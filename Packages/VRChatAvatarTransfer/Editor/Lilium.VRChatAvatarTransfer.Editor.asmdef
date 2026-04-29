@@ -1,0 +1,21 @@
+{
+    "name": "Lilium.VRChatAvatarTransfer.Editor",
+    "rootNamespace": "Lilium.VRChatAvatarTransfer.Editor",
+    "references": [
+        "VRM10",
+        "SpringBoneJobs",
+        "VRC.SDKBase",
+        "VRC.SDK3A"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,0 +1,33 @@
+{
+  "name": "jp.lilium.vrchatavatartransfer",
+  "version": "0.19.1",
+  "displayName": "Lilium VRChat Avatar Transfer",
+  "description": "Editor tools to bring VRChat avatars into non-VRChat environments (PhysBone -> VRM SpringBone, VRC Constraint -> Unity Constraint).",
+  "unity": "2022.3",
+  "license": "MIT",
+  "documentationUrl": "https://github.com/you-ri/LiveStudio/tree/main/Packages/VRChatAvatarTransfer",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/you-ri/LiveStudio.git",
+    "directory": "Packages/VRChatAvatarTransfer"
+  },
+  "dependencies": {
+    "com.vrchat.base": "3.7.0",
+    "com.vrchat.avatars": "3.7.0",
+    "com.vrmc.gltf": "0.130.1",
+    "com.vrmc.vrm": "0.130.1"
+  },
+  "vpmDependencies": {
+    "com.vrchat.base": "~3.7.0",
+    "com.vrchat.avatars": "~3.7.0"
+  },
+  "keywords": [
+    "vrchat",
+    "vrm",
+    "avatar"
+  ],
+  "author": {
+    "name": "Lilium",
+    "email": ""
+  }
+}
