@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: "Version bump (applies to all packages)"
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: beta
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute next version
+        id: bump
+        shell: bash
+        run: |
+          set -euo pipefail
+          # All packages must share the same version
+          FIRST_PKG=$(ls Packages | head -1)
+          CUR=$(jq -r .version "Packages/$FIRST_PKG/package.json")
+          for pkg in Packages/*/package.json; do
+            V=$(jq -r .version "$pkg")
+            if [[ "$V" != "$CUR" ]]; then
+              echo "Version mismatch: $pkg = $V, expected $CUR" >&2
+              exit 1
+            fi
+          done
+          IFS=. read -r MA MI PA <<< "$CUR"
+          case "${{ inputs.version_bump }}" in
+            major) NEW="$((MA+1)).0.0" ;;
+            minor) NEW="$MA.$((MI+1)).0" ;;
+            patch) NEW="$MA.$MI.$((PA+1))" ;;
+          esac
+          echo "current=$CUR"        >> "$GITHUB_OUTPUT"
+          echo "new_version=$NEW"    >> "$GITHUB_OUTPUT"
+          echo "tag=v$NEW"           >> "$GITHUB_OUTPUT"
+          echo "Bumping: $CUR -> $NEW (tag v$NEW)"
+
+      - name: Fail if tag already exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags
+          if git rev-parse -q --verify "refs/tags/${{ steps.bump.outputs.tag }}" >/dev/null; then
+            echo "Tag ${{ steps.bump.outputs.tag }} already exists." >&2
+            exit 1
+          fi
+
+      - name: Bump all package.json on beta and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          NEW="${{ steps.bump.outputs.new_version }}"
+          for pkg in Packages/*/package.json; do
+            jq ".version = \"$NEW\"" "$pkg" > "$pkg.tmp" && mv "$pkg.tmp" "$pkg"
+            git add "$pkg"
+          done
+          git commit -m "release: v$NEW"
+          git push origin beta
+
+      - name: Fast-forward main to beta
+        shell: bash
+        run: |
+          set -euo pipefail
+          # beta always contains main as ancestor, so this is a fast-forward push
+          git push origin beta:main
+
+      - name: Create tag and GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git tag "${{ steps.bump.outputs.tag }}"
+          git push origin "${{ steps.bump.outputs.tag }}"
+          gh release create "${{ steps.bump.outputs.tag }}" \
+            --title "LiveStudio ${{ steps.bump.outputs.tag }}" \
+            --generate-notes \
+            --target main
