@@ -46,6 +46,14 @@ To pin a specific version (recommended for production):
 https://github.com/you-ri/LiveStudio.git?path=/Packages/VRChatAvatarTransfer#v0.19.1
 ```
 
+To preview the latest unreleased work, point at the `beta` branch:
+
+```
+https://github.com/you-ri/LiveStudio.git?path=/Packages/VRChatAvatarTransfer#beta
+```
+
+> **Versioning note**: every package in the LiveStudio monorepo shares the same `version`. Pinning `#v0.19.1` here also pins every other LiveStudio package you install at that release to a known-compatible set. See [LiveStudio README](https://github.com/you-ri/LiveStudio#versioning).
+
 ---
 
 ## Usage
