@@ -366,10 +366,6 @@ public class VTuberController : MonoBehaviour
 
 MIT — リポジトリルートの [LICENSE](../../LICENSE) を参照。
 
-## 🛠️ 開発・貢献
-
-バグ報告や機能要望は、プロジェクトのIssueトラッカーまでお願いします。
-
 ---
 
 **重要**: このパッケージはWindows専用です。他のプラットフォームでは標準のInput Systemが使用されます。
