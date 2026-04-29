@@ -11,6 +11,7 @@ This is a **package monorepo**. Each subdirectory under `Packages/` is an indepe
 | Package | Folder | Description |
 |---|---|---|
 | `jp.lilium.vrchatavatartransfer` | [`Packages/VRChatAvatarTransfer`](./Packages/VRChatAvatarTransfer) | Editor tools to bring VRChat avatars into non-VRChat environments (PhysBone → VRM SpringBone, VRC Constraint → Unity Constraint). |
+| `jp.lilium.nativegamepad` | [`Packages/NativeGamePad`](./Packages/NativeGamePad) | Native Windows gamepad support with background input (XInput + Windows.Gaming.Input). |
 
 More packages will be added here over time.
 
