@@ -26,7 +26,7 @@ This package lives inside the [LiveStudio](https://github.com/you-ri/LiveStudio)
 In Unity, open `Window > Package Manager > + > Install package from git URL...` and paste:
 
 ```
-https://github.com/you-ri/LiveStudio.git?path=/Packages/NativeGamePad
+https://github.com/you-ri/LiveStudio.git?path=/Packages/NativeGamepad
 ```
 
 Or add to `Packages/manifest.json` directly:
@@ -34,7 +34,7 @@ Or add to `Packages/manifest.json` directly:
 ```json
 {
   "dependencies": {
-    "jp.lilium.nativegamepad": "https://github.com/you-ri/LiveStudio.git?path=/Packages/NativeGamePad"
+    "jp.lilium.nativegamepad": "https://github.com/you-ri/LiveStudio.git?path=/Packages/NativeGamepad"
   }
 }
 ```
@@ -42,13 +42,13 @@ Or add to `Packages/manifest.json` directly:
 To pin a specific version (recommended for production):
 
 ```
-https://github.com/you-ri/LiveStudio.git?path=/Packages/NativeGamePad#v0.19.1
+https://github.com/you-ri/LiveStudio.git?path=/Packages/NativeGamepad#v0.19.1
 ```
 
 To preview the latest unreleased work, point at the `beta` branch:
 
 ```
-https://github.com/you-ri/LiveStudio.git?path=/Packages/NativeGamePad#beta
+https://github.com/you-ri/LiveStudio.git?path=/Packages/NativeGamepad#beta
 ```
 
 > **Versioning note**: every package in the LiveStudio monorepo shares the same `version`. Pinning `#v0.19.1` here also pins every other LiveStudio package you install at that release to a known-compatible set. See [LiveStudio README](https://github.com/you-ri/LiveStudio#versioning).

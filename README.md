@@ -1,6 +1,6 @@
 # LiveStudio
 
-Open-source Unity packages for VTuber / avatar live-streaming pipelines, maintained by [You-Ri / Lilium](https://github.com/you-ri).
+Open-source Unity packages for VTuber / avatar live-streaming pipelines.
 
 This is a **package monorepo**. Each subdirectory under `Packages/` is an independent Unity Package Manager (UPM) package and can be installed via Git URL with a `?path=` query.
 
@@ -11,7 +11,7 @@ This is a **package monorepo**. Each subdirectory under `Packages/` is an indepe
 | Package | Folder | Description |
 |---|---|---|
 | `jp.lilium.vrchatavatartransfer` | [`Packages/VRChatAvatarTransfer`](./Packages/VRChatAvatarTransfer) | Editor tools to bring VRChat avatars into non-VRChat environments (PhysBone → VRM SpringBone, VRC Constraint → Unity Constraint). |
-| `jp.lilium.nativegamepad` | [`Packages/NativeGamePad`](./Packages/NativeGamePad) | Native Windows gamepad support with background input (XInput + Windows.Gaming.Input). |
+| `jp.lilium.nativegamepad` | [`Packages/NativeGamepad`](./Packages/NativeGamepad) | Native Windows gamepad support with background input (XInput + Windows.Gaming.Input). |
 
 More packages will be added here over time.
 

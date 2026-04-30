@@ -7,6 +7,21 @@ using UniVRM10;
 using VRC.Dynamics;
 using VRC.SDK3.Dynamics.PhysBone.Components;
 
+/*
+VRC Phys ==> VMC Spirng Bone 変換マップ
+
+pull 1 spring 1 ==> stf 0 drag 0
+
+ひも風
+pull 0 spring 0 ==> stf 0 drag 1
+pull 0 spring 1 ==> stf 0 drag 1
+
+固定(VRMは固定されない。近似値)
+pull 1 spring 0 ==>  stf 4 drag 1
+
+*/
+
+
 namespace Lilium.VRChatAvatarTransfer.Editor
 {
     internal static class PhysBoneToSpringBoneConverter
@@ -293,10 +308,20 @@ namespace Lilium.VRChatAvatarTransfer.Editor
 
         private static int PopulateSpringJoints(VRCPhysBone pb, List<Transform> chain, Vrm10InstanceSpringBone.Spring spring)
         {
-            // PhysBone の pull (静止姿勢への戻り力) → VRM の stiffnessForce
-            // PhysBone の spring (揺れの大きさ) → VRM の dragForce の逆 (1 - spring)
-            float stiffness = Mathf.Clamp01(pb.pull);
-            float drag = Mathf.Clamp01(1f - pb.spring);
+            // ファイル先頭の校正マップを式にフィットさせた近似:
+            //   stiffnessForce = pull * (1 - spring) * 4
+            //     (pull=1, spring=0) → 4 (固定相当の最大復元、VRM の LimitBreakSlider 上限)
+            //     (pull=1, spring=1) → 0 (自由振動: pull が spring で打ち消される)
+            //     (pull=0, *)        → 0 (ひも風: 復元なし)
+            //   dragForce = 1 - pull * spring
+            //     (pull=1, spring=1) → 0 (自由振動)
+            //     その他              → 1 寄り (ひも風 / 固定はどちらも完全減衰)
+            //   gravityPower = abs(gravity) * 20  (esperecyan に倣う)
+            //
+            // VRC stiffness (Advanced のみ) は本マッピングには含まれていないため使用しない。
+            // pull / spring は対応する curve でジョイント位置 t ごとに評価する。
+            const float StiffnessForceScale = 4.0f;
+            const float GravityPowerScale = 20.0f;
             float gravity = Mathf.Abs(pb.gravity);
             Vector3 gravityDir = pb.gravity >= 0f ? new Vector3(0f, -1f, 0f) : new Vector3(0f, 1f, 0f);
             float radius = Mathf.Max(0f, pb.radius);
@@ -323,9 +348,12 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     pb.limitRotation.y * EvaluateCurveOrOne(pb.limitRotationYCurve, t),
                     pb.limitRotation.z * EvaluateCurveOrOne(pb.limitRotationZCurve, t));
 
-                joint.m_stiffnessForce = stiffness;
-                joint.m_dragForce = drag;
-                joint.m_gravityPower = gravity;
+                float pullAmt   = Mathf.Max(0f,   pb.pull   * EvaluateCurveOrOne(pb.pullCurve,   t));
+                float springAmt = Mathf.Clamp01(pb.spring * EvaluateCurveOrOne(pb.springCurve, t));
+
+                joint.m_stiffnessForce = pullAmt * (1f - springAmt) * StiffnessForceScale;
+                joint.m_dragForce = Mathf.Clamp01(1f - pullAmt * springAmt);
+                joint.m_gravityPower = gravity * GravityPowerScale;
                 joint.m_gravityDir = gravityDir;
                 joint.m_jointRadius = radius * EvaluateCurveOrOne(pb.radiusCurve, t);
                 joint.m_anglelimitType = anglelimitType;

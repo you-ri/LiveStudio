@@ -6,11 +6,11 @@
   "author": "Lilium",
   "unity": "2022.3",
   "license": "MIT",
-  "documentationUrl": "https://github.com/you-ri/LiveStudio/tree/main/Packages/NativeGamePad",
+  "documentationUrl": "https://github.com/you-ri/LiveStudio/tree/main/Packages/NativeGamepad",
   "repository": {
     "type": "git",
     "url": "https://github.com/you-ri/LiveStudio.git",
-    "directory": "Packages/NativeGamePad"
+    "directory": "Packages/NativeGamepad"
   },
   "keywords": [
     "input",
