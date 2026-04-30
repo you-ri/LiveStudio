@@ -7,21 +7,6 @@ using UniVRM10;
 using VRC.Dynamics;
 using VRC.SDK3.Dynamics.PhysBone.Components;
 
-/*
-VRC Phys ==> VMC Spirng Bone 変換マップ
-
-pull 1 spring 1 ==> stf 0 drag 0
-
-ひも風
-pull 0 spring 0 ==> stf 0 drag 1
-pull 0 spring 1 ==> stf 0 drag 1
-
-固定(VRMは固定されない。近似値)
-pull 1 spring 0 ==>  stf 4 drag 1
-
-*/
-
-
 namespace Lilium.VRChatAvatarTransfer.Editor
 {
     internal static class PhysBoneToSpringBoneConverter
@@ -108,8 +93,6 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             return true;
         }
 
-        private const string DummyVrm10ObjectPath = "Assets/VRChatAvatarTransfer/DummyVrm10Object.asset";
-
         private static Vrm10Instance EnsureVrm10Instance(GameObject avatarRoot)
         {
             var existing = avatarRoot.GetComponent<Vrm10Instance>();
@@ -122,29 +105,10 @@ namespace Lilium.VRChatAvatarTransfer.Editor
 
             if (existing.Vrm == null)
             {
-                existing.Vrm = LoadOrCreateDummyVrm10Object();
+                existing.Vrm = Vrm10ObjectBuilder.BuildOrLoad(avatarRoot);
                 EditorUtility.SetDirty(existing);
             }
             return existing;
-        }
-
-        private static VRM10Object LoadOrCreateDummyVrm10Object()
-        {
-            var asset = AssetDatabase.LoadAssetAtPath<VRM10Object>(DummyVrm10ObjectPath);
-            if (asset != null) return asset;
-
-            var dir = System.IO.Path.GetDirectoryName(DummyVrm10ObjectPath);
-            if (!AssetDatabase.IsValidFolder(dir))
-            {
-                System.IO.Directory.CreateDirectory(dir);
-                AssetDatabase.Refresh();
-            }
-
-            asset = ScriptableObject.CreateInstance<VRM10Object>();
-            AssetDatabase.CreateAsset(asset, DummyVrm10ObjectPath);
-            AssetDatabase.SaveAssets();
-            VRChatAvatarTransferLog.Info($"Created dummy VRM10Object asset at '{DummyVrm10ObjectPath}'.");
-            return asset;
         }
 
         private static VRM10SpringBoneCollider ConvertCollider(VRCPhysBoneCollider src)
