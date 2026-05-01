@@ -192,13 +192,13 @@ ExposedObjectの登録・永続化・シリアライズに関する仕様は [Do
 
 `Plugins/Lilium.RemoteControl.SourceGenerator.dll` は Roslyn IIncrementalGenerator で、`[ExposedClass]` を持つ型のメンバー宣言順を C# ソースから抽出して runtime に提供する。これにより `[ExposedProperty]` `[ExposedField]` `[ExposedFunction]` を `order` 未設定で混在させたとき、RemoteApp の DynamicObjectPane に **ソース宣言順** で並ぶ。
 
-ソースは `<repo_root>/src/Lilium.RemoteControl.SourceGenerator/` 配下、ビルド成果物 (DLL) はこのパッケージに **commit する**運用。
+ソースは `SourceGenerator~/Lilium.RemoteControl.SourceGenerator/` 配下、ビルド成果物 (DLL) はこのパッケージに **commit する**運用。フォルダ末尾の `~` は Unity に無視させるためのマーカー (Unity が C# ソースをアセンブリとしてコンパイルしないようにするため)。
 
 ### Generator を変更したとき
 
 ```powershell
-# Windows
-./Scripts/build-generator.ps1
+# Windows (PowerShell 5.1 / 7+)
+./SourceGenerator~/build.ps1
 ```
 
 スクリプトが `dotnet build -c Release` した上で DLL を `Plugins/` にコピーする。source change と DLL の両方を git commit すること (DLL を含めずに push すると、他環境で旧 generator が動く)。
