@@ -172,7 +172,7 @@ namespace Lilium.RemoteControl.WebUI.Editor
             }
         }
 
-        [UnityEditor.MenuItem("Window/Remote Control/WebUI Simulator")]
+        [UnityEditor.MenuItem("Window/Lilium Remote Control/WebUI Simulator")]
         public static void ShowWindow()
         {
             var window = GetWindow<WebUISimulatorWindow>();

@@ -27,7 +27,7 @@ namespace Lilium.RemoteControl.Editor
         // Objects用
         private int _lastInstanceCount;
 
-        [MenuItem("Window/Remote Control/ExposedObjects Viewer")]
+        [MenuItem("Window/Lilium Remote Control/ExposedObjects Viewer")]
         public static void ShowWindow()
         {
             var window = GetWindow<ExposedObjectsViewerWindow>();

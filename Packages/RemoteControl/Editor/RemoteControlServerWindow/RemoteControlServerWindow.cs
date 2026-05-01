@@ -11,7 +11,7 @@ namespace Lilium.RemoteControl
         private RemoteControlServerSettings _settings;
         private Vector2 _scrollPosition;
 
-        [MenuItem("Window/Remote Control/Remote Control Server")]
+        [MenuItem("Window/Lilium Remote Control/Remote Control Server")]
         public static void ShowWindow()
         {
             var window = GetWindow<RemoteControlServerWindow>("Remote Control Server");
