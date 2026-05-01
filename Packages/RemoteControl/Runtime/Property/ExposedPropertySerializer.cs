@@ -2042,6 +2042,14 @@ namespace Lilium.RemoteControl
                 return true;
             }
 
+            // ポリモーフィック型不一致 (保存時の @type と実体型が兄弟サブクラス等で異なる) を
+            // 入口で検出し短絡する。後続の Get/Set 経路 (existingValue 取得 / oldValue 取得 /
+            // EnsureDefaultCaptured / SetValueRaw) が同じ警告を繰り返し出すのを防ぐ。
+            if (ExposedPropertyUtility.WarnIfInstanceMismatch(property.obj, property.type))
+            {
+                return false;
+            }
+
             var valueTypeForNull = property.type.valueType;
 
             // UnityEngine.Object 派生フィールドに null token を受け取った場合は明示的に null 代入する。

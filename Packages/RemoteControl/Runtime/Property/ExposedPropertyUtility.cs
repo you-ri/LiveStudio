@@ -143,6 +143,45 @@ namespace Lilium.RemoteControl
                 return false;
             if (propertyType == null) throw new ArgumentNullException(nameof(propertyType));
             if (!propertyType.isValid) throw new ArgumentException("Property must have either PropertyInfo or FieldInfo");
+
+            // ポリモーフィック型不一致を検出した場合は黙って skip する。
+            // (BCL の ArgumentException 防止が目的。警告は呼び出し側 (例: _FromJsonProperty)
+            //  で論理操作 1 回につき 1 度だけ出すため、ここではログを出さない)
+            if (!IsInstanceCompatible(obj, propertyType))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 指定された obj が propertyType の宣言型と互換性があるかを返す (ログ出力なし)。
+        /// 静的メンバー / 配列要素 / null obj はチェック対象外として true 扱い。
+        /// </summary>
+        internal static bool IsInstanceCompatible(object obj, in ExposedPropertyType propertyType)
+        {
+            if (propertyType == null || !propertyType.isValid) return true;
+            if (propertyType.isStatic || propertyType.isArrayElement) return true;
+            if (obj == null) return true;
+
+            var declaringType = propertyType.properyInfo?.DeclaringType ?? propertyType.fieldInfo?.DeclaringType;
+            if (declaringType == null) return true;
+            return declaringType.IsAssignableFrom(obj.GetType());
+        }
+
+        /// <summary>
+        /// IsInstanceCompatible が false のときに警告ログを 1 回出す。互換ならログを出さず false を返す。
+        /// 論理操作 1 回 (例: シリアライザのプロパティ適用) の入口で呼び、後続の Get/Set 経路を短絡させる用途。
+        /// </summary>
+        /// <returns>型不一致を検出したら true。</returns>
+        internal static bool WarnIfInstanceMismatch(object obj, in ExposedPropertyType propertyType)
+        {
+            if (IsInstanceCompatible(obj, propertyType)) return false;
+
+            var declaringType = propertyType.properyInfo?.DeclaringType ?? propertyType.fieldInfo?.DeclaringType;
+            var memberName = propertyType.properyInfo?.Name ?? propertyType.fieldInfo?.Name;
+            Debug.LogWarning($"[RemoteControl] Property '{declaringType?.Name}.{memberName}' is not defined on actual instance of type '{obj.GetType().Name}'. Skipping (likely polymorphic type mismatch on load).");
             return true;
         }
 
