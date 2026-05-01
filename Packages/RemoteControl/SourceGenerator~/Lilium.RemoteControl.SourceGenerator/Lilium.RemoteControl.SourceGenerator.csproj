@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <RootNamespace>Lilium.RemoteControl.SourceGenerator</RootNamespace>
+    <AssemblyName>Lilium.RemoteControl.SourceGenerator</AssemblyName>
+    <Copyright>Copyright (c) You-Ri, 2026</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Unity 2022.3 系の古いパッチでも動くよう Roslyn 4.0 を参照する。
+         Unity の compiler version より新しい Roslyn を参照すると CS9057 警告で
+         generator が無効化されるため。
+         注意: ForAttributeWithMetadataName (4.3+) などの新 API は使わないこと。 -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.0.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>
