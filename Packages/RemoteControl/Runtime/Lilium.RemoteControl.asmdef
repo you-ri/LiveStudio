@@ -1,0 +1,17 @@
+{
+    "name": "Lilium.RemoteControl",
+    "rootNamespace": "Lilium.RemoteControl",
+    "references": [
+        "Unity.Properties",
+        "Lilium.RemoteControl.Reflection"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

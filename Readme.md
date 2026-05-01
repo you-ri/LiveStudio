@@ -12,6 +12,7 @@ This is a **package monorepo**. Each subdirectory under `Packages/` is an indepe
 |---|---|---|
 | `jp.lilium.vrchatavatartransfer` | [`Packages/VRChatAvatarTransfer`](./Packages/VRChatAvatarTransfer) | Editor tools to bring VRChat avatars into non-VRChat environments (PhysBone → VRM SpringBone, VRC Constraint → Unity Constraint). |
 | `jp.lilium.nativegamepad` | [`Packages/NativeGamepad`](./Packages/NativeGamepad) | Native Windows gamepad support with background input (XInput + Windows.Gaming.Input). |
+| `jp.lilium.remotecontrol` | [`Packages/RemoteControl`](./Packages/RemoteControl) | REST API server with reflection-based remote control for Unity Editor and runtime. SSE-based realtime updates and `[ExposedProperty]`-driven UI generation. |
 
 More packages will be added here over time.
 

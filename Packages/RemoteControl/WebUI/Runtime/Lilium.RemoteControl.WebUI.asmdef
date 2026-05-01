@@ -1,0 +1,17 @@
+{
+    "name": "Lilium.RemoteControl.WebUI",
+    "rootNamespace": "Lilium.RemoteControl.WebUI",
+    "references": [
+        "Lilium.RemoteControl",
+        "Lilium.RemoteControl.Reflection"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

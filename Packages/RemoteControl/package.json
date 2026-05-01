@@ -1,0 +1,30 @@
+{
+  "name": "jp.lilium.remotecontrol",
+  "displayName": "Lilium Remote Control",
+  "version": "0.19.1",
+  "description": "REST API server with reflection-based remote control for Unity Editor and runtime",
+  "author": {
+    "name": "You-Ri",
+    "email": "you-ri@sasakingdom.com",
+    "url": "https://github.com/you-ri"
+  },
+  "unity": "2022.3",
+  "license": "MIT",
+  "documentationUrl": "https://github.com/you-ri/LiveStudio/tree/main/Packages/RemoteControl",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/you-ri/LiveStudio.git",
+    "directory": "Packages/RemoteControl"
+  },
+  "keywords": [
+    "remote",
+    "control",
+    "rest",
+    "api",
+    "server"
+  ],
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.1",
+    "com.unity.modules.jsonserialize": "1.0.0"
+  }
+}

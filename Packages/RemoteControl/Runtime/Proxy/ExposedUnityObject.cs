@@ -1,0 +1,663 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+using UnityEngine.Scripting;
+using UnityEngine.Serialization;
+
+
+namespace Lilium.RemoteControl
+{
+    //TODO: ExposedObject役割が違うのに名称がかぶるのはややこしいので、リネームするべき。
+    public interface IExposedObject
+    {
+        string name { get; set; }
+        ExposedObject exposedObject { get; }
+        string id { get; }
+        void OnEnable();
+        void OnDisable();
+        /// <summary>
+        /// オブジェクトが完全に破棄される際に呼ばれるコールバック。
+        /// OnDisableによるExposedObject解除に加えて、追加のリソース解放処理を行う。
+        /// </summary>
+        void OnDispose();
+        void Update();
+        void Reset();
+    }
+
+    [Serializable]
+    public class ExposedUnityObjectBase : IExposedObject
+    {
+        public virtual string name { get; set; }
+
+        public virtual Type referenceType { get; }
+
+        public virtual UnityEngine.Object reference { get; }
+
+        public virtual string id { get; }
+
+        public ExposedObject exposedObject => _exposedObject;
+
+        [NonSerialized]
+        protected ExposedObject _exposedObject;
+
+        /// <summary>
+        /// このオブジェクトの生成元 Prefab の Asset GUID。
+        /// Prefab からインスタンス化された場合に設定される。
+        /// </summary>
+        [NonSerialized]
+        private string _prefabSourceKey;
+        public string prefabSourceKey
+        {
+            get => _prefabSourceKey;
+            set => _prefabSourceKey = value;
+        }
+
+        /// <summary>
+        /// 親 ExposedObject の id。Unity hierarchy を真実として派生する。
+        /// reference の Transform を起点に祖先方向へ辿り、最初に見つかった登録済み ExposedObject の id を返す。
+        /// Transform を持たない reference (ScriptableObject 等) やルート (親なし) は null。
+        /// シリアライズ時はメタデータ `@parent` として出力され、デシリアライズ時は Registry.SetParent で復元される。
+        /// </summary>
+        public string parentId
+        {
+            get
+            {
+                var tr = ExposedObjectRegistry.ExtractTransform(reference);
+                return tr != null ? ExposedObjectRegistry.FindAncestorExposedId(tr) : null;
+            }
+        }
+
+        public ExposedUnityObjectBase()
+        {
+        }
+
+        public virtual void OnEnable()
+        {
+        }
+
+        public virtual void OnDisable()
+        {
+        }
+
+        public virtual void OnDispose()
+        {
+            OnDisable();
+        }
+
+        public virtual void Update()
+        {
+        }
+
+
+
+        public virtual void Reset()
+        {
+        }
+
+        public virtual void NoticeReset()
+        {
+            
+        }
+
+        public virtual void SetReference(UnityEngine.Object obj)
+        {
+        }
+
+        /// <summary>
+        /// ExposedObjectのIDを差し替える。
+        /// Loadで保存済みIDに再登録する際に使用する。
+        /// </summary>
+        public virtual void ReplaceId(string newId)
+        {
+        }
+
+        public virtual bool ResolveReferences(IExposedPropertyTable resolver)
+        {
+            return reference != null;
+        }
+
+        /// <summary>
+        /// インスタンス単位で上書きするアイコン名を返す。nullまたは空ならクラス側のアイコンにフォールバックされる。
+        /// シリアライズ時にメタデータ `@icon` としてRemoteAppへ送られる。
+        /// </summary>
+        public virtual string GetIconOverride() => null;
+    }
+
+    [Serializable]
+    public abstract class ExposedUnityObject<T> : ExposedUnityObjectBase
+         where T : UnityEngine.Object
+    {
+        [SerializeField, FormerlySerializedAs("_referenceName")]
+        private string _id;
+
+        [SerializeField]
+        protected T _reference;
+
+        private string _fallbackName;
+
+        public override string name
+        {
+            get => _reference != null ? _reference.name : _fallbackName;
+            set
+            {
+                if (_reference != null)
+                {
+                    _reference.name = value;
+                }
+                _fallbackName = value;
+            }
+        }
+
+        public override string id => _id;
+
+        public override Type referenceType => typeof(T);
+
+        public override UnityEngine.Object reference => _reference;
+
+        public ExposedUnityObject(T reference) : base()
+        {
+            _id = System.Guid.NewGuid().ToString();
+
+            _reference = reference;
+
+            // referenceがnullの場合はExposedObject生成しない
+            // (Unity [SerializeReference]デシリアライズ時のデフォルトコンストラクタ呼び出し対策)
+            if (reference != null)
+            {
+                _exposedObject = ExposedObjectRegistry.Create<T>(_reference, id);
+            }
+        }
+
+        public override void OnEnable()
+        {
+            base.OnEnable();
+            if (_reference != null)
+            {
+                _exposedObject = ExposedObjectRegistry.Create<T>(_reference, id);
+            }
+        }
+
+
+        public override void OnDisable()
+        {
+            base.OnDisable();
+
+            _exposedObject?.Unregister();
+            _exposedObject = null;
+        }
+
+        public override void Update()
+        {
+            // Unity特化の更新処理があれば実装
+        }
+
+
+        public override void NoticeReset()
+        {
+            (_reference as Component)?.SendMessage("OnExposedReset");
+        }
+
+
+        public override void SetReference(UnityEngine.Object obj)
+        {
+            _reference = obj as T;
+            _exposedObject = ExposedObjectRegistry.Create<T>(_reference, id);
+        }
+
+        public override void ReplaceId(string newId)
+        {
+            _exposedObject?.Unregister();
+            _id = newId;
+            if (_reference != null)
+            {
+                _exposedObject = ExposedObjectRegistry.Create<T>(_reference, id);
+            }
+        }
+
+        public override bool ResolveReferences(IExposedPropertyTable resolver)
+        {
+            _exposedObject = ExposedObjectRegistry.Create<T>(_reference, id);
+
+            return _reference != null;
+        }
+    }
+
+
+
+    [Serializable]
+    public abstract class ExposedUnityObjectProxy<U, T> : ExposedUnityObjectBase
+        where T : UnityEngine.Object
+        where U : ExposedUnityObjectProxy<U, T>
+    {
+
+        [SerializeField]
+        private string _id;
+
+        [SerializeField]
+        protected T _reference;
+
+        private string _fallbackName;
+
+        [ExposedProperty, Persistable]
+        public override string name
+        {
+            get => _reference != null ? _reference.name : _fallbackName;
+            set
+            {
+                if (_reference != null)
+                {
+                    _reference.name = value;
+                }
+                _fallbackName = value;
+            }
+        }
+
+        public override string id => _id;
+
+        public override Type referenceType => typeof(T);
+
+        public override UnityEngine.Object reference => _reference;
+
+        public ExposedUnityObjectProxy(T reference) : base()
+        {
+            _id = System.Guid.NewGuid().ToString();
+
+            _reference = reference;
+
+            // referenceがnullの場合はExposedObject生成しない
+            // (Unity [SerializeReference]デシリアライズ時のデフォルトコンストラクタ呼び出し対策)
+            if (reference != null)
+            {
+                _exposedObject = ExposedObjectRegistry.Create(GetType(), this, id);
+            }
+        }
+
+        public override void OnEnable()
+        {
+            base.OnEnable();
+            if (_reference != null)
+            {
+                _exposedObject = ExposedObjectRegistry.Create(GetType(), this, id);
+            }
+        }
+
+        public override void OnDisable()
+        {
+            base.OnDisable();
+
+            _exposedObject?.Unregister();
+            _exposedObject = null;
+        }
+
+        public override void Update()
+        {
+            // Unity特化の更新処理があれば実装
+        }
+
+
+
+        public override void Reset()
+        {
+        }
+
+        public override void SetReference(UnityEngine.Object obj)
+        {
+            _reference = obj as T;
+            _exposedObject = ExposedObjectRegistry.Create(GetType(), this, id);
+        }
+
+        public override void ReplaceId(string newId)
+        {
+            _exposedObject?.Unregister();
+            _id = newId;
+            if (_reference != null)
+            {
+                _exposedObject = ExposedObjectRegistry.Create(GetType(), this, id);
+            }
+        }
+
+        public override bool ResolveReferences(IExposedPropertyTable resolver)
+        {
+            _exposedObject = ExposedObjectRegistry.Create(GetType(), this, id);
+
+            return _reference != null;
+        }
+
+    }
+
+
+    [System.Serializable]
+    [ExposedClass("GameObject", Icon = "deployed_code")]
+    public class ExposedGameObject : ExposedUnityObjectProxy<ExposedGameObject, GameObject>
+    {
+        static ExposedGameObject()
+        {
+            ExposedUnityObjectFactory.Register<GameObject>("GameObject", (gameObject) => new ExposedGameObject(gameObject));
+        }
+
+
+        [ExposedProperty, Persistable]
+        [Preserve]
+        public bool active
+        {
+            get => _reference?.activeSelf ?? false;
+            set => _reference?.SetActive(value);
+        }
+
+        //TODO: IEnumerable<Component> _components; でもいけるようににしたいが、現状ExposedObject側で配列しか対応していない
+        [ExposedProperty("components"), Persistable, InlineReference]
+        [Preserve]
+        protected Component[] _components
+        {
+            get
+            {
+                if (_reference == null) return Array.Empty<Component>();
+                var allComponents = _reference.GetComponents<Component>();
+                var filtered = allComponents.Where(c => c != null && ExposedClass.Has(c.GetType())).ToArray();
+                return filtered;
+            }
+        }
+
+
+        public override void NoticeReset()
+        {
+            if (_reference == null) return;
+            _reference.BroadcastMessage("OnExposedChanged", SendMessageOptions.DontRequireReceiver);
+        }
+
+        /// <summary>
+        /// GameObjectのアイコンを、ExposedClass登録済みの先頭コンポーネントのアイコンで上書きする。
+        /// `_components` getterと同じ条件でフィルタすることで、RemoteApp一覧と一致させる。
+        /// </summary>
+        public override string GetIconOverride()
+        {
+            if (_reference == null) return null;
+            var allComponents = _reference.GetComponents<Component>();
+            for (int i = 0; i < allComponents.Length; i++)
+            {
+                var c = allComponents[i];
+                if (c == null) continue;
+                if (ExposedClass.TryGet(c.GetType(), out var cls) && !string.IsNullOrEmpty(cls.icon))
+                {
+                    return cls.icon;
+                }
+            }
+            return null;
+        }
+
+        public ExposedGameObject() : base(null)
+        {
+        }
+
+        public ExposedGameObject(GameObject reference) : base(reference)
+        {
+        }
+    }
+
+
+    /// <summary>
+    /// Transform (position / rotation / scale) を常時公開するGameObjectプロキシ。
+    /// Transform操作をRemoteAppから行いたい場合はこちらを使用する。
+    /// 親 Transform を TransformRef で指定でき、scene 内の他 ExposedGameObjectWithTransform 配下に
+    /// アタッチできる（avatar bone へのデコレーション装着など）。
+    /// </summary>
+    [System.Serializable]
+    [ExposedClass("GameObjectWithTransform", Icon = "deployed_code")]
+    public class ExposedGameObjectWithTransform : ExposedGameObject
+    {
+        // ExposedUnityObjectFactory.Register は呼ばない。
+        // GameObject 型のデフォルト自動ラップ先は ExposedGameObject のまま維持する。
+
+        /// <summary>
+        /// いずれかの ExposedGameObjectWithTransform が enable / disable された際に発火する。
+        /// 各インスタンスはこれを受けて <see cref="_parent"/> を再解決する。
+        /// avatar swap など、parent 候補となる root が増減したときに自動で再アタッチするための仕組み。
+        /// </summary>
+        static event Action _onAnyLifecycleChanged;
+
+        [SerializeField]
+        [ExposedField(order = -20), Persistable]
+        TransformRef _parent = new TransformRef();
+
+        public TransformRef parent => _parent;
+
+        [NonSerialized]
+        Transform _attachedTransform;
+
+        [ExposedProperty(order = -10), Persistable]
+        public TransformValue transform
+        {
+            get => _reference != null ? TransformValue.FromTransform(_reference.transform) : TransformValue.identity;
+            set
+            {
+                if (_reference != null) value.ApplyTo(_reference.transform);
+            }
+        }
+
+        public ExposedGameObjectWithTransform() : base(null)
+        {
+        }
+
+        public ExposedGameObjectWithTransform(GameObject reference) : base(reference)
+        {
+        }
+
+        public override void OnEnable()
+        {
+            base.OnEnable();
+
+            _parent.SetSelf(this);
+
+            if (_reference != null
+                && _parent.isEmpty
+                && _reference.transform.parent != null)
+            {
+                _parent.InitFromTransform(_reference.transform.parent);
+            }
+
+            _parent.onChanged += _OnParentChanged;
+            _onAnyLifecycleChanged += _OnAnyLifecycleChanged;
+            GameObjectUtility.RegisterHierarchyChanged(_OnHierarchyChanged);
+            _UpdateAttachment();
+            // 自身が新しい root として加わったことを既存インスタンスへ通知。
+            // 自分自身の handler は idempotent な再 Apply なので呼ばれても害なし。
+            _onAnyLifecycleChanged?.Invoke();
+        }
+
+        public override void OnDisable()
+        {
+            base.OnDisable();
+
+            GameObjectUtility.UnregisterHierarchyChanged(_OnHierarchyChanged);
+            _parent.onChanged -= _OnParentChanged;
+            _onAnyLifecycleChanged -= _OnAnyLifecycleChanged;
+            // 自身が root から外れたことを既存インスタンスへ通知（detach 含めて再評価）。
+            _onAnyLifecycleChanged?.Invoke();
+        }
+
+        void _OnParentChanged() => _UpdateAttachment();
+
+        void _OnAnyLifecycleChanged() => _UpdateAttachment();
+
+        /// <summary>
+        /// Unity hierarchy の変更通知を受け、実際の Transform.parent と TransformRef の保持する
+        /// desired state にズレがある場合は TransformRef を silent に同期する
+        /// （ユーザーの Editor ドラッグを TransformAttachment.Attach で revert してしまうのを防ぐ）。
+        /// </summary>
+        void _OnHierarchyChanged()
+        {
+            if (_reference == null) return;
+            var actualParent = _reference.transform.parent;
+            if (actualParent == _attachedTransform) return;
+            _parent.InitFromTransform(actualParent, silent: true);
+            // 次回の Attach で同じ親への余分な SetParent を避けるためキャッシュも同期する。
+            _attachedTransform = actualParent;
+        }
+
+        void _UpdateAttachment()
+        {
+            if (_reference == null) return;
+            TransformAttachment.Attach(_parent, _reference.transform, ref _attachedTransform);
+        }
+    }
+
+
+    [Serializable]
+    public abstract class ExposedUnityObjectReference<U, T> : ExposedUnityObjectBase
+        where T : UnityEngine.Object
+        where U : ExposedUnityObjectReference<U, T>
+    {
+
+        [SerializeField]
+        private string _id;
+
+        [SerializeField]
+        protected T _reference;
+
+        private string _fallbackName;
+
+        [ExposedProperty, Persistable]
+        public override string name
+        {
+            get => _reference != null ? _reference.name : _fallbackName;
+            set
+            {
+                if (_reference != null)
+                {
+                    _reference.name = value;
+                }
+                _fallbackName = value;
+            }
+        }
+
+        public override string id => _id;
+
+        public override Type referenceType => typeof(T);
+
+        public override UnityEngine.Object reference => _reference;
+
+        public ExposedUnityObjectReference(T reference) : base()
+        {
+            _id = System.Guid.NewGuid().ToString();
+
+            _reference = reference;
+
+            // referenceがnullの場合はExposedObject生成しない
+            // (Unity [SerializeReference]デシリアライズ時のデフォルトコンストラクタ呼び出し対策)
+            if (reference != null)
+            {
+                _exposedObject = ExposedObjectRegistry.Create(_reference.GetType(), _reference, id);
+            }
+        }
+
+        public override void OnEnable()
+        {
+            base.OnEnable();
+            if (_reference != null)
+            {
+                _exposedObject = ExposedObjectRegistry.Create(_reference.GetType(), _reference, id);
+            }
+        }
+
+        public override void OnDisable()
+        {
+            base.OnDisable();
+
+            _exposedObject?.Unregister();
+            _exposedObject = null;
+        }
+
+        public override void Update()
+        {
+            // Unity特化の更新処理があれば実装
+        }
+
+
+
+        public override void Reset()
+        {
+        }
+
+        public override void ReplaceId(string newId)
+        {
+            _exposedObject?.Unregister();
+            _id = newId;
+            if (_reference != null)
+            {
+                _exposedObject = ExposedObjectRegistry.Create(_reference.GetType(), _reference, id);
+            }
+        }
+
+        public override bool ResolveReferences(IExposedPropertyTable resolver)
+        {
+            if (_reference != null)
+            {
+                _exposedObject = ExposedObjectRegistry.Create(_reference.GetType(), _reference, id);
+            }
+            else
+            {
+                _exposedObject = null;
+            }
+
+
+            return _reference != null;
+        }
+    }
+
+
+    [System.Serializable]
+    [ExposedClass("Asset", Icon = "insert_drive_file")]
+    public class ExposedAsset : ExposedUnityObjectReference<ExposedAsset, ScriptableObject>
+    {
+        static ExposedAsset()
+        {
+            ExposedUnityObjectFactory.Register<ScriptableObject>("Asset", (asset) => new ExposedAsset(asset));
+        }
+
+        [ExposedProperty, Persistable]
+        public ScriptableObject asset
+        {
+            get => _reference;
+            set => _reference = value;
+        }
+
+        public override void NoticeReset()
+        {
+            if (_reference == null) return;
+        }
+
+        public ExposedAsset() : base(null)
+        {
+        }
+
+        public ExposedAsset(ScriptableObject reference) : base(reference)
+        {
+        }
+    }
+
+
+    [System.Serializable]
+    [ExposedClass("Component", Icon = "extension")]
+    public class ExposedComponent : ExposedUnityObjectReference<ExposedComponent, Component>
+    {
+        static ExposedComponent()
+        {
+            ExposedUnityObjectFactory.Register<Component>("Component", (component) => new ExposedComponent(component));
+        }
+
+        public override void NoticeReset()
+        {
+            if (_reference == null) return;
+            _reference.SendMessage("OnExposedChanged", SendMessageOptions.DontRequireReceiver);
+        }
+
+        public ExposedComponent() : base(null)
+        {
+        }
+
+        public ExposedComponent(Component reference) : base(reference)
+        {
+        }
+    }
+}
