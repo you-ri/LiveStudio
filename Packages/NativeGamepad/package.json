@@ -3,7 +3,11 @@
   "displayName": "Lilium Native Gamepad",
   "version": "0.19.1",
   "description": "Native Windows gamepad support with background input capability using XInput and Windows.Gaming.Input APIs",
-  "author": "Lilium",
+  "author": {
+    "name": "You-Ri",
+    "email": "you-ri@sasakingdom.com",
+    "url": "https://github.com/you-ri"
+  },
   "unity": "2022.3",
   "license": "MIT",
   "documentationUrl": "https://github.com/you-ri/LiveStudio/tree/main/Packages/NativeGamepad",

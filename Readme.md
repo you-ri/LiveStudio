@@ -27,12 +27,17 @@ Tag → package mapping is consistent: pinning `#v0.19.2` works for any package 
 
 ## Branches
 
+Promotion flow: **`dev` → `beta` → `main`**.
+
 | Branch | Role |
 |---|---|
 | `main` | **Stable**. Tags (`vX.Y.Z`) are cut here. Default branch for installs that don't specify `#fragment`. |
-| `beta` | Active development. Day-to-day commits land here, either directly or via short-lived feature branches that merge in and are then deleted. |
+| `beta` | Pre-release / release-candidate. Releases are cut from here (the Release workflow runs on `beta`, which then fast-forwards `main` and tags). |
+| `dev` | **Active development**. Day-to-day commits land here, either directly or via short-lived feature branches that merge in and are then deleted. |
 
-Long-lived branches are limited to these two. Force-pushing to either is forbidden; everything else is allowed for low-friction solo development. The same protection rules can later be tightened to require pull requests if more contributors join.
+Long-lived branches are limited to these three. Force-pushing to any of them is forbidden; everything else is allowed for low-friction solo development. The same protection rules can later be tightened to require pull requests if more contributors join.
+
+When a batch of work on `dev` is ready to release, fast-forward `beta` to `dev` (`git push origin dev:beta`) and run the Release workflow.
 
 ---
 
@@ -57,20 +62,6 @@ Each package is installed individually using the UPM Git URL `?path=` syntax.
 ```
 
 See each package's own README for required SDKs (e.g. VRChat SDK, UniVRM) and Unity version.
-
----
-
-## Release workflow
-
-Releases are produced by the `Release` GitHub Actions workflow (`.github/workflows/release.yml`). It runs on the `beta` branch via `workflow_dispatch` and:
-
-1. Verifies that every `Packages/*/package.json` has the same `version`.
-2. Bumps that version (`patch` / `minor` / `major`) and commits to `beta`.
-3. Fast-forwards `main` to `beta` (`git push origin beta:main`).
-4. Tags `main` as `v<X.Y.Z>`.
-5. Creates a GitHub Release with auto-generated notes.
-
-To cut a release: open the **Actions** tab, choose **Release**, pick a `version_bump`, and run it on `beta`. No manual tag pushes needed.
 
 ---
 
