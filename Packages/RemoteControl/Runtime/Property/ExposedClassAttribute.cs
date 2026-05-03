@@ -133,14 +133,6 @@ namespace Lilium.RemoteControl
         }
     }
 
-    /// <summary>
-    /// ExposedPropertyに付与すると永続化対象になる
-    /// </summary>
-    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
-    public class PersistableAttribute : Attribute
-    {
-    }
-
     [AttributeUsage(AttributeTargets.Field, AllowMultiple = false)]
     public class ExposedFieldAttribute : Attribute
     {

@@ -155,15 +155,15 @@ namespace Lilium.RemoteControl
             // MemberType: 0=Property/Field, 1=Method
             var allMembers = new List<(MemberInfo member, int token, int memberType, object attr, bool isPersistable)>();
 
-            // プロパティからExposedPropertyAttributeを検索（isPersistable = false）
+            // プロパティからExposedPropertyAttributeを検索（isPersistable は InlineReference の自動 true 化、
+            // または Shadow Field との pairing で Field 側 persistable を継承する経路でのみ true になる）
             var propertyInfos = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
             foreach (var propInfo in propertyInfos)
             {
                 var propAttribute = TypeReflectionSystem.GetCustomAttribute<ExposedPropertyAttribute>(propInfo);
                 if (propAttribute != null)
                 {
-                    var persistable = TypeReflectionSystem.GetCustomAttribute<PersistableAttribute>(propInfo) != null;
-                    allMembers.Add((propInfo, propInfo.MetadataToken, 0, propAttribute, persistable));
+                    allMembers.Add((propInfo, propInfo.MetadataToken, 0, propAttribute, false));
                 }
             }
 
@@ -314,7 +314,7 @@ namespace Lilium.RemoteControl
                         && shadowFieldByPropertyPath.TryGetValue(member.Name, out var shadowInfo))
                     {
                         shadowFieldPath = shadowInfo.fieldPath;
-                        // Field 側の persistable を Property に継承 (Property 側の Persistable 属性は無視)
+                        // Shadow Field 側の persistable を Property に継承
                         isPersistable = shadowInfo.fieldPersistable;
                     }
 
@@ -955,8 +955,7 @@ namespace Lilium.RemoteControl
             this.controlAttribute = TypeReflectionSystem.GetCustomAttribute<ControlAttribute>(info) ?? new ControlAttribute("default");
 
             // [InlineReference] は保存時に Component などを pending entry として書き出すための
-            // マーカー。isPersistable は明示指定が無くても true 扱いにする。
-            // (旧来は [Persistable] を併記する必要があったが、Phase 3 以降は冗長)
+            // マーカー。readonly Property でも isPersistable=true 扱いになる。
             if (this.controlAttribute is InlineReferenceAttribute)
             {
                 this.isPersistable = true;
