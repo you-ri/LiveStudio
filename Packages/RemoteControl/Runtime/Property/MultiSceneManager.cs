@@ -59,6 +59,8 @@ namespace Lilium.RemoteControl
         public string id => kId;
 
         [NonSerialized]
+        [ExposedField, Hide]
+        [FormerlyExposedAs("scenes")]
         private SceneInfo[] _scenes = Array.Empty<SceneInfo>();
 
         [NonSerialized]
@@ -67,7 +69,7 @@ namespace Lilium.RemoteControl
         [NonSerialized]
         private bool _initialized;
 
-        [ExposedProperty, Persistable]
+        [ExposedProperty]
         public SceneInfo[] scenes
         {
             get => _scenes;

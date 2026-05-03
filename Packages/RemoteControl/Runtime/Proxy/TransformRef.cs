@@ -23,7 +23,7 @@ namespace Lilium.RemoteControl
     /// </summary>
     [Serializable]
     [ExposedClass]
-    public class TransformRef
+    public class TransformRef : IExposedDeserializeCallback
     {
         /// <summary>_transformPath の解釈方法。</summary>
         [ExposedEnum]
@@ -35,12 +35,17 @@ namespace Lilium.RemoteControl
             Name,
         }
 
-        [SerializeField] string _ownerName;
+        [SerializeField, ExposedField, Hide]
+        [FormerlyExposedAs("ownerName")]
+        string _ownerName;
 
-        [SerializeField]
+        [SerializeField, ExposedField, Hide]
+        [FormerlyExposedAs("transformPath")]
         string _transformPath;
 
-        [SerializeField] SearchType _searchType = SearchType.Path;
+        [SerializeField, ExposedField, Hide]
+        [FormerlyExposedAs("searchType")]
+        SearchType _searchType = SearchType.Path;
 
         /// <summary>
         /// いずれかのフィールドが変更された際に呼ばれる。
@@ -98,7 +103,7 @@ namespace Lilium.RemoteControl
         /// 登録され次第 Resolve が解決できるようになる。
         /// RemoteApp からは StringSelector によるドロップダウンで親 ExposedObject の name を選択する。
         /// </summary>
-        [ExposedProperty, Persistable]
+        [ExposedProperty]
         [StringSelector(nameof(availableOwnerNames))]
         public string ownerName
         {
@@ -225,7 +230,7 @@ namespace Lilium.RemoteControl
         /// 内部 path の source of truth としての永続化プロパティ。
         /// UI には露出せず (<see cref="Hide"/>)、JSON への読み書きだけを担う。
         /// </summary>
-        [ExposedProperty, Persistable, Hide]
+        [ExposedProperty, Hide]
         public string transformPath
         {
             get => _transformPath ?? string.Empty;
@@ -243,7 +248,7 @@ namespace Lilium.RemoteControl
         /// _transformPath は保持されるため、Path 形式の path が Name モードでヒットしない場合は
         /// Resolve のフォールバックで root.transform に戻る。
         /// </summary>
-        [ExposedProperty, Persistable]
+        [ExposedProperty]
         public SearchType searchType
         {
             get => _searchType;
@@ -454,6 +459,14 @@ namespace Lilium.RemoteControl
                     return obj;
             }
             return null;
+        }
+
+        // Fields are written via reflection during JSON deserialization, which bypasses the
+        // property setters that normally fire onChanged. Re-fire here so consumers (parent
+        // attachment, RemoteApp UI) can react to restored values exactly once per load.
+        void IExposedDeserializeCallback.OnAfterExposedDeserialize()
+        {
+            onChanged?.Invoke();
         }
     }
 }

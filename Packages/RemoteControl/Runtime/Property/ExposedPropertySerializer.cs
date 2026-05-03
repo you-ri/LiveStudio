@@ -879,19 +879,34 @@ namespace Lilium.RemoteControl
                 foreach (var propType in exposedClass.propertyTypes)
                 {
                     if (!propType.isValid) continue;
-                    if (propType.isReadOnly) continue;
+                    if (propType.isReadOnly && propType.shadowField == null) continue;
 
                     var propToken = _GetTokenByPropertyName(jObject, propType);
                     if (propToken == null || propToken.Type == JTokenType.Null) continue;
 
-                    // 既存のプロパティ値を取得して渡す
-                    var existingValue = ExposedPropertyUtility.GetValueRaw(instance, propType);
+                    // Shadow Field がある場合は backing field から既存値を読み、書き込みも shadow field に直接行う
+                    // (Property setter の副作用 Apply はデシリアライズ後の IExposedDeserializeCallback に委譲)。
+                    var existingValue = propType.shadowField != null
+                        ? propType.shadowField.GetValue(instance)
+                        : ExposedPropertyUtility.GetValueRaw(instance, propType);
                     var propValue = DeserializeUnityType(resolver, propToken, propType.valueType, existingValue);
                     if (propValue != null)
                     {
-                        ExposedPropertyUtility.SetValueRaw(instance, propType, propValue);
+                        if (propType.shadowField != null)
+                        {
+                            propType.shadowField.SetValue(instance, propValue);
+                        }
+                        else
+                        {
+                            ExposedPropertyUtility.SetValueRaw(instance, propType, propValue);
+                        }
                     }
                 }
+
+                // SetValueRaw bypasses property setters, so types that need to apply
+                // deserialized field values to external state (Unity components,
+                // engine state, etc.) opt in via IExposedDeserializeCallback.
+                (instance as IExposedDeserializeCallback)?.OnAfterExposedDeserialize();
 
                 return instance;
             }
@@ -1093,6 +1108,22 @@ namespace Lilium.RemoteControl
         {
             if (exposedObject == null) return new JObject();
 
+            // Owner-side hook: refresh shadow fields whose canonical value is
+            // derived from external state (e.g. AvatarInput.settings snapshot).
+            // Fires once per object before persistence so the shadow field path
+            // used below sees a fresh value. Skipped for non-persistence reads
+            // (dirty detection, SSE broadcasts, API responses) because property
+            // setters keep the shadow in sync with user-driven changes and the
+            // refresh itself can be expensive (CreateSettingsFromAvatarInput).
+            if (forPersistence)
+            {
+                (exposedObject.target as IExposedSerializeCallback)?.OnBeforeExposedSerialize();
+                if (exposedObject.target == null)
+                {
+                    exposedObject.targetType?.InvokeStaticBeforeSerialize();
+                }
+            }
+
             var properties = exposedObject.propertyTypes;
             var jObject = _CreateMetadataJObject(exposedObject, forPersistence);
 
@@ -1131,7 +1162,12 @@ namespace Lilium.RemoteControl
                     continue;
                 }
 
-                var value = ExposedPropertyUtility.GetValueRaw(exposedObject.target, propertyType);
+                // Shadow Field がある場合は backing field から直接読む (Property getter をバイパス)。
+                // Property getter が外部状態 (Screen.width 等) を返す Shadow パターンでも、保存対象は
+                // ユーザーが設定した「内部の値」なので shadow field を信頼する。
+                var value = propertyType.shadowField != null
+                    ? propertyType.shadowField.GetValue(exposedObject.target)
+                    : ExposedPropertyUtility.GetValueRaw(exposedObject.target, propertyType);
 
                 // ObjectSelector: GameObject 側の ExposedObject を @ref として出力する
                 if (propertyType.controlAttribute is ObjectSelectorAttribute)
@@ -1978,7 +2014,26 @@ namespace Lilium.RemoteControl
             }
 
             // _FromJsonProperty を使用して、子プロパティのみをdirtyにマーク
-            return _FromJsonProperty(resolver, token, property);
+            var result = _FromJsonProperty(resolver, token, property);
+
+            // For shadow-pair properties (Phase 3): _FromJsonProperty -> property.SetValue
+            // -> propertyInfo.SetValue invokes the Property setter, which already runs
+            // the side-effect Apply. Firing the owner's IExposedDeserializeCallback here
+            // would double-apply (heavy work for callbacks like AvatarInput.ApplySettings).
+            //
+            // For non-shadow properties (e.g. nested ExposedObject rewritten via
+            // DeserializeExposedObject), the parent setter does NOT run, so the owner
+            // callback is the only place that can re-apply parent-side state.
+            if (result && property.type.shadowField == null)
+            {
+                (property.owner?.target as IExposedDeserializeCallback)?.OnAfterExposedDeserialize();
+                if (property.owner != null && property.owner.target == null)
+                {
+                    property.owner.targetType?.InvokeStaticAfterDeserialize();
+                }
+            }
+
+            return result;
         }
 
         internal static bool FromJson(string json, in ExposedProperty property)
@@ -2376,12 +2431,37 @@ namespace Lilium.RemoteControl
                 var token = _GetTokenByPropertyName(jObject, propType);
                 if (token == null || token.Type == JTokenType.Null) continue;
 
+                if (propType.shadowField != null)
+                {
+                    // Shadow Field: backing field に直接書き込んで Property setter をバイパスする
+                    // (Phase 1 の round-trip 決定性ゴール)。Apply 系副作用は IExposedDeserializeCallback で
+                    // まとめて再実行する。
+                    var existingValue = propType.shadowField.GetValue(exposedObject.target);
+                    var propValue = DeserializeUnityType(resolver, token, propType.valueType, existingValue);
+                    if (propValue != null)
+                    {
+                        propType.shadowField.SetValue(exposedObject.target, propValue);
+                        hasUpdates = true;
+                    }
+                    continue;
+                }
+
                 // プロパティに値を設定（再帰的に子プロパティも処理）
                 var property = new ExposedProperty(propType, exposedObject, exposedObject.target);
                 if (_FromJsonProperty(resolver, token, property, captureDefaults))
                 {
                     hasUpdates = true;
                 }
+            }
+
+            // _FromJsonProperty bypasses property setters when writing fields,
+            // so types that need to apply deserialized values to external state
+            // opt in via IExposedDeserializeCallback. Static-classed targets
+            // (target == null) are handled by the convention-based static method.
+            (exposedObject.target as IExposedDeserializeCallback)?.OnAfterExposedDeserialize();
+            if (exposedObject.target == null)
+            {
+                exposedObject.targetType?.InvokeStaticAfterDeserialize();
             }
 
             return hasUpdates;

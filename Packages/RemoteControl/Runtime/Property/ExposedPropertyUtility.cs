@@ -113,7 +113,16 @@ namespace Lilium.RemoteControl
                 var memberInfo = MemberAccessSystem.GetMemberInfo(type, e.path);
                 if (memberInfo != null)
                 {
-                    return new ExposedPropertyType(e.name, memberInfo, e.isPersistable);
+                    FieldInfo shadowField = null;
+                    if (!string.IsNullOrEmpty(e.shadowFieldPath))
+                    {
+                        shadowField = type.GetField(e.shadowFieldPath, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
+                        if (shadowField == null)
+                        {
+                            Debug.LogWarning($"[RemoteControl] Shadow field '{e.shadowFieldPath}' not found on {type.Name}; falling back to direct property access for '{e.name}'.");
+                        }
+                    }
+                    return new ExposedPropertyType(e.name, memberInfo, e.isPersistable, shadowField);
                 }
 
                 Debug.LogError($"[RemoteControl] Member not found for {type.Name}.{e.path}");

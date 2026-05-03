@@ -16,6 +16,16 @@ namespace Lilium.RemoteControl
         public string path;
 
         public bool isPersistable;
+
+        /// <summary>
+        /// Shadow Field のメンバー名 (= Field の field.Name)。
+        /// Property "X" に対する `[ExposedField, Hide, FormerlyExposedAs("X")]` Field を「Shadow Field」として
+        /// 検出した場合にセットされる。Shadow Field は propertyTypes に独立 entry を作らず、
+        /// 対応 Property の <see cref="ExposedPropertyType.shadowField"/> として束ねられる。
+        /// JSON シリアライザは値を Property setter ではなく shadow field に直接書き込み、
+        /// デシリアライズ時の setter 副作用 (Apply 系処理) をバイパスする。
+        /// </summary>
+        public string shadowFieldPath;
     }
 
     public class ExposedClass
@@ -216,6 +226,53 @@ namespace Lilium.RemoteControl
                 return declA.CompareTo(declB);
             });
 
+            // Shadow pair 検出:
+            //   `[ExposedProperty] X { get; set; }` と
+            //   `[ExposedField, Hide][FormerlyExposedAs("X")] _X` のペアを検出する。
+            // Field 側は propertyTypes に独立 entry を作らず、Property の shadowField として束ねる。
+            // 詳細は ExposedPropertyDefine.shadowFieldPath を参照。
+            var propertyNamesByExposedName = new Dictionary<string, string>(StringComparer.Ordinal); // displayName -> Property member name
+            for (int i = 0; i < allMembers.Count; i++)
+            {
+                var m = allMembers[i];
+                if (m.memberType != 0 || !(m.member is PropertyInfo)) continue;
+                if (!(m.attr is ExposedPropertyAttribute pa)) continue;
+                var name = pa.name ?? m.member.Name;
+                propertyNamesByExposedName[name] = m.member.Name;
+            }
+
+            // shadowField マップ: Property のメンバー名 (path) -> Shadow Field のメンバー名 (path)
+            // および Field 側の persistable 値 (Property の isPersistable に継承)
+            var shadowFieldByPropertyPath = new Dictionary<string, (string fieldPath, bool fieldPersistable)>(StringComparer.Ordinal);
+            var shadowFieldMembers = new HashSet<MemberInfo>();
+            for (int i = 0; i < allMembers.Count; i++)
+            {
+                var m = allMembers[i];
+                if (m.memberType != 0 || !(m.member is FieldInfo fi)) continue;
+                if (!(m.attr is ExposedFieldAttribute fieldAttr)) continue;
+                // [Hide] が無いものは Shadow ではない (UI 表示用の独立 Field)
+                if (TypeReflectionSystem.GetCustomAttribute<HideAttribute>(fi) == null) continue;
+                // FormerlyExposedAs で参照される名前のいずれかが同クラスの Property に存在するかをチェック
+                var formers = (FormerlyExposedAsAttribute[])fi.GetCustomAttributes(typeof(FormerlyExposedAsAttribute), inherit: false);
+                if (formers == null || formers.Length == 0) continue;
+
+                string targetPropertyPath = null;
+                for (int j = 0; j < formers.Length; j++)
+                {
+                    var alias = formers[j].name;
+                    if (string.IsNullOrEmpty(alias)) continue;
+                    if (propertyNamesByExposedName.TryGetValue(alias, out var propPath))
+                    {
+                        targetPropertyPath = propPath;
+                        break;
+                    }
+                }
+                if (targetPropertyPath == null) continue;
+
+                shadowFieldByPropertyPath[targetPropertyPath] = (fi.Name, fieldAttr.persistable);
+                shadowFieldMembers.Add(fi);
+            }
+
             // ソート順でproperties/functionsに追加し、orderを設定
             var properties = new List<ExposedPropertyDefine>();
             var functions = new List<ExposedFunctionType>();
@@ -227,6 +284,9 @@ namespace Lilium.RemoteControl
 
                 if (memberType == 0) // Property/Field
                 {
+                    // Shadow Field と判定された Field は propertyTypes に登録しない
+                    if (shadowFieldMembers.Contains(member)) continue;
+
                     // ExposedPropertyAttribute または ExposedFieldAttribute から name を取得
                     string propName;
                     if (attr is ExposedPropertyAttribute propAttr)
@@ -236,11 +296,21 @@ namespace Lilium.RemoteControl
                     else
                         propName = member.Name;
 
+                    string shadowFieldPath = null;
+                    if (member is PropertyInfo
+                        && shadowFieldByPropertyPath.TryGetValue(member.Name, out var shadowInfo))
+                    {
+                        shadowFieldPath = shadowInfo.fieldPath;
+                        // Field 側の persistable を Property に継承 (Property 側の Persistable 属性は無視)
+                        isPersistable = shadowInfo.fieldPersistable;
+                    }
+
                     properties.Add(new ExposedPropertyDefine
                     {
                         name = propName,
                         path = member.Name,
-                        isPersistable = isPersistable
+                        isPersistable = isPersistable,
+                        shadowFieldPath = shadowFieldPath
                     });
                     propertyOrderMap[member.Name] = i;
                 }
@@ -485,6 +555,13 @@ namespace Lilium.RemoteControl
 
         private readonly Dictionary<string, ExposedFunctionType> _functionByApiName;
 
+        // Convention-based callbacks for static-classed ExposedObject (target == null).
+        // C# 9 cannot put static abstract members on an interface, so we resolve a
+        // public static parameterless method by name during registration.
+        private readonly MethodInfo _staticOnAfterDeserialize;
+
+        private readonly MethodInfo _staticOnBeforeSerialize;
+
         public delegate void PropertyChangingDelegate(ExposedProperty property, object newValue);
 
         public delegate void PropertyChangedDelegate(ExposedProperty property, object oldValue);
@@ -547,6 +624,35 @@ namespace Lilium.RemoteControl
             this.formerTypeNames = formerTypeNames ?? Array.Empty<string>();
             this._propertyByName = _BuildPropertyNameIndex(this.propertyTypes);
             this._functionByApiName = _BuildFunctionApiNameIndex(this.functionTypes);
+
+            if (this.isStatic && type != null)
+            {
+                const BindingFlags kStaticPublic = BindingFlags.Public | BindingFlags.Static;
+                this._staticOnAfterDeserialize = type.GetMethod(
+                    "OnAfterExposedDeserialize", kStaticPublic, null, Type.EmptyTypes, null);
+                this._staticOnBeforeSerialize = type.GetMethod(
+                    "OnBeforeExposedSerialize", kStaticPublic, null, Type.EmptyTypes, null);
+            }
+        }
+
+        /// <summary>
+        /// Fires the convention-based static deserialize callback if one exists.
+        /// Used by <see cref="ExposedPropertySerializer"/> when the owning
+        /// ExposedObject's target is null (static class).
+        /// </summary>
+        internal void InvokeStaticAfterDeserialize()
+        {
+            _staticOnAfterDeserialize?.Invoke(null, null);
+        }
+
+        /// <summary>
+        /// Fires the convention-based static serialize callback if one exists.
+        /// Used by <see cref="ExposedPropertySerializer.SerializeFullToJObject"/>
+        /// when the owning ExposedObject's target is null (static class).
+        /// </summary>
+        internal void InvokeStaticBeforeSerialize()
+        {
+            _staticOnBeforeSerialize?.Invoke(null, null);
         }
 
         /// <summary>
@@ -592,6 +698,14 @@ namespace Lilium.RemoteControl
         public readonly PropertyInfo properyInfo;
 
         public readonly FieldInfo fieldInfo;
+
+        /// <summary>
+        /// Shadow Field 経由のバッキングストレージ。non-null の場合、JSON シリアライザは
+        /// <see cref="properyInfo"/> setter をバイパスしてここに直接書き込む。
+        /// RemoteApp 経由の SetProperty は引き続き <see cref="properyInfo"/> setter を呼ぶ。
+        /// 詳細は <see cref="ExposedPropertyDefine.shadowFieldPath"/> を参照。
+        /// </summary>
+        public readonly FieldInfo shadowField;
 
         public readonly ControlAttribute controlAttribute;
 
@@ -787,12 +901,13 @@ namespace Lilium.RemoteControl
         public bool forceValue => false;
 
 
-        public ExposedPropertyType(string name, MemberInfo info, bool isPersistable = true)
+        public ExposedPropertyType(string name, MemberInfo info, bool isPersistable = true, FieldInfo shadowField = null)
         {
             Debug.Assert(info != null, "PropertyInfo cannot be null");
 
             this.properyInfo = info as PropertyInfo;
             this.fieldInfo = info as FieldInfo;
+            this.shadowField = shadowField;
             this._name = name;
             this.isPersistable = isPersistable;
             this.isArrayElement = false;
@@ -927,8 +1042,22 @@ namespace Lilium.RemoteControl
                 this.sectionAccessLevel = this.sectionAttribute?.accessLevel ?? AccessLevel.Public;
             }
 
-            // [FormerlyExposedAs] 旧メンバー名
-            this.formerNames = ExposedClass._CollectFormerNames(info);
+            // [FormerlyExposedAs] 旧メンバー名 (Property/Field 自身に付いた属性 + shadow field のメンバー名)
+            var collected = ExposedClass._CollectFormerNames(info);
+            if (shadowField != null)
+            {
+                // Phase 1〜2 で書かれた既存 JSON では shadow field のメンバー名 (`_X`) が
+                // JSON キーに使われていたので、Property の旧名 alias として追加して読み込み互換を維持する。
+                var sfName = shadowField.Name;
+                if (!string.IsNullOrEmpty(sfName) && sfName != name && Array.IndexOf(collected, sfName) < 0)
+                {
+                    var merged = new string[collected.Length + 1];
+                    Array.Copy(collected, merged, collected.Length);
+                    merged[collected.Length] = sfName;
+                    collected = merged;
+                }
+            }
+            this.formerNames = collected;
 
             //Debug.Log($"Created ExposedPropertyEntity for {info.Name} of type {info.PropertyType.Name}, valueType: {(valueType != null ? valueType.typeName : "null")}");
         }
@@ -972,6 +1101,7 @@ namespace Lilium.RemoteControl
 
             this.properyInfo = null;
             this.fieldInfo = null;
+            this.shadowField = null;
             this._name = $"[{arrayIndex}]";
             this.isArrayElement = true;
             this.arrayElementType = elementType;

@@ -21,7 +21,7 @@ namespace Lilium.RemoteControl
     /// </summary>
     [System.Serializable]
     [ExposedClass("ExternalTexture", Icon = "image")]
-    public class ExternalTexture : IDisposable
+    public class ExternalTexture : IDisposable, IExposedDeserializeCallback
     {
         private Texture2D _texture;
 
@@ -29,10 +29,11 @@ namespace Lilium.RemoteControl
 
         private bool _disposed = false;
 
-        [SerializeField]
+        [SerializeField, ExposedField, Hide]
+        [FormerlyExposedAs("filePath")]
         private string _filePath;
 
-        [ExposedProperty, Persistable]
+        [ExposedProperty]
         public string filePath
         {
             get => _filePath;
@@ -44,6 +45,13 @@ namespace Lilium.RemoteControl
                     Reload();
                 }
             }
+        }
+
+        // Deserialization writes _filePath via reflection and bypasses the setter, so trigger
+        // the texture reload here instead.
+        void IExposedDeserializeCallback.OnAfterExposedDeserialize()
+        {
+            Reload();
         }
 
         public void Load()
