@@ -311,9 +311,11 @@ namespace Lilium.RemoteControl.Tests
             [SerializeField]
             public string _referenceName;
 
+            [SerializeField, ExposedField, Hide]
+            [FormerlyExposedAs("name")]
             private string _fallbackName;
 
-            [ExposedProperty, Persistable]
+            [ExposedProperty]
             public override string name
             {
                 get => _fallbackName;
@@ -388,7 +390,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void LoadSaveCycle_Name_IsPreservedWhenDirty()
         {
-            // Arrange: name を dirty にしてから save すれば、[Persistable] の name プロパティとして
+            // Arrange: name を dirty にしてから save すれば、Shadow Field 経由の name プロパティとして
             // 通常シリアライズされ、Load で復元されることを確認。@name メタは永続化されない。
             ExposedClass.RegisterFromAttributes<TestNameFallbackProxy>();
 

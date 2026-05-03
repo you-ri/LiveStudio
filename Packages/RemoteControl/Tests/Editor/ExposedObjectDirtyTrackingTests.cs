@@ -2101,38 +2101,9 @@ namespace Lilium.RemoteControl.Tests
             [ExposedField]
             public int id;
 
-            // ExposedClassでないクラスをPersistableプロパティとして持つ
-            [ExposedProperty, Persistable]
-            public PlainSerializableSettings settings
-            {
-                get => _settings;
-                set => _settings = value;
-            }
-            private PlainSerializableSettings _settings = new PlainSerializableSettings();
-        }
-
-        // getter が毎回新しい POCO インスタンスを返す設計 (AvatarInput.settings と同パターン)
-        [System.Serializable]
-        [ExposedClass("TestClassWithDynamicPlainGetter")]
-        public class TestClassWithDynamicPlainGetter
-        {
+            // ExposedClassでないSerializableクラスをExposedFieldとして持つ
             [ExposedField]
-            public int id;
-
-            [ExposedProperty, Persistable]
-            public PlainSerializableSettings settings
-            {
-                get
-                {
-                    // 内容は常に同じだが毎回別のインスタンス
-                    return new PlainSerializableSettings
-                    {
-                        deviceName = "Fixed",
-                        values = new[] { 1, 2, 3 }
-                    };
-                }
-                set { /* no-op for test */ }
-            }
+            public PlainSerializableSettings settings = new PlainSerializableSettings();
         }
 
         [Test]
@@ -2187,27 +2158,6 @@ namespace Lilium.RemoteControl.Tests
             Assert.IsNull(jObj["settings"], "Unchanged non-ExposedClass persistable property should NOT be included in delta");
             Assert.IsFalse(ExposedPropertySerializer.HasNonMetaProperties(jObj),
                 "delta には非メタプロパティが無く、SceneToJson からは除外されるべき");
-        }
-
-        [Test]
-        public void NonExposedClassPersistableProperty_DynamicGetterUnchangedExcludedFromDelta()
-        {
-            // Arrange - getter が毎回新しいインスタンスを返す AvatarInput.settings 相当のケース。
-            // 内容が等しければ差分なしとして扱われること。
-            ExposedClass.RegisterFromAttributes<TestClassWithDynamicPlainGetter>();
-            var testObj = new TestClassWithDynamicPlainGetter();
-            var exposedClass = ExposedClass.Find(typeof(TestClassWithDynamicPlainGetter));
-            var exposedObj = new ExposedObject("test-plain-serializable-dynamic", exposedClass, testObj);
-
-            ExposedPropertyUtility.SetDefault(exposedObj);
-
-            // Act - getter は呼ぶたびに新インスタンスを返すが内容は同じ
-            var json = ExposedPropertySerializer.ToJson(exposedObj, _resolver, isDirtyOnly: true, forPersistence: true);
-            var jObj = JObject.Parse(json);
-
-            // Assert - 内容が同じなので delta に含まれない
-            Assert.IsNull(jObj["settings"], "dynamic-getter POCO が内容未変更なら delta に含まれないこと");
-            Assert.IsFalse(ExposedPropertySerializer.HasNonMetaProperties(jObj));
         }
 
         [Test]

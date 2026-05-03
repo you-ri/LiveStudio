@@ -28,9 +28,9 @@ namespace Lilium.RemoteControl.Tests
             [FormerlyExposedAs("oldValue")]
             public int newValue;
 
-            [ExposedProperty, Persistable]
+            [ExposedField]
             [FormerlyExposedAs("oldLabel")]
-            public string newLabel { get; set; }
+            public string newLabel;
         }
 
         [Serializable]

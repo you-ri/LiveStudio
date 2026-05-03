@@ -156,10 +156,10 @@ namespace Lilium.RemoteControl.Tests
             var ec = ExposedClass.Get<TestHost>();
             var entry = ec.propertyTypes[0];
 
-            // The Property has no [Persistable] but the Shadow Field defaults to persistable=true.
-            // Field's persistable must be propagated to the Property.
+            // The Shadow Field's [ExposedField] defaults to persistable=true.
+            // That persistable flag must propagate to the paired Property entry.
             Assert.IsTrue(entry.isPersistable,
-                "Property should inherit isPersistable=true from the shadow field even without [Persistable] on the Property.");
+                "Property should inherit isPersistable=true from the shadow field's [ExposedField].");
         }
 
         [Test]

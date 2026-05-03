@@ -880,24 +880,24 @@ namespace Lilium.RemoteControl.Tests
         [ExposedClass("TestReadonlyRefClass")]
         public class TestReadonlyRefClass
         {
-            // readonly string[] — 永続化時にスキップされるべき
+            // readonly string[] — non-ref readonly は永続化対象外 (forPersistence でスキップ)
             private string[] _meshNames = new[] { "mesh1", "mesh2" };
 
-            [ExposedProperty("meshNames"), Persistable]
+            [ExposedProperty("meshNames")]
             public string[] meshNames => _meshNames;
 
-            // readonly ScriptableObject — ExposedObject参照なので永続化されるべき
+            // readonly ScriptableObject — ExposedObject参照なので InlineReference で永続化対象化
             private TestRefScriptableObject _refObj;
 
-            [ExposedProperty("refObj"), Persistable]
+            [ExposedProperty("refObj"), InlineReference]
             public TestRefScriptableObject refObj => _refObj;
 
             public void SetRefObj(TestRefScriptableObject obj) => _refObj = obj;
 
-            // readonly ScriptableObject[] — 要素がExposedObject参照の配列なので永続化されるべき
+            // readonly ScriptableObject[] — 要素がExposedObject参照の配列なので InlineReference で永続化対象化
             private TestRefScriptableObject[] _refArray;
 
-            [ExposedProperty("refArray"), Persistable]
+            [ExposedProperty("refArray"), InlineReference]
             public TestRefScriptableObject[] refArray => _refArray;
 
             public void SetRefArray(TestRefScriptableObject[] arr) => _refArray = arr;
@@ -907,7 +907,7 @@ namespace Lilium.RemoteControl.Tests
             // 派生型(TestRefScriptableObject)が登録されている
             private ScriptableObject[] _baseTypeRefArray;
 
-            [ExposedProperty("baseTypeRefArray"), Persistable]
+            [ExposedProperty("baseTypeRefArray"), InlineReference]
             public ScriptableObject[] baseTypeRefArray => _baseTypeRefArray;
 
             public void SetBaseTypeRefArray(ScriptableObject[] arr) => _baseTypeRefArray = arr;
@@ -916,10 +916,10 @@ namespace Lilium.RemoteControl.Tests
             [ExposedField]
             public int writableValue;
 
-            // readonly int — プリミティブ型は永続化時にスキップされるべき
+            // readonly int — primitive readonly は永続化対象外 (forPersistence でスキップ)
             private int _readonlyInt = 99;
 
-            [ExposedProperty("readonlyInt"), Persistable]
+            [ExposedProperty("readonlyInt")]
             public int readonlyInt => _readonlyInt;
         }
 
@@ -1213,10 +1213,10 @@ namespace Lilium.RemoteControl.Tests
             [ExposedProperty("readonlyNames")]
             public string[] readonlyNames => _readonlyNames;
 
-            // readonlyかつpersistable — 永続化時にスキップされるべき（ExposedObject参照でないため）
+            // readonly primitive — 永続化時にスキップされるべき（forPersistence でスキップ）
             private int _readonlyInt = 42;
 
-            [ExposedProperty("readonlyInt"), Persistable]
+            [ExposedProperty("readonlyInt")]
             public int readonlyInt => _readonlyInt;
         }
 

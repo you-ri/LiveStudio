@@ -22,27 +22,16 @@ namespace Lilium.RemoteControl.Tests
         [ExposedClass("TestStaticSceneClass")]
         public static class TestStaticSceneClass
         {
-            private static int _value = 0;
-            private static string _name = "Default";
+            [ExposedField]
+            public static int value = 0;
 
-            [ExposedProperty, Persistable]
-            public static int value
-            {
-                get => _value;
-                set => _value = value;
-            }
-
-            [ExposedProperty, Persistable]
-            public static string name
-            {
-                get => _name;
-                set => _name = value;
-            }
+            [ExposedField]
+            public static string name = "Default";
 
             public static void Reset()
             {
-                _value = 0;
-                _name = "Default";
+                value = 0;
+                name = "Default";
             }
         }
 
@@ -5125,9 +5114,8 @@ namespace Lilium.RemoteControl.Tests
         [ExposedClass("TestInputLikeComponent")]
         public class TestInputLikeComponent : MonoBehaviour
         {
-            [SerializeField] internal string _settingsJson = "{}";
+            [SerializeField, ExposedField("settings")] internal string _settingsJson = "{}";
 
-            [ExposedProperty, Persistable]
             public string settings
             {
                 get => _settingsJson;
