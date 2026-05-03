@@ -1637,10 +1637,10 @@ namespace Lilium.RemoteControl.Tests
         [ExposedClass("TestPluglikePath")]
         public class TestPluglikePath
         {
-            [ExposedField, Persistable]
+            [ExposedField]
             public string rootObjectName;
 
-            [ExposedField, Persistable]
+            [ExposedField]
             public string transformName;
         }
 
@@ -1648,7 +1648,7 @@ namespace Lilium.RemoteControl.Tests
         public class TestPluglikeComponent : MonoBehaviour
         {
             [SerializeField]
-            [ExposedField, Persistable]
+            [ExposedField]
             public TestPluglikePath target = new TestPluglikePath();
         }
 
@@ -5319,7 +5319,7 @@ namespace Lilium.RemoteControl.Tests
         [ExposedClass("TestDeltaNestedReadonly_Child")]
         public class TestDeltaNestedReadonly_Child
         {
-            [ExposedField, Persistable]
+            [ExposedField]
             public int writableValue;
 
             // readonly かつ非persistable — CaptureDefaultsには含まれるが、forPersistence=trueでは除外される
@@ -5333,10 +5333,10 @@ namespace Lilium.RemoteControl.Tests
         [ExposedClass("TestDeltaNestedReadonly_Parent")]
         public class TestDeltaNestedReadonly_Parent
         {
-            [ExposedField, Persistable]
+            [ExposedField]
             public TestDeltaNestedReadonly_Child child;
 
-            [ExposedField, Persistable]
+            [ExposedField]
             public int parentValue;
         }
 
@@ -5492,7 +5492,7 @@ namespace Lilium.RemoteControl.Tests
         public class TestComponentWithReadonlyChange
         {
             // 書き込み可能+persistable（settingsに相当）
-            [ExposedField, Persistable]
+            [ExposedField]
             public int settingsValue = 0;
 
             // readonly+非persistable（actionNamesに相当）
@@ -5510,7 +5510,7 @@ namespace Lilium.RemoteControl.Tests
             // writable+persistable 配列
             // 実際のExposedGameObject.componentsはreadonly+containsExposedObjectReference=trueだが
             // テストではComponent型を使えないためwritableで代替
-            [ExposedField, Persistable]
+            [ExposedField]
             public TestComponentWithReadonlyChange[] components = new TestComponentWithReadonlyChange[0];
         }
 
@@ -5751,10 +5751,10 @@ namespace Lilium.RemoteControl.Tests
         [ExposedClass("TestNoDefaultCtorClass")]
         public class TestNoDefaultCtorClass
         {
-            [ExposedField, Persistable]
+            [ExposedField]
             public int value;
 
-            [ExposedField, Persistable]
+            [ExposedField]
             public string name;
 
             // デフォルトコンストラクタなし（引数付きのみ）

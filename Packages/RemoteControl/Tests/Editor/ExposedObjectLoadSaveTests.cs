@@ -36,7 +36,7 @@ namespace Lilium.RemoteControl.Tests
 
             public override string id => _referenceName;
 
-            [ExposedField, Persistable]
+            [ExposedField]
             public int value;
 
             public TestProxy()
@@ -322,7 +322,7 @@ namespace Lilium.RemoteControl.Tests
 
             public override string id => _referenceName;
 
-            [ExposedField, Persistable]
+            [ExposedField]
             public int value;
 
             public TestNameFallbackProxy()
@@ -514,7 +514,7 @@ namespace Lilium.RemoteControl.Tests
         [ExposedClass("TestStaticClass", Icon = "test")]
         public static class TestStaticClass
         {
-            [ExposedField, Persistable]
+            [ExposedField]
             public static int staticValue = 42;
         }
 

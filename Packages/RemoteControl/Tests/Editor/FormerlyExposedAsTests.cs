@@ -24,7 +24,7 @@ namespace Lilium.RemoteControl.Tests
         [FormerlyExposedAs("AncientPlug")]
         public class NewPlug
         {
-            [ExposedField, Persistable]
+            [ExposedField]
             [FormerlyExposedAs("oldValue")]
             public int newValue;
 
@@ -37,7 +37,7 @@ namespace Lilium.RemoteControl.Tests
         [ExposedClass("NoAliasClass")]
         public class NoAliasClass
         {
-            [ExposedField, Persistable]
+            [ExposedField]
             public int value;
         }
 

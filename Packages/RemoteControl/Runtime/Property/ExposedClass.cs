@@ -954,6 +954,14 @@ namespace Lilium.RemoteControl
             }
             this.controlAttribute = TypeReflectionSystem.GetCustomAttribute<ControlAttribute>(info) ?? new ControlAttribute("default");
 
+            // [InlineReference] は保存時に Component などを pending entry として書き出すための
+            // マーカー。isPersistable は明示指定が無くても true 扱いにする。
+            // (旧来は [Persistable] を併記する必要があったが、Phase 3 以降は冗長)
+            if (this.controlAttribute is InlineReferenceAttribute)
+            {
+                this.isPersistable = true;
+            }
+
             // TypeSelectorAttributeの場合、派生型を自動計算してoptionsを設定
             if (this.controlAttribute is TypeSelectorAttribute typeSelector)
             {

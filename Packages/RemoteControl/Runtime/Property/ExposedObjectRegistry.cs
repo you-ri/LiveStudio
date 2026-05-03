@@ -97,9 +97,12 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// UnityEngine.Object の reference から Transform を取り出す。
         /// GameObject / Component を想定、どちらでもなければ null。
+        /// 破棄済み Unity Object (Unity == null) は null 扱い (.transform で
+        /// MissingReferenceException が出るのを防ぐ)。
         /// </summary>
         internal static Transform ExtractTransform(UnityEngine.Object reference)
         {
+            if (reference == null) return null;
             if (reference is GameObject go) return go.transform;
             if (reference is Component comp) return comp.transform;
             return null;

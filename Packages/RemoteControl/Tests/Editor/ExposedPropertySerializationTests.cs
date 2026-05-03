@@ -913,7 +913,7 @@ namespace Lilium.RemoteControl.Tests
             public void SetBaseTypeRefArray(ScriptableObject[] arr) => _baseTypeRefArray = arr;
 
             // 書き込み可能なプロパティ — 常に永続化される
-            [ExposedField, Persistable]
+            [ExposedField]
             public int writableValue;
 
             // readonly int — プリミティブ型は永続化時にスキップされるべき
@@ -1204,7 +1204,7 @@ namespace Lilium.RemoteControl.Tests
         [ExposedClass("TestNestedChild")]
         public class TestNestedChild
         {
-            [ExposedField, Persistable]
+            [ExposedField]
             public int writableValue;
 
             // readonlyかつ非persistable — 永続化時にスキップされるべき
@@ -1224,10 +1224,10 @@ namespace Lilium.RemoteControl.Tests
         [ExposedClass("TestNestedParent")]
         public class TestNestedParent
         {
-            [ExposedField, Persistable]
+            [ExposedField]
             public TestNestedChild child;
 
-            [ExposedField, Persistable]
+            [ExposedField]
             public int parentValue;
         }
 
@@ -1327,10 +1327,10 @@ namespace Lilium.RemoteControl.Tests
         [ExposedClass("TestDeltaFromDefaultRefClass")]
         public class TestDeltaFromDefaultRefClass
         {
-            [ExposedField, Persistable]
+            [ExposedField]
             public int normalValue;
 
-            [ExposedField, Persistable]
+            [ExposedField]
             public TestRefScriptableObject config;
         }
 

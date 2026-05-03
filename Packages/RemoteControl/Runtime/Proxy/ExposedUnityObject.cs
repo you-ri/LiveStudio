@@ -377,10 +377,10 @@ namespace Lilium.RemoteControl
         }
 
         //TODO: IEnumerable<Component> _components; でもいけるようににしたいが、現状ExposedObject側で配列しか対応していない
-        // NOTE: [Persistable] は Component の pending entry 出力経路 (InlineReference) に必要。
         // get-only derived Property だが、ここで列挙されたコンポーネントが scene.json トップレベルの
-        // pending entry として個別 save される仕組みのため、shadow field 化はできない。
-        [ExposedProperty("components"), Persistable, InlineReference]
+        // pending entry として個別 save される仕組み。
+        // [InlineReference] は ExposedPropertyType.ctor 側で isPersistable=true 扱いになる。
+        [ExposedProperty("components"), InlineReference]
         [Preserve]
         protected Component[] _components
         {
@@ -461,6 +461,26 @@ namespace Lilium.RemoteControl
         /// avatar swap など、parent 候補となる root が増減したときに自動で再アタッチするための仕組み。
         /// </summary>
         static event Action _onAnyLifecycleChanged;
+
+        /// <summary>
+        /// アバター swap 等、外部システムが managed な子 GO を一時退避する間、
+        /// <see cref="_OnHierarchyChanged"/> による <see cref="_parent"/> の silent な再同期を抑制する。
+        /// 退避中に actualParent が ControllerGO 等に書き換わっても、ユーザーが
+        /// 設定した TransformRef 値 (例: "Main Avatar/Head") を維持し、新アバター生成後の
+        /// <see cref="RefreshAttachments"/> で正しいボーンに再アタッチできるようにする。
+        /// </summary>
+        public static bool suspendHierarchySync;
+
+        /// <summary>
+        /// 全 ExposedGameObjectWithTransform インスタンスに <see cref="_parent"/> の
+        /// 再アタッチを促す。avatar swap 等、外部で hierarchy を再構築した後、
+        /// 一時退避していた managed 子 GO を新しい root の対応 Transform に
+        /// 付け直すための明示トリガ。
+        /// </summary>
+        public static void RefreshAttachments()
+        {
+            _onAnyLifecycleChanged?.Invoke();
+        }
 
         [SerializeField]
         [ExposedField(order = -20)]
@@ -554,6 +574,10 @@ namespace Lilium.RemoteControl
         void _OnHierarchyChanged()
         {
             if (_reference == null) return;
+            // suspendHierarchySync: アバター swap 等、外部システムが「一時退避」目的で
+            // 子 GO を移し替える間は user-set TransformRef 値を保持する必要がある。
+            // この期間は actualParent への silent な再同期を抑制する。
+            if (suspendHierarchySync) return;
             var actualParent = _reference.transform.parent;
             if (actualParent == _attachedTransform) return;
             _parent.InitFromTransform(actualParent, silent: true);
