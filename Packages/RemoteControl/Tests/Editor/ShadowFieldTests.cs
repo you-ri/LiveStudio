@@ -70,6 +70,37 @@ namespace Lilium.RemoteControl.Tests
             public int value { get => _value; set => _value = value; }
         }
 
+        /// <summary>
+        /// Base class declaring a private Shadow Field, mirroring the
+        /// ExposedUnityObjectProxy._name / ExposedGameObject._active layout.
+        /// The [ExposedClass] is on the derived type — the base is not registered itself.
+        /// This is the shape that previously slipped through shadow detection because
+        /// .NET reflection's GetFields does not return base-class private fields.
+        /// </summary>
+        [Serializable]
+        public class TestInheritedShadowBase
+        {
+            [SerializeField, ExposedField, Hide]
+            [FormerlyExposedAs("value")]
+            private int _value;
+
+            [ExposedProperty]
+            public virtual int value
+            {
+                get => _value;
+                set => _value = value;
+            }
+
+            public int rawBackingField => _value;
+            public void SetBackingFieldDirectly(int v) => _value = v;
+        }
+
+        [Serializable]
+        [ExposedClass("TestInheritedShadowDerived")]
+        public class TestInheritedShadowDerived : TestInheritedShadowBase
+        {
+        }
+
         private class TestResolver : IExposedObjectResolver
         {
             public ExposedObject FindById(string id) => ExposedObjectRegistry.FindById(id);
@@ -86,6 +117,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.Clear();
             ExposedClass.RegisterFromAttributes<TestHost>();
             ExposedClass.RegisterFromAttributes<TestNonShadowHost>();
+            ExposedClass.RegisterFromAttributes<TestInheritedShadowDerived>();
 
             var toRemove = ExposedObjectRegistry.instances.ToList();
             foreach (var obj in toRemove) obj.Unregister();
@@ -244,6 +276,62 @@ namespace Lilium.RemoteControl.Tests
             Assert.IsNotNull(parsed["value"], "Output JSON must use Property name 'value' as the key.");
             Assert.AreEqual(123, parsed["value"].Value<int>());
             Assert.IsNull(parsed["_value"], "Output JSON must not use the field name '_value'.");
+        }
+
+        #endregion
+
+        #region Inherited shadow field (regression: ExposedGameObject.name / .active)
+
+        [Test]
+        public void InheritedShadow_DerivedClass_DetectsBasePrivateShadowField()
+        {
+            // Regression: a base class declaring a `private` shadow field used to slip
+            // through detection because .NET's Type.GetFields does not return base-class
+            // private fields. ExposedGameObject.name / .active hit this path
+            // (declared on ExposedUnityObjectProxy / ExposedGameObject) and were silently
+            // dropped from scene.json persistence.
+            var ec = ExposedClass.Get<TestInheritedShadowDerived>();
+            var entries = ec.propertyTypes;
+
+            Assert.AreEqual(1, entries.Length,
+                "Derived class must collapse the inherited shadow pair to a single Property entry.");
+            Assert.AreEqual("value", entries[0].name);
+            Assert.IsNotNull(entries[0].shadowField,
+                "Property entry must reference the base-class private shadow field.");
+            Assert.AreEqual("_value", entries[0].shadowField.Name);
+        }
+
+        [Test]
+        public void InheritedShadow_PropertyInheritsFieldPersistability()
+        {
+            // The shadow field's [ExposedField] defaults to persistable=true.
+            // That value must propagate to the Property even though the field lives
+            // on a base class and is private.
+            var ec = ExposedClass.Get<TestInheritedShadowDerived>();
+            var entry = ec.propertyTypes[0];
+
+            Assert.IsTrue(entry.isPersistable,
+                "Property on derived class must inherit isPersistable=true from the base-class shadow field; " +
+                "without this, scene.json persistence skips the property entirely.");
+        }
+
+        [Test]
+        public void InheritedShadow_Serialize_ForPersistence_IncludesValue()
+        {
+            // End-to-end: serializing the derived ExposedObject for persistence
+            // must include the shadow-backed property value in the JSON output.
+            var target = new TestInheritedShadowDerived();
+            target.SetBackingFieldDirectly(456);
+            var exposedObj = new ExposedObject("test-inherited-shadow-1",
+                ExposedClass.Get<TestInheritedShadowDerived>(), target);
+
+            var json = ExposedPropertySerializer.ToJson(exposedObj, _resolver, isDirtyOnly: false, forPersistence: true);
+            var parsed = JObject.Parse(json);
+
+            Assert.IsNotNull(parsed["value"],
+                "Persistence output must include the shadow-backed property; " +
+                "this is the regression that hid ExposedGameObject.name and .active from scene.json.");
+            Assert.AreEqual(456, parsed["value"].Value<int>());
         }
 
         #endregion

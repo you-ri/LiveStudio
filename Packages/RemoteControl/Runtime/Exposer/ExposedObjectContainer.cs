@@ -15,7 +15,7 @@ namespace Lilium.RemoteControl
     [ExecuteAlways]
     public class ExposedObjectContainer : MonoBehaviour, IExposedObjectResolver
     {
-        [ExposedProperty("name"), Persistable]
+        [ExposedProperty("name")]
         public string exposedName => gameObject.name;
 
         public IReadOnlyList<IExposedObject> objects => _objects;

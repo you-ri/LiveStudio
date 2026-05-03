@@ -168,7 +168,20 @@ namespace Lilium.RemoteControl
             }
 
             // フィールドからExposedFieldAttributeを検索（isPersistable = true）
-            var fieldInfos = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
+            // .NET の GetFields は基底クラスの private フィールドを返さない。
+            // 基底に Shadow Field を置いて派生で使うパターン (ExposedUnityObjectProxy._name 等) を
+            // 拾うため、type.BaseType を辿って DeclaredOnly で各レベルを連結する。
+            // 派生で同名の new フィールドを定義した場合は派生側が先勝ち。
+            var fieldInfos = new List<FieldInfo>();
+            var seenFieldNames = new HashSet<string>(StringComparer.Ordinal);
+            for (var t = type; t != null && t != typeof(object); t = t.BaseType)
+            {
+                var declared = t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly);
+                foreach (var fi in declared)
+                {
+                    if (seenFieldNames.Add(fi.Name)) fieldInfos.Add(fi);
+                }
+            }
             foreach (var fieldInfo in fieldInfos)
             {
                 var fieldAttribute = TypeReflectionSystem.GetCustomAttribute<ExposedFieldAttribute>(fieldInfo);

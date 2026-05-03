@@ -226,7 +226,8 @@ namespace Lilium.RemoteControl
 
 
     [Serializable]
-    public abstract class ExposedUnityObjectProxy<U, T> : ExposedUnityObjectBase
+    public abstract class ExposedUnityObjectProxy<U, T> : ExposedUnityObjectBase,
+        IExposedSerializeCallback, IExposedDeserializeCallback
         where T : UnityEngine.Object
         where U : ExposedUnityObjectProxy<U, T>
     {
@@ -239,18 +240,40 @@ namespace Lilium.RemoteControl
 
         private string _fallbackName;
 
-        [ExposedProperty, Persistable]
+        // Shadow Field for name. The Property getter returns the live reference
+        // name so RemoteApp queries reflect Unity's current state, while
+        // serialization reads/writes this field directly. OnBeforeExposedSerialize
+        // refreshes _name from the live state before save; OnAfterExposedDeserialize
+        // applies _name to _reference.name and _fallbackName after load.
+        [SerializeField, ExposedField, Hide]
+        [FormerlyExposedAs("name")]
+        private string _name;
+
+        [ExposedProperty]
         public override string name
         {
             get => _reference != null ? _reference.name : _fallbackName;
             set
             {
+                _name = value;
                 if (_reference != null)
                 {
                     _reference.name = value;
                 }
                 _fallbackName = value;
             }
+        }
+
+        public virtual void OnBeforeExposedSerialize()
+        {
+            _name = _reference != null ? _reference.name : _fallbackName;
+        }
+
+        public virtual void OnAfterExposedDeserialize()
+        {
+            if (string.IsNullOrEmpty(_name)) return;
+            if (_reference != null) _reference.name = _name;
+            _fallbackName = _name;
         }
 
         public override string id => _id;
@@ -337,15 +360,26 @@ namespace Lilium.RemoteControl
         }
 
 
-        [ExposedProperty, Persistable]
+        [SerializeField, ExposedField, Hide]
+        [FormerlyExposedAs("active")]
+        private bool _active = true;
+
+        [ExposedProperty]
         [Preserve]
         public bool active
         {
             get => _reference?.activeSelf ?? false;
-            set => _reference?.SetActive(value);
+            set
+            {
+                _active = value;
+                _reference?.SetActive(value);
+            }
         }
 
         //TODO: IEnumerable<Component> _components; でもいけるようににしたいが、現状ExposedObject側で配列しか対応していない
+        // NOTE: [Persistable] は Component の pending entry 出力経路 (InlineReference) に必要。
+        // get-only derived Property だが、ここで列挙されたコンポーネントが scene.json トップレベルの
+        // pending entry として個別 save される仕組みのため、shadow field 化はできない。
         [ExposedProperty("components"), Persistable, InlineReference]
         [Preserve]
         protected Component[] _components
@@ -359,6 +393,18 @@ namespace Lilium.RemoteControl
             }
         }
 
+
+        public override void OnBeforeExposedSerialize()
+        {
+            base.OnBeforeExposedSerialize();
+            if (_reference != null) _active = _reference.activeSelf;
+        }
+
+        public override void OnAfterExposedDeserialize()
+        {
+            base.OnAfterExposedDeserialize();
+            if (_reference != null) _reference.SetActive(_active);
+        }
 
         public override void NoticeReset()
         {
@@ -417,7 +463,7 @@ namespace Lilium.RemoteControl
         static event Action _onAnyLifecycleChanged;
 
         [SerializeField]
-        [ExposedField(order = -20), Persistable]
+        [ExposedField(order = -20)]
         TransformRef _parent = new TransformRef();
 
         public TransformRef parent => _parent;
@@ -425,14 +471,34 @@ namespace Lilium.RemoteControl
         [NonSerialized]
         Transform _attachedTransform;
 
-        [ExposedProperty(order = -10), Persistable]
+        [SerializeField, ExposedField, Hide]
+        [FormerlyExposedAs("transform")]
+        private TransformValue _transform = TransformValue.identity;
+
+        [ExposedProperty(order = -10)]
         public TransformValue transform
         {
-            get => _reference != null ? TransformValue.FromTransform(_reference.transform) : TransformValue.identity;
+            get => _transform;
             set
             {
+                _transform = value;
                 if (_reference != null) value.ApplyTo(_reference.transform);
             }
+        }
+
+        public override void OnBeforeExposedSerialize()
+        {
+            base.OnBeforeExposedSerialize();
+            if (_reference != null) _transform = TransformValue.FromTransform(_reference.transform);
+        }
+
+        public override void OnAfterExposedDeserialize()
+        {
+            base.OnAfterExposedDeserialize();
+            // Apply only on JSON load, not OnEnable. If we applied identity at
+            // OnEnable, scene-placed objects with no JSON would teleport to the
+            // origin. The setter still applies on direct SetProperty paths.
+            if (_reference != null) _transform.ApplyTo(_reference.transform);
         }
 
         public ExposedGameObjectWithTransform() : base(null)
@@ -504,7 +570,8 @@ namespace Lilium.RemoteControl
 
 
     [Serializable]
-    public abstract class ExposedUnityObjectReference<U, T> : ExposedUnityObjectBase
+    public abstract class ExposedUnityObjectReference<U, T> : ExposedUnityObjectBase,
+        IExposedSerializeCallback, IExposedDeserializeCallback
         where T : UnityEngine.Object
         where U : ExposedUnityObjectReference<U, T>
     {
@@ -517,18 +584,36 @@ namespace Lilium.RemoteControl
 
         private string _fallbackName;
 
-        [ExposedProperty, Persistable]
+        // Shadow Field for name. See ExposedUnityObjectProxy for the same pattern.
+        [SerializeField, ExposedField, Hide]
+        [FormerlyExposedAs("name")]
+        private string _name;
+
+        [ExposedProperty]
         public override string name
         {
             get => _reference != null ? _reference.name : _fallbackName;
             set
             {
+                _name = value;
                 if (_reference != null)
                 {
                     _reference.name = value;
                 }
                 _fallbackName = value;
             }
+        }
+
+        public virtual void OnBeforeExposedSerialize()
+        {
+            _name = _reference != null ? _reference.name : _fallbackName;
+        }
+
+        public virtual void OnAfterExposedDeserialize()
+        {
+            if (string.IsNullOrEmpty(_name)) return;
+            if (_reference != null) _reference.name = _name;
+            _fallbackName = _name;
         }
 
         public override string id => _id;
@@ -615,7 +700,7 @@ namespace Lilium.RemoteControl
             ExposedUnityObjectFactory.Register<ScriptableObject>("Asset", (asset) => new ExposedAsset(asset));
         }
 
-        [ExposedProperty, Persistable]
+        [ExposedProperty]
         public ScriptableObject asset
         {
             get => _reference;

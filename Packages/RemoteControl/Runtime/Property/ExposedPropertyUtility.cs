@@ -116,7 +116,13 @@ namespace Lilium.RemoteControl
                     FieldInfo shadowField = null;
                     if (!string.IsNullOrEmpty(e.shadowFieldPath))
                     {
-                        shadowField = type.GetField(e.shadowFieldPath, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
+                        // Type.GetField は基底クラスの private フィールドを返さないため、
+                        // 階層を遡って DeclaredOnly で検索する。
+                        // (ExposedUnityObjectProxy._name など、基底に shadow field を置く構造に対応)
+                        for (var t = type; t != null && shadowField == null; t = t.BaseType)
+                        {
+                            shadowField = t.GetField(e.shadowFieldPath, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly);
+                        }
                         if (shadowField == null)
                         {
                             Debug.LogWarning($"[RemoteControl] Shadow field '{e.shadowFieldPath}' not found on {type.Name}; falling back to direct property access for '{e.name}'.");
