@@ -24,6 +24,7 @@ namespace Lilium.RemoteControl.WebUI.Editor
         private VisualElement _objectList;
         private VisualElement _propertyArea;
         private ObjectField _providerField;
+        private ObjectField _definitionField;
 
         private ExposedObject _selectedObject;
         private ScrollView _propertyScrollView;
@@ -61,10 +62,10 @@ namespace Lilium.RemoteControl.WebUI.Editor
             }
         }
 
-        private RemoteControlBehaviour _GetProvider()
+        private WebUIRemoteControlBehaviour _GetProvider()
         {
             if (_providerObject != null)
-                return _providerObject.GetComponent<RemoteControlBehaviour>();
+                return _providerObject.GetComponent<WebUIRemoteControlBehaviour>();
             return null;
         }
 
@@ -129,6 +130,7 @@ namespace Lilium.RemoteControl.WebUI.Editor
             EditorApplication.update += _CheckDirty;
             EditorApplication.update += _UpdateRemoteAppStatus;
             EditorApplication.hierarchyChanged += _OnDefinitionChanged;
+            Selection.selectionChanged += _OnSelectionChanged;
         }
 
         private void OnDisable()
@@ -136,10 +138,27 @@ namespace Lilium.RemoteControl.WebUI.Editor
             EditorApplication.update -= _CheckDirty;
             EditorApplication.update -= _UpdateRemoteAppStatus;
             EditorApplication.hierarchyChanged -= _OnDefinitionChanged;
+            Selection.selectionChanged -= _OnSelectionChanged;
 
             var provider = _GetProvider();
             if (provider != null && provider.objectContainer != null)
                 provider.objectContainer.Shutdown();
+        }
+
+        private void _OnSelectionChanged()
+        {
+            // ヒエラルキーで WebUIRemoteControlBehaviour を含む GameObject を選択したとき、
+            // それを Provider に設定する。該当しない選択では現在の Provider を維持する。
+            var go = Selection.activeGameObject;
+            if (go == null) return;
+
+            var behaviour = go.GetComponent<WebUIRemoteControlBehaviour>();
+            if (behaviour == null) return;
+
+            if (behaviour == _GetProvider()) return;
+
+            if (_providerField != null)
+                _providerField.value = behaviour;
         }
 
         private void _CheckDirty()
@@ -199,13 +218,13 @@ namespace Lilium.RemoteControl.WebUI.Editor
             toolbar.style.borderBottomColor = new Color(0.15f, 0.15f, 0.15f);
 
             // Definition ObjectField
-            var definitionField = new ObjectField("Definition");
-            definitionField.objectType = typeof(WebUIDefinition);
-            definitionField.value = _definition;
-            definitionField.style.flexGrow = 1;
-            definitionField.style.maxWidth = 300;
-            definitionField.style.marginRight = 8;
-            definitionField.RegisterValueChangedCallback(evt =>
+            _definitionField = new ObjectField("Definition");
+            _definitionField.objectType = typeof(WebUIDefinition);
+            _definitionField.value = _definition;
+            _definitionField.style.flexGrow = 1;
+            _definitionField.style.maxWidth = 300;
+            _definitionField.style.marginRight = 8;
+            _definitionField.RegisterValueChangedCallback(evt =>
             {
                 _definition = evt.newValue as WebUIDefinition;
                 _dirtyCount = _definition != null ? EditorUtility.GetDirtyCount(_definition) : 0;
@@ -213,7 +232,7 @@ namespace Lilium.RemoteControl.WebUI.Editor
                 _RebuildSideMenu();
                 _ClearContent();
             });
-            toolbar.Add(definitionField);
+            toolbar.Add(_definitionField);
 
             // Provider復元（ドメインリロードやUnity再起動後にSerializeField参照が切れた場合）
             if (_providerObject == null && !string.IsNullOrEmpty(_providerPath))
@@ -223,7 +242,7 @@ namespace Lilium.RemoteControl.WebUI.Editor
 
             // Provider ObjectField
             _providerField = new ObjectField("Provider");
-            _providerField.objectType = typeof(RemoteControlBehaviour);
+            _providerField.objectType = typeof(WebUIRemoteControlBehaviour);
             _providerField.value = _GetProvider();
             _providerField.style.flexGrow = 1;
             _providerField.style.maxWidth = 300;
@@ -234,9 +253,19 @@ namespace Lilium.RemoteControl.WebUI.Editor
                 if (oldProvider != null && oldProvider.objectContainer != null)
                     oldProvider.objectContainer.Shutdown();
 
-                var newProvider = evt.newValue as RemoteControlBehaviour;
+                var newProvider = evt.newValue as WebUIRemoteControlBehaviour;
                 _providerObject = newProvider != null ? newProvider.gameObject : null;
                 _SaveProviderPath();
+
+                // Sync definition from the provider (provider holds the authoritative WebUIDefinition).
+                var providerDefinition = newProvider != null ? newProvider.webUIDefinition : null;
+                _definition = providerDefinition;
+                _dirtyCount = _definition != null ? EditorUtility.GetDirtyCount(_definition) : 0;
+                _selectedMenuItemId = null;
+                if (_definitionField != null)
+                    _definitionField.SetValueWithoutNotify(_definition);
+                _RebuildSideMenu();
+                _ClearContent();
 
                 if (newProvider != null && newProvider.objectContainer != null)
                     newProvider.objectContainer.Initialize();
