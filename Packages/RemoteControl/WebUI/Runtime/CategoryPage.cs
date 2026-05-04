@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Lilium.RemoteControl.Server;
 
 namespace Lilium.RemoteControl.WebUI
 {
@@ -167,10 +168,11 @@ namespace Lilium.RemoteControl.WebUI
             if (_container == null)
             {
 #if UNITY_2022_3_OR_NEWER
-                _container = UnityEngine.Object.FindFirstObjectByType<ExposedObjectContainer>();
+                var host = UnityEngine.Object.FindFirstObjectByType<RemoteControlBehaviour>();
 #else
-                _container = UnityEngine.Object.FindObjectOfType<ExposedObjectContainer>();
+                var host = UnityEngine.Object.FindObjectOfType<RemoteControlBehaviour>();
 #endif
+                _container = host != null ? host.objectContainer : null;
                 if (_container == null)
                 {
                     Debug.LogError("[RemoteControl] StandardObjectFactory.CreateObject: ExposedObjectContainer not found.");
@@ -179,7 +181,7 @@ namespace Lilium.RemoteControl.WebUI
             }
 
             GameObjectUtility.SetCurrentUndoGroup("Create Object");
-            GameObjectUtility.RecordObjectUndo(_container as MonoBehaviour, "Create Object");
+            GameObjectUtility.RecordObjectUndo(_container.host, "Create Object");
 
             IExposedObject created;
             try
@@ -281,7 +283,7 @@ namespace Lilium.RemoteControl.WebUI
         {
             if (_container == null) return false;
 
-            GameObjectUtility.RecordObjectUndo(_container as MonoBehaviour, "Delete Object");
+            GameObjectUtility.RecordObjectUndo(_container.host, "Delete Object");
 
             var objects = _container.objects;
             for (int i = 0; i < objects.Count; i++)

@@ -9,6 +9,7 @@ using UnityEditor;
 using UnityEngine;
 using UnityEditor.UIElements;
 using UnityEngine.UIElements;
+using Lilium.RemoteControl.Server;
 
 namespace Lilium.RemoteControl.WebUI.Editor
 {
@@ -60,10 +61,10 @@ namespace Lilium.RemoteControl.WebUI.Editor
             }
         }
 
-        private RemoteControlProvider _GetProvider()
+        private RemoteControlBehaviour _GetProvider()
         {
             if (_providerObject != null)
-                return _providerObject.GetComponent<RemoteControlProvider>();
+                return _providerObject.GetComponent<RemoteControlBehaviour>();
             return null;
         }
 
@@ -222,7 +223,7 @@ namespace Lilium.RemoteControl.WebUI.Editor
 
             // Provider ObjectField
             _providerField = new ObjectField("Provider");
-            _providerField.objectType = typeof(RemoteControlProvider);
+            _providerField.objectType = typeof(RemoteControlBehaviour);
             _providerField.value = _GetProvider();
             _providerField.style.flexGrow = 1;
             _providerField.style.maxWidth = 300;
@@ -233,7 +234,7 @@ namespace Lilium.RemoteControl.WebUI.Editor
                 if (oldProvider != null && oldProvider.objectContainer != null)
                     oldProvider.objectContainer.Shutdown();
 
-                var newProvider = evt.newValue as RemoteControlProvider;
+                var newProvider = evt.newValue as RemoteControlBehaviour;
                 _providerObject = newProvider != null ? newProvider.gameObject : null;
                 _SaveProviderPath();
 

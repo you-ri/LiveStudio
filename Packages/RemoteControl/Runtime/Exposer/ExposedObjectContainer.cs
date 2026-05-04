@@ -7,56 +7,59 @@ using UnityEngine;
 namespace Lilium.RemoteControl
 {
     /// <summary>
-    /// IExposedObjectのリストをScene上のMonoBehaviourとして保持するコンテナ。
-    /// ランタイムでのオブジェクト追加/削除がSceneの変更に留まり、再生終了時に自動的にリセットされる。
+    /// Holds a list of <see cref="IExposedObject"/> instances and acts as a resolver that finds
+    /// objects by id or by target reference. Used to be a MonoBehaviour; the host
+    /// <see cref="Lilium.RemoteControl.Server.RemoteControlBehaviour"/> now owns the serialized
+    /// list and forwards Unity lifecycle calls.
     /// </summary>
     [ExposedClass("ObjectContainer", Icon = "widgets", HideInScene = true)]
-    [DefaultExecutionOrder(-32760)]
-    [ExecuteAlways]
-    public class ExposedObjectContainer : MonoBehaviour, IExposedObjectResolver
+    public class ExposedObjectContainer : IExposedObjectResolver
     {
+        const string kObjectContainerId = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+
         [ExposedProperty("name")]
-        public string exposedName => gameObject.name;
+        public string exposedName => _name;
 
         public IReadOnlyList<IExposedObject> objects => _objects;
 
+        // List instance is owned by the host MonoBehaviour (SerializeReference) and shared by reference.
+        // Internal so ExposedSceneSerializer can append wrapper entries during deserialization.
+        internal readonly List<IExposedObject> _objects;
+        private string _name;
 
-        [SerializeReference, Select]
-        [ExposedField(persistable = false)]
-        public List<IExposedObject> _objects = new List<IExposedObject>();
-
-        [NonSerialized]
         private ExposedObject _selfExposedObject;
-
-        [NonSerialized]
-        private HashSet<string> _persistentIds = new HashSet<string>();
+        private readonly HashSet<string> _persistentIds = new HashSet<string>();
 
         /// <summary>
-        /// 指定IDのオブジェクトがシーン初期配置（persistent）かどうかを返す。
+        /// Optional host UnityEngine.Object reference. Used for editor undo recording when the
+        /// container's _objects list mutates (set by <see cref="Lilium.RemoteControl.Server.RemoteControlBehaviour"/>).
         /// </summary>
-        public bool IsPersistent(string id)
+        public UnityEngine.Object host { get; }
+
+        public ExposedObjectContainer(string name, List<IExposedObject> objects, UnityEngine.Object host = null)
         {
-            return _persistentIds.Contains(id);
+            _name = name;
+            _objects = objects ?? throw new ArgumentNullException(nameof(objects));
+            this.host = host;
         }
 
-        // --- ライフサイクル（RemoteControlProviderから呼び出す） ---
+        /// <summary>
+        /// Updates the display name returned by <see cref="exposedName"/>.
+        /// Host MonoBehaviour can call this when its GameObject name changes.
+        /// </summary>
+        public void SetName(string name) => _name = name;
 
-        const string kObjectContainerId = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
-
-        void OnEnable()
-        {
-            if (_selfExposedObject == null)
-            {
-                Initialize();
-            }
-        }
-
-        void OnDisable()
-        {
-        }
+        /// <summary>
+        /// Returns true if the object with the given id was present at <see cref="Initialize"/> time.
+        /// </summary>
+        public bool IsPersistent(string id) => _persistentIds.Contains(id);
 
         public void Initialize()
         {
+            // Idempotent: tolerate being called more than once (some hosts call from both
+            // OnEnable and an explicit Initialize path).
+            if (_selfExposedObject != null) return;
+
             _selfExposedObject = ExposedObjectRegistry.Create<ExposedObjectContainer>(this, kObjectContainerId);
 
             foreach (var obj in _objects)
@@ -65,21 +68,20 @@ namespace Lilium.RemoteControl
                 obj.OnEnable();
             }
 
-            // ObjectContainer自身のデフォルト値をキャプチャ（_objectsリストの変更検出に必要）
+            // Capture defaults of the container itself (needed for diff-based dirty detection
+            // on the _objects list).
             ExposedPropertyUtility.SetDefault(_selfExposedObject);
 
-            // 全ExposedObjectのデフォルト値をキャプチャ（比較ベースdirty判定に必要）
+            // Capture defaults of each contained ExposedObject.
             foreach (var obj in _objects)
             {
                 if (obj == null) continue;
                 var exposedObj = obj.exposedObject;
                 if (exposedObj != null)
-                {
                     ExposedPropertyUtility.SetDefault(exposedObj);
-                }
             }
 
-            // Initialize時点のオブジェクトをpersistentとしてマーク
+            // Mark currently held objects as persistent (i.e. originally part of the scene).
             _persistentIds.Clear();
             foreach (var obj in _objects)
             {
@@ -87,14 +89,12 @@ namespace Lilium.RemoteControl
                     _persistentIds.Add(obj.exposedObject.id);
             }
 
-            // inline の UnityEngine.Object 参照（コンポーネント等）もデフォルト登録する。
-            // Delta 保存時、pending エントリは target 参照でキャプチャ済みの defaults を使って
-            // 差分計算する。ここで defaults を登録しないと pending は常に metadata-only 扱いになり、
-            // 実際の変更が保存されない。
+            // Inline UnityEngine.Object references (components etc.) also need defaults captured
+            // so that subsequent delta saves can compute diffs correctly.
             var reachable = ExposedSceneSerializer.ResolveExposedObjects(objects, this);
             foreach (var exposed in reachable)
             {
-                if (exposed == null || exposed.hasId) continue; // hasId は既に上で処理済み
+                if (exposed == null || exposed.hasId) continue;
                 ExposedObjectDefaultRegistry.EnsureDefaultsCaptured(
                     exposed, DefaultExposedObjectResolver.Instance);
             }
@@ -122,31 +122,19 @@ namespace Lilium.RemoteControl
             }
         }
 
-        // --- オブジェクト管理 ---
+        // --- Object management ---
 
-        public void AddExposedObject(IExposedObject exposedObject)
-        {
-            _objects.Add(exposedObject);
-        }
+        public void AddExposedObject(IExposedObject exposedObject) => _objects.Add(exposedObject);
 
-        public void RemoveExposedObject(IExposedObject exposedObject)
-        {
-            _objects.Remove(exposedObject);
-        }
+        public void RemoveExposedObject(IExposedObject exposedObject) => _objects.Remove(exposedObject);
 
         public void RemoveExposedObjectById(string id)
         {
             var obj = _objects.FirstOrDefault(x => x.id == id);
-            if (obj != null)
-            {
-                _objects.Remove(obj);
-            }
+            if (obj != null) _objects.Remove(obj);
         }
 
-        public bool HasExposedObject(string id)
-        {
-            return _objects.Any(x => x.id == id);
-        }
+        public bool HasExposedObject(string id) => _objects.Any(x => x.id == id);
 
         public void RebindExposedObject(string id, UnityEngine.Object obj, IExposedPropertyTable resolver)
         {
@@ -155,9 +143,7 @@ namespace Lilium.RemoteControl
             {
                 data.OnDisable();
                 if (obj != null && data is ExposedUnityObjectBase unityObj)
-                {
                     unityObj.ResolveReferences(resolver);
-                }
                 data.OnEnable();
             }
         }
@@ -169,7 +155,7 @@ namespace Lilium.RemoteControl
                 if (obj == null) continue;
                 obj.Reset();
             }
-            Debug.Log($"[RemoteControl] Reset all {gameObject.name} container to default values.");
+            Debug.Log($"[RemoteControl] Reset all {_name} container to default values.");
         }
 
         public void ResolveAllReferences(IExposedPropertyTable resolver)
@@ -178,9 +164,7 @@ namespace Lilium.RemoteControl
             {
                 if (obj == null) continue;
                 if (obj is ExposedUnityObjectBase unityObj)
-                {
                     unityObj.ResolveReferences(resolver);
-                }
             }
         }
 
@@ -191,11 +175,8 @@ namespace Lilium.RemoteControl
             for (int i = 0; i < _objects.Count; i++)
             {
                 if (_objects[i] == null) continue;
-
                 if (_objects[i].id == id)
-                {
                     return _objects[i].exposedObject;
-                }
             }
 
             return ExposedObjectRegistry.FindById(id);
@@ -210,15 +191,11 @@ namespace Lilium.RemoteControl
             {
                 if (_objects[i] == null) continue;
 
-                // UnityEngine.Object同士の比較（ExposedUnityObjectBaseの場合のみ）
                 if (targetUnityObj != null && _objects[i] is ExposedUnityObjectBase u && u.reference == targetUnityObj)
-                {
                     return _objects[i].exposedObject;
-                }
             }
 
             return ExposedObjectRegistry.FindByTarget(target);
         }
-
     }
 }

@@ -6,75 +6,42 @@ using Lilium.RemoteControl.Server;
 namespace Lilium.RemoteControl.WebUI
 {
     /// <summary>
-    /// Registers a WebUI handler against the RemoteControl server running on a given port.
-    /// Acts as the bridge between a <see cref="WebUIDefinition"/> asset and a
-    /// <see cref="RemoteControlServerCore"/> instance owned by a <see cref="RemoteControlServerRunner"/>.
-    /// Add this component to a scene only when the WebUI side menu endpoint is needed;
-    /// the server itself does not depend on WebUI.
+    /// Pure C# helper that registers a <see cref="WebUIHandler"/> against a running
+    /// <see cref="RemoteControlServerCore"/>. Used to be a MonoBehaviour; the host
+    /// <see cref="WebUIRemoteControlBehaviour"/> now drives Unity lifecycle.
     /// </summary>
-    public class WebUIProvider : MonoBehaviour
+    public class WebUIProvider
     {
         private const string kRoute = "/webui";
 
-        [SerializeField]
-        [Tooltip("WebUI definition for the remote app side menu.")]
-        private WebUIDefinition _webUIDefinition;
-
-        [SerializeField]
-        [Tooltip("Server runner that owns the target server. If null, a sibling component is used.")]
-        private RemoteControlServerRunner _runner;
+        private readonly WebUIDefinition _webUIDefinition;
+        private readonly string _ownerName;
 
         private WebUIHandler _handler;
         private RemoteControlServerCore _server;
 
-        void Awake()
+        public WebUIProvider(WebUIDefinition webUIDefinition, string ownerName)
         {
-            if (_runner == null)
-            {
-                _runner = GetComponent<RemoteControlServerRunner>();
-            }
+            _webUIDefinition = webUIDefinition;
+            _ownerName = ownerName;
         }
 
-        void OnEnable()
-        {
-            TryRegister();
-        }
-
-        void Start()
-        {
-            // Retry once after all Awake/OnEnable have run, in case the server
-            // was not yet started when OnEnable fired (e.g., this provider lives
-            // on a different GameObject than the runner).
-            TryRegister();
-        }
-
-        void OnDisable()
-        {
-            TryUnregister();
-        }
-
-        private void TryRegister()
+        public void Register(RemoteControlServerCore server)
         {
             if (_handler != null) return;
             if (_webUIDefinition == null)
             {
-                Debug.LogWarning($"[RemoteControl] WebUIProvider on '{name}' has no WebUIDefinition assigned.");
+                Debug.LogWarning($"[RemoteControl] WebUIProvider on '{_ownerName}' has no WebUIDefinition assigned.");
                 return;
             }
-
-            var server = _ResolveServer();
-            if (server == null)
-            {
-                // Server not yet ready; Start() will retry.
-                return;
-            }
+            if (server == null) return;
 
             _server = server;
             _handler = new WebUIHandler(_server, _webUIDefinition);
             _server.RegisterRoute(kRoute, _handler);
         }
 
-        private void TryUnregister()
+        public void Unregister()
         {
             if (_handler == null) return;
 
@@ -82,13 +49,6 @@ namespace Lilium.RemoteControl.WebUI
             _server?.UnregisterRoute(kRoute);
             _handler = null;
             _server = null;
-        }
-
-        private RemoteControlServerCore _ResolveServer()
-        {
-            if (_runner == null) return null;
-            var port = _runner.GetPort();
-            return RemoteControlServerManager.GetServer(port);
         }
     }
 }

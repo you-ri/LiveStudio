@@ -1,44 +1,46 @@
-using System.Collections;
+// Copyright (c) You-Ri, 2026
+using System;
 using UnityEngine;
-using UnityEngine.Serialization;
+
 using Lilium.RemoteControl.UI;
-using Unity.Collections;
 
 namespace Lilium.RemoteControl
 {
-
-    [DefaultExecutionOrder(32760)]
-    public class RemoteControlProvider : MonoBehaviour
+    /// <summary>
+    /// Pure C# scene save/load helper. Used to be a MonoBehaviour; host
+    /// <see cref="Lilium.RemoteControl.Server.RemoteControlBehaviour"/> now drives Unity lifecycle
+    /// (wantsToQuit / playModeStateChanged / coroutines for dialogs).
+    /// </summary>
+    public class RemoteControlProvider
     {
+        private const string kSceneFileExtension = ".scene.json";
+        private const string kSceneFileDefaultName = "Untitled.scene.json";
+        private const string kSceneFileDefaultSubDir = "Virgo Motion/Saved";
+
         /// <summary>
-        /// 「名前を付けて保存」ダイアログの既定ディレクトリ (絶対パス)。
-        /// 上位アプリ (例: virgo.studio) が起動時に <see cref="SetSaveAsDefaultDirectory"/> で登録する。
-        /// 未設定の場合は汎用フォールバック (MyDocuments/Virgo Motion/Saved) が使われる。
+        /// Optional directory override for the "Save As" dialog. Set by the upper-level
+        /// application at startup via <see cref="SetSaveAsDefaultDirectory"/>.
         /// </summary>
         private static string _saveAsDefaultDirectoryOverride;
 
-        /// <summary>
-        /// 「名前を付けて保存」ダイアログの既定ディレクトリを設定する。
-        /// 上位アプリが起動時に一度呼ぶことで、ダイアログがそのフォルダから開くようになる。
-        /// </summary>
         public static void SetSaveAsDefaultDirectory(string absolutePath)
         {
             _saveAsDefaultDirectoryOverride = absolutePath;
         }
 
         public ExposedObjectContainer objectContainer => _objectContainer;
-
-        [SerializeField]
-        private ExposedObjectContainer _objectContainer;
-
-        [SerializeField]
-        private string _defaultFileName;
-
-        public bool autoSaveOnQuit = true;
+        public string defaultFileName => _defaultFileName;
+        public bool autoSaveOnQuit { get; set; }
 
         /// <summary>
-        /// 現在のシーンファイルパス。相対パスの場合はpersistentDataPath基準。
-        /// Load/Saveの度に更新・永続化される。
+        /// True after a "let me quit" path has been confirmed. The host's wantsToQuit handler
+        /// reads this to bypass the unsaved-changes dialog.
+        /// </summary>
+        public bool allowQuit { get; set; }
+
+        /// <summary>
+        /// Current scene file path. Relative paths resolve against persistentDataPath.
+        /// Setter persists the value to PlayerPrefs.
         /// </summary>
         public string currentFilePath
         {
@@ -50,103 +52,56 @@ namespace Lilium.RemoteControl
             }
         }
 
-        /// <summary>
-        /// currentFilePathをフルパスに解決して返す。
-        /// </summary>
         public string currentFullPath => _ResolvePath(_currentFilePath);
 
-        /// <summary>
-        /// デフォルトのファイル名。
-        /// </summary>
-        public string defaultFileName => _defaultFileName;
-
+        private readonly ExposedObjectContainer _objectContainer;
+        private readonly string _defaultFileName;
+        private readonly string _prefsKey;
         private string _currentFilePath;
-        private string _prefsKey;
-        private bool _allowQuit;
-        private bool _dialogPending;
         private string _baselineJson;
 
-        private const string kSceneFileExtension = ".scene.json";
-        private const string kSceneFileDefaultName = "Untitled.scene.json";
-        private const string kSceneFileDefaultSubDir = "Virgo Motion/Saved";
+        public event Action onResetDataRequested;
 
-        void Awake()
+        public RemoteControlProvider(ExposedObjectContainer objectContainer, string defaultFileName, bool autoSaveOnQuit = true)
         {
-            // 同じGameObjectから自動取得
-            if (_objectContainer == null)
-                _objectContainer = GetComponent<ExposedObjectContainer>();
-
+            _objectContainer = objectContainer;
+            _defaultFileName = defaultFileName ?? string.Empty;
+            this.autoSaveOnQuit = autoSaveOnQuit;
             _prefsKey = "RemoteControl_ScenePath_" + _defaultFileName;
             _currentFilePath = PlayerPrefs.GetString(_prefsKey, _defaultFileName);
         }
 
-        void OnEnable()
+        // --- Lifecycle (called by host MonoBehaviour) ---
+
+        public void OnEnable()
         {
-            // ContainerのInitialize
-            if (_objectContainer != null)
-                _objectContainer.Initialize();
-
-            LoadCurrentData();
-
-            RemoteControlService.onResetData += OnResetData;
-
-            // Editor は Play 停止時に wantsToQuit の戻り値が尊重されないため
-            // playModeStateChanged を使う。ビルドでは wantsToQuit が確実に機能する。
-#if UNITY_EDITOR
-            UnityEditor.EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
-#else
-            Application.wantsToQuit += _OnWantsToQuit;
-#endif
+            RemoteControlService.onResetData += _OnResetData;
         }
 
-        void OnDisable()
+        public void OnDisable()
         {
-#if UNITY_EDITOR
-            UnityEditor.EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
-#else
-            Application.wantsToQuit -= _OnWantsToQuit;
-#endif
-
-            if (_objectContainer != null)
-                _objectContainer.Shutdown();
-
-            RemoteControlService.onResetData -= OnResetData;
+            RemoteControlService.onResetData -= _OnResetData;
         }
 
-        private void OnResetData()
+        private void _OnResetData()
         {
             ClearCurrentData();
-            // 破棄済みデータを確認ダイアログなしで終了させる
-            _allowQuit = true;
+            // The data has been wiped; the host should be allowed to quit without a dialog.
+            allowQuit = true;
+            onResetDataRequested?.Invoke();
             Application.Quit();
         }
 
-        void Start()
-        {
-        }
-
-        void OnApplicationQuit()
-        {
-            // 保存は _OnWantsToQuit の経路で行う。ここでは何もしない。
-        }
-
-        void LateUpdate()
-        {
-            if (_objectContainer != null)
-                _objectContainer.UpdateObjects();
-        }
-
+        // --- Save / Load ---
 
         public void LoadCurrentData()
         {
             var fullPath = currentFullPath;
-            // 前回のパスが保存されていてファイルが存在すればそちらを使用
             if (_currentFilePath != _defaultFileName && System.IO.File.Exists(fullPath))
             {
                 _LoadFrom(fullPath);
                 return;
             }
-            // デフォルトにフォールバック
             currentFilePath = _defaultFileName;
             _LoadFrom(_ResolvePath(_defaultFileName));
         }
@@ -183,162 +138,30 @@ namespace Lilium.RemoteControl
             var fullPath = _ResolvePath(filePath);
             var dir = System.IO.Path.GetDirectoryName(fullPath);
             if (!string.IsNullOrEmpty(dir) && !System.IO.Directory.Exists(dir))
-            {
                 System.IO.Directory.CreateDirectory(dir);
-            }
 
             var json = ExposedSceneSerializer.BuildSceneJson(_objectContainer);
             System.IO.File.WriteAllText(fullPath, json);
             _baselineJson = json;
         }
 
-        /// <summary>
-        /// 現在のシーン状態とロード/セーブ直後にキャッシュされた基準JSONを比較し、
-        /// 未保存の変更があればtrueを返す。
-        /// </summary>
         public bool HasUnsavedChanges()
             => ExposedSceneSerializer.HasChanges(_objectContainer, _baselineJson);
 
-        private string _GetSaveAsDefaultName()
+        public void ClearCurrentData()
         {
-            if (!string.IsNullOrEmpty(_defaultFileName)) return _defaultFileName;
-            return kSceneFileDefaultName;
+            var fullPath = _ResolvePath(_currentFilePath);
+            _currentFilePath = _defaultFileName;
+            PlayerPrefs.DeleteKey(_prefsKey);
+            _baselineJson = null;
+
+            if (System.IO.File.Exists(fullPath))
+                System.IO.File.Delete(fullPath);
         }
 
         /// <summary>
-        /// 「名前を付けて保存」ダイアログの既定ディレクトリ。RemoteApp(Tauri) の save_scene_file と揃える。
-        /// 上位アプリが <see cref="SetSaveAsDefaultDirectory"/> で登録していればその値を採用、
-        /// そうでなければ汎用フォールバック (MyDocuments/Virgo Motion/Saved) を返す。
-        /// 存在しなければ作成する。
-        /// </summary>
-        private static string _GetSaveAsDefaultDirectory()
-        {
-            string dir;
-            string fallback;
-            if (!string.IsNullOrEmpty(_saveAsDefaultDirectoryOverride))
-            {
-                dir = _saveAsDefaultDirectoryOverride;
-                fallback = _saveAsDefaultDirectoryOverride;
-            }
-            else
-            {
-                var docs = System.Environment.GetFolderPath(System.Environment.SpecialFolder.MyDocuments);
-                if (string.IsNullOrEmpty(docs))
-                {
-                    return Application.persistentDataPath;
-                }
-                dir = System.IO.Path.Combine(docs, kSceneFileDefaultSubDir);
-                fallback = docs;
-            }
-
-            try
-            {
-                if (!System.IO.Directory.Exists(dir))
-                {
-                    System.IO.Directory.CreateDirectory(dir);
-                }
-            }
-            catch (System.Exception ex)
-            {
-                Debug.LogWarning($"[RemoteControl] Failed to create default save directory '{dir}': {ex.Message}");
-                return fallback;
-            }
-            return dir;
-        }
-
-#if !UNITY_EDITOR
-        private bool _OnWantsToQuit()
-        {
-            bool hasUnsaved = HasUnsavedChanges();
-            Debug.Log($"[Debug][RemoteControl] wantsToQuit: allowQuit={_allowQuit} " +
-                      $"hasUnsaved={hasUnsaved} autoSave={autoSaveOnQuit} dialogPending={_dialogPending}");
-
-            if (_allowQuit)
-            {
-                Debug.Log("[Debug][RemoteControl] wantsToQuit -> true (allowQuit)");
-                return true;
-            }
-            if (!hasUnsaved)
-            {
-                Debug.Log("[Debug][RemoteControl] wantsToQuit -> true (no unsaved changes)");
-                return true;
-            }
-
-            if (autoSaveOnQuit)
-            {
-                // 有効時は確認ダイアログなしで強制上書き保存して終了を続行
-                SaveCurrentData();
-                _allowQuit = true;
-                Debug.Log("[Debug][RemoteControl] wantsToQuit -> true (autoSave)");
-                return true;
-            }
-
-            // wantsToQuit 内で MessageBox を表示するとUnity内部の終了処理が並行で進むため
-            // ダイアログが即座に閉じられてしまう。ここではfalseを返して終了をキャンセルし、
-            // 次フレームのコルーチンでダイアログを表示→ユーザー応答後にApplication.Quit()を再呼び出しする。
-            if (!_dialogPending)
-            {
-                _dialogPending = true;
-                StartCoroutine(_ShowDialogAndQuit());
-            }
-            Debug.Log("[Debug][RemoteControl] wantsToQuit -> false (dialog pending)");
-            return false;
-        }
-
-        private IEnumerator _ShowDialogAndQuit()
-        {
-            // wantsToQuit のコンテキストから抜けるため1フレーム待つ
-            yield return null;
-
-            string title = LocalizationSystem.Translate("DIALOG_UNSAVED_CHANGES_TITLE");
-            string message = LocalizationSystem.Translate("DIALOG_UNSAVED_CHANGES_MESSAGE");
-            string okLabel = LocalizationSystem.Translate("DIALOG_OK");
-            string cancelLabel = LocalizationSystem.Translate("DIALOG_CANCEL");
-
-            bool save = ConfirmDialog.Show(title, message, okLabel, cancelLabel);
-            Debug.Log($"[Debug][RemoteControl] dialog answered: save={save}, calling Application.Quit() again");
-            if (save && !_TrySaveOrPrompt())
-            {
-                // 名前を付けて保存ダイアログがキャンセルされた場合は終了もキャンセル
-                _dialogPending = false;
-                yield break;
-            }
-            _allowQuit = true;
-            Application.Quit();
-        }
-
-        /// <summary>
-        /// 現在のシーンを保存する。パス未設定なら「名前を付けて保存」ダイアログを表示する。
-        /// ダイアログがキャンセルされた場合は false を返す。
-        /// </summary>
-        private bool _TrySaveOrPrompt()
-        {
-            if (!string.IsNullOrEmpty(_currentFilePath))
-            {
-                SaveCurrentData();
-                return true;
-            }
-
-            string savePath = SaveFileDialog.Show(
-                title: LocalizationSystem.Translate("DIALOG_SAVE_AS_TITLE"),
-                initialDirectory: _GetSaveAsDefaultDirectory(),
-                defaultFileName: _GetSaveAsDefaultName(),
-                extension: kSceneFileExtension);
-
-            if (string.IsNullOrEmpty(savePath))
-            {
-                Debug.Log("[Debug][RemoteControl] Save As dialog cancelled");
-                return false;
-            }
-
-            SaveCurrentDataTo(savePath);
-            return true;
-        }
-#endif
-
-        /// <summary>
-        /// 全ExposedObjectのdirtyプロパティをデフォルト値に戻す。
-        /// エディタPlay終了時にScriptableObject等の状態を復元するために使用。
+        /// Reverts every dirty property in every contained ExposedObject back to its captured
+        /// default. Used at editor Play-mode exit to restore ScriptableObject state.
         /// </summary>
         public void RevertAllToDefault()
         {
@@ -352,10 +175,9 @@ namespace Lilium.RemoteControl
                 var dirtyProps = obj.GetDirtyProperties();
                 if (dirtyProps.Count == 0) continue;
 
-                // デフォルトJSONを取得してFromJsonで再適用する。
-                // Revert(path)はSetValue経由で動作するため、read-onlyコンポーネント配列内の
-                // ScriptableObject値をrevertできない。FromJsonはDeserializeExposedObject内の
-                // SetValueRawで直接フィールドを変更するため、read-onlyを経由しても動作する。
+                // Use FromJson rather than Revert(path) because FromJson uses SetValueRaw,
+                // which can write through read-only component arrays containing
+                // ScriptableObject values.
                 var defaultJson = ExposedObjectDefaultRegistry.GetDefaults(obj);
                 if (defaultJson != null)
                 {
@@ -365,75 +187,109 @@ namespace Lilium.RemoteControl
             }
         }
 
-#if UNITY_EDITOR
-        private void OnPlayModeStateChanged(UnityEditor.PlayModeStateChange state)
-        {
-            if (state != UnityEditor.PlayModeStateChange.ExitingPlayMode) return;
-            if (_allowQuit) return;
-            if (!HasUnsavedChanges()) return;
-
-            _allowQuit = true;
-
-            if (autoSaveOnQuit)
-            {
-                // 有効時は確認ダイアログなしで強制上書き保存
-                SaveCurrentData();
-                return;
-            }
-
-            // ExitingPlayMode は同期でハンドラが実行されるため DisplayDialog が確実にブロックする。
-            bool save = UnityEditor.EditorUtility.DisplayDialog(
-                LocalizationSystem.Translate("DIALOG_UNSAVED_CHANGES_TITLE"),
-                LocalizationSystem.Translate("DIALOG_UNSAVED_CHANGES_MESSAGE"),
-                LocalizationSystem.Translate("DIALOG_OK"),
-                LocalizationSystem.Translate("DIALOG_CANCEL"));
-            if (save) _EditorTrySaveOrPrompt();
-        }
-
-        private void _EditorTrySaveOrPrompt()
+        /// <summary>
+        /// Saves to the current path if one is set; otherwise opens a "Save As" dialog.
+        /// Returns true on success or false if the user cancels.
+        /// Build / runtime version (uses native dialogs).
+        /// </summary>
+        public bool TrySaveOrPromptRuntime()
         {
             if (!string.IsNullOrEmpty(_currentFilePath))
             {
                 SaveCurrentData();
-                return;
+                return true;
             }
 
-            // パス未設定なら Editor の名前を付けて保存パネルを表示する
+            string savePath = SaveFileDialog.Show(
+                title: LocalizationSystem.Translate("DIALOG_SAVE_AS_TITLE"),
+                initialDirectory: GetSaveAsDefaultDirectory(),
+                defaultFileName: _GetSaveAsDefaultName(),
+                extension: kSceneFileExtension);
+
+            if (string.IsNullOrEmpty(savePath))
+            {
+                Debug.Log("[Debug][RemoteControl] Save As dialog cancelled");
+                return false;
+            }
+
+            SaveCurrentDataTo(savePath);
+            return true;
+        }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// Saves to the current path if one is set; otherwise opens the editor's Save File panel.
+        /// Returns true on success or false if the user cancels.
+        /// </summary>
+        public bool TrySaveOrPromptEditor()
+        {
+            if (!string.IsNullOrEmpty(_currentFilePath))
+            {
+                SaveCurrentData();
+                return true;
+            }
+
             string savePath = UnityEditor.EditorUtility.SaveFilePanel(
                 LocalizationSystem.Translate("DIALOG_SAVE_AS_TITLE"),
-                _GetSaveAsDefaultDirectory(),
+                GetSaveAsDefaultDirectory(),
                 _GetSaveAsDefaultName(),
                 kSceneFileExtension.TrimStart('.'));
             if (string.IsNullOrEmpty(savePath))
             {
                 Debug.Log("[Debug][RemoteControl] Save As dialog cancelled (Editor)");
-                return;
+                return false;
             }
-            // EditorUtility.SaveFilePanel は単一拡張子しか補完しないため、複合拡張子を手動で補う
-            if (!savePath.EndsWith(kSceneFileExtension, System.StringComparison.OrdinalIgnoreCase))
-            {
+            // EditorUtility.SaveFilePanel only auto-completes a single extension, so we add the
+            // compound suffix manually.
+            if (!savePath.EndsWith(kSceneFileExtension, StringComparison.OrdinalIgnoreCase))
                 savePath += kSceneFileExtension;
-            }
             SaveCurrentDataTo(savePath);
+            return true;
         }
 #endif
 
-        public void ClearCurrentData()
+        private string _GetSaveAsDefaultName()
         {
-            var fullPath = _ResolvePath(_currentFilePath);
-            _currentFilePath = _defaultFileName;
-            PlayerPrefs.DeleteKey(_prefsKey);
-            _baselineJson = null;
-
-            if (System.IO.File.Exists(fullPath))
-            {
-                System.IO.File.Delete(fullPath);
-            }
+            if (!string.IsNullOrEmpty(_defaultFileName)) return _defaultFileName;
+            return kSceneFileDefaultName;
         }
 
         /// <summary>
-        /// 相対パスならpersistentDataPath基準で解決、絶対パスならそのまま返す。
+        /// Default directory for the "Save As" dialog. Honors a directory registered via
+        /// <see cref="SetSaveAsDefaultDirectory"/>; otherwise falls back to MyDocuments/Virgo Motion/Saved.
+        /// Creates the directory if it doesn't exist.
         /// </summary>
+        public static string GetSaveAsDefaultDirectory()
+        {
+            string dir;
+            string fallback;
+            if (!string.IsNullOrEmpty(_saveAsDefaultDirectoryOverride))
+            {
+                dir = _saveAsDefaultDirectoryOverride;
+                fallback = _saveAsDefaultDirectoryOverride;
+            }
+            else
+            {
+                var docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                if (string.IsNullOrEmpty(docs))
+                    return Application.persistentDataPath;
+                dir = System.IO.Path.Combine(docs, kSceneFileDefaultSubDir);
+                fallback = docs;
+            }
+
+            try
+            {
+                if (!System.IO.Directory.Exists(dir))
+                    System.IO.Directory.CreateDirectory(dir);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[RemoteControl] Failed to create default save directory '{dir}': {ex.Message}");
+                return fallback;
+            }
+            return dir;
+        }
+
         private string _ResolvePath(string path)
         {
             if (string.IsNullOrEmpty(path))
@@ -455,7 +311,7 @@ namespace Lilium.RemoteControl
                 ExposedSceneSerializer.SceneFromJson(json, _objectContainer);
             }
 
-            // ロード直後の状態を基準JSONとしてキャッシュ（HasUnsavedChanges用）
+            // Cache the post-load state as the baseline for HasUnsavedChanges.
             _baselineJson = ExposedSceneSerializer.BuildSceneJson(_objectContainer);
         }
     }

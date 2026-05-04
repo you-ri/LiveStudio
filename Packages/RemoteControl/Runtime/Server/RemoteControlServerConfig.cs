@@ -1,13 +1,18 @@
+using System;
 using UnityEngine;
 
 
 namespace Lilium.RemoteControl.Server
 {
-
     /// <summary>
-    /// Remote Control Server設定をScriptableObjectとして管理
-    /// 各サーバーインスタンスの設定を個別のアセットファイルとして保存
+    /// Server configuration stored as a ScriptableObject.
+    /// Each server instance is configured by its own asset file.
+    /// Concrete: instantiates a generic <see cref="RemoteControlServerCore"/>.
+    /// Application-specific routes are registered by external components
+    /// (e.g. MonoBehaviours next to <see cref="RemoteControlServerRunner"/>),
+    /// not by subclassing this config.
     /// </summary>
+    [CreateAssetMenu(fileName = "RemoteControlServerConfig", menuName = "Remote Control/Server Config")]
     public class RemoteControlServerConfig : ScriptableObject
     {
         [Tooltip("Server port number")]
@@ -19,17 +24,26 @@ namespace Lilium.RemoteControl.Server
         [Tooltip("Keep this server running in Unity Editor")]
         public bool runningInEditor = false;
 
-        public virtual RemoteControlServerCore CreateServer()
+        public RemoteControlServerCore CreateServer()
         {
-            return null;
+            return CreateServer(null);
         }
 
-        public virtual RemoteControlServerCore CreateServer(ExposedObjectContainer container)
+        public RemoteControlServerCore CreateServer(ExposedObjectContainer container)
         {
-            return CreateServer();
-        }
+            if (RemoteControlServerManager.servers.TryGetValue(port, out var existing))
+            {
+                Debug.LogWarning($"[RemoteControl] Server already exists on port {port}");
+                return existing.server;
+            }
 
+            var context = new RemoteControlContext($"port_{port}", container);
+            var server = new RemoteControlServerCore(port, enableCors, context);
+            server.OnServerError += ex => Debug.LogError($"[RemoteControl] Server on port {port} error: {ex.Message}");
+
+            RemoteControlServerManager.AddServer(port, server, context);
+
+            return server;
+        }
     }
-
-
 }

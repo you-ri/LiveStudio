@@ -28,6 +28,7 @@ namespace Lilium.RemoteControl.Server
         {
             this.context = context ?? throw new ArgumentNullException(nameof(context));
             InitializeRestApi();
+            RegisterDefaultRoutes();
         }
 
         private void InitializeRestApi()

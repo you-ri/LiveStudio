@@ -1,6 +1,6 @@
-using System.Collections;
-using System.Threading;
+// Copyright (c) You-Ri, 2026
 using System;
+using System.Threading;
 
 using UnityEngine;
 using Lilium.RemoteControl;
@@ -8,137 +8,76 @@ using Lilium.RemoteControl;
 namespace Lilium.RemoteControl.Server
 {
     /// <summary>
-    /// スタジオ用のRemoteControlServerアダプター
+    /// Pure C# helper that owns the lifetime of a <see cref="RemoteControlServerCore"/> for a
+    /// given port. Used to be a MonoBehaviour; the host
+    /// <see cref="RemoteControlBehaviour"/> now drives Unity lifecycle.
     /// </summary>
-    public class RemoteControlServerRunner : MonoBehaviour
+    public class RemoteControlServerRunner
     {
         private const int kDefaultPort = 3002;
 
         public RemoteControlServerConfig serverConfig => _serverConfig;
 
-        [SerializeField]
-        [Tooltip("Server configuration to use")]
-        private RemoteControlServerConfig _serverConfig;
+        /// <summary>
+        /// The running server instance, or null if not started yet (or start failed).
+        /// </summary>
+        public RemoteControlServerCore server => _server;
+
+        private readonly RemoteControlServerConfig _serverConfig;
+        private readonly ExposedObjectContainer _container;
 
         private RemoteControlServerCore _server;
 
-        // サーバーの保持者かどうか
-        // エディター終了時にサーバーを停止するかどうかの判定に使用
+        // True when this runner is the one that successfully started the server. Only the owner
+        // is allowed to shut it down.
         private bool _isServerOwner;
 
-        // UpdateHandlers実行用のスレッドと実行中フラグ
+        // Per-runner update thread. Drives UpdateHandlers() at high frequency. Coexists with
+        // the lower-frequency manager thread for compatibility.
         private Thread _updateThread;
         private volatile bool _isRunning = false;
+
+        public RemoteControlServerRunner(RemoteControlServerConfig serverConfig, ExposedObjectContainer container)
+        {
+            _serverConfig = serverConfig;
+            _container = container;
+        }
 
         public int GetPort()
         {
             return _serverConfig?.port ?? kDefaultPort;
         }
 
-        void Awake()
-        {
-            if (!RemoteControlServerManager.IsServerRunning(GetPort()))
-            {
-                StartServer();
-            }
-        }
-
-        void OnDestroy()
-        {
-            StopUpdateThread();
-            ShutdownServer();
-        }
-
-
         public void StartServer()
         {
+            if (_server != null) return;
+
+            var port = GetPort();
+
+            _server = RemoteControlServerManager.GetOrCreateServer(port, _serverConfig, _container);
+
             if (_server == null)
             {
-                var port = GetPort();
-
-                // Containerを取得してServerに渡す
-                var container = GetComponent<ExposedObjectContainer>();
-                if (container == null)
-                {
-                    container = FindObjectOfType<ExposedObjectContainer>();
-                }
-
-                _server = RemoteControlServerManager.GetOrCreateServer(port, _serverConfig, container);
-
-                if (_server == null)
-                {
-                    Debug.LogWarning($"[Studio] StudioRemoteControlServerAdapter: No server configuration found for port {port}. Please configure server in RemoteControlServerWindow.");
-                    return;
-                }
-
-                if (!_server.IsRunning)
-                {
-                    _server.StartServer();
-
-                    // サーバー起動に失敗した場合、マネージャーから削除してクリーンアップ
-                    if (!_server.IsRunning)
-                    {
-                        Debug.LogWarning($"[RemoteControl] Server failed to start on port {port}. Cleaning up.");
-                        RemoteControlServerManager.RemoveServer(port);
-                        _server = null;
-                        return;
-                    }
-
-                    _isServerOwner = true;
-                }
-
-                StartUpdateThread();
-            }
-        }
-
-        private void StartUpdateThread()
-        {
-            if (_updateThread != null && _updateThread.IsAlive)
-            {
+                Debug.LogWarning($"[RemoteControl] No server configuration found for port {port}. Please configure server in RemoteControlServerWindow.");
                 return;
             }
 
-            _isRunning = true;
-            _updateThread = new Thread(() =>
+            if (!_server.IsRunning)
             {
-                while (_isRunning)
+                _server.StartServer();
+
+                if (!_server.IsRunning)
                 {
-                    try
-                    {
-                        if (_server != null && _server.IsRunning)
-                        {
-                            _server.UpdateHandlers();
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogError($"[Studio] Error in UpdateHandlers: {ex.Message}");
-                    }
-
-                    Thread.Sleep(1);
-                }
-            })
-            {
-                IsBackground = true,
-                Name = $"StudioRemoteControlAdapterUpdate_{GetPort()}"
-            };
-
-            _updateThread.Start();
-        }
-
-        private void StopUpdateThread()
-        {
-            if (_updateThread != null && _updateThread.IsAlive)
-            {
-                _isRunning = false;
-
-                if (!_updateThread.Join(TimeSpan.FromSeconds(1)))
-                {
-                    Debug.LogWarning($"[Studio] UpdateHandlers thread did not stop in time");
+                    Debug.LogWarning($"[RemoteControl] Server failed to start on port {port}. Cleaning up.");
+                    RemoteControlServerManager.RemoveServer(port);
+                    _server = null;
+                    return;
                 }
 
-                _updateThread = null;
+                _isServerOwner = true;
             }
+
+            StartUpdateThread();
         }
 
         public void ShutdownServer()
@@ -153,5 +92,51 @@ namespace Lilium.RemoteControl.Server
             _server = null;
             _isServerOwner = false;
         }
-   }
+
+        private void StartUpdateThread()
+        {
+            if (_updateThread != null && _updateThread.IsAlive)
+                return;
+
+            _isRunning = true;
+            _updateThread = new Thread(() =>
+            {
+                while (_isRunning)
+                {
+                    try
+                    {
+                        if (_server != null && _server.IsRunning)
+                            _server.UpdateHandlers();
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"[RemoteControl] Error in UpdateHandlers: {ex.Message}");
+                    }
+
+                    Thread.Sleep(1);
+                }
+            })
+            {
+                IsBackground = true,
+                Name = $"RemoteControlServerUpdate_{GetPort()}"
+            };
+
+            _updateThread.Start();
+        }
+
+        private void StopUpdateThread()
+        {
+            if (_updateThread != null && _updateThread.IsAlive)
+            {
+                _isRunning = false;
+
+                if (!_updateThread.Join(TimeSpan.FromSeconds(1)))
+                {
+                    Debug.LogWarning($"[RemoteControl] UpdateHandlers thread did not stop in time");
+                }
+
+                _updateThread = null;
+            }
+        }
+    }
 }
