@@ -23,12 +23,10 @@ namespace Lilium.RemoteControl.Server
     {
         // --- Serialized configuration ---
 
-        [Header("Server")]
         [SerializeField]
         [Tooltip("Server configuration to use")]
         private RemoteControlServerConfig _serverConfig;
 
-        [Header("Scene Save / Load")]
         [SerializeField]
         private string _defaultFileName;
 
@@ -36,7 +34,6 @@ namespace Lilium.RemoteControl.Server
         [Tooltip("Auto-save the current scene file when the app quits with unsaved changes.")]
         private bool _autoSaveOnQuit = true;
 
-        [Header("Exposed Objects")]
         [SerializeReference, Select]
         [ExposedField(persistable = false)]
         public List<IExposedObject> _objects = new List<IExposedObject>();
