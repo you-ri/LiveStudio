@@ -16,12 +16,15 @@ namespace Lilium.RemoteControl.WebUI
     public class WebUIHandler : BaseRemoteControlApiHandler
     {
         private readonly WebUIDefinition _definition;
+        private readonly string _appTitle;
         private readonly List<ExposedObject> _selectorExposedObjects = new List<ExposedObject>();
         private readonly List<ExposedObject> _factoryExposedObjects = new List<ExposedObject>();
 
         public WebUIHandler(RemoteControlServerCore server, WebUIDefinition definition) : base(server)
         {
             _definition = definition;
+            // UnityEngine APIs are main-thread only; cache here at construction time.
+            _appTitle = Application.productName ?? string.Empty;
             _RegisterSelectors();
         }
 
@@ -122,7 +125,19 @@ namespace Lilium.RemoteControl.WebUI
                 return HandleGetSideMenu(context);
             }
 
+            if (path == "/webui/info")
+            {
+                return HandleGetInfo(context);
+            }
+
             return SendNotFound(context);
+        }
+
+        private Task HandleGetInfo(HttpListenerContext context)
+        {
+            var response = new InfoResponse { title = _appTitle };
+            var json = JsonUtility.ToJson(response);
+            return WriteResponse(200, context.Response, json);
         }
 
         private Task HandleGetSideMenu(HttpListenerContext context)
@@ -194,6 +209,12 @@ namespace Lilium.RemoteControl.WebUI
         private class SideMenuResponse
         {
             public List<SideMenuItemResponse> menuItems;
+        }
+
+        [System.Serializable]
+        private class InfoResponse
+        {
+            public string title;
         }
 
         [System.Serializable]

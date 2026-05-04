@@ -165,7 +165,7 @@ namespace Lilium.RemoteControl.Server
 
                     using (_processRequestMarker.Auto())
                     {
-                        _ = ProcessRequest(context);
+                        _ = _SafeProcessRequest(context);
                     }
                 }
                 catch (HttpListenerException)
@@ -190,6 +190,31 @@ namespace Lilium.RemoteControl.Server
             if (!_isManualStop)
             {
                 OnServerStopped?.Invoke("Listener loop ended");
+            }
+        }
+
+        private async Task _SafeProcessRequest(HttpListenerContext context)
+        {
+            try
+            {
+                await ProcessRequest(context).ConfigureAwait(false);
+            }
+            catch (System.Exception ex)
+            {
+                var url = context?.Request?.Url?.ToString() ?? "(null)";
+                Debug.LogError($"[RemoteControl] Unhandled exception while processing request {url}: {ex}");
+                try
+                {
+                    if (context?.Response != null)
+                    {
+                        context.Response.StatusCode = 500;
+                        context.Response.Close();
+                    }
+                }
+                catch (System.Exception closeEx)
+                {
+                    Debug.LogError($"[RemoteControl] Failed to close response after unhandled exception: {closeEx.Message}");
+                }
             }
         }
 
