@@ -182,8 +182,7 @@ namespace Lilium.RemoteControl.WebUI
                     factoryObjectId = factoryObjectId,
                     position = item.position == MenuItemPosition.Bottom ? "bottom" : "main",
                     order = item.order,
-                    development = item.development,
-                    experimental = item.experimental,
+                    accessLevel = (int)item.accessLevel,
                 });
             }
 
@@ -208,8 +207,7 @@ namespace Lilium.RemoteControl.WebUI
             public string factoryObjectId;
             public string position;
             public int order;
-            public bool development;
-            public bool experimental;
+            public int accessLevel;
         }
     }
 }

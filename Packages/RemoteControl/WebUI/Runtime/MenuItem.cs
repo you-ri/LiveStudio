@@ -55,13 +55,9 @@ namespace Lilium.RemoteControl.WebUI
         public int order;
 
         /// <summary>
-        /// 開発ビルドでのみ表示する項目
+        /// アクセスレベル。Public は常に表示、Experimental はバッジ付きで表示、
+        /// Development は開発ビルドでのみ表示しバッジを付ける。
         /// </summary>
-        public bool development;
-
-        /// <summary>
-        /// 実験的機能としてバッジを表示する
-        /// </summary>
-        public bool experimental;
+        public AccessLevel accessLevel = AccessLevel.Public;
     }
 }
