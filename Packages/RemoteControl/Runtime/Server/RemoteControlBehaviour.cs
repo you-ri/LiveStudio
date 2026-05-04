@@ -27,13 +27,6 @@ namespace Lilium.RemoteControl.Server
         [Tooltip("Server configuration to use")]
         private RemoteControlServerConfig _serverConfig;
 
-        [SerializeField]
-        private string _defaultFileName;
-
-        [SerializeField]
-        [Tooltip("Auto-save the current scene file when the app quits with unsaved changes.")]
-        private bool _autoSaveOnQuit = true;
-
         [SerializeReference, Select]
         [ExposedField(persistable = false)]
         public List<IExposedObject> _objects = new List<IExposedObject>();
@@ -57,15 +50,15 @@ namespace Lilium.RemoteControl.Server
 
         public bool autoSaveOnQuit
         {
-            get => _autoSaveOnQuit;
+            get => _serverConfig != null ? _serverConfig.autoSaveOnQuit : true;
             set
             {
-                _autoSaveOnQuit = value;
+                if (_serverConfig != null) _serverConfig.autoSaveOnQuit = value;
                 if (_sceneSave != null) _sceneSave.autoSaveOnQuit = value;
             }
         }
 
-        public string defaultFileName => _defaultFileName;
+        public string defaultFileName => _serverConfig != null ? _serverConfig.defaultFileName : null;
         public string currentFilePath
         {
             get => _sceneSave?.currentFilePath;
@@ -174,7 +167,7 @@ namespace Lilium.RemoteControl.Server
             if (_serverRunner == null)
                 _serverRunner = new RemoteControlServerRunner(_serverConfig, _container);
             if (_sceneSave == null)
-                _sceneSave = new RemoteControlProvider(_container, _defaultFileName, _autoSaveOnQuit);
+                _sceneSave = new RemoteControlProvider(_container, defaultFileName, autoSaveOnQuit);
         }
 
         private void _StartServerAndRegister()

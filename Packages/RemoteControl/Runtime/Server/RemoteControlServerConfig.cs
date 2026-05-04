@@ -24,6 +24,12 @@ namespace Lilium.RemoteControl.Server
         [Tooltip("Keep this server running in Unity Editor")]
         public bool runningInEditor = false;
 
+        [Tooltip("Default scene file name used by the scene save/load system. Empty for none.")]
+        public string defaultFileName;
+
+        [Tooltip("Auto-save the current scene file when the app quits with unsaved changes.")]
+        public bool autoSaveOnQuit = true;
+
         public RemoteControlServerCore CreateServer()
         {
             return CreateServer(null);
