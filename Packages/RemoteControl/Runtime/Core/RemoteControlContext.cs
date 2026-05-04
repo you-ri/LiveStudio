@@ -1,50 +1,42 @@
 using Lilium.RemoteControl.Core;
-using UnityEngine;
 
 namespace Lilium.RemoteControl.Server
 {
     /// <summary>
-    /// RemoteControlServer インスタンスごとのコンテキスト
-    /// 複数のサーバーインスタンスを独立して動作させるための依存関係をカプセル化
+    /// Per-server context shared by handlers running under one RemoteControlServerCore.
+    /// Encapsulates the dependencies needed to run multiple server instances independently.
     /// </summary>
     public class RemoteControlContext
     {
         /// <summary>
-        /// このサーバーが扱うExposedObjectContainer
+        /// ExposedObjectContainer this server operates on.
         /// </summary>
         public ExposedObjectContainer objectContainer { get; }
 
         /// <summary>
-        /// このサーバーインスタンス専用のイベントキュー
+        /// Event queue dedicated to this server instance.
         /// </summary>
         public EventQueue eventQueue { get; }
 
         /// <summary>
-        /// このサーバーインスタンス専用の接続マネージャー
+        /// Connection manager dedicated to this server instance.
         /// </summary>
         public RestApiConnectionManager connectionManager { get; }
 
         /// <summary>
-        /// このコンテキストのスコープ識別子（シーン名、ポート番号など）
+        /// Scope identifier for this context (scene name, port number, etc.).
         /// </summary>
         public string scope { get; }
 
         /// <summary>
-        /// WebUI定義（オプション）。設定されている場合は /webui エンドポイントが有効になる。
+        /// Create a RemoteControlContext.
         /// </summary>
-        public ScriptableObject webUIDefinition { get; }
-
-        /// <summary>
-        /// RemoteControlContext を作成
-        /// </summary>
-        /// <param name="scope">スコープ識別子（デフォルト: "default"）</param>
-        /// <param name="webUIDefinition">WebUI定義（オプション）</param>
-        /// <param name="container">ExposedObjectContainer（オプション）</param>
-        public RemoteControlContext(string scope = "default", ScriptableObject webUIDefinition = null, ExposedObjectContainer container = null)
+        /// <param name="scope">Scope identifier (default: "default").</param>
+        /// <param name="container">ExposedObjectContainer (optional).</param>
+        public RemoteControlContext(string scope = "default", ExposedObjectContainer container = null)
         {
             this.objectContainer = container;
             this.scope = scope;
-            this.webUIDefinition = webUIDefinition;
             this.eventQueue = new EventQueue();
             this.connectionManager = new RestApiConnectionManager();
         }
