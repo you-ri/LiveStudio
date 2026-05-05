@@ -1,7 +1,7 @@
 {
   "name": "jp.lilium.remotecontrol",
   "displayName": "Lilium Remote Control",
-  "version": "0.20.0",
+  "version": "0.19.1",
   "description": "REST API server with reflection-based remote control for Unity Editor and runtime",
   "author": {
     "name": "You-Ri",

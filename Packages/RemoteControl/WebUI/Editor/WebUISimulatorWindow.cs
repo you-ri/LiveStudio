@@ -1,7 +1,6 @@
 // Copyright (c) You-Ri, 2026
 
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -67,6 +66,15 @@ namespace Lilium.RemoteControl.WebUI.Editor
             if (_providerObject != null)
                 return _providerObject.GetComponent<WebUIRemoteControlBehaviour>();
             return null;
+        }
+
+        private void _UpdateDefinitionProviderVisibility()
+        {
+            var hasProvider = _GetProvider() != null;
+            if (_definitionField != null)
+                _definitionField.style.display = hasProvider ? DisplayStyle.None : DisplayStyle.Flex;
+            if (_providerField != null)
+                _providerField.style.display = hasProvider ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         /// <summary>
@@ -147,6 +155,21 @@ namespace Lilium.RemoteControl.WebUI.Editor
 
         private void _OnSelectionChanged()
         {
+            // Project ビューで WebUIDefinition アセットを選択したときは、
+            // それを Definition に差し替え、Provider は null にクリアする。
+            var def = Selection.activeObject as WebUIDefinition;
+            if (def != null)
+            {
+                if (def == _definition && _GetProvider() == null) return;
+
+                if (_providerField != null && _GetProvider() != null)
+                    _providerField.value = null;
+
+                if (_definitionField != null)
+                    _definitionField.value = def;
+                return;
+            }
+
             // ヒエラルキーで WebUIRemoteControlBehaviour を含む GameObject を選択したとき、
             // それを Provider に設定する。該当しない選択では現在の Provider を維持する。
             var go = Selection.activeGameObject;
@@ -218,12 +241,13 @@ namespace Lilium.RemoteControl.WebUI.Editor
             toolbar.style.borderBottomColor = new Color(0.15f, 0.15f, 0.15f);
 
             // Definition ObjectField
-            _definitionField = new ObjectField("Definition");
+            _definitionField = new ObjectField();
             _definitionField.objectType = typeof(WebUIDefinition);
             _definitionField.value = _definition;
             _definitionField.style.flexGrow = 1;
             _definitionField.style.maxWidth = 300;
             _definitionField.style.marginRight = 8;
+            _definitionField.SetEnabled(false);
             _definitionField.RegisterValueChangedCallback(evt =>
             {
                 _definition = evt.newValue as WebUIDefinition;
@@ -241,12 +265,13 @@ namespace Lilium.RemoteControl.WebUI.Editor
             }
 
             // Provider ObjectField
-            _providerField = new ObjectField("Provider");
+            _providerField = new ObjectField();
             _providerField.objectType = typeof(WebUIRemoteControlBehaviour);
             _providerField.value = _GetProvider();
             _providerField.style.flexGrow = 1;
             _providerField.style.maxWidth = 300;
             _providerField.style.marginRight = 8;
+            _providerField.SetEnabled(false);
             _providerField.RegisterValueChangedCallback(evt =>
             {
                 var oldProvider = _GetProvider();
@@ -269,8 +294,12 @@ namespace Lilium.RemoteControl.WebUI.Editor
 
                 if (newProvider != null && newProvider.objectContainer != null)
                     newProvider.objectContainer.Initialize();
+
+                _UpdateDefinitionProviderVisibility();
             });
             toolbar.Add(_providerField);
+
+            _UpdateDefinitionProviderVisibility();
 
             // リセットボタン
             var resetButton = new Button(() =>
@@ -294,111 +323,6 @@ namespace Lilium.RemoteControl.WebUI.Editor
             };
             resetButton.style.width = 60;
             toolbar.Add(resetButton);
-
-            // Export ボタン
-            var exportIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/Settings/Web UI/Icons/file_upload.png");
-            var exportButton = new Button(() =>
-            {
-                var provider = _GetProvider();
-                if (provider == null || provider.objectContainer == null) return;
-
-                var projectRoot = Path.GetDirectoryName(Application.dataPath);
-                var savedFolder = Path.Combine(projectRoot, "Saved");
-                var fileName = "export_" + DateTime.Now.ToString("yyMMddHHmmss") + ".json";
-                var filePath = Path.Combine(savedFolder, fileName);
-
-                if (!Directory.Exists(savedFolder))
-                    Directory.CreateDirectory(savedFolder);
-
-                var json = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), provider.objectContainer);
-                File.WriteAllText(filePath, json);
-                UnityEngine.Debug.Log($"[RemoteControl] Saved to {filePath}");
-            });
-            exportButton.tooltip = "Export";
-            exportButton.style.width = 28;
-            exportButton.style.height = 20;
-            exportButton.style.marginLeft = 4;
-            if (exportIcon != null)
-            {
-                var img = new Image { image = exportIcon };
-                img.style.width = 16;
-                img.style.height = 16;
-                exportButton.Add(img);
-            }
-            else
-            {
-                exportButton.text = "E";
-            }
-            toolbar.Add(exportButton);
-
-            // Import ボタン
-            var importIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/Settings/Web UI/Icons/file_download.png");
-            var importButton = new Button(() =>
-            {
-                var provider = _GetProvider();
-                if (provider == null || provider.objectContainer == null) return;
-
-                var projectRoot = Path.GetDirectoryName(Application.dataPath);
-                var savedFolder = Path.Combine(projectRoot, "Saved");
-
-                var filePath = EditorUtility.OpenFilePanel("Select file to load", savedFolder, "json");
-                if (string.IsNullOrEmpty(filePath)) return;
-
-                if (!File.Exists(filePath))
-                {
-                    UnityEngine.Debug.LogWarning($"[RemoteControl] File not found: {filePath}");
-                    return;
-                }
-
-                var json = File.ReadAllText(filePath);
-                ExposedSceneSerializer.SceneFromJson(json, provider.objectContainer);
-                UnityEngine.Debug.Log($"[RemoteControl] Loaded from {filePath}");
-            });
-            importButton.tooltip = "Import";
-            importButton.style.width = 28;
-            importButton.style.height = 20;
-            importButton.style.marginLeft = 4;
-            if (importIcon != null)
-            {
-                var img = new Image { image = importIcon };
-                img.style.width = 16;
-                img.style.height = 16;
-                importButton.Add(img);
-            }
-            else
-            {
-                importButton.text = "I";
-            }
-            toolbar.Add(importButton);
-
-            // Open ボタン
-            var openIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/Settings/Web UI/Icons/folder_open.png");
-            var openButton = new Button(() =>
-            {
-                var projectRoot = Path.GetDirectoryName(Application.dataPath);
-                var savedFolder = Path.Combine(projectRoot, "Saved");
-
-                if (!Directory.Exists(savedFolder))
-                    Directory.CreateDirectory(savedFolder);
-
-                Process.Start(savedFolder);
-            });
-            openButton.tooltip = "Open Saved Folder";
-            openButton.style.width = 28;
-            openButton.style.height = 20;
-            openButton.style.marginLeft = 4;
-            if (openIcon != null)
-            {
-                var img = new Image { image = openIcon };
-                img.style.width = 16;
-                img.style.height = 16;
-                openButton.Add(img);
-            }
-            else
-            {
-                openButton.text = "O";
-            }
-            toolbar.Add(openButton);
 
             // RemoteApp起動ボタン
             _remoteAppButton = new Button(_OnRemoteAppButtonClicked)
