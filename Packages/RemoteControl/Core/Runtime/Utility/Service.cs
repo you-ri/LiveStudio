@@ -1,5 +1,4 @@
 // Copyright (c) You-Ri, 2026
-// Consolidated from Lilium.Virgo.Service / Lilium.LiveStudio.Service into Lilium.RemoteControl.
 
 using System.Collections.Generic;
 using UnityEngine;

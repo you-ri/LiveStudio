@@ -1,5 +1,4 @@
 // Copyright (c) You-Ri, 2026
-// Consolidated from Lilium.Virgo.FrameBuffer into Lilium.RemoteControl.
 
 using System;
 

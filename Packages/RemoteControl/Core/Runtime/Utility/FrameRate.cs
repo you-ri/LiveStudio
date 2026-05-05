@@ -1,6 +1,4 @@
 // Copyright (c) You-Ri, 2026
-// Consolidated from Lilium.Virgo.FrameRate into Lilium.RemoteControl.
-// Kept original truncation semantics, FPS60 constant, and AsFrameNumberDecimal helper.
 
 using System;
 using UnityEngine;

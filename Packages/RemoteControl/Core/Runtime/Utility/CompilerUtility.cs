@@ -1,5 +1,4 @@
 // Copyright (c) You-Ri, 2026
-// Consolidated from Lilium.Virgo.CompilerUtility / Lilium.LiveStudio.CompilerUtility into Lilium.RemoteControl.
 
 using UnityEngine;
 

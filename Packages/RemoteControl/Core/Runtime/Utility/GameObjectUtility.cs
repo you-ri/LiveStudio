@@ -1,5 +1,4 @@
 // Copyright (c) You-Ri, 2026
-// Merged GameObjectUtility (consolidated from Lilium.Virgo.GameObjectUtility into Lilium.RemoteControl).
 
 using System.Collections.Generic;
 using UnityEngine;

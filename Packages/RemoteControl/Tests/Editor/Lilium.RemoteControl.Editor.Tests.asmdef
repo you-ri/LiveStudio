@@ -2,6 +2,7 @@
     "name": "Lilium.RemoteControl.Editor.Tests",
     "rootNamespace": "Lilium.RemoteControl.Tests",
     "references": [
+        "Lilium.RemoteControl.Core",
         "Lilium.RemoteControl",
         "Lilium.RemoteControl.Reflection",
         "Lilium.RemoteControl.WebUI",

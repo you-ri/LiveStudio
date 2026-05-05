@@ -1,5 +1,4 @@
 // Copyright (c) You-Ri, 2026
-// Consolidated from Lilium.Virgo.Timecode into Lilium.RemoteControl.
 
 using System;
 

@@ -5,6 +5,8 @@ using NUnit.Framework;
 using UnityEngine;
 using Newtonsoft.Json.Linq;
 
+using GameObjectUtility = Lilium.RemoteControl.GameObjectUtility;
+
 namespace Lilium.RemoteControl.Tests
 {
     /// <summary>
