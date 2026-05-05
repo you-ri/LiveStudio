@@ -1,6 +1,6 @@
 {
   "name": "jp.lilium.vrchatavatartransfer",
-  "version": "0.19.1",
+  "version": "0.19.1-exp.1",
   "displayName": "Lilium VRChat Avatar Transfer",
   "description": "Editor tools to bring VRChat avatars into non-VRChat environments (PhysBone -> VRM SpringBone, VRC Constraint -> Unity Constraint).",
   "unity": "2022.3",

@@ -28,26 +28,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # All packages must share the same version
+          # Version format per package: X.Y.Z, X.Y.Z-pre.N, or X.Y.Z-exp.N.
+          # All packages must share the same X.Y.Z (SemVer core); the -pre/-exp
+          # stage is per-package and is preserved across releases.
+          VRE='^([0-9]+)\.([0-9]+)\.([0-9]+)(-(pre|exp)\.([0-9]+))?$'
           FIRST_PKG=$(ls Packages | head -1)
-          CUR=$(jq -r .version "Packages/$FIRST_PKG/package.json")
+          FIRST_V=$(jq -r .version "Packages/$FIRST_PKG/package.json")
+          [[ "$FIRST_V" =~ $VRE ]] || { echo "Invalid version: Packages/$FIRST_PKG = $FIRST_V" >&2; exit 1; }
+          CUR_SEMVER="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+          MA="${BASH_REMATCH[1]}"; MI="${BASH_REMATCH[2]}"; PA="${BASH_REMATCH[3]}"
           for pkg in Packages/*/package.json; do
             V=$(jq -r .version "$pkg")
-            if [[ "$V" != "$CUR" ]]; then
-              echo "Version mismatch: $pkg = $V, expected $CUR" >&2
+            [[ "$V" =~ $VRE ]] || { echo "Invalid version: $pkg = $V" >&2; exit 1; }
+            PKG_SEMVER="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+            if [[ "$PKG_SEMVER" != "$CUR_SEMVER" ]]; then
+              echo "SemVer mismatch: $pkg = $PKG_SEMVER, expected $CUR_SEMVER" >&2
               exit 1
             fi
           done
-          IFS=. read -r MA MI PA <<< "$CUR"
           case "${{ inputs.version_bump }}" in
-            major) NEW="$((MA+1)).0.0" ;;
-            minor) NEW="$MA.$((MI+1)).0" ;;
-            patch) NEW="$MA.$MI.$((PA+1))" ;;
+            major) NEW_SEMVER="$((MA+1)).0.0" ;;
+            minor) NEW_SEMVER="$MA.$((MI+1)).0" ;;
+            patch) NEW_SEMVER="$MA.$MI.$((PA+1))" ;;
           esac
-          echo "current=$CUR"        >> "$GITHUB_OUTPUT"
-          echo "new_version=$NEW"    >> "$GITHUB_OUTPUT"
-          echo "tag=v$NEW"           >> "$GITHUB_OUTPUT"
-          echo "Bumping: $CUR -> $NEW (tag v$NEW)"
+          echo "current=$CUR_SEMVER"        >> "$GITHUB_OUTPUT"
+          echo "new_version=$NEW_SEMVER"    >> "$GITHUB_OUTPUT"
+          echo "tag=v$NEW_SEMVER"           >> "$GITHUB_OUTPUT"
+          echo "Bumping SemVer: $CUR_SEMVER -> $NEW_SEMVER (tag v$NEW_SEMVER); per-package -pre/-exp stage preserved, suffix counter reset to 1"
 
       - name: Fail if tag already exists
         shell: bash
@@ -65,12 +72,21 @@ jobs:
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          NEW="${{ steps.bump.outputs.new_version }}"
+          NEW_SEMVER="${{ steps.bump.outputs.new_version }}"
+          VRE='^([0-9]+)\.([0-9]+)\.([0-9]+)(-(pre|exp)\.([0-9]+))?$'
           for pkg in Packages/*/package.json; do
+            V=$(jq -r .version "$pkg")
+            [[ "$V" =~ $VRE ]] || { echo "Invalid version: $pkg = $V" >&2; exit 1; }
+            STAGE="${BASH_REMATCH[5]:-}"
+            if [[ -n "$STAGE" ]]; then
+              NEW="$NEW_SEMVER-$STAGE.1"
+            else
+              NEW="$NEW_SEMVER"
+            fi
             jq ".version = \"$NEW\"" "$pkg" > "$pkg.tmp" && mv "$pkg.tmp" "$pkg"
             git add "$pkg"
           done
-          git commit -m "release: v$NEW"
+          git commit -m "release: v$NEW_SEMVER"
           git push origin beta
 
       - name: Fast-forward main to beta
