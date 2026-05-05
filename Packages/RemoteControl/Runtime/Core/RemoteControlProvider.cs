@@ -1,6 +1,7 @@
 // Copyright (c) You-Ri, 2026
 using System;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 using Lilium.RemoteControl.UI;
 
@@ -16,6 +17,12 @@ namespace Lilium.RemoteControl
         private const string kSceneFileExtension = ".scene.json";
         private const string kSceneFileDefaultName = "Untitled.scene.json";
         private const string kSceneFileDefaultSubDir = "Virgo Motion/Saved";
+
+        // Fixed PlayerPrefs key that mirrors the absolute path of the most recently used
+        // scene file. Used by the BeforeSceneLoad startup hook to read the file without
+        // needing access to a per-app defaultFileName (no RemoteControlBehaviour exists yet
+        // at that point).
+        private const string kLastScenePathKey = "RemoteControl_LastScenePath";
 
         /// <summary>
         /// Optional directory override for the "Save As" dialog. Set by the upper-level
@@ -49,6 +56,10 @@ namespace Lilium.RemoteControl
             {
                 _currentFilePath = value;
                 PlayerPrefs.SetString(_prefsKey, value ?? "");
+                // Mirror the absolute path into a fixed key so the BeforeSceneLoad hook
+                // can read it on next launch without knowing the per-app defaultFileName.
+                var fullPath = string.IsNullOrEmpty(value) ? "" : _ResolvePath(value);
+                PlayerPrefs.SetString(kLastScenePathKey, fullPath);
             }
         }
 
@@ -69,6 +80,56 @@ namespace Lilium.RemoteControl
             this.autoSaveOnQuit = autoSaveOnQuit;
             _prefsKey = "RemoteControl_ScenePath_" + _defaultFileName;
             _currentFilePath = PlayerPrefs.GetString(_prefsKey, _defaultFileName);
+        }
+
+        // --- Startup hook ---
+
+        /// <summary>
+        /// Runs before the first scene is loaded. If the most recently used scene file
+        /// (mirrored to <see cref="kLastScenePathKey"/>) targets a different Unity scene
+        /// than the one Unity is about to load, redirect to that scene up-front.
+        /// This avoids switching scenes after the HTTP server has already started, which
+        /// would race with in-flight requests and produce ObjectDisposedException noise.
+        /// All error paths are silent: fall through to the normal startup scene.
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void _SwitchBaseSceneOnStartup()
+        {
+            if (!Application.isPlaying) return;
+
+            var fullPath = PlayerPrefs.GetString(kLastScenePathKey, "");
+            if (string.IsNullOrEmpty(fullPath)) return;
+            if (!System.IO.File.Exists(fullPath)) return;
+
+            string baseSceneName;
+            try
+            {
+                var json = System.IO.File.ReadAllText(fullPath);
+                baseSceneName = ExposedSceneSerializer.ExtractBaseSceneName(json);
+            }
+            catch
+            {
+                return;
+            }
+            if (string.IsNullOrEmpty(baseSceneName)) return;
+
+            int count = SceneManager.sceneCountInBuildSettings;
+            if (count == 0) return;
+
+            // Skip if the scene Unity is about to load (build index 0 among enabled scenes)
+            // already matches the saved baseSceneName.
+            var initialName = System.IO.Path.GetFileNameWithoutExtension(SceneUtility.GetScenePathByBuildIndex(0));
+            if (initialName == baseSceneName) return;
+
+            for (int i = 0; i < count; i++)
+            {
+                var path = SceneUtility.GetScenePathByBuildIndex(i);
+                if (System.IO.Path.GetFileNameWithoutExtension(path) == baseSceneName)
+                {
+                    SceneManager.LoadScene(i);
+                    return;
+                }
+            }
         }
 
         // --- Lifecycle (called by host MonoBehaviour) ---
@@ -96,14 +157,24 @@ namespace Lilium.RemoteControl
 
         public void LoadCurrentData()
         {
-            var fullPath = currentFullPath;
-            if (_currentFilePath != _defaultFileName && System.IO.File.Exists(fullPath))
+            string fullPath;
+            if (_currentFilePath != _defaultFileName && System.IO.File.Exists(currentFullPath))
             {
-                _LoadFrom(fullPath);
-                return;
+                fullPath = currentFullPath;
             }
-            currentFilePath = _defaultFileName;
-            _LoadFrom(_ResolvePath(_defaultFileName));
+            else
+            {
+                currentFilePath = _defaultFileName;
+                fullPath = _ResolvePath(_defaultFileName);
+            }
+
+            // If the file targets a different Unity base scene than the one currently active,
+            // switch first and let the new scene's RemoteControlBehaviour.Start() re-enter
+            // LoadCurrentData(). This unifies the order "read JSON -> switch scene -> deserialize"
+            // for both startup loads (PlayerPrefs-backed) and explicit LoadScene calls.
+            if (_TrySwitchBaseScene(fullPath)) return;
+
+            _LoadFrom(fullPath);
         }
 
         public void LoadCurrentDataFrom(string filePath)
@@ -111,7 +182,48 @@ namespace Lilium.RemoteControl
             if (_objectContainer == null) return;
 
             currentFilePath = filePath;
-            _LoadFrom(_ResolvePath(filePath));
+            // Delegate to LoadCurrentData so the base-scene switch path is exercised
+            // identically to the startup load path.
+            LoadCurrentData();
+        }
+
+        /// <summary>
+        /// Reads <c>baseSceneName</c> from the file. If it differs from the active Unity scene
+        /// and is registered in build settings, calls <see cref="SceneManager.LoadScene(int)"/>
+        /// and returns <c>true</c>; the new scene's RemoteControlBehaviour will re-trigger the load.
+        /// Returns <c>false</c> when no switch is needed (legacy file, same scene, or scene not in build).
+        /// </summary>
+        private static bool _TrySwitchBaseScene(string fullPath)
+        {
+            if (string.IsNullOrEmpty(fullPath) || !System.IO.File.Exists(fullPath)) return false;
+            string json;
+            try
+            {
+                json = System.IO.File.ReadAllText(fullPath);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[RemoteControl] Failed to read '{fullPath}' for base-scene check: {ex.Message}");
+                return false;
+            }
+
+            var baseSceneName = ExposedSceneSerializer.ExtractBaseSceneName(json);
+            if (string.IsNullOrEmpty(baseSceneName)) return false;
+            if (baseSceneName == SceneManager.GetActiveScene().name) return false;
+
+            int count = SceneManager.sceneCountInBuildSettings;
+            for (int i = 0; i < count; i++)
+            {
+                var path = SceneUtility.GetScenePathByBuildIndex(i);
+                if (System.IO.Path.GetFileNameWithoutExtension(path) == baseSceneName)
+                {
+                    SceneManager.LoadScene(i);
+                    return true;
+                }
+            }
+
+            Debug.LogWarning($"[RemoteControl] Base scene '{baseSceneName}' not found in build settings. Loading data into current active scene.");
+            return false;
         }
 
         public void SaveCurrentData()
@@ -140,7 +252,8 @@ namespace Lilium.RemoteControl
             if (!string.IsNullOrEmpty(dir) && !System.IO.Directory.Exists(dir))
                 System.IO.Directory.CreateDirectory(dir);
 
-            var json = ExposedSceneSerializer.BuildSceneJson(_objectContainer);
+            var baseSceneName = SceneManager.GetActiveScene().name;
+            var json = ExposedSceneSerializer.BuildSceneJson(_objectContainer, baseSceneName);
             System.IO.File.WriteAllText(fullPath, json);
             _baselineJson = json;
         }
@@ -311,8 +424,10 @@ namespace Lilium.RemoteControl
                 ExposedSceneSerializer.SceneFromJson(json, _objectContainer);
             }
 
-            // Cache the post-load state as the baseline for HasUnsavedChanges.
-            _baselineJson = ExposedSceneSerializer.BuildSceneJson(_objectContainer);
+            // Cache the post-load state as the baseline for HasUnsavedChanges. The baseline
+            // must use the same baseSceneName the next save will write so an unchanged scene
+            // does not appear dirty on round-trip.
+            _baselineJson = ExposedSceneSerializer.BuildSceneJson(_objectContainer, SceneManager.GetActiveScene().name);
         }
     }
 }

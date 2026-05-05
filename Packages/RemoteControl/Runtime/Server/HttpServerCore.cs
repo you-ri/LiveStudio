@@ -199,6 +199,13 @@ namespace Lilium.RemoteControl.Server
             {
                 await ProcessRequest(context).ConfigureAwait(false);
             }
+            catch (System.ObjectDisposedException)
+            {
+                // The listener / response was torn down (e.g. scene switch or server shutdown)
+                // while this request was still in flight. Nothing to write back to.
+                var url = context?.Request?.Url?.ToString() ?? "(null)";
+                Debug.LogWarning($"[RemoteControl] Request {url} aborted: response was disposed (likely shutdown / scene switch).");
+            }
             catch (System.Exception ex)
             {
                 var url = context?.Request?.Url?.ToString() ?? "(null)";
@@ -210,6 +217,10 @@ namespace Lilium.RemoteControl.Server
                         context.Response.StatusCode = 500;
                         context.Response.Close();
                     }
+                }
+                catch (System.ObjectDisposedException)
+                {
+                    // Response already disposed; nothing to clean up.
                 }
                 catch (System.Exception closeEx)
                 {

@@ -16,7 +16,7 @@ namespace Lilium.RemoteControl
         public const string FormatIdentifier = "jp.lilium.remotecontrol.scene";
         public const int CurrentFormatVersion = 1;
 
-        public static string SceneToJson(IReadOnlyList<ExposedObject> objects, IExposedObjectResolver resolver, SerializeMode filter = SerializeMode.Snapshot, ExcludeFilter exclude = ExcludeFilter.None)
+        public static string SceneToJson(IReadOnlyList<ExposedObject> objects, IExposedObjectResolver resolver, SerializeMode filter = SerializeMode.Snapshot, ExcludeFilter exclude = ExcludeFilter.None, string baseSceneName = null)
         {
             bool onlyDirty = filter == SerializeMode.Delta;
             bool excludeStatic = (exclude & ExcludeFilter.Static) != 0;
@@ -30,6 +30,11 @@ namespace Lilium.RemoteControl
 
             jRoot["format"] = FormatIdentifier;
             jRoot["formatVersion"] = CurrentFormatVersion;
+            // Top-level field that drives load-time behavior: name of the Unity scene to load
+            // before applying objects[]. Older files without this field fall back to re-loading
+            // the current active scene. Kept outside `metadata` because it is functional, not
+            // informational like packageVersion / appVersion.
+            if (!string.IsNullOrEmpty(baseSceneName)) jRoot["baseSceneName"] = baseSceneName;
             var jMetadata = new JObject();
             jMetadata["packageVersion"] = RemoteControlSettings.PackageVersion;
             jMetadata["appName"] = Application.productName;
@@ -256,25 +261,47 @@ namespace Lilium.RemoteControl
         /// 指定 Container の現在の状態を、変更検出用の Delta JSON として生成する。
         /// SceneToJson の Delta モード・既定フィルタを呼ぶ薄いラッパー。container が null なら null。
         /// </summary>
-        public static string BuildSceneJson(ExposedObjectContainer container)
+        public static string BuildSceneJson(ExposedObjectContainer container, string baseSceneName = null)
         {
             if (container == null) return null;
             return SceneToJson(
                 ResolveExposedObjects(container.objects, container),
                 container,
                 SerializeMode.Delta,
-                ExcludeFilter.None);
+                ExcludeFilter.None,
+                baseSceneName);
         }
 
         /// <summary>
         /// 現在の Container 状態と基準 JSON を比較し、差分があれば true。
         /// baselineJson または container が null の場合は false。
+        /// baseSceneName は baselineJson から抽出して比較対象 JSON にも反映する
+        /// （baseline 生成時と同じフィールドが揃うように）。
         /// </summary>
         public static bool HasChanges(ExposedObjectContainer container, string baselineJson)
         {
             if (container == null) return false;
             if (baselineJson == null) return false;
-            return !string.Equals(BuildSceneJson(container), baselineJson, StringComparison.Ordinal);
+            var baseSceneName = ExtractBaseSceneName(baselineJson);
+            return !string.Equals(BuildSceneJson(container, baseSceneName), baselineJson, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// Reads the top-level <c>baseSceneName</c> from a scene JSON without performing a full deserialization.
+        /// Returns <c>null</c> when the field is absent (legacy files) or the JSON cannot be parsed.
+        /// </summary>
+        public static string ExtractBaseSceneName(string json)
+        {
+            if (string.IsNullOrEmpty(json)) return null;
+            try
+            {
+                var jRoot = JObject.Parse(json);
+                return jRoot["baseSceneName"]?.Value<string>();
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
         }
 
         public static void SceneFromJson(string json, IExposedObjectResolver resolver)
