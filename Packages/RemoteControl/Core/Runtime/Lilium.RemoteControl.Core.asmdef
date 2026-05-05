@@ -1,14 +1,10 @@
 {
-    "name": "Lilium.RemoteControl",
+    "name": "Lilium.RemoteControl.Core",
     "rootNamespace": "Lilium.RemoteControl",
-    "references": [
-        "Unity.Properties",
-        "Lilium.RemoteControl.Reflection",
-        "Lilium.RemoteControl.Core"
-    ],
+    "references": [],
     "includePlatforms": [],
     "excludePlatforms": [],
-    "allowUnsafeCode": false,
+    "allowUnsafeCode": true,
     "overrideReferences": false,
     "precompiledReferences": [],
     "autoReferenced": true,

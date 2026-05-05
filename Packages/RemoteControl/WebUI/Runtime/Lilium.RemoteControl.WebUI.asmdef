@@ -3,7 +3,8 @@
     "rootNamespace": "Lilium.RemoteControl.WebUI",
     "references": [
         "Lilium.RemoteControl",
-        "Lilium.RemoteControl.Reflection"
+        "Lilium.RemoteControl.Reflection",
+        "Lilium.RemoteControl.Core"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
