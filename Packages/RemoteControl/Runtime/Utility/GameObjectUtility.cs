@@ -1,5 +1,7 @@
 // Copyright (c) You-Ri, 2026
+// Merged GameObjectUtility (consolidated from Lilium.Virgo.GameObjectUtility into Lilium.RemoteControl).
 
+using System.Collections.Generic;
 using UnityEngine;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -8,10 +10,226 @@ using UnityEditor;
 namespace Lilium.RemoteControl
 {
     /// <summary>
-    /// GameObjectやComponentの操作をランタイムとエディターで適切に切り分けるユーティリティ。
+    /// Utility for GameObject and Component operations that need to switch behavior between
+    /// edit mode and play mode (PrefabUtility vs Object.Instantiate, DestroyImmediate vs Destroy, etc.).
     /// </summary>
     public static class GameObjectUtility
     {
+        /// <summary>
+        /// Set GameObject active state only when it differs from the current state, avoiding redundant change events.
+        /// </summary>
+        public static void SetActive(GameObject go, bool active)
+        {
+            if (go == null) return;
+            if (go.activeSelf != active)
+            {
+                go.SetActive(active);
+            }
+        }
+
+        /// <summary>
+        /// Return the existing direct child with the given name under <paramref name="parent"/>,
+        /// or create a new empty GameObject if none exists.
+        /// </summary>
+        public static GameObject CreateOrGetGameObject(string name, Transform parent)
+        {
+            if (parent == null) return null;
+            var t = parent.Find(name);
+            if (t == null)
+            {
+                var go = new GameObject(name);
+                go.transform.parent = parent;
+                return go;
+            }
+            return t.gameObject;
+        }
+
+        /// <summary>
+        /// Same as <see cref="CreateOrGetGameObject(string, Transform)"/> but attaches the given component types when creating.
+        /// </summary>
+        public static GameObject CreateOrGetGameObject(string name, Transform parent, params System.Type[] components)
+        {
+            if (parent == null) return null;
+            var t = parent.Find(name);
+            if (t == null)
+            {
+                var go = new GameObject(name, components);
+                go.transform.parent = parent;
+                return go;
+            }
+            return t.gameObject;
+        }
+
+        /// <summary>
+        /// Find a direct child of <paramref name="parent"/> with the given name. Returns null if not found.
+        /// </summary>
+        public static GameObject FindChildByName(GameObject parent, string name)
+        {
+            if (parent == null || string.IsNullOrEmpty(name))
+                return null;
+            return FindChildByName(parent.transform, name);
+        }
+
+        /// <summary>
+        /// Find a direct child of <paramref name="parent"/> with the given name. Returns null if not found.
+        /// </summary>
+        public static GameObject FindChildByName(Transform parent, string name)
+        {
+            if (parent == null || string.IsNullOrEmpty(name))
+                return null;
+            foreach (Transform child in parent)
+            {
+                if (child.name == name)
+                    return child.gameObject;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Find a descendant of <paramref name="parent"/> with the given name (depth-first, breadth-preferred).
+        /// </summary>
+        public static GameObject FindChildByNameRecursive(GameObject parent, string name)
+        {
+            if (parent == null || string.IsNullOrEmpty(name))
+                return null;
+            return FindChildByNameRecursive(parent.transform, name);
+        }
+
+        /// <summary>
+        /// Find a descendant of <paramref name="parent"/> with the given name (depth-first, breadth-preferred).
+        /// </summary>
+        public static GameObject FindChildByNameRecursive(Transform parent, string name)
+        {
+            if (parent == null || string.IsNullOrEmpty(name))
+                return null;
+
+            // Search direct children first to keep the result stable when multiple matches exist.
+            foreach (Transform child in parent)
+            {
+                if (child.name == name)
+                    return child.gameObject;
+            }
+
+            foreach (Transform child in parent)
+            {
+                var result = FindChildByNameRecursive(child, name);
+                if (result != null)
+                    return result;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Find all direct children of <paramref name="parent"/> with the given name.
+        /// </summary>
+        public static GameObject[] FindChildrenByName(GameObject parent, string name)
+        {
+            if (parent == null || string.IsNullOrEmpty(name))
+                return new GameObject[0];
+            return FindChildrenByName(parent.transform, name);
+        }
+
+        /// <summary>
+        /// Find all direct children of <paramref name="parent"/> with the given name.
+        /// </summary>
+        public static GameObject[] FindChildrenByName(Transform parent, string name)
+        {
+            if (parent == null || string.IsNullOrEmpty(name))
+                return new GameObject[0];
+
+            var results = new List<GameObject>();
+            foreach (Transform child in parent)
+            {
+                if (child.name == name)
+                    results.Add(child.gameObject);
+            }
+            return results.ToArray();
+        }
+
+        /// <summary>
+        /// Build a slash-separated relative path from <paramref name="root"/> to <paramref name="target"/>.
+        /// Returns the target's name when target is not a descendant of root.
+        /// </summary>
+        public static string GetRelativePath(Transform root, Transform target)
+        {
+            if (root == null || target == null || root == target)
+                return string.Empty;
+
+            var path = target.name;
+            var current = target.parent;
+            while (current != null && current != root)
+            {
+                path = current.name + "/" + path;
+                current = current.parent;
+            }
+            return path;
+        }
+
+        /// <summary>
+        /// Instantiate a prefab keeping the prefab connection in editor non-play mode, registering an undo step.
+        /// In play mode or standalone runtime this falls back to plain <see cref="Object.Instantiate(Object, Transform)"/>.
+        /// </summary>
+        public static GameObject CreateInstanceFromPrefab(GameObject prefab, Transform parent = null)
+        {
+            if (prefab == null) return null;
+
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                var instance = PrefabUtility.InstantiatePrefab(prefab) as GameObject;
+                if (instance != null)
+                {
+                    if (parent != null)
+                        instance.transform.SetParent(parent);
+                    Undo.RegisterCreatedObjectUndo(instance, "Create Instance From Prefab");
+                }
+                return instance;
+            }
+#endif
+            return Object.Instantiate(prefab, parent);
+        }
+
+        /// <summary>
+        /// Return an existing direct child named <paramref name="name"/> if present; otherwise instantiate
+        /// <paramref name="prefab"/> via <see cref="CreateInstanceFromPrefab"/> and rename it.
+        /// </summary>
+        public static GameObject GetOrCreateInstanceFromPrefab(string name, GameObject prefab, Transform parent = null)
+        {
+            Debug.Assert(prefab != null, "Prefab must not be null");
+            if (parent == null) return null;
+
+            var existing = parent.Find(name);
+            if (existing != null)
+            {
+                return existing.gameObject;
+            }
+
+            var instanced = CreateInstanceFromPrefab(prefab, parent);
+            if (instanced == null)
+            {
+                Debug.LogError($"[RemoteControl] Failed to instantiate prefab: {prefab.name}");
+                return null;
+            }
+
+            instanced.name = name;
+            instanced.transform.SetParent(parent);
+            return instanced;
+        }
+
+        /// <summary>
+        /// Remove the given component if present (calls <see cref="Destroy(Object)"/>); the component
+        /// is intentionally not re-added — call sites are expected to recreate it explicitly when needed.
+        /// </summary>
+        public static void ReplaceComponent<T>(GameObject instance) where T : Component
+        {
+            if (instance == null) return;
+            T component = instance.GetComponent<T>();
+            if (component != null)
+            {
+                Destroy(component);
+            }
+        }
+
         /// <summary>
         /// Prefabからインスタンスを生成する。
         /// エディターではPrefabUtilityを使用し、ランタイムではObject.Instantiateを使用する。
