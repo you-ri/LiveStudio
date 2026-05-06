@@ -5,8 +5,8 @@ using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
 using Lilium.RemoteControl;
-using Lilium.RemoteControl.WebUI;
-using Lilium.RemoteControl.WebUI.Editor;
+using Lilium.RemoteControl.UI;
+using Lilium.RemoteControl.UI.Editor;
 using Newtonsoft.Json.Linq;
 
 namespace Lilium.RemoteControl.Tests
@@ -2306,7 +2306,7 @@ namespace Lilium.RemoteControl.Tests
         #endregion
 
         /// <summary>
-        /// Factory._prefabGuid が空 (Simulator Reset / OnValidate 未実行) の状態で Factory.Create → container に追加 →
+        /// Factory._prefabGuid が空 (UI Designer Reset / OnValidate 未実行) の状態で Factory.Create → container に追加 →
         /// BuildSceneJson (Delta) したとき、exposed.prefabSourceKey も空のため isPrefabNew=false + メタのみ判定で
         /// エントリが完全に欠落するリグレッションを捕捉する。ユーザー報告 test.scene.json (objects: []) と同じ症状。
         /// RefreshPrefabKey を事前に呼べば @prefab が出力されることも検証する。
@@ -2350,7 +2350,7 @@ namespace Lilium.RemoteControl.Tests
                 GameObject.DestroyImmediate(instance);
                 instance = null;
 
-                // Simulator Reset 相当: Factory の _prefabGuid を AssetDatabase から再解決
+                // UI Designer Reset 相当: Factory の _prefabGuid を AssetDatabase から再解決
                 factory.RefreshPrefabKey();
                 Assert.AreEqual(expectedGuid, factory.prefabGuid,
                     "RefreshPrefabKey should populate _prefabGuid from AssetDatabase");
@@ -2377,8 +2377,8 @@ namespace Lilium.RemoteControl.Tests
         }
 
         /// <summary>
-        /// Simulator Reset (= WebUIDefinitionPrefabKeyRefresher.Refresh) は渡された WebUIDefinition
-        /// のみ更新し、それ以外の WebUIDefinition アセットには影響しないことを検証する。
+        /// UI Designer Reset (= UIDefinitionPrefabKeyRefresher.Refresh) は渡された UIDefinition
+        /// のみ更新し、それ以外の UIDefinition アセットには影響しないことを検証する。
         /// Play 中に呼ばれても PrefabRegistry に即座に登録されることも併せて確認する。
         /// </summary>
         [Test]
@@ -2386,8 +2386,8 @@ namespace Lilium.RemoteControl.Tests
         {
             const string prefabTargetPath = "Assets/_TmpPrefab_Refresher_Target.prefab";
             const string prefabOtherPath = "Assets/_TmpPrefab_Refresher_Other.prefab";
-            const string defTargetPath = "Assets/_TmpWebUIDef_Refresher_Target.asset";
-            const string defOtherPath = "Assets/_TmpWebUIDef_Refresher_Other.asset";
+            const string defTargetPath = "Assets/_TmpUIDef_Refresher_Target.asset";
+            const string defOtherPath = "Assets/_TmpUIDef_Refresher_Other.asset";
 
             var seedT = new GameObject("RefresherPrefabTarget");
             var prefabTarget = UnityEditor.PrefabUtility.SaveAsPrefabAsset(seedT, prefabTargetPath);
@@ -2400,15 +2400,15 @@ namespace Lilium.RemoteControl.Tests
             var expectedGuidTarget = UnityEditor.AssetDatabase.AssetPathToGUID(prefabTargetPath);
             var expectedGuidOther = UnityEditor.AssetDatabase.AssetPathToGUID(prefabOtherPath);
 
-            WebUIDefinition defTarget = null;
-            WebUIDefinition defOther = null;
+            UIDefinition defTarget = null;
+            UIDefinition defOther = null;
 
             try
             {
                 var factoryTarget = new ExposedGameObjectFactory { prefab = prefabTarget };
                 var factoryOther = new ExposedGameObjectFactory { prefab = prefabOther };
 
-                defTarget = ScriptableObject.CreateInstance<WebUIDefinition>();
+                defTarget = ScriptableObject.CreateInstance<UIDefinition>();
                 defTarget.menuItems.Add(new MenuItem
                 {
                     id = "target",
@@ -2416,7 +2416,7 @@ namespace Lilium.RemoteControl.Tests
                 });
                 UnityEditor.AssetDatabase.CreateAsset(defTarget, defTargetPath);
 
-                defOther = ScriptableObject.CreateInstance<WebUIDefinition>();
+                defOther = ScriptableObject.CreateInstance<UIDefinition>();
                 defOther.menuItems.Add(new MenuItem
                 {
                     id = "other",
@@ -2428,18 +2428,18 @@ namespace Lilium.RemoteControl.Tests
                 Assert.IsTrue(string.IsNullOrEmpty(factoryOther.prefabGuid), "Precondition: other factory guid empty");
 
                 // Act: Simulator が設定している _definition だけを対象に Refresh
-                var updated = WebUIDefinitionPrefabKeyRefresher.Refresh(defTarget);
+                var updated = UIDefinitionPrefabKeyRefresher.Refresh(defTarget);
                 Assert.IsTrue(updated);
 
                 // Target は更新される
-                var reloadedTarget = UnityEditor.AssetDatabase.LoadAssetAtPath<WebUIDefinition>(defTargetPath);
+                var reloadedTarget = UnityEditor.AssetDatabase.LoadAssetAtPath<UIDefinition>(defTargetPath);
                 var rfTarget = ((StandardObjectFactory)((CategoryPage)reloadedTarget.menuItems[0].page).factory).factories[0] as ExposedGameObjectFactory;
                 Assert.AreEqual(expectedGuidTarget, rfTarget.prefabGuid, "Target definition factory GUID should be refreshed");
                 Assert.IsTrue(PrefabRegistry.TryFind(expectedGuidTarget, out var regTarget), "PrefabRegistry should have target prefab");
                 Assert.AreEqual(prefabTarget, regTarget);
 
                 // Other は一切触られない
-                var reloadedOther = UnityEditor.AssetDatabase.LoadAssetAtPath<WebUIDefinition>(defOtherPath);
+                var reloadedOther = UnityEditor.AssetDatabase.LoadAssetAtPath<UIDefinition>(defOtherPath);
                 var rfOther = ((StandardObjectFactory)((CategoryPage)reloadedOther.menuItems[0].page).factory).factories[0] as ExposedGameObjectFactory;
                 Assert.IsTrue(string.IsNullOrEmpty(rfOther.prefabGuid), "Other definition factory GUID must remain empty");
                 Assert.IsFalse(PrefabRegistry.TryFind(expectedGuidOther, out _), "PrefabRegistry must not contain other prefab");
@@ -2456,13 +2456,13 @@ namespace Lilium.RemoteControl.Tests
         /// <summary>
         /// ScenePage のように CategoryPage 以外の IPage 実装が StandardObjectFactory を持つ場合でも
         /// Refresh が Factory の prefab GUID を再解決することを検証する。
-        /// ユーザーの Studio WebUI Definition で ScenePage 側の Factory が更新されなかった症状の再発防止。
+        /// ユーザーの Studio UI Definition で ScenePage 側の Factory が更新されなかった症状の再発防止。
         /// </summary>
         [Test]
         public void Refresh_SupportsScenePageInAdditionToCategoryPage()
         {
             const string prefabPath = "Assets/_TmpPrefab_ScenePage.prefab";
-            const string defPath = "Assets/_TmpWebUIDef_ScenePage.asset";
+            const string defPath = "Assets/_TmpUIDef_ScenePage.asset";
 
             var seed = new GameObject("ScenePagePrefab");
             var prefab = UnityEditor.PrefabUtility.SaveAsPrefabAsset(seed, prefabPath);
@@ -2470,12 +2470,12 @@ namespace Lilium.RemoteControl.Tests
 
             var expectedGuid = UnityEditor.AssetDatabase.AssetPathToGUID(prefabPath);
 
-            WebUIDefinition def = null;
+            UIDefinition def = null;
             try
             {
                 var factory = new ExposedGameObjectFactory { prefab = prefab };
 
-                def = ScriptableObject.CreateInstance<WebUIDefinition>();
+                def = ScriptableObject.CreateInstance<UIDefinition>();
                 def.menuItems.Add(new MenuItem
                 {
                     id = "scene",
@@ -2485,10 +2485,10 @@ namespace Lilium.RemoteControl.Tests
 
                 Assert.IsTrue(string.IsNullOrEmpty(factory.prefabGuid), "Precondition: factory guid empty");
 
-                var updated = WebUIDefinitionPrefabKeyRefresher.Refresh(def);
+                var updated = UIDefinitionPrefabKeyRefresher.Refresh(def);
                 Assert.IsTrue(updated);
 
-                var reloaded = UnityEditor.AssetDatabase.LoadAssetAtPath<WebUIDefinition>(defPath);
+                var reloaded = UnityEditor.AssetDatabase.LoadAssetAtPath<UIDefinition>(defPath);
                 var rf = ((StandardObjectFactory)((ScenePage)reloaded.menuItems[0].page).factory).factories[0] as ExposedGameObjectFactory;
                 Assert.AreEqual(expectedGuid, rf.prefabGuid, "ScenePage-hosted factory should also be refreshed");
                 Assert.IsTrue(PrefabRegistry.TryFind(expectedGuid, out var reg));

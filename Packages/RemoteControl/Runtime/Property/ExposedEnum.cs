@@ -118,7 +118,7 @@ namespace Lilium.RemoteControl
         /// Clears all ExposedEnum entries and re-registers them from attributes.
         /// Also broadcasts a types_update SSE so that connected RemoteApp clients can
         /// refetch /exposed/types and /exposed/enums after a manual rebuild
-        /// (e.g. WebUISimulator Reset, which calls ExposedClass.Reset() then ExposedEnum.Reset()).
+        /// (e.g. UI Designer Reset, which calls ExposedClass.Reset() then ExposedEnum.Reset()).
         /// </summary>
         public static void Reset()
         {

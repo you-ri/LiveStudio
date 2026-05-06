@@ -1,0 +1,20 @@
+{
+    "name": "Lilium.RemoteControl.UI.Editor",
+    "rootNamespace": "Lilium.RemoteControl.UI.Editor",
+    "references": [
+        "Lilium.RemoteControl",
+        "Lilium.RemoteControl.Reflection",
+        "Lilium.RemoteControl.UI"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

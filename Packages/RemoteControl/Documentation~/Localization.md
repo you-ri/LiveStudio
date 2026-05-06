@@ -63,7 +63,7 @@ Runtime/
 
 | Surface | Source |
 |---|---|
-| Sidebar / menu labels in the WebUI | `label` field on the menu item |
+| Sidebar / menu labels in the Remote Control UI | `label` field on the menu item |
 | Help text | The string passed to `[ExposedHelp("...")]` |
 
 ---

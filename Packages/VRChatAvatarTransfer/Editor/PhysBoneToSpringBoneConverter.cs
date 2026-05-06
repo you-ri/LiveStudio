@@ -108,6 +108,15 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 existing.Vrm = Vrm10ObjectBuilder.BuildOrLoad(avatarRoot);
                 EditorUtility.SetDirty(existing);
             }
+
+            // SpringBone を Update タイミングで動かす (デフォルトの LateUpdate だとアニメーション後の
+            // ボーンに対して 1 frame 遅れて反映される)。
+            if (existing.UpdateType != Vrm10Instance.UpdateTypes.Update)
+            {
+                Undo.RecordObject(existing, "Set Vrm10Instance UpdateType to Update");
+                existing.UpdateType = Vrm10Instance.UpdateTypes.Update;
+                EditorUtility.SetDirty(existing);
+            }
             return existing;
         }
 

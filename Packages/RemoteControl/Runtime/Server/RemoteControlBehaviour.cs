@@ -15,7 +15,7 @@ namespace Lilium.RemoteControl.Server
     /// <remarks>
     /// Replaces the four-component combo of <see cref="RemoteControlServerRunner"/>,
     /// <see cref="ExposedObjectContainer"/>, <see cref="RemoteControlProvider"/>, plus the
-    /// optional WebUI add-on.
+    /// optional UI add-on.
     /// </remarks>
     [DefaultExecutionOrder(-32760)]
     [ExecuteAlways]
@@ -152,7 +152,7 @@ namespace Lilium.RemoteControl.Server
 
         /// <summary>
         /// Hook for derived classes to register routes that need the server but should not
-        /// be exposed via OnRegisterHandlers (e.g. WebUI). Called immediately after the server
+        /// be exposed via OnRegisterHandlers (e.g. UI). Called immediately after the server
         /// starts, before <see cref="OnRegisterHandlers"/>.
         /// </summary>
         protected virtual void OnPreRegisterHandlers(RemoteControlServerCore server) { }

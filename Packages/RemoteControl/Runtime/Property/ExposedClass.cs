@@ -430,7 +430,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// Edit モードのエディタ起動時 / ドメインリロード後にも静的 ExposedObject を登録する。
         /// `RuntimeInitializeOnLoadMethod` は Play 起動時のみ発火するため、Edit モードで動作する
-        /// `RemoteControlServerManager` / `WebUISimulatorWindow` から静的クラスが引けるようにここで補完する。
+        /// `RemoteControlServerManager` / `UIDesignerWindow` から静的クラスが引けるようにここで補完する。
         /// `_RegisterStaticExposedObjects` は FindById で重複スキップするため冪等。
         /// </summary>
         [UnityEditor.InitializeOnLoadMethod]

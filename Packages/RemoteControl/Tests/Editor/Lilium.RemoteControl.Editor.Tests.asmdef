@@ -5,8 +5,8 @@
         "Lilium.RemoteControl.Core",
         "Lilium.RemoteControl",
         "Lilium.RemoteControl.Reflection",
-        "Lilium.RemoteControl.WebUI",
-        "Lilium.RemoteControl.WebUI.Editor",
+        "Lilium.RemoteControl.UI",
+        "Lilium.RemoteControl.UI.Editor",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],
