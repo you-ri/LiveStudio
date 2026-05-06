@@ -1,0 +1,31 @@
+{
+  "name": "jp.lilium.livestudio",
+  "displayName": "Lilium Live Studio",
+  "version": "0.19.1-exp.1",
+  "description": "Base package for VTuber live streaming applications. Provides Camera/Lighting/Scene/Build/RemoteControl infrastructure and shared localization that are independent from any specific motion capture system.",
+  "author": {
+    "name": "You-Ri",
+    "email": "you-ri@sasakingdom.com",
+    "url": "https://github.com/you-ri"
+  },
+  "unity": "2022.3",
+  "license": "MIT",
+  "documentationUrl": "https://github.com/you-ri/LiveStudio/tree/main/Packages/LiveStudio",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/you-ri/LiveStudio.git",
+    "directory": "Packages/LiveStudio"
+  },
+  "keywords": [
+    "vtuber",
+    "live",
+    "studio",
+    "streaming"
+  ],
+  "dependencies": {
+    "jp.lilium.remotecontrol": "0.19.1-exp.1",
+    "jp.lilium.nativegamepad": "0.19.1-pre.1",
+    "com.unity.cinemachine": "3.1.5"
+  },
+  "samples": []
+}

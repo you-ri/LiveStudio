@@ -1,0 +1,154 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &3469607007112265641
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 689914820132487794}
+  - component: {fileID: 7100432985641003001}
+  m_Layer: 0
+  m_Name: Remote Control
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &689914820132487794
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3469607007112265641}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &7100432985641003001
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3469607007112265641}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6954cb2cc38b4515b84178f8e465239a, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  _serverConfig: {fileID: 11400000, guid: fe5d91a57c882da4791babe82a0d8d75, type: 2}
+  _objects:
+  - rid: 1948541982014701682
+  - rid: 1948541982014701683
+  - rid: 1948541982014701684
+  - rid: 1948541982014701686
+  - rid: 1948541982014701688
+  - rid: 1948541700119199836
+  - rid: 938059670836215908
+  - rid: 1948541663652085848
+  _uiDefinition: {fileID: 11400000, guid: 0d7378062cf94704d8b17ee9440d3b21, type: 2}
+  references:
+    version: 2
+    RefIds:
+    - rid: 938059670836215908
+      type: {class: ExposedGameObject, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl}
+      data:
+        _id: 450dd368-3ad8-4b61-9f08-f986adeb7908
+        _reference: {fileID: 0}
+        _name: Main Screen
+        _active: 1
+    - rid: 1948541663652085848
+      type: {class: ExposedGameObject, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl}
+      data:
+        _id: 48ffab25-85be-47b8-879c-9cd5f8c9fe6d
+        _reference: {fileID: 0}
+        _name: Virgo Motion Source
+        _active: 1
+    - rid: 1948541700119199836
+      type: {class: ExposedGameObjectWithTransform, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl}
+      data:
+        _id: 1bd72042-8b83-4a6d-b39c-c662487db3f0
+        _reference: {fileID: 0}
+        _name: Main Avatar
+        _active: 1
+        _parent:
+          _ownerName:
+          _transformPath:
+          _searchType: 0
+        _transform:
+          position: {x: 0, y: 0, z: 0}
+          rotation: {x: 0, y: 1, z: 0, w: 0}
+          scale: {x: 1, y: 1, z: 1}
+    - rid: 1948541982014701682
+      type: {class: EnvironmentLight, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      data:
+        _ambientLightSource: 0
+        _ambientColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
+        _ambientIntensity: 1
+    - rid: 1948541982014701683
+      type: {class: SkyboxBackground, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      data:
+        _backgroundMode: 0
+        _backgroundTexture:
+          _filePath:
+        _skyboxRotation: 0
+        _skyboxExposure: 1
+        _imageFitMode: 0
+    - rid: 1948541982014701684
+      type: {class: ExposedLight, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      data:
+        _id: 2c3043aa-ce67-4e7b-bd99-6c51f51ae8c2
+        _reference: {fileID: 0}
+        _name: Directional Light
+        _enabled: 1
+        _color: {r: 1, g: 1, b: 1, a: 1}
+        _intensity: 1
+        _shadow: 1
+        _transform:
+          position: {x: 0, y: 0, z: 0}
+          rotation: {x: 0, y: 0, z: 0, w: 1}
+          scale: {x: 1, y: 1, z: 1}
+        _parent:
+          _ownerName:
+          _transformPath:
+          _searchType: 0
+    - rid: 1948541982014701686
+      type: {class: ExposedCamera, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      data:
+        _id: 0e133176-8816-4cb3-8557-9652e7f13c90
+        _reference: {fileID: 0}
+        _name: Capture Camera
+        controller:
+          rid: 1948541982014701690
+    - rid: 1948541982014701688
+      type: {class: ExposedCamera, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      data:
+        _id: bd8d73be-9e02-462f-aa24-917a70c81119
+        _reference: {fileID: 0}
+        _name: Orbital Follow Camera
+        controller:
+          rid: 1948541982014701689
+    - rid: 1948541982014701689
+      type: {class: OrbitalFollowCameraController, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      data:
+        _target:
+          _ownerName: Main Avatar
+          _transformPath: Head
+          _searchType: 1
+        _roll: 0
+        _pitch: 0
+        _distance: 1
+        _fov: 40
+        _screenPosition: {x: 0, y: 0}
+    - rid: 1948541982014701690
+      type: {class: CaptureCameraController, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      data:
+        _lockRoll: 1

@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 92a5a91569b8b8a48bd7f4e9f857ba75
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - _facialExpressionDefinition: {fileID: 11400000, guid: 299ddec19ea9d524f99f5ea80a6126c0,
+      type: 2}
+  - blendShapeAvatar: {instanceID: 0}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

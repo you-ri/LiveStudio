@@ -1,0 +1,82 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 13966, guid: 0000000000000000e000000000000000, type: 0}
+  m_Name: Studio Template
+  m_EditorClassIdentifier: 
+  templateScene: {fileID: 102900000, guid: fc4ce2a05315bef42a819815701b6eec, type: 3}
+  templateName: Studio Template
+  description: 
+  preview: {fileID: 0}
+  dependencies:
+  - dependency: {fileID: 11400000, guid: fe5d91a57c882da4791babe82a0d8d75, type: 2}
+    instantiationMode: 1
+  - dependency: {fileID: 2800000, guid: eb22af15397486741a53b4e02513ec1d, type: 3}
+    instantiationMode: 0
+  - dependency: {fileID: 2800000, guid: 3028dc075ba8c584d9bc7d1e0255e038, type: 3}
+    instantiationMode: 1
+  - dependency: {fileID: 11400000, guid: f449ebbe2051c2e4d993eaa773a410de, type: 2}
+    instantiationMode: 1
+  - dependency: {fileID: 2800000, guid: 4e66028e0e9ca7546abe43a6e08366db, type: 3}
+    instantiationMode: 1
+  - dependency: {fileID: 2100000, guid: e6996bb67fdc3c54bab772b1c79a9dbc, type: 2}
+    instantiationMode: 1
+  - dependency: {fileID: 2800000, guid: ad4861e134018c948ac79793d290f48b, type: 3}
+    instantiationMode: 1
+  - dependency: {fileID: 1686019019707292, guid: cd5e86e9086dffc46ba89edbfedcdd17, type: 3}
+    instantiationMode: 0
+  - dependency: {fileID: 8347655980647196745, guid: f71013d224f7ce644aa05dec5b997419, type: 3}
+    instantiationMode: 1
+  - dependency: {fileID: 8328178207827300682, guid: 2907bfc9e9731a644b71686de80b9d52, type: 3}
+    instantiationMode: 1
+  - dependency: {fileID: -1728013695380148634, guid: 744f99b695190f54c8d612102aa77f1a, type: 3}
+    instantiationMode: 1
+  - dependency: {fileID: 1380209117773144308, guid: 613b142a679f53f4f975a8edd10806c2, type: 3}
+    instantiationMode: 0
+  - dependency: {fileID: 2800000, guid: 2fd6421f253b4ef1a19526541f9ffc0c, type: 3}
+    instantiationMode: 1
+  - dependency: {fileID: 11400000, guid: 2e498d1c8094910479dc3e1b768306a4, type: 2}
+    instantiationMode: 1
+  - dependency: {fileID: 2100000, guid: ce2141a4971e3284e91b95d48e1951bc, type: 2}
+    instantiationMode: 0
+  - dependency: {fileID: 11400000, guid: c7b12b2866458f44fb076018b48d8fb4, type: 2}
+    instantiationMode: 0
+  - dependency: {fileID: 898271066512019448, guid: 905ca0c297c47ed4aae2a7a1aec70403, type: 3}
+    instantiationMode: 1
+  - dependency: {fileID: 8900000, guid: 69219a60e9fe38749bf4219bfc766eb7, type: 3}
+    instantiationMode: 1
+  - dependency: {fileID: 1279386992439560, guid: f8049a040195d804aae1044443781a84, type: 3}
+    instantiationMode: 0
+  - dependency: {fileID: 2100000, guid: 9a7cf8bd4cd49c94eb96dcbd385f6a8f, type: 2}
+    instantiationMode: 0
+  - dependency: {fileID: 3895535444614248388, guid: 12157d3b9112eb1429b9a4b1f8f5b604, type: 3}
+    instantiationMode: 0
+  - dependency: {fileID: 11400000, guid: 0d7378062cf94704d8b17ee9440d3b21, type: 2}
+    instantiationMode: 0
+  - dependency: {fileID: 2100000, guid: e95f412ee5abbc14597da11817d59113, type: 2}
+    instantiationMode: 1
+  - dependency: {fileID: 5573200067596421233, guid: b9bbf00b50e2f6d4cb631df84bdc0b06, type: 3}
+    instantiationMode: 0
+  - dependency: {fileID: 2800000, guid: ee148e281f3c41c5b4ff5f8a5afe5a6c, type: 3}
+    instantiationMode: 1
+  - dependency: {fileID: 11400000, guid: 4873acb8669c0e2418cb679a49e2bbe6, type: 2}
+    instantiationMode: 1
+  - dependency: {fileID: 87923789013685897, guid: c380008e51e47824fa964133a5c1aa5b, type: 3}
+    instantiationMode: 1
+  - dependency: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+    instantiationMode: 1
+  - dependency: {fileID: 2800000, guid: 57da91ef0c2a5489891995dc81537253, type: 3}
+    instantiationMode: 1
+  - dependency: {fileID: 12800000, guid: e3265ab4bf004d28a9537516768c1c75, type: 3}
+    instantiationMode: 1
+  templatePipeline: {fileID: 0}
+  badge: {fileID: 0}
+  addToDefaults: 0

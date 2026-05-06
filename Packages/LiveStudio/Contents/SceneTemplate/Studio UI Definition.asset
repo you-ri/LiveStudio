@@ -1,0 +1,101 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 820526b5935f298498a0cb6b6371467f, type: 3}
+  m_Name: Studio UI Definition
+  m_EditorClassIdentifier: 
+  menuItems:
+  - id: camera
+    icon: videocam
+    editorIcon: {fileID: 0}
+    label: Camera
+    page:
+      rid: 938059672656543835
+    position: 0
+    order: 290
+    accessLevel: 0
+  - id: scene
+    icon: widgets
+    editorIcon: {fileID: 0}
+    label: Scene
+    page:
+      rid: 1948541687429857378
+    position: 0
+    order: 100
+    accessLevel: 1
+  - id: settings
+    icon: 
+    editorIcon: {fileID: 0}
+    label: Settings
+    page:
+      rid: 1948541681775935488
+    position: 0
+    order: 500
+    accessLevel: 0
+  references:
+    version: 2
+    RefIds:
+    - rid: 938059672656543835
+      type: {class: CategoryPage, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
+      data:
+        selector:
+          rid: 938059672656543836
+        factory:
+          rid: 938059672656543837
+    - rid: 938059672656543836
+      type: {class: StandardObjectSelector, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
+      data:
+        category: Camera
+    - rid: 938059672656543837
+      type: {class: StandardObjectFactory, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
+      data:
+        factories: []
+    - rid: 1948541681775935488
+      type: {class: NavigatePage, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
+      data:
+        selector:
+          rid: 1948541681775935489
+    - rid: 1948541681775935489
+      type: {class: NavigateObjectSelector, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
+      data:
+        objectIds:
+        - ProjectManager
+    - rid: 1948541687429857378
+      type: {class: ScenePage, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
+      data:
+        experimental: 1
+        factory:
+          rid: 1948541687429857379
+    - rid: 1948541687429857379
+      type: {class: StandardObjectFactory, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
+      data:
+        factories:
+        - rid: 1948541982014701722
+        - rid: 1948541702825050202
+        - rid: 1948541932242993236
+    - rid: 1948541702825050202
+      type: {class: ExposedGameObjectWithTransformFactory, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl}
+      data:
+        prefab: {fileID: 1380209117773144308, guid: 613b142a679f53f4f975a8edd10806c2, type: 3}
+        _prefabGuid: 613b142a679f53f4f975a8edd10806c2
+        _accessLevel: 1
+    - rid: 1948541932242993236
+      type: {class: ExposedGameObjectWithTransformFactory, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl}
+      data:
+        prefab: {fileID: 87923789013685897, guid: c380008e51e47824fa964133a5c1aa5b, type: 3}
+        _prefabGuid: c380008e51e47824fa964133a5c1aa5b
+        _accessLevel: 2
+    - rid: 1948541982014701722
+      type: {class: ExposedCameraFactory, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      data:
+        prefab: {fileID: 8328178207827300682, guid: 2907bfc9e9731a644b71686de80b9d52, type: 3}
+        _prefabGuid: 2907bfc9e9731a644b71686de80b9d52
+        _accessLevel: 0

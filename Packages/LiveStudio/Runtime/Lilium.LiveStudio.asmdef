@@ -1,0 +1,60 @@
+{
+    "name": "Lilium.LiveStudio",
+    "rootNamespace": "Lilium.LiveStudio",
+    "references": [
+        "Lilium.RemoteControl",
+        "Lilium.RemoteControl.Core",
+        "Lilium.RemoteControl.Reflection",
+        "Lilium.RemoteControl.UI",
+        "Lilium.NativeGamepad",
+        "Unity.Cinemachine",
+        "Unity.InputSystem",
+        "Unity.Mathematics",
+        "Unity.Burst",
+        "Unity.Collections",
+        "Unity.RenderPipelines.Universal.Runtime",
+        "Unity.RenderPipelines.Core.Runtime",
+        "Unity.Animation.Rigging",
+        "Unity.Timeline",
+        "Unity.AI.Navigation",
+        "Newtonsoft.Json",
+        "Klak.Spout.Runtime",
+        "GUID:647923a87dff76e40bcb797783a11b03",
+        "GUID:05dd262a0c0a2f841b8252c8c3815582",
+        "GUID:e47c917724578cc43b5506c17a27e9a0",
+        "GUID:8d76e605759c3f64a957d63ef96ada7c",
+        "GUID:b7aa47b240b57de44a4b2021c143c9bf",
+        "GUID:e8063cf3a345f9c46b7c7c4f14d54285",
+        "glTFast"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "jp.keijiro.klak.spout",
+            "expression": "",
+            "define": "KEIJIRO_KLAK_SPOUT"
+        },
+        {
+            "name": "com.hecomi.uosc",
+            "expression": "",
+            "define": "HECOMI_UOSC"
+        },
+        {
+            "name": "com.vrmc.vrm",
+            "expression": "",
+            "define": "VRMC_VRM10"
+        },
+        {
+            "name": "com.unity.cloud.gltfast",
+            "expression": "",
+            "define": "UNITY_GLTFAST"
+        }
+    ],
+    "noEngineReferences": false
+}

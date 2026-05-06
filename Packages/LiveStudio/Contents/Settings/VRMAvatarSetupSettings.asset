@@ -1,0 +1,16 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7842315e623fa2b4db4d178345c41a38, type: 3}
+  m_Name: VRMAvatarSetupSettings
+  m_EditorClassIdentifier: 
+  _characterProviderPrefab: {fileID: 5573200067596421233, guid: b9bbf00b50e2f6d4cb631df84bdc0b06, type: 3}
+  _postRigArmPrefab: {fileID: 3895535444614248388, guid: 12157d3b9112eb1429b9a4b1f8f5b604, type: 3}

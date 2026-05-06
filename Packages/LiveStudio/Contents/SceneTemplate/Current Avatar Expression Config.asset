@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 467cc8bc1ac5a0848b6db71c0ed503d0, type: 3}
+  m_Name: Current Avatar Expression Config
+  m_EditorClassIdentifier: 
+  sourceWeightAdjustments:
+    adjustments: []
+  neutralExpression:
+    name: 
+    blendTime: 0.2
+    blinkWeightInfluence: 1
+    eyesWeightInfluence: 1
+    mouthWeightInfluence: 1
+    browWeightInfluence: 1
+    cheekWeightInfluence: 1
+    adjustments: []
+  expressions: []

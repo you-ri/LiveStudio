@@ -1,0 +1,19 @@
+{
+    "name": "Lilium.LiveStudio.Editor",
+    "rootNamespace": "Lilium.LiveStudio.Editor",
+    "references": [
+        "Lilium.LiveStudio",
+        "Unity.InputSystem"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
