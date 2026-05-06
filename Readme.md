@@ -25,32 +25,6 @@ More packages will be added here over time.
 
 ---
 
-## Versioning
-
-LiveStudio uses **monorepo-wide synchronized SemVer**: every package under `Packages/` shares the same `X.Y.Z` core in its `package.json`. A release bumps the SemVer of all packages together and tags the repository as `v<X.Y.Z>`. This trades strict per-package SemVer for low operational overhead as the package count grows.
-
-Each package carries its own UPM lifecycle suffix (`-exp.N`, `-pre.N`, or none), reflecting maturity independently. The release workflow preserves each package's stage and resets the suffix counter to `1` on every SemVer bump (so `0.19.1-exp.3` becomes `0.19.2-exp.1` after a `patch` bump).
-
-Tag → package mapping is consistent: pinning `#v0.19.2` works for any package and gives you a compatible set as of that release. Tags do not include the suffix.
-
----
-
-## Branches
-
-Promotion flow: **`dev` → `beta` → `main`**.
-
-| Branch | Role |
-|---|---|
-| `main` | **Stable**. Tags (`vX.Y.Z`) are cut here. Default branch for installs that don't specify `#fragment`. |
-| `beta` | Pre-release / release-candidate. Releases are cut from here (the Release workflow runs on `beta`, which then fast-forwards `main` and tags). |
-| `dev` | **Active development**. Day-to-day commits land here, either directly or via short-lived feature branches that merge in and are then deleted. |
-
-Long-lived branches are limited to these three. Force-pushing to any of them is forbidden; everything else is allowed for low-friction solo development. The same protection rules can later be tightened to require pull requests if more contributors join.
-
-When a batch of work on `dev` is ready to release, fast-forward `beta` to `dev` (`git push origin dev:beta`) and run the Release workflow.
-
----
-
 ## Installation
 
 Each package is installed individually using the UPM Git URL `?path=` syntax.
