@@ -72,5 +72,24 @@ namespace Lilium.RemoteControl
                 _ = instance.server?.BroadcastMessage(jObject, "exposed_object_updated");
             }
         }
+
+        /// <summary>
+        /// Notify connected clients that the ExposedClass / ExposedEnum tables have been
+        /// rebuilt and they should refetch /exposed/types and /exposed/enums.
+        /// Payload is intentionally empty — the receiver pulls fresh data via REST so that
+        /// types and enums stay consistent.
+        /// </summary>
+        public static void BroadcastTypesUpdate()
+        {
+            var jObject = new JObject
+            {
+                ["type"] = "types_update"
+            };
+
+            foreach (var instance in RemoteControlServerManager.servers.Values)
+            {
+                _ = instance.server?.BroadcastMessage(jObject, "types_update");
+            }
+        }
     }
 }
