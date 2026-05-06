@@ -4,7 +4,7 @@
   "version": "0.19.1-exp.1",
   "description": "Base package for VTuber live streaming applications. Provides Camera/Lighting/Scene/Build/RemoteControl infrastructure and shared localization that are independent from any specific motion capture system.",
   "author": {
-    "name": "SYRIZE",
+    "name": "Syrize",
     "email": "you-ri@sasakingdom.com",
     "url": "https://github.com/you-ri"
   },
