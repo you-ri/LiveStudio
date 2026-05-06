@@ -229,7 +229,9 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 return (0, 0);
             }
 
-            // ColliderGroup は PhysBone あたり 1 つ作って全チェーンで共有
+            // ColliderGroup は PhysBone あたり 1 つ作って全チェーンで共有。
+            // ルート GO に Component が大量に積まれるのを避けるため、専用の子 GO "ColliderGroup" にまとめる
+            // (UniVRM Importer が "secondary" 子 GO にまとめるのと同じパターン)。
             VRM10SpringBoneColliderGroup sharedGroup = null;
             if (pb.colliders != null)
             {
@@ -238,7 +240,8 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     if (pbc == null || !colliderMap.TryGetValue(pbc, out var vrmCol)) continue;
                     if (sharedGroup == null)
                     {
-                        sharedGroup = Undo.AddComponent<VRM10SpringBoneColliderGroup>(vrm10.gameObject);
+                        var container = EnsureColliderGroupContainer(vrm10);
+                        sharedGroup = Undo.AddComponent<VRM10SpringBoneColliderGroup>(container);
                         sharedGroup.Name = BuildSpringName(pb);
                         vrm10.SpringBone.ColliderGroups.Add(sharedGroup);
                     }
@@ -334,7 +337,75 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 spring.Joints.Add(joint);
                 jointCount++;
             }
+
+            // VRM10 SpringBone の FastSpringBoneBuffer は spring.joints.Length - 1 までしかループしないため、
+            // 末端 Joint 自体はシミュレーションされない。VRC PhysBone と挙動を揃えるため、
+            // 末端 Joint の子に "_end" Transform を生成し、これをチェーンの最後の Joint (= tail 専用) として登録する。
+            if (chain.Count >= 2)
+            {
+                var leaf = chain[chain.Count - 1];
+                var parentOfLeaf = chain[chain.Count - 2];
+                var endTr = EnsureLeafEndTransform(leaf, parentOfLeaf);
+                if (endTr != null)
+                {
+                    var endJoint = endTr.gameObject.GetComponent<VRM10SpringBoneJoint>();
+                    if (endJoint == null)
+                    {
+                        endJoint = Undo.AddComponent<VRM10SpringBoneJoint>(endTr.gameObject);
+                    }
+                    if (endJoint != null)
+                    {
+                        // _end Joint のパラメータは FastSpringBoneBuffer のループ範囲外で参照されないため、
+                        // デフォルト値のままで問題ない (tail position の参照点としてのみ使われる)。
+                        spring.Joints.Add(endJoint);
+                        jointCount++;
+                    }
+                }
+            }
+
             return jointCount;
+        }
+
+        private static GameObject EnsureColliderGroupContainer(Vrm10Instance vrm10)
+        {
+            const string ContainerName = "ColliderGroup";
+            var existing = vrm10.transform.Find(ContainerName);
+            if (existing != null) return existing.gameObject;
+
+            var go = new GameObject(ContainerName);
+            Undo.RegisterCreatedObjectUndo(go, "Create VRM SpringBone ColliderGroup Container");
+            Undo.SetTransformParent(go.transform, vrm10.transform, "Reparent ColliderGroup Container");
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+            go.transform.localScale = Vector3.one;
+            return go;
+        }
+
+        private static Transform EnsureLeafEndTransform(Transform leaf, Transform parent)
+        {
+            var endName = $"{leaf.name}_end";
+
+            // 既存の同名子があれば再利用 (再変換時の重複生成回避)
+            var existing = leaf.Find(endName);
+            if (existing != null) return existing;
+
+            var delta = leaf.position - parent.position;
+            if (delta.sqrMagnitude < 1e-10f)
+            {
+                // 親と末端が同位置: 方向を決めようがないので安全側にフォールバック
+                VRChatAvatarTransferLog.Warn(
+                    $"Leaf '{leaf.name}' coincides with its parent '{parent.name}'. " +
+                    "Falling back to a small +Y offset for the SpringBone tail.");
+                delta = Vector3.up * 0.01f;
+            }
+
+            var go = new GameObject(endName);
+            Undo.RegisterCreatedObjectUndo(go, "Create VRM SpringBone Tail");
+            Undo.SetTransformParent(go.transform, leaf, "Reparent VRM SpringBone Tail");
+            go.transform.position = leaf.position + delta;
+            go.transform.localRotation = Quaternion.identity;
+            go.transform.localScale = Vector3.one;
+            return go.transform;
         }
 
         private static string BuildSpringName(VRCPhysBone pb)
