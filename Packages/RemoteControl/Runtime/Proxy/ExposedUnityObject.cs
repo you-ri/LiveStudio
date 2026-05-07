@@ -245,7 +245,7 @@ namespace Lilium.RemoteControl
         // serialization reads/writes this field directly. OnBeforeExposedSerialize
         // refreshes _name from the live state before save; OnAfterExposedDeserialize
         // applies _name to _reference.name and _fallbackName after load.
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("name")]
         private string _name;
 
@@ -360,7 +360,7 @@ namespace Lilium.RemoteControl
         }
 
 
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("active")]
         private bool _active = true;
 
@@ -491,7 +491,7 @@ namespace Lilium.RemoteControl
         [NonSerialized]
         Transform _attachedTransform;
 
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("transform")]
         private TransformValue _transform = TransformValue.identity;
 
@@ -609,7 +609,7 @@ namespace Lilium.RemoteControl
         private string _fallbackName;
 
         // Shadow Field for name. See ExposedUnityObjectProxy for the same pattern.
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("name")]
         private string _name;
 

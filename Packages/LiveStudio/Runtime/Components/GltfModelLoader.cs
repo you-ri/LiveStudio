@@ -14,7 +14,7 @@ namespace Lilium.LiveStudio
     [FormerlyExposedAs("GLTFModelLoader")]
     public class GltfModel : MonoBehaviour
     {
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("path")]
         private string _path;
 

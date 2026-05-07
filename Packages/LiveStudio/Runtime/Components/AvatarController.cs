@@ -121,6 +121,7 @@ namespace Lilium.LiveStudio
 
         [SerializeField]
         [ExposedField, Hide]
+        [FormerlyExposedAs("_config")]
         private AvatarExpressionConfig _expressionConfig;
 
         public AvatarExpressionConfig config => _expressionConfig;
@@ -497,6 +498,10 @@ namespace Lilium.LiveStudio
         [ExposedFunction, Hide]
         IEnumerable<ControlExpressionInfo> GetExpressionBindings()
         {
+            if (_expressionConfig == null)
+            {
+                return Array.Empty<ControlExpressionInfo>();
+            }
             var expressionKeys = ExpressionService.GetAvailableExpressions();
             return _expressionConfig.expressions.Where(exp => expressionKeys.Any(key => key.name == exp.name)).Select(t => new ControlExpressionInfo
             {

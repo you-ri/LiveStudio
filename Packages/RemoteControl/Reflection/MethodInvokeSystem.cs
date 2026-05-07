@@ -268,12 +268,12 @@ namespace Lilium.RemoteControl.Reflection
             }
             catch (TargetInvocationException ex)
             {
-                Debug.LogError($"[Reflection] Method invocation failed: {ex.InnerException?.Message ?? ex.Message}");
+                Debug.LogError($"[Reflection] Method invocation failed: {ex.InnerException?.ToString() ?? ex.ToString()}");
                 return null;
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[Reflection] Method invocation failed: {ex.Message}");
+                Debug.LogError($"[Reflection] Method invocation failed: {ex}");
                 return null;
             }
         }
@@ -286,12 +286,12 @@ namespace Lilium.RemoteControl.Reflection
             }
             catch (TargetInvocationException ex)
             {
-                Debug.LogError($"[Reflection] Method invocation failed: {ex.InnerException?.Message ?? ex.Message}");
+                Debug.LogError($"[Reflection] Method invocation failed: {ex.InnerException?.ToString() ?? ex.ToString()}");
                 return null;
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[Reflection] Method invocation failed: {ex.Message}");
+                Debug.LogError($"[Reflection] Method invocation failed: {ex}");
                 return null;
             }
         }

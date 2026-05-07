@@ -85,7 +85,7 @@ namespace Lilium.RemoteControl
         }
 
         //TODO: パフォーマンス改善の余地あり
-        public bool isExposedObjectReference => type.isExposedObjectReference && ExposedClass.Has(GetPolymorphicValueType());
+        public bool isExposedObjectReference => type.isExposedObjectReference && GetPolymorphicValueType() is Type t && ExposedClass.Has(t);
 
         public int arrayLength
         {

@@ -61,7 +61,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("backgroundMode")]
         BackgroundMode _backgroundMode = BackgroundMode.Cubemap;
 
@@ -91,13 +91,13 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("backgroundTexture")]
         private ExternalTexture _backgroundTexture;
 
         // --- Cubemap mode ---
 
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("skyboxRotation")]
         private float _skyboxRotation = 0f;
 
@@ -112,7 +112,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("skyboxExposure")]
         private float _skyboxExposure = 1f;
 
@@ -140,7 +140,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("imageFitMode")]
         ImageFitMode _imageFitMode = ImageFitMode.AutoFit;
 

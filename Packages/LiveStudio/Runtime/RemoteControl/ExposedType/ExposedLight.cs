@@ -9,7 +9,7 @@ namespace Lilium.LiveStudio
     [ExposedClass(Category = "Light", Icon = "lightbulb")]
     public class ExposedLight : ExposedUnityObjectProxy<ExposedLight, Light>
     {
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("enabled")]
         private bool _enabled = true;
 
@@ -24,7 +24,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("color")]
         private Color _color = Color.white;
 
@@ -39,7 +39,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("intensity")]
         private float _intensity = 1f;
 
@@ -54,7 +54,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("shadow")]
         private bool _shadow = true;
 
@@ -69,7 +69,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("transform")]
         private TransformValue _transform = TransformValue.identity;
 

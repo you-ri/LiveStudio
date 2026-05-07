@@ -115,6 +115,7 @@ namespace Lilium.LiveStudio
             if (camera == null) return;
 
             _orbitalFollow = Lilium.RemoteControl.GameObjectUtility.GetOrAddComponent<CinemachineOrbitalFollow>(camera.gameObject);
+            _orbitalFollow.Radius = 1;
             _rotationComposer = Lilium.RemoteControl.GameObjectUtility.GetOrAddComponent<CinemachineRotationComposer>(camera.gameObject);
             _camera = camera;
 
