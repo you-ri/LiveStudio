@@ -1,0 +1,27 @@
+{
+    "name": "Lilium.LiveStudio.Virgo.Editor.Tests",
+    "rootNamespace": "Lilium.LiveStudio.Virgo.EditorTests",
+    "references": [
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner",
+        "Lilium.LiveStudio.Virgo",
+        "Lilium.LiveStudio",
+        "Lilium.RemoteControl",
+        "Unity.InputSystem"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

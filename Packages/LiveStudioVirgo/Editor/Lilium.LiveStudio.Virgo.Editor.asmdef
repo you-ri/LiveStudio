@@ -1,0 +1,34 @@
+{
+    "name": "Lilium.LiveStudio.Virgo.Editor",
+    "rootNamespace": "Lilium.LiveStudio.Virgo.Editor",
+    "references": [
+        "Lilium.LiveStudio",
+        "Lilium.LiveStudio.Editor",
+        "GUID:2085b34bb72c92d4e9e20d2a879f115c",
+        "GUID:4307f53044263cf4b835bd812fc161a4",
+        "GUID:75469ad4d38634e559750d17036d5f7c",
+        "GUID:d8b63aba1907145bea998dd612889d6b",
+        "GUID:e0cd26848372d4e5c891c569017e11f1",
+        "GUID:5238a1cd812e16c48aff723910458dbb",
+        "GUID:5c6710f7460c812409cb033cd760ed08",
+        "GUID:e47c917724578cc43b5506c17a27e9a0",
+        "GUID:8a2b7b67c367ae442ac20df4372b2cf8"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.vrmc.vrm",
+            "expression": "",
+            "define": "VRMC_VRM10"
+        }
+    ],
+    "noEngineReferences": false
+}

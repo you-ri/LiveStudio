@@ -1,0 +1,52 @@
+{
+    "name": "Lilium.LiveStudio.Virgo",
+    "rootNamespace": "Lilium.LiveStudio.Virgo",
+    "references": [
+        "Lilium.RemoteControl.Core",
+        "GUID:3f0594a14a115274bb20bef8ed9ed08f",
+        "GUID:4307f53044263cf4b835bd812fc161a4",
+        "GUID:75469ad4d38634e559750d17036d5f7c",
+        "GUID:d8b63aba1907145bea998dd612889d6b",
+        "GUID:e0cd26848372d4e5c891c569017e11f1",
+        "GUID:5c6710f7460c812409cb033cd760ed08",
+        "GUID:647923a87dff76e40bcb797783a11b03",
+        "GUID:05dd262a0c0a2f841b8252c8c3815582",
+        "GUID:e47c917724578cc43b5506c17a27e9a0",
+        "GUID:8d76e605759c3f64a957d63ef96ada7c",
+        "GUID:b7aa47b240b57de44a4b2021c143c9bf",
+        "GUID:e8063cf3a345f9c46b7c7c4f14d54285",
+        "GUID:7cdfac5ef1f961d4ebfe51361a2020bd",
+        "GUID:c0fa96d614e415a4ba44f51cb9855fc2",
+        "GUID:a42927d1d4a3b4cda9b076a7adecb9cc"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "jp.keijiro.klak.spout",
+            "expression": "",
+            "define": "KEIJIRO_KLAK_SPOUT"
+        },
+        {
+            "name": "com.hecomi.uosc",
+            "expression": "",
+            "define": "HECOMI_UOSC"
+        },
+        {
+            "name": "com.vrmc.vrm",
+            "expression": "",
+            "define": "VRMC_VRM10"
+        },
+        {
+            "name": "com.unity.cloud.gltfast",
+            "expression": "",
+            "define": "UNITY_GLTFAST"
+        }
+    ],
+    "noEngineReferences": false
+}

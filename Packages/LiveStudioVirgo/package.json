@@ -1,0 +1,32 @@
+{
+  "name": "jp.lilium.livestudio.virgo",
+  "displayName": "Lilium LiveStudio Virgo Extension",
+  "version": "0.19.1-exp.1",
+  "description": "VirgoMotion adapter for jp.lilium.livestudio. Receives ARKit / MediaPipe motion frames over UDP, talks to the Fusion process via REST/SSE, and bridges the wire format into the LiveStudio avatar pipeline.",
+  "author": {
+    "name": "Syrize",
+    "email": "you-ri@sasakingdom.com",
+    "url": "https://github.com/you-ri"
+  },
+  "unity": "2022.3",
+  "license": "MIT",
+  "documentationUrl": "https://github.com/you-ri/LiveStudio/tree/main/Packages/LiveStudioVirgo",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/you-ri/LiveStudio.git",
+    "directory": "Packages/LiveStudioVirgo"
+  },
+  "keywords": [
+    "vtuber",
+    "live",
+    "studio",
+    "virgo",
+    "motion capture"
+  ],
+  "dependencies": {
+    "jp.lilium.livestudio": "0.19.1-exp.1",
+    "jp.lilium.remotecontrol": "0.19.1-exp.1",
+    "com.unity.cinemachine": "3.1.5"
+  },
+  "samples": []
+}
