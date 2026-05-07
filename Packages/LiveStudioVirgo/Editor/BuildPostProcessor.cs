@@ -16,6 +16,9 @@ namespace Lilium.LiveStudio.Virgo.Editor
     {
         private const string kEditorPrefsLastBuildPathKey = "Lilium.LiveStudio.Virgo.LastBuildPath";
 
+        // Tools~ を持つパッケージ群。すべての Tools~ を build/Tools/ にマージコピーする。
+        private static readonly string[] kToolsSourcePackages = { "jp.lilium.remotecontrol", "jp.lilium.livestudio.virgo" };
+
         public int callbackOrder => 0;
 
         public void OnPostprocessBuild(BuildReport report)
@@ -32,29 +35,10 @@ namespace Lilium.LiveStudio.Virgo.Editor
         }
 
         /// <summary>
-        /// Tools~フォルダの内容をビルド出力にコピー
+        /// 各パッケージの Tools~ フォルダの内容をビルド出力にマージコピー
         /// </summary>
         private void CopyToolsFolder(string buildPath)
         {
-            // パッケージのTools~フォルダのパス
-            // PackageManager APIを使用してローカルパッケージの実際のパスを取得
-            var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssetPath("Packages/jp.lilium.livestudio.virgo");
-            if (packageInfo == null)
-            {
-                Debug.LogError("[Studio] Could not find package: jp.lilium.livestudio.virgo");
-                return;
-            }
-            string packagePath = packageInfo.resolvedPath;
-            string toolsSourcePath = Path.Combine(packagePath, "Tools~");
-
-            if (!Directory.Exists(toolsSourcePath))
-            {
-                Debug.LogWarning($"[Studio] Tools~ folder not found: {toolsSourcePath}");
-                return;
-            }
-
-            // ビルド出力のToolsフォルダのパス
-            // 実行ファイルと同じディレクトリにToolsフォルダを作成
             string buildDirectory = Path.GetDirectoryName(buildPath);
             string toolsDestPath = Path.Combine(buildDirectory, "Tools");
 
@@ -66,10 +50,31 @@ namespace Lilium.LiveStudio.Virgo.Editor
                     Directory.Delete(toolsDestPath, true);
                 }
 
-                // Tools~フォルダをコピー
-                CopyDirectory(toolsSourcePath, toolsDestPath);
+                bool copiedAny = false;
+                foreach (var packageName in kToolsSourcePackages)
+                {
+                    var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForPackageName(packageName);
+                    if (packageInfo == null)
+                    {
+                        Debug.LogWarning($"[Studio] Package not found: {packageName}");
+                        continue;
+                    }
 
-                Debug.Log($"[Studio] Tools folder copied successfully to: {toolsDestPath}");
+                    string toolsSourcePath = Path.Combine(packageInfo.resolvedPath, "Tools~");
+                    if (!Directory.Exists(toolsSourcePath))
+                    {
+                        continue;
+                    }
+
+                    CopyDirectory(toolsSourcePath, toolsDestPath);
+                    Debug.Log($"[Studio] Tools folder copied from {toolsSourcePath} to: {toolsDestPath}");
+                    copiedAny = true;
+                }
+
+                if (!copiedAny)
+                {
+                    Debug.LogWarning("[Studio] No Tools~ folder found in any source package.");
+                }
             }
             catch (System.Exception e)
             {

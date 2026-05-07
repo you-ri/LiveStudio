@@ -18,6 +18,8 @@ namespace Lilium.LiveStudio.Virgo
         private const string kStudioOutputFolder = "Builds/VirgoMotionStudio";
         private const string kStudioExeName = "VirgoMotionStudio.exe";
         private const string kStudioPackageName = "jp.lilium.livestudio.virgo";
+        // Tools~ を持つパッケージ群。すべての Tools~ を build/Tools/ にマージコピーする。
+        private static readonly string[] kToolsSourcePackages = { "jp.lilium.remotecontrol", "jp.lilium.livestudio.virgo" };
         // ビルド中の一時出力先（再帰コピー問題を回避）
         private const string kTempBuildFolder = "Temp/StudioBuild";
 
@@ -150,23 +152,25 @@ namespace Lilium.LiveStudio.Virgo
                     // ディレクトリごとコピー
                     CopyDirectory(tempBuildDir, finalOutputDir);
 
-                    // Tools~フォルダを出力先にコピー（Toolsサブフォルダは除外して再帰コピーを防ぐ）
-                    var packageInfo = PackageInfo.FindForPackageName(kStudioPackageName);
-                    if (packageInfo != null)
+                    // 各パッケージの Tools~ フォルダを出力先にマージコピー（Toolsサブフォルダは除外して再帰コピーを防ぐ）
+                    string toolsDestDir = Path.Combine(finalOutputDir, "Tools");
+                    var excludeFolders = new HashSet<string> { "Tools" };
+                    foreach (var packageName in kToolsSourcePackages)
                     {
-                        string toolsSourceDir = Path.Combine(packageInfo.resolvedPath, "Tools~");
-                        string toolsDestDir = Path.Combine(finalOutputDir, "Tools");
-                        if (Directory.Exists(toolsSourceDir))
+                        var packageInfo = PackageInfo.FindForPackageName(packageName);
+                        if (packageInfo == null)
                         {
-                            Debug.Log($"[Studio] Copying Tools folder from: {toolsSourceDir}");
-                            var excludeFolders = new HashSet<string> { "Tools" };
-                            CopyDirectory(toolsSourceDir, toolsDestDir, excludeFolders);
-                            Debug.Log($"[Studio] Tools folder copied to: {toolsDestDir}");
+                            Debug.LogWarning($"[Studio] Package not found: {packageName}");
+                            continue;
                         }
-                    }
-                    else
-                    {
-                        Debug.LogWarning($"[Studio] Package not found: {kStudioPackageName}");
+                        string toolsSourceDir = Path.Combine(packageInfo.resolvedPath, "Tools~");
+                        if (!Directory.Exists(toolsSourceDir))
+                        {
+                            continue;
+                        }
+                        Debug.Log($"[Studio] Copying Tools folder from: {toolsSourceDir}");
+                        CopyDirectory(toolsSourceDir, toolsDestDir, excludeFolders);
+                        Debug.Log($"[Studio] Tools folder copied to: {toolsDestDir}");
                     }
 
                     Debug.Log("[Studio] ===== BUILD SUCCEEDED =====");

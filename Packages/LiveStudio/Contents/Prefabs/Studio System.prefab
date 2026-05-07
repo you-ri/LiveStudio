@@ -46,8 +46,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   pathType: 1
   applicationPath: VirgoMotionRemote/VirgoMotionRemote.exe
-  packageName: 
-  arguments: 
+  packageName: jp.lilium.remotecontrol
+  arguments:
   hideWindow: 1
   _autoClose: 1
   _applicationOnly: 1

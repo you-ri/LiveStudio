@@ -1,1 +1,3 @@
-/Tools~/
+# Tools~ ships built runtime apps (VirgoMotionFusion) with the package.
+# Override parent ignores (e.g. *.pdb, *.tmp, *.lock) so the full runtime is tracked.
+!Tools~/**

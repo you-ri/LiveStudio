@@ -1083,7 +1083,7 @@ namespace Lilium.RemoteControl.UI.Editor
 
         private static string _ResolveRemoteAppPath()
         {
-            var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssetPath("Packages/jp.lilium.livestudio.virgo");
+            var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssetPath("Packages/jp.lilium.remotecontrol");
             if (packageInfo != null)
                 return Path.GetFullPath(Path.Combine(packageInfo.resolvedPath, "Tools~/VirgoMotionRemote/VirgoMotionRemote.exe"));
             // フォールバック: プロジェクト相対
