@@ -1,4 +1,4 @@
-name: Release
+name: Beta Release
 
 on:
   workflow_dispatch:
@@ -7,12 +7,12 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  beta-release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: beta
+          ref: dev
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -24,7 +24,7 @@ jobs:
           # Version format per package: X.Y.Z, X.Y.Z-pre.N, or X.Y.Z-exp.N.
           # All packages must share the same X.Y.Z (SemVer core).
           # Versions are bumped manually via the /sync-version skill before this
-          # workflow is dispatched, so the current SemVer determines the tag.
+          # workflow is dispatched. The beta tag is "v<X.Y.Z>-beta".
           VRE='^([0-9]+)\.([0-9]+)\.([0-9]+)(-(pre|exp)\.([0-9]+))?$'
           FIRST_PKG=$(ls Packages | head -1)
           FIRST_V=$(jq -r .version "Packages/$FIRST_PKG/package.json")
@@ -39,9 +39,9 @@ jobs:
               exit 1
             fi
           done
-          echo "version=$SEMVER" >> "$GITHUB_OUTPUT"
-          echo "tag=v$SEMVER"   >> "$GITHUB_OUTPUT"
-          echo "Releasing v$SEMVER from current beta HEAD"
+          echo "version=$SEMVER"        >> "$GITHUB_OUTPUT"
+          echo "tag=v$SEMVER-beta"      >> "$GITHUB_OUTPUT"
+          echo "Beta-releasing v$SEMVER-beta from current dev HEAD"
 
       - name: Fail if tag already exists
         shell: bash
@@ -53,14 +53,15 @@ jobs:
             exit 1
           fi
 
-      - name: Fast-forward main to beta
+      - name: Fast-forward beta to dev
         shell: bash
         run: |
           set -euo pipefail
-          # beta always contains main as ancestor, so this is a fast-forward push
-          git push origin beta:main
+          # dev must have beta as ancestor; this is a fast-forward push.
+          # If beta has commits dev does not, merge beta back into dev first.
+          git push origin dev:beta
 
-      - name: Create tag and GitHub Release
+      - name: Create tag and GitHub Release (pre-release)
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -71,4 +72,5 @@ jobs:
           gh release create "${{ steps.ver.outputs.tag }}" \
             --title "LiveStudio ${{ steps.ver.outputs.tag }}" \
             --generate-notes \
-            --target main
+            --prerelease \
+            --target beta
