@@ -105,7 +105,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
 
             using (new EditorGUI.DisabledScope(convertedPrefab == null))
             {
-                if (GUILayout.Button("Export Package", GUILayout.Height(28)))
+                if (GUILayout.Button("Export", GUILayout.Height(28)))
                 {
                     DoExportPackage();
                 }
