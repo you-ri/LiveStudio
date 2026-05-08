@@ -141,6 +141,10 @@ namespace Lilium.LiveStudio
         private int _channel;
 
 #if KEIJIRO_KLAK_SPOUT
+        [SerializeField]
+        [Tooltip("SpoutResources asset from the Klak.Spout package (required for runtime SpoutSender creation).")]
+        SpoutResources _spoutResources;
+
         SpoutSender _spoutSender;
 #endif
 
@@ -209,8 +213,6 @@ namespace Lilium.LiveStudio
             _brain.ChannelMask = (OutputChannels)(1 << _channel);
 
 #if KEIJIRO_KLAK_SPOUT
-            if (_spoutSender == null)
-                _spoutSender = GetComponent<SpoutSender>();
             if (_spoutRenderTexture == null)
             {
                 _spoutRenderTexture = new RenderTexture(width, height, 24)
@@ -236,12 +238,30 @@ namespace Lilium.LiveStudio
 
         void _SetUseSpout(bool use)
         {
-            if (_spoutSender != null)
+            if (use)
             {
-                _spoutSender.enabled = use;
+                if (_spoutSender == null)
+                {
+                    _spoutSender = GetComponent<SpoutSender>();
+                    if (_spoutSender == null)
+                        _spoutSender = gameObject.AddComponent<SpoutSender>();
+                    if (_spoutResources != null)
+                        _spoutSender.SetResources(_spoutResources);
+                    else
+                        Debug.LogWarning("[LiveStudio] SpoutResources is not assigned on ScreenController; SpoutSender will not work.");
+                }
+                _spoutSender.enabled = true;
                 _spoutSender.sourceTexture = _spoutRenderTexture;
                 _spoutSender.spoutName = $"{gameObject.name}";
                 _spoutSender.captureMethod = CaptureMethod.Texture;
+            }
+            else
+            {
+                if (_spoutSender != null)
+                {
+                    GameObjectUtility.Destroy(_spoutSender);
+                    _spoutSender = null;
+                }
             }
             _camera.targetTexture = use ? _spoutRenderTexture : null;
         }

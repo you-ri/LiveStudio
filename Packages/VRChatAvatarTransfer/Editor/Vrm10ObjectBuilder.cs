@@ -17,7 +17,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
     /// </summary>
     internal static class Vrm10ObjectBuilder
     {
-        private const string OutputFolder = "Assets/VRChatAvatarTransfer";
+        internal const string OutputFolder = "Assets/VRChatAvatarTransfer";
 
         /// <summary>
         /// avatarRoot 用の VRM10Object をロードまたは生成し、内容を埋めて返す。
@@ -56,7 +56,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             return $"{OutputFolder}/{safe}.Vrm10.asset";
         }
 
-        private static string MakeFileSafe(string name)
+        internal static string MakeFileSafe(string name)
         {
             if (string.IsNullOrEmpty(name)) return "Avatar";
             var invalid = Path.GetInvalidFileNameChars();
@@ -68,7 +68,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             return sb.ToString();
         }
 
-        private static void EnsureFolder(string path)
+        internal static void EnsureFolder(string path)
         {
             if (AssetDatabase.IsValidFolder(path)) return;
             var parent = Path.GetDirectoryName(path).Replace('\\', '/');

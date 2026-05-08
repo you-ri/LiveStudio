@@ -23,8 +23,6 @@ This is a **package monorepo**. Each subdirectory under `Packages/` is an indepe
 | `jp.lilium.nativegamepad` | [`Packages/NativeGamepad`](./Packages/NativeGamepad) | Pre-release (`-pre`) | Native Windows gamepad support with background input (XInput + Windows.Gaming.Input). |
 | `jp.lilium.remotecontrol` | [`Packages/RemoteControl`](./Packages/RemoteControl) | Experimental (`-exp`) | REST API server with reflection-based remote control for Unity Editor and runtime. SSE-based realtime updates and `[ExposedProperty]`-driven UI generation. |
 
-More packages will be added here over time.
-
 ---
 
 ## Installation

@@ -58,6 +58,8 @@ https://github.com/you-ri/LiveStudio.git?path=/Packages/VRChatAvatarTransfer#bet
 
 ## Usage
 
+### From a Hierarchy GameObject
+
 1. Place a VRChat avatar (with `VRCAvatarDescriptor`) into the scene and select its root GameObject.
 2. From the menu bar, choose one of:
    - `Tools/Virgo Motion/VRChat Avatar Transfer/Convert PhysBone to VRM SpringBone (Selected)`
@@ -66,6 +68,25 @@ https://github.com/you-ri/LiveStudio.git?path=/Packages/VRChatAvatarTransfer#bet
 3. The converters operate in-place on the selected avatar(s).
 
 Multiple avatars can be selected and processed at once.
+
+### From a prefab asset (Project window)
+
+1. Select one or more VRChat avatar prefab assets in the Project window.
+2. From the menu bar, choose:
+   - `Tools/Virgo Motion/VRChat Avatar Transfer/Convert All (VRM SpringBone) (Prefab Asset)`
+3. Converted prefabs are written to `Assets/VRChatAvatarTransfer/{originalName}.prefab`. Existing files at the destination are overwritten without confirmation. The original prefab assets are not modified.
+
+### From the converter window
+
+1. Open `Tools/Virgo Motion/VRChat Avatar Transfer/Open Converter Window`.
+2. Drop a VRChat avatar prefab into the **VRChat Avatar Prefab** field.
+3. The window verifies the prefab against the prerequisites:
+   - It must be a prefab asset.
+   - The root must have `VRCAvatarDescriptor`.
+   - The root must have an `Animator` configured as Humanoid.
+
+   It also reports informational counts (PhysBone components, PhysBone colliders, VRC Constraints) and whether a custom FX AnimatorController is set on the avatar descriptor.
+4. The **Convert** button is enabled only when all required checks pass. Pressing it writes the converted prefab to `Assets/VRChatAvatarTransfer/{originalName}.prefab` (overwrites without confirmation).
 
 ---
 

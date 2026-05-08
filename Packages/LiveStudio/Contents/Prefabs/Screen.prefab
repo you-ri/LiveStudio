@@ -15,7 +15,6 @@ GameObject:
   - component: {fileID: 5139552168852688448}
   - component: {fileID: 7510228485317497027}
   - component: {fileID: 7245162037629223203}
-  - component: {fileID: 4574722517346394444}
   m_Layer: 0
   m_Name: Screen
   m_TagString: Screen
@@ -197,27 +196,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 1bb54b5fd4077e145a8d6e6af73e5e70, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   _channel: 0
---- !u!114 &4574722517346394444
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 898271066512019448}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 45099d624c1e6c14e9514f4e5ea1ed9c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _spoutName: Screen (VirgoMotion)
-  _keepAlpha: 1
-  _captureMethod: 2
-  _sourceCamera: {fileID: 8761647482215367987}
-  _sourceTexture: {fileID: 0}
-  _resources: {fileID: 11400000, guid: f449ebbe2051c2e4d993eaa773a410de, type: 2}
+  _spoutResources: {fileID: 11400000, guid: f449ebbe2051c2e4d993eaa773a410de, type: 2}
 --- !u!1 &1785982825748795599
 GameObject:
   m_ObjectHideFlags: 0
