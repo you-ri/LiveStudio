@@ -2,6 +2,9 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
 
+//TODO: 機能全体を無効。復活するかは未定。必要に応じて再度有効化すること。
+#if false
+
 #if UNITY_6000_3_OR_NEWER
 using UnityEditor.Toolbars;
 #endif
@@ -158,3 +161,5 @@ namespace Lilium.LiveStudio.Virgo.Editor
     }
 #endif
 }
+
+#endif

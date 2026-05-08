@@ -7,7 +7,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
 {
     internal static class VRChatAvatarTransferMenu
     {
-        private const string MenuRoot = "Tools/Virgo Motion/VRChat Avatar Transfer/";
+        private const string MenuRoot = "Tools/VRChat Avatar Transfer/";
 
         [MenuItem(MenuRoot + "Convert PhysBone to VRM SpringBone (Selected)")]
         private static void ConvertPhysBoneToSpringBone()
