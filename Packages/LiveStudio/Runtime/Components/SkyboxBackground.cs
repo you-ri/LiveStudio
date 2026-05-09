@@ -152,6 +152,9 @@ namespace Lilium.LiveStudio
         public void OnEnable()
         {
             _defaultSkybox = RenderSettings.skybox;
+            _backgroundMode = RenderSettings.skybox != null && RenderSettings.skybox.HasProperty(kMainTexId)
+                ? BackgroundMode.Image
+                : BackgroundMode.Cubemap;
 
             _InitializeMaterials();
             ExposedObjectRegistry.Create<SkyboxBackground>(this, kId);

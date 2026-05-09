@@ -27,6 +27,13 @@ namespace Lilium.LiveStudio
         public void OnEnable()
         {
             ExposedObjectRegistry.Create<EnvironmentLight>(this, kId);
+
+            _ambientLightSource = RenderSettings.ambientMode == UnityEngine.Rendering.AmbientMode.Flat
+                ? BackgroundType.SolidColor
+                : BackgroundType.Skybox;
+            _ambientColor = RenderSettings.ambientLight;
+            _ambientIntensity = RenderSettings.ambientIntensity;
+
             _ApplyAmbient();
         }
 
@@ -47,7 +54,7 @@ namespace Lilium.LiveStudio
         {
         }
 
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("ambientLightSource")]
         private BackgroundType _ambientLightSource = BackgroundType.SolidColor;
 
@@ -62,7 +69,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("ambientColor")]
         private Color _ambientColor = Color.gray;
 
@@ -77,7 +84,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("ambientIntensity")]
         private float _ambientIntensity = 1f;
 

@@ -106,7 +106,16 @@ namespace Lilium.LiveStudio
 
         public override void OnEnable()
         {
+            GameObjectUtility.RegisterHierarchyChanged(_OnHierarchyChanged);
+            SelectableService<IAvatarService>.onRegistered += _OnAvatarRegistered;
+            SelectableService<IAvatarService>.onUnregistered += _OnAvatarUnregistered;
+
             base.OnEnable();
+
+            _enabled = _reference != null ? _reference.enabled : true;
+            _color = _reference != null ? _reference.color : Color.white;
+            _intensity = _reference != null ? _reference.intensity : 1f;
+            _shadow = _reference != null ? _reference.shadows != LightShadows.None : true;
 
             _parent.SetSelf(this);
 
@@ -118,9 +127,6 @@ namespace Lilium.LiveStudio
             }
 
             _parent.onChanged += _OnParentChanged;
-            Lilium.RemoteControl.GameObjectUtility.RegisterHierarchyChanged(_OnHierarchyChanged);
-            SelectableService<IAvatarService>.onRegistered += _OnAvatarRegistered;
-            SelectableService<IAvatarService>.onUnregistered += _OnAvatarUnregistered;
             _UpdateAttachment();
             _ApplyLightSettings();
         }

@@ -1,7 +1,7 @@
 {
   "name": "jp.lilium.nativegamepad",
   "displayName": "Lilium Native Gamepad",
-  "version": "0.20.0-pre.1",
+  "version": "0.20.1-pre.1",
   "description": "Native Windows gamepad support with background input capability using XInput and Windows.Gaming.Input APIs",
   "author": {
     "name": "Syrize",

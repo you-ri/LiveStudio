@@ -22,7 +22,7 @@ namespace Lilium.LiveStudio
     [RequireComponent(typeof(CinemachineBrain))]
     public class ScreenController : MonoBehaviour, IExposedDeserializeCallback
     {
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("width")]
         private int _width = 1920;
 
@@ -44,7 +44,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("height")]
         private int _height = 1080;
 
@@ -66,7 +66,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("isFullScreen")]
         private bool _isFullScreen;
 
@@ -81,7 +81,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("backgroundType")]
         private BackgroundType _backgroundType = BackgroundType.Skybox;
 
@@ -96,7 +96,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [SerializeField, ExposedField, Hide]
+        [ExposedField, Hide]
         [FormerlyExposedAs("backgroundColor")]
         private Color _backgroundColor = Color.black;
 
@@ -211,6 +211,12 @@ namespace Lilium.LiveStudio
 
             _brain = GetComponent<CinemachineBrain>();
             _brain.ChannelMask = (OutputChannels)(1 << _channel);
+
+            _backgroundColor = _camera.backgroundColor;
+            _backgroundType = _camera.clearFlags == CameraClearFlags.Skybox ? BackgroundType.Skybox : BackgroundType.SolidColor;
+            _height = Screen.height;
+            _width = Screen.width;
+            _isFullScreen = Screen.fullScreen;
 
 #if KEIJIRO_KLAK_SPOUT
             if (_spoutRenderTexture == null)
