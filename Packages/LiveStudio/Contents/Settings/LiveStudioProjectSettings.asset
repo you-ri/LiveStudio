@@ -11,6 +11,6 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 21919f3952c7855479b3976104eb9950, type: 3}
   m_Name: LiveStudioProjectSettings
-  m_EditorClassIdentifier:
+  m_EditorClassIdentifier: 
   _vrmAvatarSetupSettings: {fileID: 11400000, guid: 4873acb8669c0e2418cb679a49e2bbe6, type: 2}
-  _savedBaseSubDir: Virgo Motion/Saved
+  _savedBaseSubDir: Virgo Motion

@@ -1,6 +1,7 @@
 // Copyright (c) You-Ri, 2026
 
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 
 using UnityEditor;
@@ -11,7 +12,10 @@ namespace Lilium.LiveStudio.Virgo.Editor
     static class LiveStudioVirgoProjectSettingsProvider
     {
         const string kSettingsPath = "Project/Live Studio/Virgo";
-        const string kAssetPath = "Packages/jp.lilium.livestudio.virgo/Contents/Settings/LiveStudioVirgoProjectSettings.asset";
+
+        // Editable proxy used while the active source is the package default. Edits go to this
+        // proxy first; on apply we persist its values as a per-project override and discard it.
+        static LiveStudioVirgoProjectSettings _packageDefaultProxy;
 
         [SettingsProvider]
         public static SettingsProvider CreateProvider()
@@ -27,10 +31,59 @@ namespace Lilium.LiveStudio.Virgo.Editor
 
         static void _DrawGUI()
         {
-            var settings = _GetOrCreateSettings();
-            if (settings == null) return;
+            var perProject = _LoadPerProjectAsset();
+            var packageDefault = perProject == null ? _LoadPackageDefault() : null;
 
-            using var so = new SerializedObject(settings);
+            if (perProject == null && packageDefault == null)
+            {
+                EditorGUILayout.HelpBox(
+                    "Live Studio Virgo settings asset is missing from the package. The package may be corrupted.",
+                    MessageType.Error);
+                return;
+            }
+
+            bool usingPackageDefault = perProject == null;
+            LiveStudioVirgoProjectSettings activeAsset = usingPackageDefault ? packageDefault : perProject;
+            LiveStudioVirgoProjectSettings editTarget;
+
+            if (usingPackageDefault)
+            {
+                if (_packageDefaultProxy == null)
+                {
+                    _packageDefaultProxy = Object.Instantiate(packageDefault);
+                    _packageDefaultProxy.name = packageDefault.name;
+                    _packageDefaultProxy.hideFlags = HideFlags.DontSave;
+                }
+                editTarget = _packageDefaultProxy;
+            }
+            else
+            {
+                if (_packageDefaultProxy != null)
+                {
+                    Object.DestroyImmediate(_packageDefaultProxy);
+                    _packageDefaultProxy = null;
+                }
+                editTarget = perProject;
+            }
+
+            using (new EditorGUI.DisabledScope(true))
+            {
+                EditorGUILayout.ObjectField(
+                    "Active Asset",
+                    activeAsset,
+                    typeof(LiveStudioVirgoProjectSettings),
+                    allowSceneObjects: false);
+            }
+            if (usingPackageDefault)
+            {
+                EditorGUILayout.HelpBox(
+                    "Showing package default. Editing any value creates a per-project override at " +
+                    LiveStudioVirgoProjectSettings.kAssetPath + ".",
+                    MessageType.Info);
+            }
+            EditorGUILayout.Space();
+
+            using var so = new SerializedObject(editTarget);
             so.Update();
 
             var iter = so.GetIterator();
@@ -42,35 +95,54 @@ namespace Lilium.LiveStudio.Virgo.Editor
 
             if (so.ApplyModifiedProperties())
             {
-                EditorUtility.SetDirty(settings);
+                if (usingPackageDefault)
+                {
+                    perProject = _PromoteProxyToOverride(editTarget);
+                    Object.DestroyImmediate(_packageDefaultProxy);
+                    _packageDefaultProxy = null;
+                }
+                EditorUtility.SetDirty(perProject);
             }
         }
 
-        static LiveStudioVirgoProjectSettings _GetOrCreateSettings()
+        static LiveStudioVirgoProjectSettings _LoadPerProjectAsset()
         {
             if (EditorBuildSettings.TryGetConfigObject(LiveStudioVirgoProjectSettings.kConfigKey, out LiveStudioVirgoProjectSettings settings) && settings != null)
             {
                 _EnsurePreloaded(settings);
                 return settings;
             }
-
-            settings = AssetDatabase.LoadAssetAtPath<LiveStudioVirgoProjectSettings>(kAssetPath);
-            if (settings == null)
+            var asset = AssetDatabase.LoadAssetAtPath<LiveStudioVirgoProjectSettings>(LiveStudioVirgoProjectSettings.kAssetPath);
+            if (asset != null)
             {
-                var dir = System.IO.Path.GetDirectoryName(kAssetPath);
-                if (!AssetDatabase.IsValidFolder(dir))
-                {
-                    System.IO.Directory.CreateDirectory(dir);
-                    AssetDatabase.Refresh();
-                }
-                settings = ScriptableObject.CreateInstance<LiveStudioVirgoProjectSettings>();
-                AssetDatabase.CreateAsset(settings, kAssetPath);
-                AssetDatabase.SaveAssets();
+                EditorBuildSettings.AddConfigObject(LiveStudioVirgoProjectSettings.kConfigKey, asset, true);
+                _EnsurePreloaded(asset);
+            }
+            return asset;
+        }
+
+        static LiveStudioVirgoProjectSettings _LoadPackageDefault()
+        {
+            return AssetDatabase.LoadAssetAtPath<LiveStudioVirgoProjectSettings>(LiveStudioVirgoProjectSettings.kPackageDefaultPath);
+        }
+
+        static LiveStudioVirgoProjectSettings _PromoteProxyToOverride(LiveStudioVirgoProjectSettings proxy)
+        {
+            var dir = Path.GetDirectoryName(LiveStudioVirgoProjectSettings.kAssetPath);
+            if (!AssetDatabase.IsValidFolder(dir))
+            {
+                Directory.CreateDirectory(dir);
+                AssetDatabase.Refresh();
             }
 
-            EditorBuildSettings.AddConfigObject(LiveStudioVirgoProjectSettings.kConfigKey, settings, true);
-            _EnsurePreloaded(settings);
-            return settings;
+            var copy = Object.Instantiate(proxy);
+            copy.name = Path.GetFileNameWithoutExtension(LiveStudioVirgoProjectSettings.kAssetPath);
+            AssetDatabase.CreateAsset(copy, LiveStudioVirgoProjectSettings.kAssetPath);
+            AssetDatabase.SaveAssets();
+
+            EditorBuildSettings.AddConfigObject(LiveStudioVirgoProjectSettings.kConfigKey, copy, true);
+            _EnsurePreloaded(copy);
+            return copy;
         }
 
         static void _EnsurePreloaded(Object asset)

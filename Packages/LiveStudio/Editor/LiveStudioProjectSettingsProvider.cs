@@ -1,6 +1,7 @@
 // Copyright (c) You-Ri, 2026
 
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 
 using UnityEditor;
@@ -11,7 +12,10 @@ namespace Lilium.LiveStudio.Editor
     static class LiveStudioProjectSettingsProvider
     {
         const string kSettingsPath = "Project/Live Studio";
-        const string kAssetPath = "Packages/jp.lilium.livestudio/Contents/Settings/LiveStudioProjectSettings.asset";
+
+        // Editable proxy used while the active source is the package default. Edits go to this
+        // proxy first; on apply we persist its values as a per-project override and discard it.
+        static LiveStudioProjectSettings _packageDefaultProxy;
 
         [SettingsProvider]
         public static SettingsProvider CreateProvider()
@@ -27,10 +31,59 @@ namespace Lilium.LiveStudio.Editor
 
         static void _DrawGUI()
         {
-            var settings = _GetOrCreateSettings();
-            if (settings == null) return;
+            var perProject = _LoadPerProjectAsset();
+            var packageDefault = perProject == null ? _LoadPackageDefault() : null;
 
-            using var so = new SerializedObject(settings);
+            if (perProject == null && packageDefault == null)
+            {
+                EditorGUILayout.HelpBox(
+                    "Live Studio settings asset is missing from the package. The package may be corrupted.",
+                    MessageType.Error);
+                return;
+            }
+
+            bool usingPackageDefault = perProject == null;
+            LiveStudioProjectSettings activeAsset = usingPackageDefault ? packageDefault : perProject;
+            LiveStudioProjectSettings editTarget;
+
+            if (usingPackageDefault)
+            {
+                if (_packageDefaultProxy == null)
+                {
+                    _packageDefaultProxy = Object.Instantiate(packageDefault);
+                    _packageDefaultProxy.name = packageDefault.name;
+                    _packageDefaultProxy.hideFlags = HideFlags.DontSave;
+                }
+                editTarget = _packageDefaultProxy;
+            }
+            else
+            {
+                if (_packageDefaultProxy != null)
+                {
+                    Object.DestroyImmediate(_packageDefaultProxy);
+                    _packageDefaultProxy = null;
+                }
+                editTarget = perProject;
+            }
+
+            using (new EditorGUI.DisabledScope(true))
+            {
+                EditorGUILayout.ObjectField(
+                    "Active Asset",
+                    activeAsset,
+                    typeof(LiveStudioProjectSettings),
+                    allowSceneObjects: false);
+            }
+            if (usingPackageDefault)
+            {
+                EditorGUILayout.HelpBox(
+                    "Showing package default. Editing any value creates a per-project override at " +
+                    LiveStudioProjectSettings.kAssetPath + ".",
+                    MessageType.Info);
+            }
+            EditorGUILayout.Space();
+
+            using var so = new SerializedObject(editTarget);
             so.Update();
 
             var iter = so.GetIterator();
@@ -42,35 +95,54 @@ namespace Lilium.LiveStudio.Editor
 
             if (so.ApplyModifiedProperties())
             {
-                EditorUtility.SetDirty(settings);
+                if (usingPackageDefault)
+                {
+                    perProject = _PromoteProxyToOverride(editTarget);
+                    Object.DestroyImmediate(_packageDefaultProxy);
+                    _packageDefaultProxy = null;
+                }
+                EditorUtility.SetDirty(perProject);
             }
         }
 
-        static LiveStudioProjectSettings _GetOrCreateSettings()
+        static LiveStudioProjectSettings _LoadPerProjectAsset()
         {
             if (EditorBuildSettings.TryGetConfigObject(LiveStudioProjectSettings.kConfigKey, out LiveStudioProjectSettings settings) && settings != null)
             {
                 _EnsurePreloaded(settings);
                 return settings;
             }
-
-            settings = AssetDatabase.LoadAssetAtPath<LiveStudioProjectSettings>(kAssetPath);
-            if (settings == null)
+            var asset = AssetDatabase.LoadAssetAtPath<LiveStudioProjectSettings>(LiveStudioProjectSettings.kAssetPath);
+            if (asset != null)
             {
-                var dir = System.IO.Path.GetDirectoryName(kAssetPath);
-                if (!AssetDatabase.IsValidFolder(dir))
-                {
-                    System.IO.Directory.CreateDirectory(dir);
-                    AssetDatabase.Refresh();
-                }
-                settings = ScriptableObject.CreateInstance<LiveStudioProjectSettings>();
-                AssetDatabase.CreateAsset(settings, kAssetPath);
-                AssetDatabase.SaveAssets();
+                EditorBuildSettings.AddConfigObject(LiveStudioProjectSettings.kConfigKey, asset, true);
+                _EnsurePreloaded(asset);
+            }
+            return asset;
+        }
+
+        static LiveStudioProjectSettings _LoadPackageDefault()
+        {
+            return AssetDatabase.LoadAssetAtPath<LiveStudioProjectSettings>(LiveStudioProjectSettings.kPackageDefaultPath);
+        }
+
+        static LiveStudioProjectSettings _PromoteProxyToOverride(LiveStudioProjectSettings proxy)
+        {
+            var dir = Path.GetDirectoryName(LiveStudioProjectSettings.kAssetPath);
+            if (!AssetDatabase.IsValidFolder(dir))
+            {
+                Directory.CreateDirectory(dir);
+                AssetDatabase.Refresh();
             }
 
-            EditorBuildSettings.AddConfigObject(LiveStudioProjectSettings.kConfigKey, settings, true);
-            _EnsurePreloaded(settings);
-            return settings;
+            var copy = Object.Instantiate(proxy);
+            copy.name = Path.GetFileNameWithoutExtension(LiveStudioProjectSettings.kAssetPath);
+            AssetDatabase.CreateAsset(copy, LiveStudioProjectSettings.kAssetPath);
+            AssetDatabase.SaveAssets();
+
+            EditorBuildSettings.AddConfigObject(LiveStudioProjectSettings.kConfigKey, copy, true);
+            _EnsurePreloaded(copy);
+            return copy;
         }
 
         static void _EnsurePreloaded(Object asset)
