@@ -1,4 +1,3 @@
-using System;
 using System.Diagnostics;
 using System.IO;
 using UnityEngine;
@@ -155,41 +154,16 @@ namespace Lilium.LiveStudio
         /// </summary>
         public void StartChildApplication()
         {
-            string applicationFullpath = ResolveToolApplicationPath(pathType, applicationPath, packageName);
-
-            if (string.IsNullOrEmpty(applicationFullpath))
-            {
-                UnityEngine.Debug.LogWarning("[Studio] Application path is not set.");
-                return;
-            }
-
             if (_childProcess != null && !_childProcess.HasExited)
             {
                 UnityEngine.Debug.LogWarning("[Studio] Child application is already running.");
                 return;
             }
 
-            // ダウンロードしたファイルの MOTW を除去して SmartScreen ブロックを回避
-            WindowsFileUnblock.UnblockFile(applicationFullpath);
-            string appDir = Path.GetDirectoryName(applicationFullpath);
-            if (!string.IsNullOrEmpty(appDir))
-                WindowsFileUnblock.UnblockDirectory(appDir);
+            string applicationFullpath = ResolveToolApplicationPath(pathType, applicationPath, packageName);
+            _childProcess = ChildProcessHost.Start(applicationFullpath, arguments, hideWindow);
 
-            ProcessStartInfo startInfo = new ProcessStartInfo
-            {
-                FileName = applicationFullpath,
-                Arguments = arguments,
-                UseShellExecute = true,
-                WindowStyle = hideWindow ? ProcessWindowStyle.Hidden : ProcessWindowStyle.Normal
-            };
-
-            _childProcess = Process.Start(startInfo);
-
-            if (_childProcess == null)
-            {
-                UnityEngine.Debug.LogError($"[Studio] Failed to start child application. path:{applicationFullpath}");
-            }
-            else
+            if (_childProcess != null)
             {
                 _RegisterEditorHook();
             }
@@ -200,38 +174,7 @@ namespace Lilium.LiveStudio
         /// </summary>
         public void StopChildApplication()
         {
-            if (_childProcess == null || _childProcess.HasExited)
-            {
-                _childProcess?.Dispose();
-                _childProcess = null;
-                return;
-            }
-
-            try
-            {
-                // CloseMainWindow を試行
-                if (_childProcess.CloseMainWindow())
-                {
-                    if (_childProcess.WaitForExit(5000))
-                    {
-                        UnityEngine.Debug.Log("[Studio] Child application terminated via CloseMainWindow.");
-                        return;
-                    }
-                }
-
-                // 強制終了
-                _childProcess.Kill();
-                UnityEngine.Debug.LogWarning("[Studio] Child application was forcibly terminated.");
-            }
-            catch (Exception ex)
-            {
-                UnityEngine.Debug.LogError($"[Studio] Error stopping child application: {ex.Message}");
-            }
-            finally
-            {
-                _childProcess?.Dispose();
-                _childProcess = null;
-            }
+            ChildProcessHost.Stop(ref _childProcess);
         }
 
         /// <summary>
