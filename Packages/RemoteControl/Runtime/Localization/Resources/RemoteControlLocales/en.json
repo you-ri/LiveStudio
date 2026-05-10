@@ -3,5 +3,7 @@
     "DIALOG_UNSAVED_CHANGES_MESSAGE": "The scene has unsaved changes. Save before quitting?",
     "DIALOG_SAVE_AS_TITLE": "Save Scene As",
     "DIALOG_OK": "OK",
-    "DIALOG_CANCEL": "Cancel"
+    "DIALOG_CANCEL": "Cancel",
+    "DIALOG_SAVE": "Save",
+    "DIALOG_DONT_SAVE": "Don't Save"
 }

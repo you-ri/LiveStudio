@@ -3,5 +3,7 @@
     "DIALOG_UNSAVED_CHANGES_MESSAGE": "シーンに未保存の変更があります。終了前に保存しますか？",
     "DIALOG_SAVE_AS_TITLE": "名前を付けてシーンを保存",
     "DIALOG_OK": "OK",
-    "DIALOG_CANCEL": "キャンセル"
+    "DIALOG_CANCEL": "キャンセル",
+    "DIALOG_SAVE": "保存",
+    "DIALOG_DONT_SAVE": "保存しない"
 }

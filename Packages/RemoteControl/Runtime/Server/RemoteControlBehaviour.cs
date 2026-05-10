@@ -243,16 +243,34 @@ namespace Lilium.RemoteControl.Server
 
             string title = LocalizationSystem.Translate("DIALOG_UNSAVED_CHANGES_TITLE");
             string message = LocalizationSystem.Translate("DIALOG_UNSAVED_CHANGES_MESSAGE");
-            string okLabel = LocalizationSystem.Translate("DIALOG_OK");
+            string yesLabel = LocalizationSystem.Translate("DIALOG_SAVE");
+            string noLabel = LocalizationSystem.Translate("DIALOG_DONT_SAVE");
             string cancelLabel = LocalizationSystem.Translate("DIALOG_CANCEL");
 
-            bool save = ConfirmDialog.Show(title, message, okLabel, cancelLabel);
-            Debug.Log($"[Debug][RemoteControl] dialog answered: save={save}, calling Application.Quit() again");
-            if (save && !_sceneSave.TrySaveOrPromptRuntime())
+            var result = ConfirmDialog.ShowYesNoCancel(title, message, yesLabel, noLabel, cancelLabel);
+            Debug.Log($"[Debug][RemoteControl] dialog answered: result={result}");
+
+            switch (result)
             {
-                _dialogPending = false;
-                yield break;
+                case ConfirmDialog.ConfirmResult.Yes:
+                    if (!_sceneSave.TrySaveOrPromptRuntime())
+                    {
+                        // The user cancelled the file picker; abort the quit so the app stays open.
+                        _dialogPending = false;
+                        yield break;
+                    }
+                    break;
+                case ConfirmDialog.ConfirmResult.No:
+                    // Quit without saving.
+                    break;
+                case ConfirmDialog.ConfirmResult.Cancel:
+                default:
+                    // The user wants to keep the app running; release the dialog gate so the next
+                    // wantsToQuit can show the prompt again.
+                    _dialogPending = false;
+                    yield break;
             }
+
             _sceneSave.allowQuit = true;
             Application.Quit();
         }
@@ -274,11 +292,13 @@ namespace Lilium.RemoteControl.Server
             }
 
             // ExitingPlayMode runs synchronously, so DisplayDialog reliably blocks here.
+            // Cancel-the-quit is intentionally omitted: ExitingPlayMode is informational and
+            // cannot be aborted, so we only ask Save vs Don't Save.
             bool save = UnityEditor.EditorUtility.DisplayDialog(
                 LocalizationSystem.Translate("DIALOG_UNSAVED_CHANGES_TITLE"),
                 LocalizationSystem.Translate("DIALOG_UNSAVED_CHANGES_MESSAGE"),
-                LocalizationSystem.Translate("DIALOG_OK"),
-                LocalizationSystem.Translate("DIALOG_CANCEL"));
+                LocalizationSystem.Translate("DIALOG_SAVE"),
+                LocalizationSystem.Translate("DIALOG_DONT_SAVE"));
             if (save) _sceneSave.TrySaveOrPromptEditor();
         }
 #endif

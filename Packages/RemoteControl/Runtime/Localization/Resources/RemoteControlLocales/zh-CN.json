@@ -3,5 +3,7 @@
     "DIALOG_UNSAVED_CHANGES_MESSAGE": "场景有未保存的更改。退出前是否保存？",
     "DIALOG_SAVE_AS_TITLE": "另存场景为",
     "DIALOG_OK": "确定",
-    "DIALOG_CANCEL": "取消"
+    "DIALOG_CANCEL": "取消",
+    "DIALOG_SAVE": "保存",
+    "DIALOG_DONT_SAVE": "不保存"
 }
