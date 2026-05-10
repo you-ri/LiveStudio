@@ -181,7 +181,8 @@ namespace Lilium.LiveStudio.Virgo
         [ExposedFunction]
         public override void ResetCamera()
         {
-            _offsetRotation =  new Vector3(0, _lastReceivedFrameData.camera.rotation.eulerAngles.y - _lastReceivedFrameData.root.rotation.eulerAngles.y, 0);
+            // Cancel the captured root Y so that the target's world Y rotation stays at the source transform's Y rotation (= start-time target world Y).
+            _offsetRotation = new Vector3(0, -_lastReceivedFrameData.root.rotation.eulerAngles.y, 0);
 
             // オフセット適用後のカメラワールド位置を原点に合わせる。キャラクターも同じ行列で変換されるため、撮影時のカメラ-キャラクター相対位置は保たれる。
             var rotation = Quaternion.Euler(_offsetRotation);
