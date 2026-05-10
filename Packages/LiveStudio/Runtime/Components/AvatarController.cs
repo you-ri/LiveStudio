@@ -10,7 +10,6 @@ using UnityEngine.Scripting;
 using Lilium.RemoteControl;
 
 using GameObjectUtility = Lilium.RemoteControl.GameObjectUtility;
-using UnityEngine.Serialization;
 
 namespace Lilium.LiveStudio
 {
