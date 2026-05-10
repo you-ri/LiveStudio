@@ -25,6 +25,8 @@ jobs:
           # All packages must share the same X.Y.Z (SemVer core).
           # Versions are bumped manually via the /sync-version skill before this
           # workflow is dispatched, so the current SemVer determines the tag.
+          # The tag itself is created by Beta Release; this workflow only
+          # promotes the existing prerelease to stable.
           VRE='^([0-9]+)\.([0-9]+)\.([0-9]+)(-(pre|exp)\.([0-9]+))?$'
           FIRST_PKG=$(ls Packages | head -1)
           FIRST_V=$(jq -r .version "Packages/$FIRST_PKG/package.json")
@@ -41,15 +43,23 @@ jobs:
           done
           echo "version=$SEMVER" >> "$GITHUB_OUTPUT"
           echo "tag=v$SEMVER"   >> "$GITHUB_OUTPUT"
-          echo "Releasing v$SEMVER from current beta HEAD"
+          echo "Promoting v$SEMVER from current beta HEAD"
 
-      - name: Fail if tag already exists
+      - name: Verify beta tag and release exist
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # Beta Release must have created the tag and a prerelease GitHub
+          # Release. Stable Release only promotes; it never creates new tags.
           git fetch --tags
-          if git rev-parse -q --verify "refs/tags/${{ steps.ver.outputs.tag }}" >/dev/null; then
-            echo "Tag ${{ steps.ver.outputs.tag }} already exists. Bump the SemVer core via /sync-version first." >&2
+          if ! git rev-parse -q --verify "refs/tags/${{ steps.ver.outputs.tag }}" >/dev/null; then
+            echo "Tag ${{ steps.ver.outputs.tag }} not found. Run Beta Release first." >&2
+            exit 1
+          fi
+          if ! gh release view "${{ steps.ver.outputs.tag }}" >/dev/null 2>&1; then
+            echo "GitHub Release ${{ steps.ver.outputs.tag }} not found. Run Beta Release first." >&2
             exit 1
           fi
 
@@ -60,15 +70,15 @@ jobs:
           # beta always contains main as ancestor, so this is a fast-forward push
           git push origin beta:main
 
-      - name: Create tag and GitHub Release
+      - name: Promote GitHub Release to stable
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          git tag "${{ steps.ver.outputs.tag }}"
-          git push origin "${{ steps.ver.outputs.tag }}"
-          gh release create "${{ steps.ver.outputs.tag }}" \
-            --title "LiveStudio ${{ steps.ver.outputs.tag }}" \
-            --generate-notes \
+          # Tag stays where Beta Release placed it (it is reachable from main
+          # via the fast-forward above). Only the GitHub Release metadata
+          # is updated: target → main, prerelease flag cleared.
+          gh release edit "${{ steps.ver.outputs.tag }}" \
+            --prerelease=false \
             --target main

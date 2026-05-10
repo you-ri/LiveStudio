@@ -24,7 +24,9 @@ jobs:
           # Version format per package: X.Y.Z, X.Y.Z-pre.N, or X.Y.Z-exp.N.
           # All packages must share the same X.Y.Z (SemVer core).
           # Versions are bumped manually via the /sync-version skill before this
-          # workflow is dispatched. The beta tag is "v<X.Y.Z>-beta".
+          # workflow is dispatched. The tag is "v<X.Y.Z>" and is shared with the
+          # eventual Release workflow (which promotes the same tag/release from
+          # prerelease to stable rather than creating a new one).
           VRE='^([0-9]+)\.([0-9]+)\.([0-9]+)(-(pre|exp)\.([0-9]+))?$'
           FIRST_PKG=$(ls Packages | head -1)
           FIRST_V=$(jq -r .version "Packages/$FIRST_PKG/package.json")
@@ -39,9 +41,9 @@ jobs:
               exit 1
             fi
           done
-          echo "version=$SEMVER"        >> "$GITHUB_OUTPUT"
-          echo "tag=v$SEMVER-beta"      >> "$GITHUB_OUTPUT"
-          echo "Beta-releasing v$SEMVER-beta from current dev HEAD"
+          echo "version=$SEMVER" >> "$GITHUB_OUTPUT"
+          echo "tag=v$SEMVER"    >> "$GITHUB_OUTPUT"
+          echo "Beta-releasing v$SEMVER from current dev HEAD"
 
       - name: Fail if tag already exists
         shell: bash
