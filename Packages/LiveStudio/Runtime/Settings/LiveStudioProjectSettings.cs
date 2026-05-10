@@ -25,6 +25,29 @@ namespace Lilium.LiveStudio
         [Tooltip("Documents フォルダ配下のサブディレクトリ。空ならパッケージ既定値 (LiveStudio/Saved) を使用。アプリのブランド名を設定する想定 (例: \"Virgo Motion/Saved\")。")]
         string _savedBaseSubDir = "";
 
+        [Header("Remote App")]
+        [Tooltip("If enabled, the configured Remote app is launched on application startup and stopped on shutdown.")]
+        [SerializeField] bool _launchRemoteOnStartup = true;
+
+        [SerializeField] PathType _remotePathType = PathType.PackageRelative;
+
+        [Tooltip("Application path relative to the resolved root (Tools~ folder for PackageRelative, Tools/ for ProjectRelative).")]
+        [SerializeField] string _remoteApplicationPath = "VirgoMotionRemote/VirgoMotionRemote.exe";
+
+        [Tooltip("Package name used to resolve Tools~ when pathType is PackageRelative.")]
+        [SerializeField] string _remotePackageName = "jp.lilium.remotecontrol";
+
+        [SerializeField] string _remoteArguments = "";
+
+        [SerializeField] bool _remoteHideWindow = true;
+
+        public bool launchRemoteOnStartup => _launchRemoteOnStartup;
+        public PathType remotePathType => _remotePathType;
+        public string remoteApplicationPath => _remoteApplicationPath;
+        public string remotePackageName => _remotePackageName;
+        public string remoteArguments => _remoteArguments;
+        public bool remoteHideWindow => _remoteHideWindow;
+
         static LiveStudioProjectSettings _instance;
 
         public static LiveStudioProjectSettings Instance

@@ -14,3 +14,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   _vrmAvatarSetupSettings: {fileID: 11400000, guid: 4873acb8669c0e2418cb679a49e2bbe6, type: 2}
   _savedBaseSubDir: Virgo Motion
+  _launchRemoteOnStartup: 1
+  _remotePathType: 1
+  _remoteApplicationPath: VirgoMotionRemote/VirgoMotionRemote.exe
+  _remotePackageName: jp.lilium.remotecontrol
+  _remoteArguments:
+  _remoteHideWindow: 1
