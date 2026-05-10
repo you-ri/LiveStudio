@@ -11,8 +11,8 @@ namespace Lilium.LiveStudio
         /// <summary>Per-project override path (created on first edit).</summary>
         public const string kAssetPath = "Assets/Settings/LiveStudioProjectSettings.asset";
 
-        /// <summary>Read-only package default referenced when no per-project override exists.</summary>
-        public const string kPackageDefaultPath = "Packages/jp.lilium.livestudio/Contents/Settings/LiveStudioProjectSettings.asset";
+        /// <summary>Resources path of the package default asset (no extension, relative to a Resources folder).</summary>
+        public const string kResourcesPath = "Settings/LiveStudioProjectSettings";
 
         public VRMAvatarSetupSettings vrmAvatarSetupSettings => _vrmAvatarSetupSettings;
 
@@ -64,16 +64,17 @@ namespace Lilium.LiveStudio
                 // 2. Per-project override that exists in AssetDatabase but is not yet registered.
                 _instance = UnityEditor.AssetDatabase.LoadAssetAtPath<LiveStudioProjectSettings>(kAssetPath);
                 if (_instance != null) return _instance;
-
-                // 3. Read-only package default.
-                _instance = UnityEditor.AssetDatabase.LoadAssetAtPath<LiveStudioProjectSettings>(kPackageDefaultPath);
-                if (_instance != null) return _instance;
 #endif
 
-                // 4. Final fallback for player builds that ship no preloaded asset.
+                // 3. Package default shipped via Resources. Works in both Editor and player builds.
+                _instance = Resources.Load<LiveStudioProjectSettings>(kResourcesPath);
+                if (_instance != null) return _instance;
+
+                // 4. Final fallback when no asset can be located. Warn so the cause is visible in player logs.
+                Debug.LogWarning("[LiveStudio] LiveStudioProjectSettings asset not found in Resources; using empty fallback. VRM avatar setup will be skipped.");
                 var fallback = CreateInstance<LiveStudioProjectSettings>();
                 fallback.hideFlags = HideFlags.DontSave;
-                return _instance != null ? _instance : fallback;
+                return fallback;
             }
         }
 

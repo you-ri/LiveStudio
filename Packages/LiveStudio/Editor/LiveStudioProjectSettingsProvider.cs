@@ -123,7 +123,7 @@ namespace Lilium.LiveStudio.Editor
 
         static LiveStudioProjectSettings _LoadPackageDefault()
         {
-            return AssetDatabase.LoadAssetAtPath<LiveStudioProjectSettings>(LiveStudioProjectSettings.kPackageDefaultPath);
+            return Resources.Load<LiveStudioProjectSettings>(LiveStudioProjectSettings.kResourcesPath);
         }
 
         static LiveStudioProjectSettings _PromoteProxyToOverride(LiveStudioProjectSettings proxy)
