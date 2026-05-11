@@ -60,4 +60,4 @@ https://github.com/you-ri/LiveStudio.git?path=/Packages/LiveStudioVirgo#beta
 
 ## License
 
-MIT — see the [LICENSE](../../LICENSE) at the repository root.
+Apache License 2.0 — see the [LICENSE](../../LICENSE) at the repository root.

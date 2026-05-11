@@ -92,4 +92,4 @@ Multiple avatars can be selected and processed at once.
 
 ## License
 
-MIT — see the [LICENSE](../../LICENSE) at the repository root.
+Apache License 2.0 — see the [LICENSE](../../LICENSE) at the repository root.

@@ -90,4 +90,4 @@ For automatic device detection and management, attach `BackgroundGamepadProvider
 
 ## License
 
-MIT — see the [LICENSE](../../LICENSE) at the repository root.
+Apache License 2.0 — see the [LICENSE](../../LICENSE) at the repository root.

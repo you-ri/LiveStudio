@@ -9,7 +9,7 @@
     "url": "https://github.com/you-ri"
   },
   "unity": "2022.3",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "documentationUrl": "https://github.com/you-ri/LiveStudio/tree/main/Packages/NativeGamepad",
   "repository": {
     "type": "git",

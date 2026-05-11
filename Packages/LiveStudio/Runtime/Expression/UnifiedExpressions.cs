@@ -1,3 +1,8 @@
+// Derived from VRCFaceTracking (https://github.com/benaclejames/VRCFaceTracking)
+// Copyright (c) benaclejames and VRCFaceTracking contributors.
+// Licensed under the Apache License, Version 2.0.
+// See THIRD_PARTY_NOTICES.md for details.
+
 namespace Lilium.LiveStudio
 {
     // TODO: Create expressions map to relate legacy shapes to new ones

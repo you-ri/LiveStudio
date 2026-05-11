@@ -4,7 +4,7 @@
   "displayName": "Lilium VRChat Avatar Transfer",
   "description": "Editor tools to bring VRChat avatars into non-VRChat environments (PhysBone -> VRM SpringBone, VRC Constraint -> Unity Constraint).",
   "unity": "2022.3",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "documentationUrl": "https://github.com/you-ri/LiveStudio/tree/main/Packages/VRChatAvatarTransfer",
   "repository": {
     "type": "git",

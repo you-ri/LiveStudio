@@ -51,4 +51,4 @@ See each package's own README for required SDKs (e.g. VRChat SDK, UniVRM) and Un
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Copyright (c) You-Ri, 2026.
+Apache License 2.0 — see [LICENSE](LICENSE). Copyright (c) You-Ri, 2026.

@@ -106,6 +106,6 @@ Internal details (Roslyn 4.0 constraint, fallback behavior when the generator is
 
 ## License
 
-MIT — see the [LICENSE](../../LICENSE) at the repository root.
+Apache License 2.0 — see the [LICENSE](../../LICENSE) at the repository root.
 
 Third-party dependencies and their licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

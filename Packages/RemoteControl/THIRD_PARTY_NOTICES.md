@@ -1,15 +1,17 @@
 # Third Party Notices
 
-`jp.lilium.remotecontrol` is licensed under the MIT License (see [LICENSE.md](LICENSE.md)).
-This document lists third-party software referenced by this package and their respective license texts.
+`jp.lilium.remotecontrol` is licensed under the Apache License 2.0 (see [LICENSE.md](LICENSE.md)).
+This document lists third-party software referenced or bundled by this package and their respective license terms.
 
 ---
 
-## Newtonsoft.Json
+## Runtime dependencies (resolved via Unity Package Manager)
+
+### Newtonsoft.Json
 
 - Source: https://github.com/JamesNK/Newtonsoft.Json
 - License: MIT
-- Usage: Runtime dependency declared in `package.json` as `com.unity.nuget.newtonsoft-json`. The library is resolved by consumers through Unity Package Manager and is **not bundled** in this package.
+- Usage: Declared in `package.json` as `com.unity.nuget.newtonsoft-json`. Resolved by consumers through Unity Package Manager; **not bundled** in this package.
 
 ```
 The MIT License (MIT)
@@ -36,11 +38,13 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ---
 
-## Roslyn (Microsoft.CodeAnalysis.CSharp / Microsoft.CodeAnalysis.Analyzers)
+## Build-time references (not redistributed)
+
+### Roslyn (Microsoft.CodeAnalysis.CSharp / Microsoft.CodeAnalysis.Analyzers)
 
 - Source: https://github.com/dotnet/roslyn
 - License: MIT
-- Usage: **Build-time only** reference for the Source Generator project at `src/Lilium.RemoteControl.SourceGenerator/`. The csproj uses `PrivateAssets="all"` and `SuppressDependenciesWhenPacking`, so no Roslyn binaries are redistributed in the shipped `Plugins/Lilium.RemoteControl.SourceGenerator.dll`.
+- Usage: Build-time only reference for the Source Generator project at `SourceGenerator~/Lilium.RemoteControl.SourceGenerator/`. The csproj uses `PrivateAssets="all"` and `SuppressDependenciesWhenPacking`, so no Roslyn binaries are redistributed in the shipped `Plugins/Lilium.RemoteControl.SourceGenerator.dll`.
 
 ```
 The MIT License (MIT)
@@ -67,3 +71,30 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+---
+
+## Bundled tools
+
+### VirgoMotionRemote (companion application)
+
+- Location: `Tools~/VirgoMotionRemote/VirgoMotionRemote.exe`
+- Origin: Built from the [VirgoMotionRemote](https://github.com/you-ri/VirgoMotionRemote) project (Tauri 2 / Rust + React).
+- License of the application itself: Apache License 2.0, Copyright (c) You-Ri, 2026.
+- Usage: A self-contained desktop application shipped inside this Unity package as a launchable companion tool. Because it is distributed as a pre-built binary, the runtime artifacts of all of its transitive third-party dependencies are redistributed together with this package.
+
+The canonical, versioned list of third-party libraries linked into the bundled `VirgoMotionRemote.exe` — including their copyright notices and full license texts — is shipped alongside the binary at [`Tools~/VirgoMotionRemote/THIRD_PARTY_LICENSES.md`](Tools~/VirgoMotionRemote/THIRD_PARTY_LICENSES.md). Consumers redistributing this package must keep that file together with the executable.
+
+Summary of license families used by the bundled binary:
+
+| License | Representative libraries |
+|---|---|
+| MIT | React, React-DOM, Zustand, Immer, i18next, react-i18next, Base UI, QRCode, Vite, Tailwind CSS, ESLint, Prettier, Jest, PostCSS, Autoprefixer, Tauri, Serde, if-addrs, base64, dirs, open, built |
+| Apache-2.0 | TypeScript |
+| Font Awesome Free (Icons: CC BY 4.0 / Fonts: SIL OFL 1.1 / Code: MIT) | Font Awesome |
+
+For dependencies that are dual-licensed under `MIT OR Apache-2.0`, this distribution uses them under the terms compatible with both licenses; downstream consumers may rely on either.
+
+---
+
+*Last updated: 2026-05-11*
