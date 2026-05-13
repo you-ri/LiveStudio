@@ -22,6 +22,15 @@ MonoBehaviour:
     position: 0
     order: 290
     accessLevel: 0
+  - id: settings
+    icon: 
+    editorIcon: {fileID: 2800000, guid: 02f5db26e2e852545949f535b0807669, type: 3}
+    label: Settings
+    page:
+      rid: 7884749914114883666
+    position: 0
+    order: 290
+    accessLevel: 0
   references:
     version: 2
     RefIds:
@@ -35,3 +44,13 @@ MonoBehaviour:
       data:
         objectIds:
         - FusionPage
+    - rid: 7884749914114883666
+      type: {class: NavigatePage, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
+      data:
+        selector:
+          rid: 7884749914114883667
+    - rid: 7884749914114883667
+      type: {class: NavigateObjectSelector, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
+      data:
+        objectIds:
+        - LicenseSettings

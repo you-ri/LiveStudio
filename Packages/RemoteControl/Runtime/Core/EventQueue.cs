@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 using UnityEngine;
 
 namespace Lilium.RemoteControl.Core
@@ -271,19 +272,29 @@ namespace Lilium.RemoteControl.Core
         /// <summary>
         /// システム通知をブロードキャスト
         /// </summary>
-        public Task<int> BroadcastSystemNotificationAsync(string message, string notificationType = "info", object data = null)
+        /// <param name="message">本文</param>
+        /// <param name="notificationType">"info" / "warning" / "error"</param>
+        /// <param name="data">付随データ (任意)</param>
+        /// <param name="title">タイトル (任意)</param>
+        /// <param name="icon">Material Symbols 名 (任意)</param>
+        public Task<int> BroadcastSystemNotificationAsync(string message, string notificationType = "info", object data = null, string title = null, string icon = null)
         {
             var systemNotification = new SystemNotification
             {
                 Type = "system_notification",
                 NotificationType = notificationType,
+                Title = title,
                 Message = message,
+                Icon = icon,
                 Data = data,
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 MessageId = Guid.NewGuid().ToString()
             };
 
-            AddEvent(systemNotification);
+            // eventType を指定することで StreamHandler に unified format
+            // ({type:"data", data:{...}}) へラップさせる。eventType=null だと
+            // 既に unified format とみなされ生のオブジェクトが流れてしまう。
+            AddEvent(systemNotification, eventType: "system_notification");
 
             var deliveredCount = GetConnectedClientCount();
             return Task.FromResult(deliveredCount);
@@ -527,12 +538,14 @@ namespace Lilium.RemoteControl.Core
     /// </summary>
     public class SystemNotification
     {
-        public string Type { get; set; }
-        public string NotificationType { get; set; } // info, warning, error
-        public string Message { get; set; }
-        public object Data { get; set; }
-        public long Timestamp { get; set; }
-        public string MessageId { get; set; }
+        [JsonProperty("type")] public string Type { get; set; }
+        [JsonProperty("notificationType")] public string NotificationType { get; set; } // info, warning, error
+        [JsonProperty("title")] public string Title { get; set; }
+        [JsonProperty("message")] public string Message { get; set; }
+        [JsonProperty("icon")] public string Icon { get; set; } // Material Symbols 名 (例: "license", "check_circle")。null/空ならクライアント側でタイプ既定
+        [JsonProperty("data")] public object Data { get; set; }
+        [JsonProperty("timestamp")] public long Timestamp { get; set; }
+        [JsonProperty("messageId")] public string MessageId { get; set; }
     }
     
     /// <summary>

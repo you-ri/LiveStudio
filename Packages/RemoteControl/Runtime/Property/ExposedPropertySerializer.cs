@@ -2,6 +2,7 @@
 using System;
 using System.Linq;
 using System.Collections.Generic;
+using System.Reflection;
 
 using UnityEngine;
 using Newtonsoft.Json;
@@ -1667,13 +1668,11 @@ namespace Lilium.RemoteControl
                 jObject["category"] = LocalizationSystem.Translate(type.category);
             }
 
-            // 引数なしの関数のみをfunctions配列に追加
-            var parameterlessFunctions = type.functionTypes
-                .Where(f => f.parameters == null || f.parameters.Length == 0)
-                .ToArray();
-            if (parameterlessFunctions.Length > 0)
+            // 関数を functions 配列に追加 (引数あり / なし 両方)
+            // RemoteApp 側は parameters の有無で実行ボタンと引数入力モーダルを切り替える。
+            if (type.functionTypes != null && type.functionTypes.Length > 0)
             {
-                jObject["functions"] = new JArray(parameterlessFunctions.Select(f => JsonConvert.DeserializeObject<JObject>(ToJson(f))));
+                jObject["functions"] = new JArray(type.functionTypes.Select(f => JsonConvert.DeserializeObject<JObject>(ToJson(f))));
             }
 
             // help項目を追加（nullでない場合のみ）
@@ -1889,13 +1888,9 @@ namespace Lilium.RemoteControl
 
             if (parameters != null)
             {
-                foreach (var param in parameters)
+                for (int i = 0; i < parameters.Length; i++)
                 {
-                    jParams.Add(new JObject
-                    {
-                        ["name"] = param.Name,
-                        ["type"] = param.ParameterType.Name
-                    });
+                    jParams.Add(_BuildParameterJObject(parameters[i], i));
                 }
             }
 
@@ -1926,6 +1921,62 @@ namespace Lilium.RemoteControl
             }
 
             return JsonConvert.SerializeObject(jObject, Formatting.None);
+        }
+
+        /// <summary>
+        /// ExposedFunction の引数 ParameterInfo を ExposedPropertyType と同等のスキーマで JObject 化する。
+        /// RemoteApp 側の DynamicPropertyControl がそのまま入力 UI として描画できる形を狙う。
+        /// </summary>
+        private static JObject _BuildParameterJObject(ParameterInfo param, int order)
+        {
+            var paramType = param.ParameterType;
+            bool isArray = ExposedPropertyUtility.IsArrayType(paramType);
+
+            string typeName;
+            if (isArray)
+            {
+                var elementType = ExposedPropertyUtility.GetCollectionElementType(paramType);
+                typeName = elementType != null ? elementType.Name + "[]" : paramType.Name;
+            }
+            else
+            {
+                typeName = paramType.Name;
+            }
+
+            var controlAttr = param.GetCustomAttribute<ControlAttribute>();
+            var controllerJObject = controlAttr?.ToJObject() ?? new JObject { ["type"] = "default" };
+
+            var jObject = new JObject
+            {
+                ["name"] = param.Name,
+                ["type"] = typeName,
+                ["isReadOnly"] = false,
+                ["isArray"] = isArray,
+                ["isPersistable"] = false,
+                ["controller"] = controllerJObject,
+                ["order"] = order
+            };
+
+            // Enum 型の場合は enumType 名を emit (ExposedPropertyType と同じ運用)
+            if (paramType.IsEnum)
+            {
+                jObject["enumType"] = paramType.Name;
+            }
+
+            // ExposedHelp 属性を help として emit (翻訳済み)
+            var helpAttr = param.GetCustomAttribute<ExposedHelpAttribute>();
+            if (helpAttr != null && !string.IsNullOrEmpty(helpAttr.text))
+            {
+                jObject["help"] = LocalizationSystem.Translate(helpAttr.text);
+            }
+
+            // 既定値 (param.HasDefaultValue が true のときのみ)
+            if (param.HasDefaultValue && param.DefaultValue != null && param.DefaultValue != DBNull.Value)
+            {
+                jObject["defaultValue"] = JToken.FromObject(param.DefaultValue);
+            }
+
+            return jObject;
         }
 
         internal static string ToJson(IEnumerable<ExposedFunctionType> functionTypes)

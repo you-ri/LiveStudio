@@ -125,10 +125,10 @@ namespace Lilium.RemoteControl.Server
             _eventQueue?.AddEventToClient(clientId, message, eventType);
         }
 
-        public Task BroadcastSystemNotification(string message, string type = "info", object data = null)
+        public Task BroadcastSystemNotification(string message, string type = "info", object data = null, string title = null, string icon = null)
         {
             return _eventQueue != null
-                ? _eventQueue.BroadcastSystemNotificationAsync(message, type, data)
+                ? _eventQueue.BroadcastSystemNotificationAsync(message, type, data, title, icon)
                 : Task.CompletedTask;
         }
         

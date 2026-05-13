@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Net;
@@ -751,6 +752,7 @@ namespace Lilium.RemoteControl
                 }
 
                 object[] args = null;
+                var parameters = function.parameters;
 
                 // リクエストボディからパラメータを取得
                 if (!string.IsNullOrEmpty(body))
@@ -760,14 +762,24 @@ namespace Lilium.RemoteControl
 
                     if (argsToken != null && argsToken is JArray jArray)
                     {
-                        var parameters = function.parameters;
-                        var arrayCount = ((JArray)argsToken).Count;
-                        args = new object[arrayCount];
-
-                        for (int i = 0; i < arrayCount && i < parameters.Length; i++)
+                        // パラメータ個数ベースで配列を確保。送られて来た要素を埋め、
+                        // 未指定/null の位置は HasDefaultValue があれば既定値、無ければ型の default を使う。
+                        args = new object[parameters.Length];
+                        for (int i = 0; i < parameters.Length; i++)
                         {
-                            //TODO: DeseirializeExposedObjectを使うべきか？
-                            args[i] = ExposedPropertySerializer.DeserializeUnityType(DefaultExposedObjectResolver.Instance, jArray[i], parameters[i].ParameterType);
+                            var param = parameters[i];
+                            var jToken = i < jArray.Count ? jArray[i] : null;
+                            if (jToken == null || jToken.Type == JTokenType.Null)
+                            {
+                                args[i] = param.HasDefaultValue
+                                    ? param.DefaultValue
+                                    : (param.ParameterType.IsValueType ? Activator.CreateInstance(param.ParameterType) : null);
+                            }
+                            else
+                            {
+                                //TODO: DeseirializeExposedObjectを使うべきか？
+                                args[i] = ExposedPropertySerializer.DeserializeUnityType(DefaultExposedObjectResolver.Instance, jToken, param.ParameterType);
+                            }
                         }
                     }
                 }
