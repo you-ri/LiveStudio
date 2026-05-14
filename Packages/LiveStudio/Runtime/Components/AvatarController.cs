@@ -157,6 +157,10 @@ namespace Lilium.LiveStudio
             SelectableService<IAvatarService>.Unregister("current", this);
 
             SingletonService<IAvatarService>.Unregister(this);
+
+            // Notify dependents that this controller's hierarchy is no longer valid so they can
+            // detach / clear their cached resolutions before the GameObject is torn down.
+            TransformStructureService.NotifyStructureChanged(this.gameObject);
         }
 
         void Start()
@@ -219,8 +223,7 @@ namespace Lilium.LiveStudio
             Socket.CreateSocket(avatarTarget.GetBoneTransform(HumanBodyBones.Head), "Head", avatarRotation);
             Socket.CreateSocket(avatarTarget.GetBoneTransform(HumanBodyBones.LeftHand), "LeftHand", avatarRotation);
             Socket.CreateSocket(avatarTarget.GetBoneTransform(HumanBodyBones.RightHand), "RightHand", avatarRotation);
-
-
+ 
             foreach (var meshInfo in meshStateOverrides)
             {
                 var prevSkinnedMeshRenderer = meshInfo.skinnedMeshRenderer;
@@ -239,6 +242,12 @@ namespace Lilium.LiveStudio
             }
 
             _ApplyAnimationParameterOverrides(avatar);
+
+            // Notify TransformRef subscribers that the hierarchy under this GameObject may have
+            // changed (avatar swap, BuildAvatar, etc.). Single notification point unifies the
+            // Start path and _ReplaceAvatar path since both flow through here. The argument is
+            // the GameObject whose name corresponds to TransformRef.ownerName ("Main Avatar" etc.).
+            TransformStructureService.NotifyStructureChanged(this.gameObject);
         }
 
         private void _ApplyAnimationParameterOverrides(GameObject avatar)
@@ -299,7 +308,7 @@ namespace Lilium.LiveStudio
                 // アタッチした managed な ExposedGameObjectWithTransform 系子 GO を、
                 // 破棄前に ControllerGO 直下に退避させる。退避中の hierarchy 変更で
                 // user-set TransformRef が clobber されないよう suspendHierarchySync を立てる。
-                // 新アバター生成後 _ReplaceAvatar で RefreshAttachments を呼んで再アタッチする。
+                // 新アバター生成後 _PostSetupAvatar 末尾の TransformStructureService.NotifyStructureChanged で再アタッチする。
                 ExposedGameObjectWithTransform.suspendHierarchySync = true;
                 try
                 {
@@ -434,12 +443,11 @@ namespace Lilium.LiveStudio
                 _target = newTarget;
             }
 
-            SetupAvatar(newTarget);
-
-            // ReleaseAvatar でこの ControllerGO 直下に退避した managed な子 GO を、
+            // SetupAvatar → _PostSetupAvatar 末尾で TransformStructureService.NotifyStructureChanged(this)
+            // が走り、ReleaseAvatar でこの ControllerGO 直下に退避した managed な子 GO が、
             // 新しいアバターの対応するボーン (TransformRef で指定された "Main Avatar/Head" 等)
-            // に再アタッチする。
-            ExposedGameObjectWithTransform.RefreshAttachments();
+            // に自動で再アタッチされる。
+            SetupAvatar(newTarget);
 
             onAvatarChanged?.Invoke();
         }

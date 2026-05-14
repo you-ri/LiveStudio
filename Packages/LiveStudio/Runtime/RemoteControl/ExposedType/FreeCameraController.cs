@@ -98,8 +98,7 @@ namespace Lilium.LiveStudio
             _SeedFromTransform();
 
             _target.onChanged += _OnTargetChanged;
-            SelectableService<IAvatarService>.onRegistered += _OnAvatarRegistered;
-            SelectableService<IAvatarService>.onUnregistered += _OnAvatarUnregistered;
+            TransformStructureService.onStructureChanged += _OnStructureChanged;
 
             _ApplyTarget();
             // _ApplyCameraSettings() はここでは呼ばない。
@@ -143,8 +142,7 @@ namespace Lilium.LiveStudio
             if (camera == null) return;
 
             _target.onChanged -= _OnTargetChanged;
-            SelectableService<IAvatarService>.onRegistered -= _OnAvatarRegistered;
-            SelectableService<IAvatarService>.onUnregistered -= _OnAvatarUnregistered;
+            TransformStructureService.onStructureChanged -= _OnStructureChanged;
 
             Lilium.RemoteControl.GameObjectUtility.RemoveComponent<CinemachineRotationComposer>(camera.gameObject, immediate: true);
 
@@ -188,20 +186,13 @@ namespace Lilium.LiveStudio
 
         void _OnTargetChanged() => _ApplyTarget();
 
-        void _OnAvatarRegistered(string id, IAvatarService avatar)
+        /// <summary>
+        /// owner GameObject の内部 hierarchy 変化通知。ownerName 一致時のみ target を再 resolve する。
+        /// </summary>
+        void _OnStructureChanged(GameObject owner)
         {
-            avatar.onAvatarChanged += _OnAvatarChanged;
-            _ApplyTarget();
-        }
-
-        void _OnAvatarUnregistered(string id, IAvatarService avatar)
-        {
-            avatar.onAvatarChanged -= _OnAvatarChanged;
-            _ApplyTarget();
-        }
-
-        void _OnAvatarChanged()
-        {
+            if (owner == null) return;
+            if (_target.ownerName != owner.name) return;
             _ApplyTarget();
         }
 

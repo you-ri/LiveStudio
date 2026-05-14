@@ -107,8 +107,7 @@ namespace Lilium.LiveStudio
         public override void OnEnable()
         {
             GameObjectUtility.RegisterHierarchyChanged(_OnHierarchyChanged);
-            SelectableService<IAvatarService>.onRegistered += _OnAvatarRegistered;
-            SelectableService<IAvatarService>.onUnregistered += _OnAvatarUnregistered;
+            TransformStructureService.onStructureChanged += _OnStructureChanged;
 
             base.OnEnable();
 
@@ -162,8 +161,7 @@ namespace Lilium.LiveStudio
 
             Lilium.RemoteControl.GameObjectUtility.UnregisterHierarchyChanged(_OnHierarchyChanged);
             _parent.onChanged -= _OnParentChanged;
-            SelectableService<IAvatarService>.onRegistered -= _OnAvatarRegistered;
-            SelectableService<IAvatarService>.onUnregistered -= _OnAvatarUnregistered;
+            TransformStructureService.onStructureChanged -= _OnStructureChanged;
         }
 
         void _OnParentChanged() => _UpdateAttachment();
@@ -182,19 +180,15 @@ namespace Lilium.LiveStudio
             _attachedTransform = actualParent;
         }
 
-        void _OnAvatarRegistered(string id, IAvatarService avatar)
+        /// <summary>
+        /// owner GameObject の内部 hierarchy 変化通知。ownerName 一致時のみ再 attach する。
+        /// </summary>
+        void _OnStructureChanged(GameObject owner)
         {
-            avatar.onAvatarChanged += _OnAvatarChanged;
+            if (owner == null) return;
+            if (_parent.ownerName != owner.name) return;
             _UpdateAttachment();
         }
-
-        void _OnAvatarUnregistered(string id, IAvatarService avatar)
-        {
-            avatar.onAvatarChanged -= _OnAvatarChanged;
-            TransformAttachment.Detach(_reference != null ? _reference.transform : null, ref _attachedTransform);
-        }
-
-        void _OnAvatarChanged() => _UpdateAttachment();
 
         void _UpdateAttachment()
         {

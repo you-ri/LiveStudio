@@ -332,8 +332,12 @@ namespace Lilium.RemoteControl
 
             if (_searchType == SearchType.Name)
             {
+                // 過去に Path モードで slash 入り path に正規化された _transformPath が
+                // 残ったまま searchType だけ Name に切り替わったケースに備え、leaf 名で比較する。
+                var slash = _transformPath.LastIndexOf('/');
+                var leafName = slash >= 0 ? _transformPath.Substring(slash + 1) : _transformPath;
                 var byName = root.GetComponentsInChildren<Transform>(includeInactive: true)
-                    .FirstOrDefault(t => t.name == _transformPath);
+                    .FirstOrDefault(t => t.name == leafName);
                 if (byName != null) return byName;
                 return root.transform;
             }
@@ -445,7 +449,10 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// name から ExposedUnityObjectBase 派生を検索する。
+        /// name から owner として扱える ExposedObject を検索する。
+        /// ExposedUnityObjectBase 派生 (proxy) と、target が直接 GameObject/Component の
+        /// ExposedObject (例: <c>[ExposedClass]</c> を持つ MonoBehaviour) の両方を対象にする。
+        /// 比較は <see cref="ExposedObject.name"/> ベースなので Unity の GameObject 名と一致する。
         /// </summary>
         static ExposedObject _FindExposedByName(string name)
         {
@@ -453,10 +460,9 @@ namespace Lilium.RemoteControl
             foreach (var obj in ExposedObjectRegistry.instances)
             {
                 if (obj == null || !obj.isValid) continue;
-                if (obj.target is ExposedUnityObjectBase proxy
-                    && proxy.reference != null
-                    && proxy.reference.name == name)
-                    return obj;
+                if (obj.name != name) continue;
+                if (_ExtractGameObject(obj.target) == null) continue;
+                return obj;
             }
             return null;
         }

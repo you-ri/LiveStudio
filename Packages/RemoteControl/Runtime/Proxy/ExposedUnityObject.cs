@@ -456,31 +456,13 @@ namespace Lilium.RemoteControl
         // GameObject 型のデフォルト自動ラップ先は ExposedGameObject のまま維持する。
 
         /// <summary>
-        /// いずれかの ExposedGameObjectWithTransform が enable / disable された際に発火する。
-        /// 各インスタンスはこれを受けて <see cref="_parent"/> を再解決する。
-        /// avatar swap など、parent 候補となる root が増減したときに自動で再アタッチするための仕組み。
-        /// </summary>
-        static event Action _onAnyLifecycleChanged;
-
-        /// <summary>
         /// アバター swap 等、外部システムが managed な子 GO を一時退避する間、
         /// <see cref="_OnHierarchyChanged"/> による <see cref="_parent"/> の silent な再同期を抑制する。
         /// 退避中に actualParent が ControllerGO 等に書き換わっても、ユーザーが
         /// 設定した TransformRef 値 (例: "Main Avatar/Head") を維持し、新アバター生成後の
-        /// <see cref="RefreshAttachments"/> で正しいボーンに再アタッチできるようにする。
+        /// 構造変化通知 (<see cref="TransformStructureService"/>) で正しいボーンに再アタッチできるようにする。
         /// </summary>
         public static bool suspendHierarchySync;
-
-        /// <summary>
-        /// 全 ExposedGameObjectWithTransform インスタンスに <see cref="_parent"/> の
-        /// 再アタッチを促す。avatar swap 等、外部で hierarchy を再構築した後、
-        /// 一時退避していた managed 子 GO を新しい root の対応 Transform に
-        /// 付け直すための明示トリガ。
-        /// </summary>
-        public static void RefreshAttachments()
-        {
-            _onAnyLifecycleChanged?.Invoke();
-        }
 
         [SerializeField]
         [ExposedField(order = -20)]
@@ -543,28 +525,38 @@ namespace Lilium.RemoteControl
             }
 
             _parent.onChanged += _OnParentChanged;
-            _onAnyLifecycleChanged += _OnAnyLifecycleChanged;
+            TransformStructureService.onStructureChanged += _OnStructureChanged;
             GameObjectUtility.RegisterHierarchyChanged(_OnHierarchyChanged);
             _UpdateAttachment();
-            // 自身が新しい root として加わったことを既存インスタンスへ通知。
-            // 自分自身の handler は idempotent な再 Apply なので呼ばれても害なし。
-            _onAnyLifecycleChanged?.Invoke();
+            // 自身が新しい root として登場したことを通知し、別の宿主が ownerName でこの GO を
+            // 参照していたら再 attach を促す。
+            TransformStructureService.NotifyStructureChanged(_reference);
         }
 
         public override void OnDisable()
         {
+            // 自身が root から外れたことを通知し、依存先の宿主に再解決を促す。
+            TransformStructureService.NotifyStructureChanged(_reference);
+
             base.OnDisable();
 
             GameObjectUtility.UnregisterHierarchyChanged(_OnHierarchyChanged);
             _parent.onChanged -= _OnParentChanged;
-            _onAnyLifecycleChanged -= _OnAnyLifecycleChanged;
-            // 自身が root から外れたことを既存インスタンスへ通知（detach 含めて再評価）。
-            _onAnyLifecycleChanged?.Invoke();
+            TransformStructureService.onStructureChanged -= _OnStructureChanged;
         }
 
         void _OnParentChanged() => _UpdateAttachment();
 
-        void _OnAnyLifecycleChanged() => _UpdateAttachment();
+        /// <summary>
+        /// owner GameObject の内部 hierarchy 変化通知を受けて、ownerName 一致時に再 attach する。
+        /// avatar swap など、参照先 Transform の resolve 結果が変わる可能性のあるイベントを拾う。
+        /// </summary>
+        void _OnStructureChanged(GameObject owner)
+        {
+            if (owner == null) return;
+            if (_parent.ownerName != owner.name) return;
+            _UpdateAttachment();
+        }
 
         /// <summary>
         /// Unity hierarchy の変更通知を受け、実際の Transform.parent と TransformRef の保持する
