@@ -10,7 +10,7 @@ namespace Lilium.RemoteControl.Server
     /// <summary>
     /// Pure C# helper that owns the lifetime of a <see cref="RemoteControlServerCore"/> for a
     /// given port. Used to be a MonoBehaviour; the host
-    /// <see cref="RemoteControlBehaviour"/> now drives Unity lifecycle.
+    /// <see cref="Lilium.RemoteControl.Scene.RemoteControlBehaviour"/> now drives Unity lifecycle.
     /// </summary>
     public class RemoteControlServerRunner
     {

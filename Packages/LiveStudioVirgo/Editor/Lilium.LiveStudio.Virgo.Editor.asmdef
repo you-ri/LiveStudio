@@ -4,6 +4,7 @@
     "references": [
         "Lilium.LiveStudio",
         "Lilium.LiveStudio.Editor",
+        "Lilium.RemoteControl.Scene",
         "GUID:2085b34bb72c92d4e9e20d2a879f115c",
         "GUID:4307f53044263cf4b835bd812fc161a4",
         "GUID:75469ad4d38634e559750d17036d5f7c",

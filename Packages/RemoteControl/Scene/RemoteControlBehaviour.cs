@@ -3,9 +3,11 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+using Lilium.RemoteControl;
 using Lilium.RemoteControl.UI;
+using Lilium.RemoteControl.Server;
 
-namespace Lilium.RemoteControl.Server
+namespace Lilium.RemoteControl.Scene
 {
     /// <summary>
     /// Single MonoBehaviour that owns the full Remote Control runtime: HTTP server,
@@ -36,6 +38,11 @@ namespace Lilium.RemoteControl.Server
         private ExposedObjectContainer _container;
         private RemoteControlServerRunner _serverRunner;
         private RemoteControlProvider _sceneSave;
+        private SceneIoHandler _sceneIoHandler;
+
+        // Route key for the scene import/export handler. The value is only a dictionary key;
+        // actual matching is done by SceneIoHandler.CanHandle (/exposed/export, /exposed/import).
+        private const string kSceneIoRoute = "/exposed/io";
 
         private bool _serverStarted;
         private bool _handlersRegistered;
@@ -180,6 +187,12 @@ namespace Lilium.RemoteControl.Server
 
             _serverStarted = true;
 
+            // Built-in scene import/export handler. Registered here (not via the virtual
+            // OnRegisterHandlers hook) so subclasses that override the hook without calling
+            // base still get scene I/O. ExposedObjectHandler no longer claims these routes.
+            if (_sceneIoHandler == null) _sceneIoHandler = new SceneIoHandler(srv);
+            srv.RegisterRoute(kSceneIoRoute, _sceneIoHandler);
+
             OnPreRegisterHandlers(srv);
             OnRegisterHandlers(srv);
             _handlersRegistered = true;
@@ -192,6 +205,9 @@ namespace Lilium.RemoteControl.Server
             {
                 OnUnregisterHandlers(srv);
                 OnPreUnregisterHandlers(srv);
+                srv.UnregisterRoute(kSceneIoRoute);
+                _sceneIoHandler?.Cleanup();
+                _sceneIoHandler = null;
                 _handlersRegistered = false;
             }
             // Note: server itself stays alive; OnDestroy handles ShutdownServer.

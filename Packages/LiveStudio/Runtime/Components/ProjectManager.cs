@@ -19,9 +19,9 @@ namespace Lilium.LiveStudio
             get
             {
 #if UNITY_2022_3_OR_NEWER
-                var provider = Object.FindFirstObjectByType<Lilium.RemoteControl.Server.RemoteControlBehaviour>();
+                var provider = Object.FindFirstObjectByType<Lilium.RemoteControl.Scene.RemoteControlBehaviour>();
 #else
-                var provider = Object.FindObjectOfType<Lilium.RemoteControl.Server.RemoteControlBehaviour>();
+                var provider = Object.FindObjectOfType<Lilium.RemoteControl.Scene.RemoteControlBehaviour>();
 #endif
                 if (provider == null) return "";
                 // currentFilePath が空の場合はシーンが未保存状態なので空文字を返す
@@ -116,7 +116,7 @@ namespace Lilium.LiveStudio
         [ExposedFunction(label = "PROJECT_SAVE_SCENE"), Hide]
         public static void SaveScene(string filePath = null)
         {
-            var providers = Object.FindObjectsOfType<Lilium.RemoteControl.Server.RemoteControlBehaviour>();
+            var providers = Object.FindObjectsOfType<Lilium.RemoteControl.Scene.RemoteControlBehaviour>();
             foreach (var provider in providers)
             {
                 if (string.IsNullOrEmpty(filePath))
@@ -138,7 +138,7 @@ namespace Lilium.LiveStudio
             // 起動時 (RemoteControlBehaviour.Start → LoadCurrentData) と同じパスを通すため、
             // ここでは provider に filePath だけ伝え、シーン切替/デシリアライズの判断は
             // provider 内部 (LoadCurrentData → _TrySwitchBaseScene → _LoadFrom) に委ねる。
-            var providers = Object.FindObjectsOfType<Lilium.RemoteControl.Server.RemoteControlBehaviour>();
+            var providers = Object.FindObjectsOfType<Lilium.RemoteControl.Scene.RemoteControlBehaviour>();
             foreach (var provider in providers)
             {
                 provider.LoadCurrentDataFrom(filePath);
@@ -148,7 +148,7 @@ namespace Lilium.LiveStudio
         [ExposedFunction(label = "PROJECT_NEW_SCENE"), Hide]
         public static void NewScene(string sceneName = null)
         {
-            var providers = Object.FindObjectsOfType<Lilium.RemoteControl.Server.RemoteControlBehaviour>();
+            var providers = Object.FindObjectsOfType<Lilium.RemoteControl.Scene.RemoteControlBehaviour>();
             foreach (var provider in providers)
             {
                 provider.currentFilePath = "";

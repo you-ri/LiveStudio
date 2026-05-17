@@ -4,6 +4,7 @@ using System;
 using System.IO;
 using UnityEngine;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Scene;
 
 namespace Lilium.LiveStudio
 {

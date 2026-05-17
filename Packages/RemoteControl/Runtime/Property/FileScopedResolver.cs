@@ -117,7 +117,7 @@ namespace Lilium.RemoteControl
             {
                 var rootId = overrideRootId ?? _currentRoot?.id;
                 var path = overridePath ?? GetCurrentPath();
-                sourceKey = ExposedSceneSerializer._ComposeSourceKey(rootId, path);
+                sourceKey = _ComposeSourceKey(rootId, path);
             }
             ExposedObjectFileRegistry.Register(sourceKey, obj);
             _objectFileIds[obj] = sourceKey;
@@ -148,6 +148,18 @@ namespace Lilium.RemoteControl
 
             var sourceKey = AssignFileId(obj, registerPending: !isRegisteredRoot);
             return new JObject { ["@ref"] = sourceKey };
+        }
+
+        /// <summary>
+        /// rootId と DotBracket 形式 path を 1 本の文字列 @source キーに結合する。
+        /// 前提: rootId は '.' や '[' を含まない (GUID や typeName ベース id)。
+        /// path が空 → "rootId"。path が "[" から始まる → "rootId[0]..."。それ以外 → "rootId.foo..."。
+        /// （旧 ExposedSceneSerializer._ComposeSourceKey。唯一の呼び元である本リゾルバーへ移設。）
+        /// </summary>
+        private static string _ComposeSourceKey(string rootId, string path)
+        {
+            if (string.IsNullOrEmpty(path)) return rootId;
+            return path[0] == '[' ? rootId + path : rootId + "." + path;
         }
     }
 }

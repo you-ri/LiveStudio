@@ -5,6 +5,7 @@ using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Scene;
 using Lilium.RemoteControl.UI;
 using Lilium.RemoteControl.UI.Editor;
 using Newtonsoft.Json.Linq;
@@ -2273,7 +2274,7 @@ namespace Lilium.RemoteControl.Tests
                 var wrapper = container._objects.FirstOrDefault() as ExposedGameObjectWithTransform;
                 if (wrapper != null) instance = wrapper.reference as GameObject;
 
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(container.objects, container);
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(container.objects, container);
                 var saved = ExposedSceneSerializer.SceneToJson(resolved, container, SerializeMode.Snapshot);
 
                 var parsed = JObject.Parse(saved);
@@ -2768,7 +2769,7 @@ namespace Lilium.RemoteControl.Tests
                 exposedGO.OnEnable();
 
                 // コンポーネントのExposedObjectは事前に作成しない
-                var objects = ExposedSceneSerializer.ResolveExposedObjects(
+                var objects = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO }, _resolver);
 
                 // IDなしコンポーネントも result に含まれる（defaults 登録のため）
@@ -2811,7 +2812,7 @@ namespace Lilium.RemoteControl.Tests
                 exposedGO.OnEnable();
 
                 // ResolveExposedObjectsで依存解決
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO }, _resolver);
 
                 // 全オブジェクトのデフォルト値をキャプチャ
@@ -2859,7 +2860,7 @@ namespace Lilium.RemoteControl.Tests
                 var exposedGO = new ExposedGameObject(go);
                 exposedGO.OnEnable();
 
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO }, _resolver);
                 foreach (var obj in resolved)
                     ExposedPropertyUtility.SetDefault(obj);
@@ -2908,7 +2909,7 @@ namespace Lilium.RemoteControl.Tests
                 var exposedGO = new ExposedGameObject(go);
                 exposedGO.OnEnable();
 
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO }, _resolver);
 
                 foreach (var obj in resolved)
@@ -3637,7 +3638,7 @@ namespace Lilium.RemoteControl.Tests
                 var exposedGO = new ExposedGameObject(go);
                 exposedGO.OnEnable();
 
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO }, _resolver);
 
                 foreach (var obj in resolved)
@@ -3687,7 +3688,7 @@ namespace Lilium.RemoteControl.Tests
                 var exposedGO = new ExposedGameObject(go);
                 exposedGO.OnEnable();
 
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO }, _resolver);
 
                 foreach (var obj in resolved)
@@ -3734,7 +3735,7 @@ namespace Lilium.RemoteControl.Tests
                 var exposedGO = new ExposedGameObject(go);
                 exposedGO.OnEnable();
 
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO }, _resolver);
 
                 foreach (var obj in resolved)
@@ -3786,7 +3787,7 @@ namespace Lilium.RemoteControl.Tests
                 var exposedGO = new ExposedGameObject(go);
                 exposedGO.OnEnable();
 
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO }, _resolver);
 
                 foreach (var obj in resolved)
@@ -3873,7 +3874,7 @@ namespace Lilium.RemoteControl.Tests
                 var exposedGO = new ExposedGameObject(go);
                 exposedGO.OnEnable();
 
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO }, _resolver);
 
                 foreach (var obj in resolved)
@@ -3995,7 +3996,7 @@ namespace Lilium.RemoteControl.Tests
                 var exposedGO = new ExposedGameObject(go);
                 exposedGO.OnEnable();
 
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO }, _resolver);
 
                 // 3. 全オブジェクトのSetDefault（@ref境界でネストパスなし）
@@ -4072,7 +4073,7 @@ namespace Lilium.RemoteControl.Tests
                 var exposedGO = new ExposedGameObject(go);
                 exposedGO.OnEnable();
 
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO }, _resolver);
 
                 // ResolveExposedObjects後にSetDefault（@ref境界でネストパスが作られない状態を再現）
@@ -4129,7 +4130,7 @@ namespace Lilium.RemoteControl.Tests
                 var exposedGO = new ExposedGameObject(go);
                 exposedGO.OnEnable();
 
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO }, _resolver);
 
                 foreach (var obj in resolved)
@@ -4243,7 +4244,7 @@ namespace Lilium.RemoteControl.Tests
                 var exposedGO = new ExposedGameObject(go);
                 exposedGO.OnEnable();
 
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO }, _resolver);
 
                 foreach (var obj in resolved)
@@ -4286,7 +4287,7 @@ namespace Lilium.RemoteControl.Tests
                 var exposedGO = new ExposedGameObject(go);
                 exposedGO.OnEnable();
 
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO }, _resolver);
 
                 foreach (var obj in resolved)
@@ -4340,7 +4341,7 @@ namespace Lilium.RemoteControl.Tests
                 var exposedGO = new ExposedGameObject(go);
                 exposedGO.OnEnable();
 
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO }, _resolver);
 
                 foreach (var obj in resolved)
@@ -4808,7 +4809,7 @@ namespace Lilium.RemoteControl.Tests
                 var exposedGO = new ExposedGameObject(go);
                 exposedGO.OnEnable();
 
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO }, _resolver);
 
                 foreach (var obj in resolved)
@@ -4884,7 +4885,7 @@ namespace Lilium.RemoteControl.Tests
                 var exposedGO = new ExposedGameObject(go);
                 exposedGO.OnEnable();
 
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO }, _resolver);
                 foreach (var obj in resolved)
                     ExposedPropertyUtility.SetDefault(obj);
@@ -4971,7 +4972,7 @@ namespace Lilium.RemoteControl.Tests
                 var exposedGO2 = new ExposedGameObject(go2);
                 exposedGO2.OnEnable();
 
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO1, exposedGO2 }, _resolver);
 
                 foreach (var obj in resolved)
@@ -5049,7 +5050,7 @@ namespace Lilium.RemoteControl.Tests
                 var exposedGO = new ExposedGameObject(go);
                 exposedGO.OnEnable();
 
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO }, _resolver);
 
                 foreach (var obj in resolved)
@@ -5147,7 +5148,7 @@ namespace Lilium.RemoteControl.Tests
                 var exposedGO = new ExposedGameObject(go);
                 exposedGO.OnEnable();
 
-                var resolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { exposedGO }, _resolver);
 
                 foreach (var obj in resolved)

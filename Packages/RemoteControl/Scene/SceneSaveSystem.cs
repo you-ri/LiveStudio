@@ -3,16 +3,17 @@ using System;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
+using Lilium.RemoteControl;
 using Lilium.RemoteControl.UI;
 
-namespace Lilium.RemoteControl
+namespace Lilium.RemoteControl.Scene
 {
     /// <summary>
     /// Pure C# scene save/load helper. Used to be a MonoBehaviour; host
-    /// <see cref="Lilium.RemoteControl.Server.RemoteControlBehaviour"/> now drives Unity lifecycle
+    /// <see cref="RemoteControlBehaviour"/> now drives Unity lifecycle
     /// (wantsToQuit / playModeStateChanged / coroutines for dialogs).
     /// </summary>
-    public class RemoteControlProvider
+    public class SceneSaveSystem
     {
         private const string kSceneFileExtension = ".scene.json";
         private const string kSceneFileDefaultName = "Untitled.scene.json";
@@ -73,7 +74,7 @@ namespace Lilium.RemoteControl
 
         public event Action onResetDataRequested;
 
-        public RemoteControlProvider(ExposedObjectContainer objectContainer, string defaultFileName, bool autoSaveOnQuit = true)
+        public SceneSaveSystem(ExposedObjectContainer objectContainer, string defaultFileName, bool autoSaveOnQuit = true)
         {
             _objectContainer = objectContainer;
             _defaultFileName = defaultFileName ?? string.Empty;
@@ -280,7 +281,7 @@ namespace Lilium.RemoteControl
         {
             if (_objectContainer == null) return;
 
-            var objects = ExposedSceneSerializer.ResolveExposedObjects(
+            var objects = ExposedObjectGraph.ResolveExposedObjects(
                 _objectContainer.objects, _objectContainer);
 
             foreach (var obj in objects)

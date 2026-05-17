@@ -5,6 +5,7 @@ using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Scene;
 
 namespace Lilium.LiveStudio.EditorTests
 {

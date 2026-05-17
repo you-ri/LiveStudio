@@ -6,10 +6,13 @@ using UnityEngine;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-namespace Lilium.RemoteControl
+using Lilium.RemoteControl;
+
+namespace Lilium.RemoteControl.Scene
 {
     /// <summary>
-    /// シーン全体のシリアライズ/デシリアライズと、ExposedObjectの依存解決を担当するユーティリティクラス。
+    /// シーン全体のシリアライズ/デシリアライズを担当するユーティリティクラス。
+    /// 依存グラフ走査は本体側 <see cref="ExposedObjectGraph"/> に分離済み。
     /// </summary>
     public static class ExposedSceneSerializer
     {
@@ -166,98 +169,6 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// 任意のオブジェクトリストからExposedObjectリストを構築する。
-        /// 依存するExposedObjectも幅優先探索で自動的に追加される。
-        /// </summary>
-        public static List<ExposedObject> ResolveExposedObjects(IReadOnlyList<object> objects, IExposedObjectResolver resolver)
-        {
-            var result = new List<ExposedObject>();
-            var visited = new HashSet<ExposedObject>();
-            var visitedTargets = new HashSet<object>(ExposedObjectRegistry.ReferenceEqualityComparer.Instance);
-            var queue = new Queue<ExposedObject>();
-
-            // 初期オブジェクトをExposedObjectに変換
-            for (int i = 0; i < objects.Count; i++)
-            {
-                var target = objects[i];
-                if (target == null) continue;
-
-                // IExposedObjectの場合は直接exposedObjectを取得
-                ExposedObject exposed;
-                if (target is IExposedObject ieo)
-                {
-                    exposed = ieo.exposedObject;
-                }
-                else
-                {
-                    exposed = resolver.FindByTarget(target);
-                }
-
-                if (exposed == null) continue;
-                if (!visited.Add(exposed)) continue;
-
-                result.Add(exposed);
-                queue.Enqueue(exposed);
-            }
-
-            // 幅優先探索で依存ExposedObjectを収集
-            while (queue.Count > 0)
-            {
-                var current = queue.Dequeue();
-                if (!current.isValid) continue;
-
-                var propertyTypes = current.propertyTypes;
-                for (int i = 0; i < propertyTypes.Length; i++)
-                {
-                    var propType = propertyTypes[i];
-                    if (!propType.containsExposedObjectReference) continue;
-
-                    object value;
-                    try
-                    {
-                        value = ExposedPropertyUtility.GetValueRaw(current.target, propType);
-                    }
-                    catch
-                    {
-                        continue;
-                    }
-
-                    if (value == null) continue;
-
-                    if (value is System.Collections.IList list)
-                    {
-                        for (int j = 0; j < list.Count; j++)
-                        {
-                            _TryEnqueueDependency(list[j], resolver, visited, visitedTargets, result, queue);
-                        }
-                    }
-                    else if (value is System.Array array)
-                    {
-                        for (int j = 0; j < array.Length; j++)
-                        {
-                            _TryEnqueueDependency(array.GetValue(j), resolver, visited, visitedTargets, result, queue);
-                        }
-                    }
-                    else
-                    {
-                        _TryEnqueueDependency(value, resolver, visited, visitedTargets, result, queue);
-                    }
-                }
-            }
-
-            // BFS完了後、static classのExposedObjectを追加
-            foreach (var instance in ExposedObjectRegistry.instances)
-            {
-                if (instance == null) continue;
-                if (instance.targetType == null || !instance.targetType.isStatic) continue;
-                if (!visited.Add(instance)) continue;
-                result.Add(instance);
-            }
-
-            return result;
-        }
-
-        /// <summary>
         /// 指定 Container の現在の状態を、変更検出用の Delta JSON として生成する。
         /// SceneToJson の Delta モード・既定フィルタを呼ぶ薄いラッパー。container が null なら null。
         /// </summary>
@@ -265,7 +176,7 @@ namespace Lilium.RemoteControl
         {
             if (container == null) return null;
             return SceneToJson(
-                ResolveExposedObjects(container.objects, container),
+                ExposedObjectGraph.ResolveExposedObjects(container.objects, container),
                 container,
                 SerializeMode.Delta,
                 ExcludeFilter.None,
@@ -607,18 +518,8 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// rootId と DotBracket 形式 path を 1 本の文字列 @source キーに結合する。
-        /// 前提: rootId は '.' や '[' を含まない (GUID や typeName ベース id)。
-        /// path が空 → "rootId"。path が "[" から始まる → "rootId[0]..."。それ以外 → "rootId.foo..."。
-        /// </summary>
-        internal static string _ComposeSourceKey(string rootId, string path)
-        {
-            if (string.IsNullOrEmpty(path)) return rootId;
-            return path[0] == '[' ? rootId + path : rootId + "." + path;
-        }
-
-        /// <summary>
-        /// _ComposeSourceKey の逆。最初の '.' または '[' を区切りとして rootId と path を分解する。
+        /// 最初の '.' または '[' を区切りとして rootId と path を分解する
+        /// （FileScopedResolver._ComposeSourceKey の逆操作）。
         /// </summary>
         private static void _ParseSourceKey(string sourceKey, out string rootId, out string path)
         {
@@ -706,38 +607,6 @@ namespace Lilium.RemoteControl
                     match.ReplaceId(savedId);
                 }
             }
-        }
-
-        private static void _TryEnqueueDependency(object target, IExposedObjectResolver resolver,
-            HashSet<ExposedObject> visited, HashSet<object> visitedTargets, List<ExposedObject> result, Queue<ExposedObject> queue)
-        {
-            if (target == null) return;
-
-            // targetベースの重複チェック（unregistered ExposedObjectは毎回新規インスタンスのため）
-            if (!visitedTargets.Add(target)) return;
-
-            var exposed = resolver.FindByTarget(target);
-
-            // レジストリ未登録の場合、ExposedClass登録済みのUnityEngine.Objectなら一時ExposedObjectを生成
-            if (exposed == null && target is UnityEngine.Object unityObj)
-            {
-                var exposedClass = ExposedClass.Find(target.GetType());
-                if (exposedClass != null)
-                {
-                    exposed = ExposedObject.CreateUnregistered(exposedClass, target);
-                }
-            }
-
-            if (exposed == null) return;
-            visited.Add(exposed);
-
-            // ID付き/ID無しの両方を result に含める。
-            // - hasId: SceneToJson のトップレベル出力対象。
-            // - hasId無し: 呼び出し側が SetDefault/EnsureDefaultsCaptured で
-            //   inline 子オブジェクトの defaults を登録できるように含める（pending delta 判定に必要）。
-            //   SceneToJson 側では L52 の hasId チェックで出力はスキップされる。
-            result.Add(exposed);
-            queue.Enqueue(exposed);
         }
 
         private static GameObject _GetGameObject(ExposedObject obj)

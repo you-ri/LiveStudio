@@ -10,7 +10,9 @@ using System.ComponentModel;
 using UnityEditor;
 #endif
 
-namespace Lilium.RemoteControl
+using Lilium.RemoteControl;
+
+namespace Lilium.LiveStudio
 {
     [Serializable]
     [ExposedClass]

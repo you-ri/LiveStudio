@@ -1,11 +1,11 @@
 {
-    "name": "Lilium.RemoteControl.UI",
-    "rootNamespace": "Lilium.RemoteControl.UI",
+    "name": "Lilium.RemoteControl.Scene",
+    "rootNamespace": "Lilium.RemoteControl.Scene",
     "references": [
+        "Unity.Properties",
         "Lilium.RemoteControl",
         "Lilium.RemoteControl.Reflection",
-        "Lilium.RemoteControl.Core",
-        "Lilium.RemoteControl.Scene"
+        "Lilium.RemoteControl.Core"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

@@ -4,6 +4,7 @@ using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Scene;
 using Newtonsoft.Json.Linq;
 
 namespace Lilium.RemoteControl.Tests

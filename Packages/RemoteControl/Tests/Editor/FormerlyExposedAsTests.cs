@@ -6,6 +6,7 @@ using NUnit.Framework;
 using UnityEngine;
 using Newtonsoft.Json.Linq;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Scene;
 
 namespace Lilium.RemoteControl.Tests
 {

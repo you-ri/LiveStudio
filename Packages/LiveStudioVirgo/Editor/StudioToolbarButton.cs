@@ -35,7 +35,7 @@ namespace Lilium.LiveStudio.Virgo.Editor
             var menu = new GenericMenu();
             menu.AddItem(new GUIContent("Studio Home"), false, () => StudioHomeWindow.ShowWindow());
             menu.AddItem(new GUIContent("Launch Remote App"), false, () => ToolMenu.LaunchRemoteApp());
-            menu.AddItem(new GUIContent("Clear Current Data"), false, () => { foreach (var p in Object.FindObjectsOfType<Lilium.RemoteControl.Server.RemoteControlBehaviour>()) p.ClearCurrentData(); });
+            menu.AddItem(new GUIContent("Clear Current Data"), false, () => { foreach (var p in Object.FindObjectsOfType<Lilium.RemoteControl.Scene.RemoteControlBehaviour>()) p.ClearCurrentData(); });
             menu.AddSeparator("");
             menu.AddItem(new GUIContent("Build/Release"), false, () => BuildStudioApp.BuildFromEditor());
             menu.AddItem(new GUIContent("Build/Development"), false, () => BuildStudioApp.BuildDevelopmentFromEditor());

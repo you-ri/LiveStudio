@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Scripting.APIUpdating;
 using Lilium.RemoteControl.Server;
+using Lilium.RemoteControl.Scene;
 
 namespace Lilium.RemoteControl.UI
 {

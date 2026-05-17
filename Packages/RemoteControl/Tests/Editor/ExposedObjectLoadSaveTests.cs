@@ -6,6 +6,7 @@ using NUnit.Framework;
 using UnityEngine;
 using Newtonsoft.Json.Linq;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Scene;
 
 namespace Lilium.RemoteControl.Tests
 {
@@ -926,7 +927,7 @@ namespace Lilium.RemoteControl.Tests
                 // デフォルト値をキャプチャ（Container.Initialize相当）
                 // inline children（コンポーネント・ScriptableObject）の defaults も
                 // 登録しないと pending delta で差分が検出できない。
-                var initialResolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var initialResolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { proxy }, _resolver);
                 foreach (var obj in initialResolved)
                     ExposedPropertyUtility.SetDefault(obj);
@@ -954,7 +955,7 @@ namespace Lilium.RemoteControl.Tests
                 Assert.IsNotNull(proxy.exposedObject);
 
                 // デフォルトを再キャプチャ（値はデフォルトに戻っている）
-                var reResolved = ExposedSceneSerializer.ResolveExposedObjects(
+                var reResolved = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { proxy }, _resolver);
                 foreach (var obj in reResolved)
                     ExposedPropertyUtility.SetDefault(obj);
@@ -1020,7 +1021,7 @@ namespace Lilium.RemoteControl.Tests
                 // 1. Initialize: プロキシ登録 + デフォルトキャプチャ（inline children 含む）
                 var proxy = new ExposedGameObject(go);
                 proxy.OnEnable();
-                var resolved1 = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved1 = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { proxy }, _resolver);
                 foreach (var obj in resolved1)
                     ExposedPropertyUtility.SetDefault(obj);
@@ -1066,7 +1067,7 @@ namespace Lilium.RemoteControl.Tests
                 // 5. Shutdown + 再Initialize（Play mode再入シミュレーション）
                 proxy.OnDisable();
                 proxy.OnEnable();
-                var resolved2 = ExposedSceneSerializer.ResolveExposedObjects(
+                var resolved2 = ExposedObjectGraph.ResolveExposedObjects(
                     new object[] { proxy }, _resolver);
                 foreach (var obj in resolved2)
                     ExposedPropertyUtility.SetDefault(obj);
