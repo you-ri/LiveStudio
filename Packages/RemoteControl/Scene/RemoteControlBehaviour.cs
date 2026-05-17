@@ -16,7 +16,7 @@ namespace Lilium.RemoteControl.Scene
     /// </summary>
     /// <remarks>
     /// Replaces the four-component combo of <see cref="RemoteControlServerRunner"/>,
-    /// <see cref="ExposedObjectContainer"/>, <see cref="RemoteControlProvider"/>, plus the
+    /// <see cref="ExposedObjectContainer"/>, <see cref="SceneSaveSystem"/>, plus the
     /// optional UI add-on.
     /// </remarks>
     [DefaultExecutionOrder(-32760)]
@@ -37,7 +37,7 @@ namespace Lilium.RemoteControl.Scene
 
         private ExposedObjectContainer _container;
         private RemoteControlServerRunner _serverRunner;
-        private RemoteControlProvider _sceneSave;
+        private SceneSaveSystem _sceneSave;
         private SceneIoHandler _sceneIoHandler;
 
         // Route key for the scene import/export handler. The value is only a dictionary key;
@@ -53,7 +53,7 @@ namespace Lilium.RemoteControl.Scene
         public RemoteControlServerConfig serverConfig => _serverConfig;
         public RemoteControlServerCore server => _serverRunner?.server;
         public ExposedObjectContainer objectContainer => _container;
-        public RemoteControlProvider sceneSave => _sceneSave;
+        public SceneSaveSystem sceneSave => _sceneSave;
 
         public bool autoSaveOnQuit
         {
@@ -73,7 +73,7 @@ namespace Lilium.RemoteControl.Scene
         }
         public string currentFullPath => _sceneSave?.currentFullPath;
 
-        // Convenience pass-throughs (callers historically went through RemoteControlProvider).
+        // Convenience pass-throughs (callers historically went through SceneSaveSystem).
         public void LoadCurrentData() => _sceneSave?.LoadCurrentData();
         public void LoadCurrentDataFrom(string path) => _sceneSave?.LoadCurrentDataFrom(path);
         public void SaveCurrentData() => _sceneSave?.SaveCurrentData();
@@ -174,7 +174,7 @@ namespace Lilium.RemoteControl.Scene
             if (_serverRunner == null)
                 _serverRunner = new RemoteControlServerRunner(_serverConfig, _container);
             if (_sceneSave == null)
-                _sceneSave = new RemoteControlProvider(_container, defaultFileName, autoSaveOnQuit);
+                _sceneSave = new SceneSaveSystem(_container, defaultFileName, autoSaveOnQuit);
         }
 
         private void _StartServerAndRegister()

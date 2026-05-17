@@ -11,7 +11,7 @@ namespace Lilium.LiveStudio
     /// <summary>
     /// アプリ起動時に <see cref="LiveStudioProjectSettings.savedBaseSubDir"/> から
     /// <see cref="SavedPaths"/> のベースディレクトリを構築し、
-    /// <see cref="RemoteControlProvider"/> の Save Scene As ダイアログ既定パスを揃える。
+    /// <see cref="SceneSaveSystem"/> の Save Scene As ダイアログ既定パスを揃える。
     /// </summary>
     public static class LiveStudioPathsInitializer
     {
@@ -30,7 +30,7 @@ namespace Lilium.LiveStudio
                 SavedPaths.SetBaseDirectory(Path.Combine(_GetDocumentsRoot(), subDir));
             }
 
-            RemoteControlProvider.SetSaveAsDefaultDirectory(SavedPaths.EnsureSceneDirectory());
+            SceneSaveSystem.SetSaveAsDefaultDirectory(SavedPaths.EnsureSceneDirectory());
 
             Debug.Log($"[Studio] SavedPaths base directory = {SavedPaths.baseDirectory}");
         }

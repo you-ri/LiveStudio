@@ -58,7 +58,7 @@ https://github.com/you-ri/LiveStudio.git?path=/Packages/RemoteControl#beta
 ## Quick start
 
 1. **Create an `ExposerAsset`** to hold the registry of exposed objects. In the Project window: right-click → **Create > Virgo Motion > Exposer Asset**.
-2. **Add a `RemoteControlProvider` component** to a GameObject in your scene and assign the `ExposerAsset` to it.
+2. **Add a `RemoteControlBehaviour` component** to a GameObject in your scene and assign the `ExposerAsset` to it.
 3. **Mark a class as exposable** and decorate the members you want to expose:
 
    ```csharp
