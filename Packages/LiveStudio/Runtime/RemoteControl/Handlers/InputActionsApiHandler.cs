@@ -84,12 +84,13 @@ namespace Lilium.LiveStudio
             }
         }
 
-        public override bool CanHandle(HttpListenerRequest request)
+        private static readonly RouteRule[] _kRoutes =
         {
-            var path = request.Url.AbsolutePath;
-            return path.Equals("/api/input-actions", StringComparison.OrdinalIgnoreCase) ||
-                   path.Equals("/api/input-actions/bind", StringComparison.OrdinalIgnoreCase);
-        }
+            new RouteRule("/api/input-actions", RouteMatch.Exact),
+            new RouteRule("/api/input-actions/bind", RouteMatch.Exact),
+        };
+
+        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
 
         public override async Task HandleRequest(HttpListenerContext context)
         {

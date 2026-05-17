@@ -4,7 +4,9 @@ using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 using System.Threading;
+using System.Collections.Generic;
 using UnityEngine;
+using Newtonsoft.Json;
 using Lilium.RemoteControl;
 using Lilium.RemoteControl.Core;
 using Lilium.RemoteControl.Server;
@@ -40,7 +42,58 @@ namespace Lilium.RemoteControl.RestApi
 
         public abstract void Cleanup();
 
-        public abstract bool CanHandle(HttpListenerRequest request);
+        // ---- Declarative routing (opt-in; backward compatible) ----
+        // 既存ハンドラは CanHandle を override しているため挙動は不変。
+        // Routes を返すよう移行したハンドラは CanHandle を消してこの既定実装を使う。
+
+        protected enum RouteMatch { Exact, Prefix, Wildcard }
+
+        protected readonly struct RouteRule
+        {
+            public readonly string pattern;
+            public readonly RouteMatch match;
+            public RouteRule(string pattern, RouteMatch match)
+            {
+                this.pattern = pattern;
+                this.match = match;
+            }
+        }
+
+        /// <summary>
+        /// 宣言的ルート定義。null（既定）を返すハンドラは従来どおり CanHandle の
+        /// override 実装が使われる。Routes を返すと共通の一致判定が使われる。
+        /// </summary>
+        protected virtual IReadOnlyList<RouteRule> Routes => null;
+
+        public virtual bool CanHandle(HttpListenerRequest request)
+        {
+            var routes = Routes;
+            if (routes == null) return false;
+
+            var path = request.Url.AbsolutePath;
+            for (int i = 0; i < routes.Count; i++)
+            {
+                var r = routes[i];
+                bool m;
+                switch (r.match)
+                {
+                    case RouteMatch.Exact:
+                        m = path.Equals(r.pattern, StringComparison.OrdinalIgnoreCase);
+                        break;
+                    case RouteMatch.Prefix:
+                        m = path.StartsWith(r.pattern, StringComparison.OrdinalIgnoreCase);
+                        break;
+                    case RouteMatch.Wildcard:
+                        m = PathParser.IsMatchIgnoreCase(path, r.pattern);
+                        break;
+                    default:
+                        m = false;
+                        break;
+                }
+                if (m) return true;
+            }
+            return false;
+        }
 
         /// <summary>
         /// HTTPリクエストを処理（共通実装）
@@ -266,6 +319,58 @@ namespace Lilium.RemoteControl.RestApi
             {
                 return await reader.ReadToEndAsync().ConfigureAwait(false);
             }
+        }
+
+        // ---- Consolidation helpers (additive; behavior-preserving) ----
+
+        /// <summary>
+        /// リクエストボディを読み取り <typeparamref name="T"/> にデシリアライズする共通ヘルパ。
+        /// 空 body / null / JSON 例外を (ok=false, error) で返す。エラー文言は呼び出し元が
+        /// 従来の文言と一致させられるよう差し替え可能。
+        /// </summary>
+        protected async Task<(bool ok, T data, string error)> TryReadRequest<T>(
+            HttpListenerRequest request,
+            string emptyMessage = "Empty request body",
+            string invalidMessage = "Invalid request format") where T : class
+        {
+            var body = await ReadRequestBody(request).ConfigureAwait(false);
+            if (string.IsNullOrEmpty(body))
+                return (false, null, emptyMessage);
+            try
+            {
+                var data = JsonConvert.DeserializeObject<T>(body);
+                if (data == null)
+                    return (false, null, invalidMessage);
+                return (true, data, null);
+            }
+            catch (JsonException)
+            {
+                return (false, null, invalidMessage);
+            }
+        }
+
+        /// <summary>
+        /// {"error": "..."} 形式のエラーレスポンスを書き込む共通ヘルパ。
+        /// 単純な文字列メッセージの場合、従来の手組み JSON とバイト一致する。
+        /// </summary>
+        protected Task WriteError(HttpListenerContext context, int statusCode, string message)
+        {
+            context.Response.StatusCode = statusCode;
+            var json = JsonConvert.SerializeObject(new { error = message });
+            return WriteResponse(context.Response, json, "application/json");
+        }
+
+        /// <summary>
+        /// DTO を JSON 直列化してレスポンスを書き込む共通ヘルパ。
+        /// 従来 Formatting.Indented を使っていたハンドラは formatting を明示して
+        /// 出力バイトを維持する。
+        /// </summary>
+        protected Task WriteJson<T>(HttpListenerContext context, T data,
+            int statusCode = 200, Formatting formatting = Formatting.None)
+        {
+            context.Response.StatusCode = statusCode;
+            var json = JsonConvert.SerializeObject(data, formatting);
+            return WriteResponse(context.Response, json, "application/json");
         }
 
         /// <summary>

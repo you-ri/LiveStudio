@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -41,10 +42,12 @@ namespace Lilium.LiveStudio
         {
         }
 
-        public override bool CanHandle(HttpListenerRequest request)
+        private static readonly RouteRule[] _kRoutes =
         {
-            return request.Url.AbsolutePath.Equals("/api/commands", StringComparison.OrdinalIgnoreCase);
-        }
+            new RouteRule("/api/commands", RouteMatch.Exact)
+        };
+
+        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
 
         protected override bool SupportsGet() => false;
         protected override bool SupportsPost() => true;
@@ -55,8 +58,7 @@ namespace Lilium.LiveStudio
 
             if (string.IsNullOrEmpty(body))
             {
-                context.Response.StatusCode = 400;
-                await WriteResponse(context.Response, "{\"error\":\"Empty request body\"}");
+                await WriteError(context, 400, "Empty request body");
                 return;
             }
 
@@ -69,14 +71,11 @@ namespace Lilium.LiveStudio
                     return ExecuteCommand(request);
                 });
 
-                var json = JsonConvert.SerializeObject(response);
-                context.Response.StatusCode = response.success ? 200 : 400;
-                await WriteResponse(context.Response, json);
+                await WriteJson(context, response, response.success ? 200 : 400);
             }
             else
             {
-                context.Response.StatusCode = 400;
-                await WriteResponse(context.Response, "{\"error\":\"Invalid request format - missing type\"}");
+                await WriteError(context, 400, "Invalid request format - missing type");
             }
         }
 

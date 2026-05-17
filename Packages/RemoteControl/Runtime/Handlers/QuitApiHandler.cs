@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -26,10 +27,12 @@ namespace Lilium.RemoteControl.RestApi
         {
         }
 
-        public override bool CanHandle(HttpListenerRequest request)
+        private static readonly RouteRule[] _kRoutes =
         {
-            return request.Url.AbsolutePath.Equals("/api/commands/quit", StringComparison.OrdinalIgnoreCase);
-        }
+            new RouteRule("/api/commands/quit", RouteMatch.Exact)
+        };
+
+        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
 
         protected override bool SupportsGet() => false;
         protected override bool SupportsPost() => true;
@@ -46,9 +49,7 @@ namespace Lilium.RemoteControl.RestApi
                 timestamp = GetISOTimestamp()
             };
 
-            var json = Newtonsoft.Json.JsonConvert.SerializeObject(response);
-            context.Response.StatusCode = 200;
-            await WriteResponse(context.Response, json);
+            await WriteJson(context, response);
             Debug.Log("[Debug][RemoteControl] Quit response written, scheduling Task.Run");
 
             // レスポンス送信後に終了処理を実行

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Threading.Tasks;
 using System.Threading;
@@ -146,13 +147,14 @@ namespace Lilium.LiveStudio
             });
         }
 
-        public override bool CanHandle(HttpListenerRequest request)
+        private static readonly RouteRule[] _kRoutes =
         {
-            var path = request.Url.AbsolutePath;
-            return path.Equals("/api/camera", StringComparison.OrdinalIgnoreCase) ||
-                   path.Equals("/api/camera/image", StringComparison.OrdinalIgnoreCase) ||
-                   path.Equals("/api/camera/switch", StringComparison.OrdinalIgnoreCase);
-        }
+            new RouteRule("/api/camera", RouteMatch.Exact),
+            new RouteRule("/api/camera/image", RouteMatch.Exact),
+            new RouteRule("/api/camera/switch", RouteMatch.Exact),
+        };
+
+        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
 
         protected override bool SupportsGet() => true;
         protected override bool SupportsPost() => true;

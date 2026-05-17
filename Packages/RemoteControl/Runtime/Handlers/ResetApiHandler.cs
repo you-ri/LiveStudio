@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -19,10 +20,12 @@ namespace Lilium.Virgo.RemoteControl
         {
         }
 
-        public override bool CanHandle(HttpListenerRequest request)
+        private static readonly RouteRule[] _kRoutes =
         {
-            return request.Url.AbsolutePath.Equals("/api/commands/reset", StringComparison.OrdinalIgnoreCase);
-        }
+            new RouteRule("/api/commands/reset", RouteMatch.Exact)
+        };
+
+        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
 
         protected override bool SupportsGet() => false;
         protected override bool SupportsPost() => true;
@@ -38,9 +41,7 @@ namespace Lilium.Virgo.RemoteControl
                 timestamp = GetISOTimestamp()
             };
 
-            var json = JsonConvert.SerializeObject(response);
-            context.Response.StatusCode = 200;
-            await WriteResponse(context.Response, json);
+            await WriteJson(context, response);
 
             // レスポンス送信後にリセット処理を実行
             _ = Task.Run(async () =>

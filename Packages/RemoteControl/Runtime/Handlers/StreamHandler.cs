@@ -34,10 +34,13 @@ namespace Lilium.RemoteControl.RestApi.Controllers
         private static readonly ProfilerMarker s_JsonSerializeMarker = new ProfilerMarker("StreamHandler.JsonSerialize");
         private static readonly ProfilerMarker s_WriteDataMarker = new ProfilerMarker("StreamHandler.WriteData");
 
+        private readonly RouteRule[] _routes;
+
         public StreamHandler(RemoteControlServerCore server, string path = "/api/stream")
             : base(server)
         {
             _path = path;
+            _routes = new[] { new RouteRule(_path, RouteMatch.Exact) };
         }
 
         public override void Cleanup()
@@ -66,10 +69,7 @@ namespace Lilium.RemoteControl.RestApi.Controllers
             _shutdownCts = null;
         }
 
-        public override bool CanHandle(HttpListenerRequest request)
-        {
-            return request.Url.AbsolutePath.Equals(_path, StringComparison.OrdinalIgnoreCase);
-        }
+        protected override IReadOnlyList<RouteRule> Routes => _routes;
         
         public override async Task HandleRequest(HttpListenerContext httpContext)
         {

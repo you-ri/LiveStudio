@@ -1,5 +1,6 @@
 // Copyright (c) You-Ri, 2026
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -65,11 +66,12 @@ namespace Lilium.LiveStudio
             // 現状はアプリ終了時に自動で破棄される想定。
         }
 
-        public override bool CanHandle(HttpListenerRequest request)
+        private static readonly RouteRule[] _kRoutes =
         {
-            var path = request.Url.AbsolutePath;
-            return path.StartsWith("/api/manipulator/", StringComparison.OrdinalIgnoreCase);
-        }
+            new RouteRule("/api/manipulator/", RouteMatch.Prefix)
+        };
+
+        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
 
         protected override bool SupportsGet() => true;
         protected override bool SupportsPost() => true;

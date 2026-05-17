@@ -43,12 +43,13 @@ namespace Lilium.RemoteControl.Scene
         {
         }
 
-        public override bool CanHandle(HttpListenerRequest request)
+        private static readonly RouteRule[] _kRoutes =
         {
-            var path = request.Url.AbsolutePath.ToLower();
-            return path.Equals("/exposed/export") ||
-                   path.Equals("/exposed/import");
-        }
+            new RouteRule("/exposed/export", RouteMatch.Exact),
+            new RouteRule("/exposed/import", RouteMatch.Exact),
+        };
+
+        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
 
         protected override bool SupportsPost() => true;
 
@@ -67,7 +68,7 @@ namespace Lilium.RemoteControl.Scene
                 return;
             }
 
-            await WriteResponse(400, context.Response, "{\"error\":\"Invalid request format\"}");
+            await WriteError(context, 400, "Invalid request format");
         }
 
         private async Task HandleExport(HttpListenerContext context)
@@ -75,14 +76,14 @@ namespace Lilium.RemoteControl.Scene
             var body = await ReadRequestBody(context.Request);
             if (string.IsNullOrEmpty(body))
             {
-                await WriteResponse(400, context.Response, "{\"error\":\"Empty request body\"}");
+                await WriteError(context, 400, "Empty request body");
                 return;
             }
 
             var request = JsonConvert.DeserializeObject<ExportRequest>(body);
             if (string.IsNullOrEmpty(request.path))
             {
-                await WriteResponse(400, context.Response, "{\"error\":\"Path is required\"}");
+                await WriteError(context, 400, "Path is required");
                 return;
             }
 
@@ -118,7 +119,7 @@ namespace Lilium.RemoteControl.Scene
 
             if (!result)
             {
-                await WriteResponse(400, context.Response, "{\"error\":\"Export failed\"}");
+                await WriteError(context, 400, "Export failed");
                 return;
             }
             await WriteResponse(200, context.Response, "{\"success\":true}");
@@ -129,14 +130,14 @@ namespace Lilium.RemoteControl.Scene
             var body = await ReadRequestBody(context.Request);
             if (string.IsNullOrEmpty(body))
             {
-                await WriteResponse(400, context.Response, "{\"error\":\"Empty request body\"}");
+                await WriteError(context, 400, "Empty request body");
                 return;
             }
 
             var request = JsonConvert.DeserializeObject<ImportRequest>(body);
             if (string.IsNullOrEmpty(request.path))
             {
-                await WriteResponse(400, context.Response, "{\"error\":\"Path is required\"}");
+                await WriteError(context, 400, "Path is required");
                 return;
             }
 

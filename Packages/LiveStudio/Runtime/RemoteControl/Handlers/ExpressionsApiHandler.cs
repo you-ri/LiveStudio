@@ -91,10 +91,12 @@ namespace Lilium.LiveStudio
             }
         }
 
-        public override bool CanHandle(HttpListenerRequest request)
+        private static readonly RouteRule[] _kRoutes =
         {
-            return request.Url.AbsolutePath.Equals("/api/expressions", StringComparison.OrdinalIgnoreCase);
-        }
+            new RouteRule("/api/expressions", RouteMatch.Exact)
+        };
+
+        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
 
         protected override bool SupportsGet() => true;
         protected override bool SupportsPost() => true;
@@ -108,11 +110,7 @@ namespace Lilium.LiveStudio
                 availableExpressions = GetAvailableExpressions(),
                 timestamp = GetISOTimestamp()
             });
-            var json = JsonConvert.SerializeObject(response);
-            var buffer = Encoding.UTF8.GetBytes(json);
-
-            context.Response.StatusCode = 200;
-            await WriteResponse(context.Response, json);
+            await WriteJson(context, response);
         }
 
         protected override async Task HandlePostRequest(HttpListenerContext context)
@@ -121,31 +119,27 @@ namespace Lilium.LiveStudio
                 
             if (string.IsNullOrEmpty(body))
             {
-                context.Response.StatusCode = 400;
-                await WriteResponse(context.Response, "{\"error\":\"Empty request body\"}");
+                await WriteError(context, 400, "Empty request body");
                 return;
             }
 
             var request = JsonConvert.DeserializeObject<ExpressionControlRequest>(body);
-            
+
             if (request?.data != null)
             {
                 var response = await ExecuteOnMainThread(() => {
                     var result = ExecuteExpressionAction(request.data);
-                    
+
                     // SSEで他のクライアントに通知
                     _ = BroadcastExpressionUpdate();
-                    
+
                     return result;
                 });
-                var json = JsonConvert.SerializeObject(response);
-                context.Response.StatusCode = 200;
-                await WriteResponse(context.Response, json);
+                await WriteJson(context, response);
             }
             else
             {
-                context.Response.StatusCode = 400;
-                await WriteResponse(context.Response, "{\"error\":\"Invalid request format\"}");
+                await WriteError(context, 400, "Invalid request format");
             }
         }
 

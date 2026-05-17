@@ -1,5 +1,6 @@
 // Copyright (c) You-Ri, 2026
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -21,10 +22,12 @@ namespace Lilium.RemoteControl
         {
         }
 
-        public override bool CanHandle(HttpListenerRequest request)
+        private static readonly RouteRule[] _kRoutes =
         {
-            return request.Url.AbsolutePath.Equals("/api/language", StringComparison.OrdinalIgnoreCase);
-        }
+            new RouteRule("/api/language", RouteMatch.Exact)
+        };
+
+        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
 
         protected override bool SupportsGet() => true;
         protected override bool SupportsPut() => true;
@@ -53,8 +56,7 @@ namespace Lilium.RemoteControl
 
                 if (string.IsNullOrEmpty(language))
                 {
-                    context.Response.StatusCode = 400;
-                    await WriteResponse(context.Response, "{\"error\":\"'language' field is required.\"}");
+                    await WriteError(context, 400, "'language' field is required.");
                     return;
                 }
 
@@ -74,8 +76,7 @@ namespace Lilium.RemoteControl
             }
             catch (JsonException)
             {
-                context.Response.StatusCode = 400;
-                await WriteResponse(context.Response, "{\"error\":\"Invalid JSON body.\"}");
+                await WriteError(context, 400, "Invalid JSON body.");
             }
         }
     }

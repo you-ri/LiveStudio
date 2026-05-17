@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Threading.Tasks;
@@ -60,12 +61,13 @@ namespace Lilium.LiveStudio
             }
         }
         
-        public override bool CanHandle(HttpListenerRequest request)
+        private static readonly RouteRule[] _kRoutes =
         {
-            var path = request.Url.AbsolutePath;
-            return path.Equals("/api/vrm/load", StringComparison.OrdinalIgnoreCase) ||
-                   path.Equals("/api/vrm/reset", StringComparison.OrdinalIgnoreCase);
-        }
+            new RouteRule("/api/vrm/load", RouteMatch.Exact),
+            new RouteRule("/api/vrm/reset", RouteMatch.Exact),
+        };
+
+        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
         
         public override async Task HandleRequest(HttpListenerContext context)
         {

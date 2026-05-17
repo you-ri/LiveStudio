@@ -56,15 +56,16 @@ namespace Lilium.RemoteControl
         {
         }
 
-        public override bool CanHandle(HttpListenerRequest request)
+        private static readonly RouteRule[] _kRoutes =
         {
-            var path = request.Url.AbsolutePath.ToLower();
-            return path.StartsWith("/exposed/object/") ||
-                   path.StartsWith("/exposed/function/") ||
-                   path.StartsWith("/exposed/objects") ||
-                   path.StartsWith("/exposed/types") ||
-                   path.StartsWith("/exposed/enums");
-        }
+            new RouteRule("/exposed/object/", RouteMatch.Prefix),
+            new RouteRule("/exposed/function/", RouteMatch.Prefix),
+            new RouteRule("/exposed/objects", RouteMatch.Prefix),
+            new RouteRule("/exposed/types", RouteMatch.Prefix),
+            new RouteRule("/exposed/enums", RouteMatch.Prefix),
+        };
+
+        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
 
         protected override bool SupportsGet() => true;
 

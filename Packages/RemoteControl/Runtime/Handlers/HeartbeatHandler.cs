@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Text;
 using System.Threading.Tasks;
@@ -15,21 +16,20 @@ namespace Lilium.RemoteControl.RestApi.Controllers
     public class HeartbeatHandler : BaseRemoteControlApiHandler
     {
         private readonly string _path;
+        private readonly RouteRule[] _routes;
 
         public HeartbeatHandler(RemoteControlServerCore server, string path = "/api/heartbeat")
             : base(server)
         {
             _path = path;
+            _routes = new[] { new RouteRule(_path, RouteMatch.Exact) };
         }
 
         public override void Cleanup()
         {
         }
 
-        public override bool CanHandle(HttpListenerRequest request)
-        {
-            return request.Url.AbsolutePath.Equals(_path, StringComparison.OrdinalIgnoreCase);
-        }
+        protected override IReadOnlyList<RouteRule> Routes => _routes;
 
         protected override bool SupportsGet() => true;
         protected override bool SupportsPost() => true;
@@ -72,10 +72,7 @@ namespace Lilium.RemoteControl.RestApi.Controllers
                 }
             };
 
-            var json = JsonConvert.SerializeObject(responseData, Formatting.Indented);
-
-            response.StatusCode = 200;
-            await WriteResponse(response, json, "application/json");
+            await WriteJson(httpContext, responseData, 200, Formatting.Indented);
 
             // ハートビートイベントを他のクライアントに通知（オプション）
             var heartbeatEvent = new
