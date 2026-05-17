@@ -8,6 +8,39 @@ using Newtonsoft.Json.Linq;
 namespace Lilium.RemoteControl
 {
     /// <summary>
+    /// ファイル（シーン）スコープ専用のリゾルバー拡張。
+    /// ExposedSceneSerializer が保存時に利用し、プロパティ走査中の UnityEngine.Object 参照を
+    /// fileid ベースの @ref に置き換えつつ、参照先を別エントリとして収集する。
+    /// REST API など file-scope 外の経路は通常の <see cref="IExposedObjectResolver"/> を使うため
+    /// 既存挙動に影響しない。シーン保存内部専用のため internal（実装の唯一の利用者は
+    /// 同アセンブリの ExposedPropertySerializer のキャストと、IVT 経由の ExposedSceneSerializer）。
+    /// </summary>
+    internal interface IFileScopedResolver : IExposedObjectResolver
+    {
+        /// <summary>
+        /// 現在のプロパティパスにセグメントを追加する（配列添字は "[i]" 形式）。
+        /// </summary>
+        void PushPath(string segment);
+
+        /// <summary>
+        /// <see cref="PushPath"/> で積んだ最上位セグメントを取り除く。
+        /// </summary>
+        void PopPath();
+
+        /// <summary>
+        /// 現在処理中の root ExposedObject を設定する。null で解除。
+        /// </summary>
+        void SetCurrentRoot(ExposedObject root);
+
+        /// <summary>
+        /// UnityEngine.Object 参照を fileid 付きの @ref トークンとしてエンコードし、
+        /// 本体を objects[] に後で書き出せるよう内部キューに登録する。
+        /// </summary>
+        /// <returns>置換用の @ref トークン（"{ "@ref": "{guid}" }" 相当）</returns>
+        Newtonsoft.Json.Linq.JToken EncodeUnityObjectReference(UnityEngine.Object obj);
+    }
+
+    /// <summary>
     /// ExposedSceneSerializer がシーン保存時に利用する file-scope リゾルバー。
     /// - プロパティ走査中のパスを追跡する
     /// - UnityEngine.Object 参照を source-key ベースの @ref にエンコードする

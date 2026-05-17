@@ -923,12 +923,6 @@ namespace Lilium.RemoteControl.Tests
             public int readonlyInt => _readonlyInt;
         }
 
-        private class TestResolver : IExposedObjectResolver
-        {
-            public ExposedObject FindById(string id) => ExposedObjectRegistry.FindById(id);
-            public ExposedObject FindByTarget(object target) => ExposedObjectRegistry.FindByTarget(target);
-        }
-
         [Test]
         public void ContainsExposedObjectReference_StringArray_ReturnsFalse()
         {
@@ -1015,7 +1009,7 @@ namespace Lilium.RemoteControl.Tests
             var exposedClass = ExposedClass.Find(typeof(TestReadonlyRefClass));
             var testObj = new TestReadonlyRefClass { writableValue = 42 };
             var exposedObj = new ExposedObject("test-readonly-1", exposedClass, testObj);
-            var resolver = new TestResolver();
+            var resolver = new TestExposedObjectResolver();
 
             try
             {
@@ -1057,7 +1051,7 @@ namespace Lilium.RemoteControl.Tests
             var testObj = new TestReadonlyRefClass { writableValue = 1 };
             testObj.SetRefObj(soInstance);
             var exposedObj = new ExposedObject("test-readonly-2", exposedClass, testObj);
-            var resolver = new TestResolver();
+            var resolver = new TestExposedObjectResolver();
 
             try
             {
@@ -1097,7 +1091,7 @@ namespace Lilium.RemoteControl.Tests
             var testObj = new TestReadonlyRefClass { writableValue = 2 };
             testObj.SetRefArray(new[] { so1, so2 });
             var exposedObj = new ExposedObject("test-readonly-3", exposedClass, testObj);
-            var resolver = new TestResolver();
+            var resolver = new TestExposedObjectResolver();
 
             try
             {
@@ -1140,7 +1134,7 @@ namespace Lilium.RemoteControl.Tests
             // ScriptableObject[]（ベース型）として格納
             testObj.SetBaseTypeRefArray(new ScriptableObject[] { so1, so2 });
             var exposedObj = new ExposedObject("test-readonly-5", exposedClass, testObj);
-            var resolver = new TestResolver();
+            var resolver = new TestExposedObjectResolver();
 
             try
             {
@@ -1174,7 +1168,7 @@ namespace Lilium.RemoteControl.Tests
             var exposedClass = ExposedClass.Find(typeof(TestReadonlyRefClass));
             var testObj = new TestReadonlyRefClass { writableValue = 5 };
             var exposedObj = new ExposedObject("test-readonly-4", exposedClass, testObj);
-            var resolver = new TestResolver();
+            var resolver = new TestExposedObjectResolver();
 
             try
             {
@@ -1246,7 +1240,7 @@ namespace Lilium.RemoteControl.Tests
                 child = new TestNestedChild { writableValue = 5 }
             };
             var exposedObj = new ExposedObject("test-nested-readonly", exposedClass, testObj);
-            var resolver = new TestResolver();
+            var resolver = new TestExposedObjectResolver();
 
             try
             {
@@ -1294,7 +1288,7 @@ namespace Lilium.RemoteControl.Tests
                 child = new TestNestedChild { writableValue = 5 }
             };
             var exposedObj = new ExposedObject("test-nested-nonpersist", exposedClass, testObj);
-            var resolver = new TestResolver();
+            var resolver = new TestExposedObjectResolver();
 
             try
             {
@@ -1350,7 +1344,7 @@ namespace Lilium.RemoteControl.Tests
             var exposedClass = ExposedClass.Find(typeof(TestDeltaFromDefaultRefClass));
             var testObj = new TestDeltaFromDefaultRefClass { normalValue = 5, config = soInstance };
             var exposedObj = new ExposedObject("dirty-ref-test", exposedClass, testObj);
-            var resolver = new TestResolver();
+            var resolver = new TestExposedObjectResolver();
 
             // デフォルト値を設定（dirty判定のベースライン）
             ExposedPropertyUtility.SetDefault(exposedObj);
@@ -1475,7 +1469,7 @@ namespace Lilium.RemoteControl.Tests
                 }
             }.ToString();
 
-            var resolver = new TestResolver();
+            var resolver = new TestExposedObjectResolver();
             var token = JObject.Parse(partial)["value"];
             var resultObj = ExposedPropertySerializer.DeserializeExposedObject(resolver, token, typeof(TransformValueHolder), existing);
             var result = (TransformValueHolder)resultObj;

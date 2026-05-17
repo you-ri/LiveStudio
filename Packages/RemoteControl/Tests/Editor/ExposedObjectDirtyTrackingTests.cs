@@ -115,15 +115,9 @@ namespace Lilium.RemoteControl.Tests
             public List<TestDirtyRefItem> items;
         }
 
-        public class MockExposedObjectResolver : IExposedObjectResolver
-        {
-            public ExposedObject FindById(string id) => ExposedObjectRegistry.FindById(id);
-            public ExposedObject FindByTarget(object target) => ExposedObjectRegistry.FindByTarget(target);
-        }
-
         #endregion
 
-        private MockExposedObjectResolver _resolver;
+        private TestExposedObjectResolver _resolver;
 
         [SetUp]
         public void SetUp()
@@ -150,7 +144,7 @@ namespace Lilium.RemoteControl.Tests
                 obj.Unregister();
             }
 
-            _resolver = new MockExposedObjectResolver();
+            _resolver = new TestExposedObjectResolver();
         }
 
         [TearDown]

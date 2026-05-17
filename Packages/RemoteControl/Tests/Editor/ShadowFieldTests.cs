@@ -101,15 +101,9 @@ namespace Lilium.RemoteControl.Tests
         {
         }
 
-        private class TestResolver : IExposedObjectResolver
-        {
-            public ExposedObject FindById(string id) => ExposedObjectRegistry.FindById(id);
-            public ExposedObject FindByTarget(object target) => ExposedObjectRegistry.FindByTarget(target);
-        }
-
         #endregion
 
-        private TestResolver _resolver;
+        private TestExposedObjectResolver _resolver;
 
         [SetUp]
         public void SetUp()
@@ -122,7 +116,7 @@ namespace Lilium.RemoteControl.Tests
             var toRemove = ExposedObjectRegistry.instances.ToList();
             foreach (var obj in toRemove) obj.Unregister();
 
-            _resolver = new TestResolver();
+            _resolver = new TestExposedObjectResolver();
         }
 
         [TearDown]

@@ -46,15 +46,9 @@ namespace Lilium.RemoteControl.Tests
             public TestReceiverBase receiver;
         }
 
-        private class MockResolver : IExposedObjectResolver
-        {
-            public ExposedObject FindById(string id) => ExposedObjectRegistry.FindById(id);
-            public ExposedObject FindByTarget(object target) => ExposedObjectRegistry.FindByTarget(target);
-        }
-
         #endregion
 
-        private MockResolver _resolver;
+        private TestExposedObjectResolver _resolver;
         private readonly List<GameObject> _createdGameObjects = new List<GameObject>();
 
         [SetUp]
@@ -70,7 +64,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<TestOtherComponent>();
             ExposedClass.RegisterFromAttributes<TestHolder>();
 
-            _resolver = new MockResolver();
+            _resolver = new TestExposedObjectResolver();
         }
 
         [TearDown]
