@@ -7,6 +7,7 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Core;
 using Lilium.RemoteControl.Server;
 using Lilium.RemoteControl.RestApi;
 using Newtonsoft.Json;

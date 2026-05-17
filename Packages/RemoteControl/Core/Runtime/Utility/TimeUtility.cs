@@ -1,6 +1,6 @@
 using System;
 
-namespace Lilium.RemoteControl
+namespace Lilium.RemoteControl.Core
 {
     /// <summary>
     /// スレッドセーフな時間取得ユーティリティ

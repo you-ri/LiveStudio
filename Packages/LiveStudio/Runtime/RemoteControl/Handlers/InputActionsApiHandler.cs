@@ -11,6 +11,7 @@ using Lilium.RemoteControl.RestApi;
 
 using Newtonsoft.Json;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Core;
 
 namespace Lilium.LiveStudio
 {

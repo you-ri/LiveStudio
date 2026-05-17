@@ -10,6 +10,7 @@ using Newtonsoft.Json;
 using Lilium.RemoteControl;
 using Lilium.RemoteControl.Core;
 using Lilium.RemoteControl.Server;
+using Lilium.RemoteControl.Utility;
 
 namespace Lilium.RemoteControl.RestApi
 {
@@ -196,6 +197,14 @@ namespace Lilium.RemoteControl.RestApi
         protected Task WriteResponse(int statusCode, HttpListenerResponse response, string content, string contentType = "application/json")
         {
             response.StatusCode = statusCode;
+            return _WriteResponseBody(response, content, contentType);
+        }
+
+        // WriteResponse の共通本体。StatusCode は一切触らない
+        // （statusCode 付きオーバーロードのみが事前に設定する。no-status 版は
+        //  呼び出し側が事前に設定した StatusCode をそのまま使う既存挙動を保つ）。
+        private Task _WriteResponseBody(HttpListenerResponse response, string content, string contentType)
+        {
             response.ContentType = contentType;
 
             // CORSヘッダーが未設定の場合のみ追加
@@ -224,27 +233,7 @@ namespace Lilium.RemoteControl.RestApi
         /// </summary>
         protected Task WriteResponse(HttpListenerResponse response, string content, string contentType = "application/json")
         {
-            response.ContentType = contentType;
-
-            // CORSヘッダーが未設定の場合のみ追加
-            if (string.IsNullOrEmpty(response.Headers["Access-Control-Allow-Origin"]))
-            {
-                response.Headers.Add("Access-Control-Allow-Origin", "*");
-            }
-
-            if (!string.IsNullOrEmpty(content))
-            {
-                byte[] buffer = Encoding.UTF8.GetBytes(content);
-                response.ContentLength64 = buffer.Length;
-                response.OutputStream.Write(buffer, 0, buffer.Length);
-            }
-            else
-            {
-                response.ContentLength64 = 0;
-            }
-
-            response.Close();
-            return Task.CompletedTask;
+            return _WriteResponseBody(response, content, contentType);
         }
 
         /// <summary>
@@ -378,7 +367,7 @@ namespace Lilium.RemoteControl.RestApi
         /// </summary>
         protected long GetTimestamp()
         {
-            return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            return TimeUtility.GetUnixTimeMilliseconds();
         }
 
         /// <summary>

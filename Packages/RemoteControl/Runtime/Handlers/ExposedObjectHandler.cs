@@ -9,6 +9,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Lilium.RemoteControl.Server;
 using Lilium.RemoteControl.RestApi;
+using Lilium.RemoteControl.Utility;
 using Lilium.RemoteControl.Reflection;
 
 using PropertyPath = Lilium.RemoteControl.Reflection.PropertyPath;
@@ -923,16 +924,25 @@ namespace Lilium.RemoteControl
         /// @parent 変更を SSE で broadcast する。child 全体のフルシリアライズを送り、
         /// 受信側 (RemoteApp) はツリー表示を再構築する。
         /// </summary>
-        private static void _BroadcastParentChanged(string childId, JObject valueJObject)
+        /// <summary>
+        /// exposed_object_updated メッセージを生成する。キー挿入順
+        /// [type,id,path,value,changed] は Newtonsoft 直列化バイトに影響するため厳守。
+        /// </summary>
+        private static JObject _CreateExposedObjectUpdatedMessage(string id, string path, JObject value, bool changed)
         {
-            var message = new JObject
+            return new JObject
             {
                 ["type"] = "exposed_object_updated",
-                ["id"] = childId,
-                ["path"] = "",
-                ["value"] = valueJObject,
-                ["changed"] = true
+                ["id"] = id,
+                ["path"] = path,
+                ["value"] = value,
+                ["changed"] = changed
             };
+        }
+
+        private static void _BroadcastParentChanged(string childId, JObject valueJObject)
+        {
+            var message = _CreateExposedObjectUpdatedMessage(childId, "", valueJObject, true);
 
             foreach (var instance in RemoteControlServerManager.servers.Values)
             {
@@ -968,14 +978,7 @@ namespace Lilium.RemoteControl
             var valueJObject = ExposedPropertySerializer.SerializeFullToJObject(
                 parentExposed, DefaultExposedObjectResolver.Instance);
 
-            var message = new JObject
-            {
-                ["type"] = "exposed_object_updated",
-                ["id"] = requestId,
-                ["path"] = parentSlashPath,
-                ["value"] = valueJObject,
-                ["changed"] = true
-            };
+            var message = _CreateExposedObjectUpdatedMessage(requestId, parentSlashPath, valueJObject, true);
 
             foreach (var instance in RemoteControlServerManager.servers.Values)
             {

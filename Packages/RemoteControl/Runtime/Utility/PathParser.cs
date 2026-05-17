@@ -1,6 +1,6 @@
 using System;
 
-namespace Lilium.RemoteControl
+namespace Lilium.RemoteControl.Utility
 {
     /// <summary>
     /// パス解析とパターンマッチング機能を提供するユーティリティクラス

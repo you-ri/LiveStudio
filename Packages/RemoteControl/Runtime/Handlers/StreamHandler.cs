@@ -294,7 +294,7 @@ namespace Lilium.RemoteControl.RestApi.Controllers
                     if (dataObj["type"] == null)
                         dataObj["type"] = eventType;
                     if (dataObj["timestamp"] == null)
-                        dataObj["timestamp"] = GetCurrentTimestamp();
+                        dataObj["timestamp"] = TimeUtility.GetISOTimestamp();
 
                     unifiedData = new
                     {
@@ -329,10 +329,6 @@ namespace Lilium.RemoteControl.RestApi.Controllers
             }
         }
         
-        private string GetCurrentTimestamp()
-        {
-            return TimeUtility.GetISOTimestamp();
-        }
         
         private void SendSseComment(StreamWriter writer, string comment)
         {

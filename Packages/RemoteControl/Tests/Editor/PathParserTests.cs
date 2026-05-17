@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Utility;
 
 namespace Lilium.RemoteControl.Tests
 {

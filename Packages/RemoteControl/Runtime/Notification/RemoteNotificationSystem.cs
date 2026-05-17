@@ -1,7 +1,7 @@
 // Copyright (c) You-Ri, 2026
 using Lilium.RemoteControl.Server;
 
-namespace Lilium.RemoteControl
+namespace Lilium.RemoteControl.Notification
 {
     /// <summary>
     /// Studio 等の Unity アプリから接続中の Remote App へ通知ダイアログを表示するための静的 API。
