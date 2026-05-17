@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -37,11 +38,12 @@ namespace Lilium.RemoteControl
         {
         }
 
-        public override bool CanHandle(HttpListenerRequest request)
+        private static readonly RouteRule[] _kRoutes =
         {
-            return request.Url.AbsolutePath.Equals("/api/status", StringComparison.OrdinalIgnoreCase) &&
-                   request.HttpMethod == "GET";
-        }
+            new RouteRule("/api/status", RouteMatch.Exact)
+        };
+
+        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
 
         protected override bool SupportsGet() => true;
 
@@ -55,9 +57,7 @@ namespace Lilium.RemoteControl
                 fps = 60,//TimeService.fps,
             };
 
-            var json = JsonUtility.ToJson(status);
-            context.Response.StatusCode = 200;
-            return WriteResponse(context.Response, json);
+            return WriteJson(context, status);
         }
 
     }
