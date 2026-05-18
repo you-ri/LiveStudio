@@ -1538,24 +1538,18 @@ namespace Lilium.RemoteControl
             return _FromJsonProperty(resolver, token, property, captureDefaults: true);
         }
 
+        // Phase 10: 段別 private ヘルパに逐語分解した dispatcher。
+        // 判定順・SetValue 引数・captureDefaults 伝播・existingValue の単一取得位置・
+        // 子再帰順は元実装と完全一致(挙動 byte 不変)。
         private static bool _FromJsonProperty(IExposedObjectResolver resolver, JToken token, ExposedProperty property, bool captureDefaults)
         {
-            // PropertyRef: 参照先の型でデシリアライズし、SetValue で参照先に委譲する
+            // ① PropertyRef: 参照先の型でデシリアライズし、SetValue で参照先に委譲する
             if (property.type != null && property.type.isExposedPropertyReference)
             {
-                var resolvedType = property.type.resolvedValueType;
-                if (resolvedType == null || resolvedType == typeof(ExposedPropertyRef))
-                {
-                    return false;
-                }
-                if (token == null || token.Type == JTokenType.Null) return false;
-                var refExistingValue = property.GetValue();
-                var deserialized = DeserializeUnityType(resolver, token, resolvedType, refExistingValue);
-                property.SetValue(deserialized, captureDefault: captureDefaults);
-                return true;
+                return _FromJsonRefProperty(resolver, token, property, captureDefaults);
             }
 
-            // ポリモーフィック型不一致 (保存時の @type と実体型が兄弟サブクラス等で異なる) を
+            // ② ポリモーフィック型不一致 (保存時の @type と実体型が兄弟サブクラス等で異なる) を
             // 入口で検出し短絡する。後続の Get/Set 経路 (existingValue 取得 / oldValue 取得 /
             // EnsureDefaultCaptured / SetValueRaw) が同じ警告を繰り返し出すのを防ぐ。
             if (ExposedPropertyUtility.WarnIfInstanceMismatch(property.obj, property.type))
@@ -1565,7 +1559,7 @@ namespace Lilium.RemoteControl
 
             var valueTypeForNull = property.type.valueType;
 
-            // UnityEngine.Object 派生フィールドに null token を受け取った場合は明示的に null 代入する。
+            // ③ UnityEngine.Object 派生フィールドに null token を受け取った場合は明示的に null 代入する。
             // (ObjectSelector の None 選択で RemoteApp が送ってくるケース)
             if ((token == null || token.Type == JTokenType.Null)
                 && valueTypeForNull != null
@@ -1580,7 +1574,7 @@ namespace Lilium.RemoteControl
             var existingValue = property.GetValue();
             var valueType = property.type.valueType;
 
-            // ObjectSelector: @ref を解決して fieldType に沿う値 (Component など) を代入する。
+            // ④a ObjectSelector: @ref を解決して fieldType に沿う値 (Component など) を代入する。
             // wrapper が GameObject を指す場合は GetComponent(fieldType) で取り出す。
             if (property.type.controlAttribute is ObjectSelectorAttribute
                 && valueType != null
@@ -1591,118 +1585,159 @@ namespace Lilium.RemoteControl
                 return true;
             }
 
-            // 配列の場合: 配列全体を設定後、各要素も再帰処理
+            // ④b/④c 配列
             if (property.isArray && token is JArray jArray)
             {
-                // デルタ形式判定: @op要素があるか確認
-                bool isDelta = IsArrayDeltaFormat(jArray);
-
-                if (isDelta)
-                {
-                    return _FromJsonPropertyArrayDelta(resolver, jArray, property, captureDefaults);
-                }
-
-                // 既存配列の長さを記録
-                int existingLength = property.arrayLength;
-
-                // 配列のサイズを調整 - デシリアライズ前に行う
-                var elementType = ExposedPropertyUtility.GetCollectionElementType(property.type.valueType);
-
-                // 読み取り専用でない場合のみ配列サイズを調整
-                if (!property.type.isReadOnly)
-                {
-                    // 配列のサイズを拡張（必要な場合）
-                    while (property.arrayLength < jArray.Count)
-                    {
-                        // CreateDefaultElementで新規要素を追加
-                        var defaultElement = ExposedPropertyUtility.CreateDefaultElement(elementType);
-                        property.Add(defaultElement);
-                    }
-
-                    // 配列のサイズを縮小（必要な場合）
-                    while (property.arrayLength > jArray.Count)
-                    {
-                        property.RemoveAt(property.arrayLength - 1);
-                    }
-
-                    // 新規要素のデフォルト値キャプチャとインスタンス置き換え
-                    _InitializeNewArrayElements(property, elementType, existingLength);
-                }
-
-                // 各要素をデシリアライズ
-                for (int i = 0; i < property.arrayLength && i < jArray.Count; i++)
-                {
-                    var elementProp = property.GetPropertyIndex(i);
-                    if (elementProp != null)
-                    {
-                        _FromJsonProperty(resolver, jArray[i], elementProp.Value, captureDefaults);
-                    }
-                }
-                return true;
+                return _FromJsonArrayProperty(resolver, jArray, property, captureDefaults);
             }
 
-            // オブジェクト/構造体の場合: 子プロパティも再帰処理
+            // ⑤ オブジェクト/構造体
             if (!property.type.isUnityPrimtive && token is JObject jObject)
             {
-                // デフォルト値キャプチャ（SceneFromJson経由ではスキップ：
-                // デフォルトはContainer.Initializeで既にキャプチャ済み。
-                // DeserializeExposedObject内のSetValueRawが先に値を変更するため、
-                // ここでキャプチャすると変更後の値がデフォルトになってしまう）
-                if (captureDefaults)
-                {
-                    _EnsureDefaultsCapturedRecursive(jObject, property);
-                }
-
-                var value = DeserializeUnityType(resolver, token, valueType, existingValue);
-
-                // SetValueを子プロパティ再帰の前に実行（型切り替え後の参照を親に反映するため）
-                property.SetValue(value, captureDefault: captureDefaults);
-
-                // 実際の型でExposedClassを取得（型切り替え後の型を使用）
-                var actualType = value != null ? value.GetType() : null;
-                var exposedClass = actualType != null ? ExposedClass.Find(actualType) : null;
-
-                // 子プロパティを再帰処理
-                if (exposedClass != null && exposedClass.propertyTypes != null)
-                {
-                    // ExposedClassが登録されている場合はpropertyTypesを使用
-                    foreach (var childType in exposedClass.propertyTypes)
-                    {
-                        var childToken = jObject[childType.name];
-                        if (childToken != null && childToken.Type != JTokenType.Null)
-                        {
-                            var childProp = property.GetProperty(childType.name);
-                            if (childProp != null)
-                            {
-                                _FromJsonProperty(resolver, childToken, childProp.Value, captureDefaults);
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    // ExposedClassがない場合はJSONキーに基づいて子プロパティを処理
-                    foreach (var jsonProperty in jObject.Properties())
-                    {
-                        // メタデータキー（@type, @id, @ref, @name）はスキップ
-                        if (jsonProperty.Name.StartsWith("@")) continue;
-
-                        var childProp = property.GetProperty(jsonProperty.Name);
-                        if (childProp != null && jsonProperty.Value != null && jsonProperty.Value.Type != JTokenType.Null)
-                        {
-                            _FromJsonProperty(resolver, jsonProperty.Value, childProp.Value, captureDefaults);
-                        }
-                    }
-                }
-
-                return true;
+                return _FromJsonObjectProperty(resolver, jObject, property, valueType, existingValue, captureDefaults);
             }
 
+            // ⑥ プリミティブ/Unity型
+            return _FromJsonPrimitiveProperty(resolver, token, property, valueType, existingValue, captureDefaults);
+        }
+
+        // ① PropertyRef 段。元 _FromJsonProperty L1546-1555 を逐語抽出。
+        private static bool _FromJsonRefProperty(IExposedObjectResolver resolver, JToken token, ExposedProperty property, bool captureDefaults)
+        {
+            var resolvedType = property.type.resolvedValueType;
+            if (resolvedType == null || resolvedType == typeof(ExposedPropertyRef))
+            {
+                return false;
+            }
+            if (token == null || token.Type == JTokenType.Null) return false;
+            var refExistingValue = property.GetValue();
+            var deserialized = DeserializeUnityType(resolver, token, resolvedType, refExistingValue);
+            property.SetValue(deserialized, captureDefault: captureDefaults);
+            return true;
+        }
+
+        // ④b/④c 配列段。delta は _FromJsonPropertyArrayDelta へ委譲。元 L1597-1641 を逐語抽出。
+        private static bool _FromJsonArrayProperty(IExposedObjectResolver resolver, JArray jArray, ExposedProperty property, bool captureDefaults)
+        {
+            // デルタ形式判定: @op要素があるか確認
+            bool isDelta = IsArrayDeltaFormat(jArray);
+
+            if (isDelta)
+            {
+                return _FromJsonPropertyArrayDelta(resolver, jArray, property, captureDefaults);
+            }
+
+            // 既存配列の長さを記録
+            int existingLength = property.arrayLength;
+
+            // 配列のサイズを調整 - デシリアライズ前に行う
+            var elementType = ExposedPropertyUtility.GetCollectionElementType(property.type.valueType);
+
+            // 読み取り専用でない場合のみ配列サイズを調整
+            if (!property.type.isReadOnly)
+            {
+                // 配列のサイズを拡張（必要な場合）
+                while (property.arrayLength < jArray.Count)
+                {
+                    // CreateDefaultElementで新規要素を追加
+                    var defaultElement = ExposedPropertyUtility.CreateDefaultElement(elementType);
+                    property.Add(defaultElement);
+                }
+
+                // 配列のサイズを縮小（必要な場合）
+                while (property.arrayLength > jArray.Count)
+                {
+                    property.RemoveAt(property.arrayLength - 1);
+                }
+
+                // 新規要素のデフォルト値キャプチャとインスタンス置き換え
+                _InitializeNewArrayElements(property, elementType, existingLength);
+            }
+
+            // 各要素をデシリアライズ
+            for (int i = 0; i < property.arrayLength && i < jArray.Count; i++)
+            {
+                var elementProp = property.GetPropertyIndex(i);
+                if (elementProp != null)
+                {
+                    _FromJsonProperty(resolver, jArray[i], elementProp.Value, captureDefaults);
+                }
+            }
+            return true;
+        }
+
+        // ⑤ オブジェクト/構造体段。元 L1646-1698 を逐語抽出 (valueType/existingValue は
+        // dispatcher の単一取得値をそのまま受け取る)。
+        // 不変条件: _EnsureDefaultsCapturedRecursive は SetValue より前 / 子再帰は SetValue より後 /
+        // captureDefaults を子へ伝播。
+        private static bool _FromJsonObjectProperty(IExposedObjectResolver resolver, JObject jObject, ExposedProperty property, System.Type valueType, object existingValue, bool captureDefaults)
+        {
+            // デフォルト値キャプチャ（SceneFromJson経由ではスキップ：
+            // デフォルトはContainer.Initializeで既にキャプチャ済み。
+            // DeserializeExposedObject内のSetValueRawが先に値を変更するため、
+            // ここでキャプチャすると変更後の値がデフォルトになってしまう）
+            if (captureDefaults)
+            {
+                _EnsureDefaultsCapturedRecursive(jObject, property);
+            }
+
+            var value = DeserializeUnityType(resolver, jObject, valueType, existingValue);
+
+            // SetValueを子プロパティ再帰の前に実行（型切り替え後の参照を親に反映するため）
+            property.SetValue(value, captureDefault: captureDefaults);
+
+            // 実際の型でExposedClassを取得（型切り替え後の型を使用）
+            var actualType = value != null ? value.GetType() : null;
+            var exposedClass = actualType != null ? ExposedClass.Find(actualType) : null;
+
+            // 子プロパティを再帰処理
+            if (exposedClass != null && exposedClass.propertyTypes != null)
+            {
+                // ExposedClassが登録されている場合はpropertyTypesを使用
+                foreach (var childType in exposedClass.propertyTypes)
+                {
+                    var childToken = jObject[childType.name];
+                    if (childToken != null && childToken.Type != JTokenType.Null)
+                    {
+                        var childProp = property.GetProperty(childType.name);
+                        if (childProp != null)
+                        {
+                            _FromJsonProperty(resolver, childToken, childProp.Value, captureDefaults);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // ExposedClassがない場合はJSONキーに基づいて子プロパティを処理
+                foreach (var jsonProperty in jObject.Properties())
+                {
+                    // メタデータキー（@type, @id, @ref, @name）はスキップ
+                    if (jsonProperty.Name.StartsWith("@")) continue;
+
+                    var childProp = property.GetProperty(jsonProperty.Name);
+                    if (childProp != null && jsonProperty.Value != null && jsonProperty.Value.Type != JTokenType.Null)
+                    {
+                        _FromJsonProperty(resolver, jsonProperty.Value, childProp.Value, captureDefaults);
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        // ⑥ プリミティブ/Unity型段。
+        // Phase 11 是正: 旧実装は SetValue の captureDefault 引数を省略し常に true だった
+        // (段①③④a⑤ は captureDefaults を明示伝播)。現行フローでは Container 取得済みパスは
+        // 冪等吸収、新規配列要素は @op:"new" 完全出力のため観測可能な実害は未再現だが、
+        // 段間の伝播一貫性回復(default 二重キャプチャ抑止指示の尊重)のため captureDefaults を伝播する。
+        private static bool _FromJsonPrimitiveProperty(IExposedObjectResolver resolver, JToken token, ExposedProperty property, System.Type valueType, object existingValue, bool captureDefaults)
+        {
             // プリミティブ/Unity型の場合: 単純にSetValue（dirtyマーキングあり）
             var simpleValue = DeserializeUnityType(resolver, token, valueType, existingValue);
             if (simpleValue != null)
             {
-                property.SetValue(simpleValue);
+                property.SetValue(simpleValue, captureDefault: captureDefaults);
                 return true;
             }
 
@@ -1932,6 +1967,9 @@ namespace Lilium.RemoteControl
 
         // -------------------------------------------------------
         // Array element operations
+        // 留置判断(Phase 9/10 再評価): Add はコア _FromJsonProperty に不可避依存のため
+        // このクラスに留置。Remove/Reorder は _FromJsonProperty 非依存で独立化自体は
+        // 可能だが薄いコマンドラッパで利得が無く直接テストも無いため同居維持。
         // -------------------------------------------------------
 
         internal static bool AddArrayElement(string json, in ExposedProperty property)

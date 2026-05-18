@@ -89,6 +89,25 @@ namespace Lilium.RemoteControl.Tests
             public Mid3 mid = new Mid3();
         }
 
+        // 追跡型(ExposedClass)のネスト要素を持つリスト。
+        // SceneFromJson(captureDefaults=false) で新規追加された要素の primitive が
+        // 段⑤(object,false)→段⑥(primitive) を通る経路の検証用。
+        [Serializable]
+        [ExposedClass("TestEdgeTrackedItem")]
+        public class TrackedItem
+        {
+            [ExposedField]
+            public int value;
+        }
+
+        [Serializable]
+        [ExposedClass("TestEdgeTrackedListHolder")]
+        public class TrackedListHolder
+        {
+            [ExposedField]
+            public List<TrackedItem> items = new List<TrackedItem>();
+        }
+
         #endregion
 
         private TestExposedObjectResolver _resolver;
@@ -102,6 +121,8 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<Leaf3>();
             ExposedClass.RegisterFromAttributes<Mid3>();
             ExposedClass.RegisterFromAttributes<Root3>();
+            ExposedClass.RegisterFromAttributes<TrackedItem>();
+            ExposedClass.RegisterFromAttributes<TrackedListHolder>();
 
             var toRemove = ExposedObjectRegistry.instances.ToList();
             foreach (var obj in toRemove)
@@ -304,6 +325,53 @@ namespace Lilium.RemoteControl.Tests
             Assert.AreEqual(42, testObj2.mid.leaf.leafValue, "precondition: leaf value round-trips");
             Assert.GreaterOrEqual(testObj2.mid.leaf.callbackCount, 1,
                 "IExposedDeserializeCallback must propagate to a level-3 nested ExposedClass");
+        }
+
+        // ---- Group C: captureDefaults propagation for new array element primitive ----
+
+        [Test]
+        public void NewArrayElementPrimitive_SceneFromJsonThenReDelta_DoesNotLoseValue()
+        {
+            // 段⑥ primitive の captureDefault 不整合検証。
+            // SceneFromJson(captureDefaults=false) で新規追加された配列要素の primitive が
+            // 段⑤(object, captureDefault:false)→段⑥(primitive) を通る。段⑥が captureDefaults を
+            // 無視して default を誤キャプチャすると、続く Delta 保存で当該値が脱落し、
+            // 2 段目 round-trip でデータが失われる(保存時データ消失)。
+            var ec = ExposedClass.Find(typeof(TrackedListHolder));
+
+            // hop1: src は要素1個で SetDefault → 要素追加(value=99) → Delta 保存
+            var src = new TrackedListHolder { items = new List<TrackedItem> { new TrackedItem { value = 1 } } };
+            var srcExposed = new ExposedObject("tracked-h", ec, src);
+            ExposedPropertyUtility.SetDefault(srcExposed);
+            src.items.Add(new TrackedItem { value = 99 });
+            var s1 = ExposedSceneSerializer.SceneToJson(
+                new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            srcExposed.Unregister();
+
+            // dst: 要素1個で SetDefault → SceneFromJson(s1) で2要素へ(captureDefaults=false 経路) → 再 Delta
+            var dst = new TrackedListHolder { items = new List<TrackedItem> { new TrackedItem { value = 1 } } };
+            var dstExposed = new ExposedObject("tracked-h", ec, dst);
+            ExposedPropertyUtility.SetDefault(dstExposed);
+            ExposedSceneSerializer.SceneFromJson(s1, _resolver);
+
+            Assert.AreEqual(2, dst.items.Count, "precondition: new element loaded");
+            Assert.AreEqual(99, dst.items[1].value, "precondition: loaded primitive value");
+
+            var s2 = ExposedSceneSerializer.SceneToJson(
+                new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            dstExposed.Unregister();
+
+            // hop2: s2 を別オブジェクトへロード。段⑥誤キャプチャがあると items[1].value が
+            // s2 から脱落しており、ここで 99 が復元されない(データ消失)。
+            var third = new TrackedListHolder { items = new List<TrackedItem> { new TrackedItem { value = 1 } } };
+            var thirdExposed = new ExposedObject("tracked-h", ec, third);
+            ExposedPropertyUtility.SetDefault(thirdExposed);
+            ExposedSceneSerializer.SceneFromJson(s2, _resolver);
+
+            Assert.AreEqual(2, third.items.Count,
+                "new element must survive a second delta round-trip");
+            Assert.AreEqual(99, third.items[1].value,
+                "new array element primitive must not be mis-captured as default (captureDefaults must propagate to segment ⑥)");
         }
     }
 }
