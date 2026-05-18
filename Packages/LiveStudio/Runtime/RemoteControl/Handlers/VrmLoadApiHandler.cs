@@ -52,7 +52,7 @@ namespace Lilium.LiveStudio
                     progress = 0f,
                     isLoading = true,
                     error = (string)null,
-                    timestamp = GetTimestamp(),
+                    timestamp = TimeUtility.GetUnixTimeMilliseconds(),
                     filename = Path.GetFileName(VRMLoader.CurrentLoadingFilePath),
                     applicationName = "VirgoMotionStudio"
                 };
@@ -68,26 +68,25 @@ namespace Lilium.LiveStudio
         };
 
         protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
-        
-        public override async Task HandleRequest(HttpListenerContext context)
+
+        protected override bool SupportsPost() => true;
+
+        protected override async Task HandlePostRequest(HttpListenerContext context)
         {
-            var endpoints = new EndpointConfig[]
+            var path = context.Request.Url.AbsolutePath;
+
+            if (path.Equals("/api/vrm/load", StringComparison.OrdinalIgnoreCase))
             {
-                new EndpointConfig
-                {
-                    Path = "/api/vrm/load",
-                    SupportedMethods = new[] { "POST", "OPTIONS" },
-                    PostHandler = HandleVrmLoadRequest
-                },
-                new EndpointConfig
-                {
-                    Path = "/api/vrm/reset",
-                    SupportedMethods = new[] { "POST", "OPTIONS" },
-                    PostHandler = HandleVrmResetRequest
-                }
-            };
-            
-            await HandleMultipleEndpoints(context, endpoints);
+                await HandleVrmLoadRequest(context);
+                return;
+            }
+            if (path.Equals("/api/vrm/reset", StringComparison.OrdinalIgnoreCase))
+            {
+                await HandleVrmResetRequest(context);
+                return;
+            }
+
+            await SendNotFound(context);
         }
         
         private async Task HandleVrmLoadRequest(HttpListenerContext context)
@@ -138,7 +137,7 @@ namespace Lilium.LiveStudio
                 {
                     success = true,
                     message = "VRM load started",
-                    timestamp = GetTimestamp(),
+                    timestamp = TimeUtility.GetUnixTimeMilliseconds(),
                     filePath = filePath
                 };
 
@@ -171,7 +170,7 @@ namespace Lilium.LiveStudio
                 {
                     success = true,
                     message = "Avatar reset successfully",
-                    timestamp = GetTimestamp()
+                    timestamp = TimeUtility.GetUnixTimeMilliseconds()
                 };
 
                 var json = JsonConvert.SerializeObject(responseData, Formatting.Indented);
@@ -183,7 +182,7 @@ namespace Lilium.LiveStudio
                 var resetData = new
                 {
                     type = "vrm_reset_complete",
-                    timestamp = GetTimestamp(),
+                    timestamp = TimeUtility.GetUnixTimeMilliseconds(),
                     applicationName = "VirgoMotionStudio"
                 };
 
@@ -246,7 +245,7 @@ namespace Lilium.LiveStudio
                 progress = 0f,
                 isLoading = true,
                 error = (string)null,
-                timestamp = GetTimestamp(),
+                timestamp = TimeUtility.GetUnixTimeMilliseconds(),
                 filename = Path.GetFileName(filePath),
                 applicationName = "VirgoMotionStudio"
             };
@@ -265,7 +264,7 @@ namespace Lilium.LiveStudio
                 progress = 100f,
                 isLoading = false,
                 error = (string)null,
-                timestamp = GetTimestamp(),
+                timestamp = TimeUtility.GetUnixTimeMilliseconds(),
                 filename = Path.GetFileName(_currentFilePath),
                 avatarName = vrm?.name,
                 applicationName = "VirgoMotionStudio"
@@ -289,7 +288,7 @@ namespace Lilium.LiveStudio
                 progress = 0f,
                 isLoading = false,
                 error = error,
-                timestamp = GetTimestamp(),
+                timestamp = TimeUtility.GetUnixTimeMilliseconds(),
                 filename = Path.GetFileName(_currentFilePath),
                 applicationName = "VirgoMotionStudio"
             };
@@ -312,7 +311,7 @@ namespace Lilium.LiveStudio
                     progress = progress * 100f,
                     isLoading = true,
                     error = (string)null,
-                    timestamp = GetTimestamp(),
+                    timestamp = TimeUtility.GetUnixTimeMilliseconds(),
                     filename = Path.GetFileName(_currentFilePath),
                     applicationName = "VirgoMotionStudio"
                 };

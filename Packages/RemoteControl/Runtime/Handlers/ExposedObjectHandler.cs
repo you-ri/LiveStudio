@@ -48,11 +48,6 @@ namespace Lilium.RemoteControl
         {
         }
 
-        private IExposedObjectResolver _GetResolver()
-        {
-            return GetObjectContainer() ?? (IExposedObjectResolver)DefaultExposedObjectResolver.Instance;
-        }
-
         public override void Cleanup()
         {
         }
@@ -108,7 +103,7 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            await WriteResponse(400, context.Response, "{\"error\":\"Invalid request format\"}");
+            await WriteError(context, 400, "Invalid request format");
         }
 
         protected override async Task HandlePutRequest(HttpListenerContext context)
@@ -128,7 +123,7 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            await WriteResponse(400, context.Response, "{\"error\":\"Empty request body\"}");
+            await WriteError(context, 400, "Empty request body");
         }
 
         protected override async Task HandlePostRequest(HttpListenerContext context)
@@ -153,7 +148,7 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            await WriteResponse(400, context.Response, "{\"error\":\"Invalid request format\"}");
+            await WriteError(context, 400, "Invalid request format");
         }
 
         protected override async Task HandleDeleteRequest(HttpListenerContext context)
@@ -166,7 +161,7 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            await WriteResponse(400, context.Response, "{\"error\":\"Invalid request format\"}");
+            await WriteError(context, 400, "Invalid request format");
         }
 
         protected override async Task HandlePatchRequest(HttpListenerContext context)
@@ -179,7 +174,7 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            await WriteResponse(400, context.Response, "{\"error\":\"Invalid request format\"}");
+            await WriteError(context, 400, "Invalid request format");
         }
 
         private async Task HandleGetObjects(HttpListenerContext context)
@@ -253,7 +248,7 @@ namespace Lilium.RemoteControl
                 return instanceObjects;
             });
 
-            var json = await ExecuteOnMainThread(() => ExposedPropertySerializer.ToJson(exposedObjects, GetObjectContainer() ?? (IExposedObjectResolver)DefaultExposedObjectResolver.Instance));
+            var json = await ExecuteOnMainThread(() => ExposedPropertySerializer.ToJson(exposedObjects, GetResolver()));
             await WriteResponse(200, context.Response, json);
             return;
         }
@@ -273,338 +268,223 @@ namespace Lilium.RemoteControl
 
             if (exposedObject != null)
             {
-                var json = await ExecuteOnMainThread(() => ExposedPropertySerializer.ToJson(exposedObject, GetObjectContainer() ?? (IExposedObjectResolver)DefaultExposedObjectResolver.Instance));
+                var json = await ExecuteOnMainThread(() => ExposedPropertySerializer.ToJson(exposedObject, GetResolver()));
 
                 await WriteResponse(200, context.Response, json);
                 return;
             }
 
-            await WriteResponse(404, context.Response, "{\"error\":\"Object not found\"}");
+            await WriteError(context, 404, "Object not found");
         }
 
-        private async Task HandleGetProperty(HttpListenerContext context)
+        /// <summary>
+        /// プロパティ系エンドポイント (/exposed/object/{id}/{slashPath}) の共通定型をまとめた
+        /// パイプラインに渡すコンテキスト。メインスレッド上で <see cref="onProperty"/> に渡される。
+        /// </summary>
+        private readonly struct PropertyPipelineContext
         {
-            var path = context.Request.Url.AbsolutePath;
-            var id = PathParser.GetPathSegment(path, 2);
-            var slashPath = PathParser.GetPathSegmentFrom(path, 3);
+            public readonly ExposedObject exposedObject;
+            public readonly string id;
+            public readonly string slashPath;
+            public readonly string propertyPath; // DotBracket 形式 (PropertyPath.Value)
+            public readonly string body;         // readBody=false の場合は null
 
-            if (id == null || slashPath == null)
+            public PropertyPipelineContext(ExposedObject exposedObject, string id,
+                string slashPath, string propertyPath, string body)
             {
-                await WriteResponse(400, context.Response, "{\"error\":\"Invalid request format\"}");
-                return;
+                this.exposedObject = exposedObject;
+                this.id = id;
+                this.slashPath = slashPath;
+                this.propertyPath = propertyPath;
+                this.body = body;
             }
-
-            // Slash形式からDotBracket形式に変換
-            var propertyPath = PropertyPath.FromSlash(slashPath);
-
-            var exposedObject = await ExecuteOnMainThread(() =>
-            {
-                var exposedObject = FindExposedObjectById(id);
-
-                return exposedObject;
-            });
-
-            if (exposedObject == null)
-            {
-                await WriteResponse(400, context.Response, "{\"error\":\"Invalid request format\"}");
-                return;
-            }
-
-            var response = await ExecuteOnMainThread(() =>
-            {
-                var property = exposedObject.FindProperty(propertyPath.Value);
-                if (!property.HasValue)
-                {
-                    return null;
-                }
-
-                var json = ExposedPropertySerializer.ToJson(property.Value, _GetResolver());
-                return json;
-            });
-
-            if (response == null)
-            {
-                await WriteResponse(400, context.Response, "{\"error\":\"Property not found\"}");
-                return;
-            }
-
-            await WriteResponse(200, context.Response, response);
-            return;
         }
 
-
-        private async Task HandleSetProperty(HttpListenerContext context)
+        /// <summary>
+        /// /exposed/object/{id}/{slashPath} 系の共通定型:
+        /// id/slashPath 解析 → ExposedObject 解決 → (任意で body 読込) →
+        /// メインスレッドで <paramref name="onProperty"/> 実行 → 応答書き込み。
+        /// <paramref name="onProperty"/> が非 null 文字列を返せば 200 でそのまま本文に、
+        /// null を返せば 400 + <paramref name="propertyFailMessage"/> を書き込む。
+        /// 各分岐のステータス・本文は従来実装と厳密にバイト一致する。
+        /// </summary>
+        private async Task RunPropertyPipeline(
+            HttpListenerContext context,
+            bool readBody,
+            bool stripResetSuffix,
+            string objectNotFoundMessage,
+            string propertyFailMessage,
+            Func<PropertyPipelineContext, string> onProperty)
         {
             var path = context.Request.Url.AbsolutePath;
-            var id = PathParser.GetPathSegment(path, 2);
-            var slashPath = PathParser.GetPathSegmentFrom(path, 3);
-
-            if (id == null || slashPath == null)
-            {
-                await WriteResponse(400, context.Response, "{\"error\":\"Invalid request format\"}");
-                return;
-            }
-
-            // Slash形式からDotBracket形式に変換
-            var propertyPath = PropertyPath.FromSlash(slashPath);
-
-            var exposedObject = await ExecuteOnMainThread(() =>
-            {
-                var exposedObject = FindExposedObjectById(id);
-
-                return exposedObject;
-            });
-
-            if (exposedObject == null)
-            {
-                await WriteResponse(400, context.Response, "{\"error\":\"Object not found\"}");
-                return;
-            }
-
-            var body = await ReadRequestBody(context.Request);
-
-            var response = await ExecuteOnMainThread(() =>
-            {
-                var property = exposedObject.FindProperty(propertyPath.Value);
-                if (property == null)
-                {
-                    return null;
-                }
-
-                var prop = property.Value;
-                var result = ExposedPropertySerializer.FromJson(body, in prop);
-                if (!result)
-                {
-                    return null;
-                }
-
-                var json = ExposedPropertySerializer.ToJson(property.Value, _GetResolver());
-
-                // onPropertyChanged で親要素の他フィールドが書き換わる場合に備え、
-                // 親が配列要素ならその要素全体を SSE でブロードキャストする。
-                // 親インスタンスは property.obj で既に手元にあるので、登録済み ExposedObject を
-                // 検索するのではなく、その場で CreateUnregistered で ExposedObject を作って使う。
-                _BroadcastParentElement(id, slashPath, property.Value);
-
-                return json;
-            });
-
-            if (response == null)
-            {
-                await WriteResponse(400, context.Response, "{\"error\":\"Property not found\"}");
-                return;
-            }
-
-            await WriteResponse(200, context.Response, response);
-            return;
-        }
-
-
-        private async Task HandleAddArrayElement(HttpListenerContext context)
-        {
-            var path = context.Request.Url.AbsolutePath;
-            var id = PathParser.GetPathSegment(path, 2);
-            var slashPath = PathParser.GetPathSegmentFrom(path, 3);
-
-            if (id == null || slashPath == null)
-            {
-                await WriteResponse(400, context.Response, "{\"error\":\"Invalid request format\"}");
-                return;
-            }
-
-            // Slash形式からDotBracket形式に変換
-            var propertyPath = PropertyPath.FromSlash(slashPath);
-
-            var exposedObject = await ExecuteOnMainThread(() =>
-            {
-                return FindExposedObjectById(id);
-            });
-
-            if (exposedObject == null)
-            {
-                await WriteResponse(400, context.Response, "{\"error\":\"Object not found\"}");
-                return;
-            }
-
-            var body = await ReadRequestBody(context.Request);
-
-            bool result = await ExecuteOnMainThread(() =>
-            {
-                var property = exposedObject.FindProperty(propertyPath.Value);
-                if (property == null)
-                {
-                    return false;
-                }
-
-                var prop = property.Value;
-                return ExposedPropertySerializer.AddArrayElement(body, in prop);
-            });
-
-            if (!result)
-            {
-                await WriteResponse(400, context.Response, "{\"error\":\"Failed to add array element\"}");
-                return;
-            }
-
-            await WriteResponse(200, context.Response, "{}");
-        }
-
-        private async Task HandleRemoveArrayElement(HttpListenerContext context)
-        {
-            var path = context.Request.Url.AbsolutePath;
-            var id = PathParser.GetPathSegment(path, 2);
-            var slashPath = PathParser.GetPathSegmentFrom(path, 3);
-
-            if (id == null || slashPath == null)
-            {
-                await WriteResponse(400, context.Response, "{\"error\":\"Invalid request format\"}");
-                return;
-            }
-
-            // Slash形式からDotBracket形式に変換
-            var propertyPath = PropertyPath.FromSlash(slashPath);
-
-            var exposedObject = await ExecuteOnMainThread(() =>
-            {
-                return FindExposedObjectById(id);
-            });
-
-            if (exposedObject == null)
-            {
-                await WriteResponse(400, context.Response, "{\"error\":\"Object not found\"}");
-                return;
-            }
-
-            var body = await ReadRequestBody(context.Request);
-
-            bool result = await ExecuteOnMainThread(() =>
-            {
-                var property = exposedObject.FindProperty(propertyPath.Value);
-                if (property == null)
-                {
-                    return false;
-                }
-
-                var prop = property.Value;
-                return ExposedPropertySerializer.RemoveArrayElement(body, in prop);
-            });
-
-            if (!result)
-            {
-                await WriteResponse(400, context.Response, "{\"error\":\"Failed to remove array element\"}");
-                return;
-            }
-
-            await WriteResponse(200, context.Response, "{}");
-        }
-
-        private async Task HandleReorderArrayElement(HttpListenerContext context)
-        {
-            var path = context.Request.Url.AbsolutePath;
-            var id = PathParser.GetPathSegment(path, 2);
-            var slashPath = PathParser.GetPathSegmentFrom(path, 3);
-
-            if (id == null || slashPath == null)
-            {
-                await WriteResponse(400, context.Response, "{\"error\":\"Invalid request format\"}");
-                return;
-            }
-
-            // Slash形式からDotBracket形式に変換
-            var propertyPath = PropertyPath.FromSlash(slashPath);
-
-            var exposedObject = await ExecuteOnMainThread(() =>
-            {
-                return FindExposedObjectById(id);
-            });
-
-            if (exposedObject == null)
-            {
-                await WriteResponse(400, context.Response, "{\"error\":\"Object not found\"}");
-                return;
-            }
-
-            var body = await ReadRequestBody(context.Request);
-
-            bool result = await ExecuteOnMainThread(() =>
-            {
-                var property = exposedObject.FindProperty(propertyPath.Value);
-                if (property == null)
-                {
-                    return false;
-                }
-
-                var prop = property.Value;
-                return ExposedPropertySerializer.ReorderArrayElement(body, in prop);
-            });
-
-            if (!result)
-            {
-                await WriteResponse(400, context.Response, "{\"error\":\"Failed to reorder array element\"}");
-                return;
-            }
-
-            await WriteResponse(200, context.Response, "{}");
-        }
-
-        private async Task HandleResetProperty(HttpListenerContext context)
-        {
-            var path = context.Request.Url.AbsolutePath;
-            if (path.EndsWith("/reset"))
+            if (stripResetSuffix && path.EndsWith("/reset"))
             {
                 path = path.Substring(0, path.Length - "/reset".Length);
             }
+
             var id = PathParser.GetPathSegment(path, 2);
             var slashPath = PathParser.GetPathSegmentFrom(path, 3);
 
             if (id == null || slashPath == null)
             {
-                await WriteResponse(400, context.Response, "{\"error\":\"Invalid request format\"}");
+                await WriteError(context, 400, "Invalid request format");
                 return;
             }
 
             // Slash形式からDotBracket形式に変換
             var propertyPath = PropertyPath.FromSlash(slashPath);
 
-            var exposedObject = await ExecuteOnMainThread(() =>
-            {
-                var exposedObject = FindExposedObjectById(id);
-                return exposedObject;
-            });
+            var exposedObject = await ExecuteOnMainThread(() => FindExposedObjectById(id));
 
             if (exposedObject == null)
             {
-                await WriteResponse(400, context.Response, "{\"error\":\"Object not found\"}");
+                await WriteError(context, 400, objectNotFoundMessage);
                 return;
             }
 
-            var body = await ReadRequestBody(context.Request);
+            var body = readBody ? await ReadRequestBody(context.Request) : null;
 
-            var response = await ExecuteOnMainThread(() =>
-            {
-                //Debug.Log($"[RemoteControl] Resetting property '{propertyPath.Value}' on object '{id}'");
-                var property = exposedObject.FindProperty(propertyPath.Value);
-                if (property == null)
-                {
-                    return null;
-                }
+            var pipelineContext = new PropertyPipelineContext(
+                exposedObject, id, slashPath, propertyPath.Value, body);
 
-                var prop = property.Value;
-                var result = ExposedPropertyUtility.ResetValue(exposedObject, in prop);
-
-                var newProperty = exposedObject.FindProperty(propertyPath.Value);
-                var json = ExposedPropertySerializer.ToJson(newProperty.Value, _GetResolver());
-                return json;
-            });
+            var response = await ExecuteOnMainThread(() => onProperty(pipelineContext));
 
             if (response == null)
             {
-                await WriteResponse(400, context.Response, "{\"error\":\"Property not found\"}");
+                await WriteError(context, 400, propertyFailMessage);
                 return;
             }
 
             await WriteResponse(200, context.Response, response);
-            return;
+        }
+
+        private Task HandleGetProperty(HttpListenerContext context)
+        {
+            // GetProperty のみ object 不在時も "Invalid request format" を返す(従来挙動)。
+            return RunPropertyPipeline(context, readBody: false, stripResetSuffix: false,
+                objectNotFoundMessage: "Invalid request format",
+                propertyFailMessage: "Property not found",
+                onProperty: ctx =>
+                {
+                    var property = ctx.exposedObject.FindProperty(ctx.propertyPath);
+                    if (!property.HasValue)
+                    {
+                        return null;
+                    }
+
+                    var json = ExposedPropertySerializer.ToJson(property.Value, GetResolver());
+                    return json;
+                });
+        }
+
+        private Task HandleSetProperty(HttpListenerContext context)
+        {
+            return RunPropertyPipeline(context, readBody: true, stripResetSuffix: false,
+                objectNotFoundMessage: "Object not found",
+                propertyFailMessage: "Property not found",
+                onProperty: ctx =>
+                {
+                    var property = ctx.exposedObject.FindProperty(ctx.propertyPath);
+                    if (property == null)
+                    {
+                        return null;
+                    }
+
+                    var prop = property.Value;
+                    var result = ExposedPropertySerializer.FromJson(ctx.body, in prop);
+                    if (!result)
+                    {
+                        return null;
+                    }
+
+                    var json = ExposedPropertySerializer.ToJson(property.Value, GetResolver());
+
+                    // onPropertyChanged で親要素の他フィールドが書き換わる場合に備え、
+                    // 親が配列要素ならその要素全体を SSE でブロードキャストする。
+                    // 親インスタンスは property.obj で既に手元にあるので、登録済み ExposedObject を
+                    // 検索するのではなく、その場で CreateUnregistered で ExposedObject を作って使う。
+                    _BroadcastParentElement(ctx.id, ctx.slashPath, property.Value);
+
+                    return json;
+                });
+        }
+
+        private Task HandleAddArrayElement(HttpListenerContext context)
+        {
+            return RunPropertyPipeline(context, readBody: true, stripResetSuffix: false,
+                objectNotFoundMessage: "Object not found",
+                propertyFailMessage: "Failed to add array element",
+                onProperty: ctx =>
+                {
+                    var property = ctx.exposedObject.FindProperty(ctx.propertyPath);
+                    if (property == null)
+                    {
+                        return null;
+                    }
+
+                    var prop = property.Value;
+                    return ExposedPropertySerializer.AddArrayElement(ctx.body, in prop) ? "{}" : null;
+                });
+        }
+
+        private Task HandleRemoveArrayElement(HttpListenerContext context)
+        {
+            return RunPropertyPipeline(context, readBody: true, stripResetSuffix: false,
+                objectNotFoundMessage: "Object not found",
+                propertyFailMessage: "Failed to remove array element",
+                onProperty: ctx =>
+                {
+                    var property = ctx.exposedObject.FindProperty(ctx.propertyPath);
+                    if (property == null)
+                    {
+                        return null;
+                    }
+
+                    var prop = property.Value;
+                    return ExposedPropertySerializer.RemoveArrayElement(ctx.body, in prop) ? "{}" : null;
+                });
+        }
+
+        private Task HandleReorderArrayElement(HttpListenerContext context)
+        {
+            return RunPropertyPipeline(context, readBody: true, stripResetSuffix: false,
+                objectNotFoundMessage: "Object not found",
+                propertyFailMessage: "Failed to reorder array element",
+                onProperty: ctx =>
+                {
+                    var property = ctx.exposedObject.FindProperty(ctx.propertyPath);
+                    if (property == null)
+                    {
+                        return null;
+                    }
+
+                    var prop = property.Value;
+                    return ExposedPropertySerializer.ReorderArrayElement(ctx.body, in prop) ? "{}" : null;
+                });
+        }
+
+        private Task HandleResetProperty(HttpListenerContext context)
+        {
+            // Reset は body を消費するが未使用(InputStream 消費タイミング維持のため readBody:true)。
+            return RunPropertyPipeline(context, readBody: true, stripResetSuffix: true,
+                objectNotFoundMessage: "Object not found",
+                propertyFailMessage: "Property not found",
+                onProperty: ctx =>
+                {
+                    //Debug.Log($"[RemoteControl] Resetting property '{ctx.propertyPath}' on object '{ctx.id}'");
+                    var property = ctx.exposedObject.FindProperty(ctx.propertyPath);
+                    if (property == null)
+                    {
+                        return null;
+                    }
+
+                    var prop = property.Value;
+                    var result = ExposedPropertyUtility.ResetValue(ctx.exposedObject, in prop);
+
+                    var newProperty = ctx.exposedObject.FindProperty(ctx.propertyPath);
+                    var json = ExposedPropertySerializer.ToJson(newProperty.Value, GetResolver());
+                    return json;
+                });
         }
 
 
@@ -649,7 +529,7 @@ namespace Lilium.RemoteControl
 
             if (id == null || functionPath == null)
             {
-                await WriteResponse(400, context.Response, "{\"error\":\"Invalid request format\"}");
+                await WriteError(context, 400, "Invalid request format");
                 return;
             }
 
@@ -670,7 +550,7 @@ namespace Lilium.RemoteControl
 
             if (exposedObject == null)
             {
-                await WriteResponse(400, context.Response, "{\"error\":\"Object not found\"}");
+                await WriteError(context, 400, "Object not found");
                 return;
             }
 
@@ -765,7 +645,7 @@ namespace Lilium.RemoteControl
 
             if (!result.success)
             {
-                await WriteResponse(400, context.Response, "{\"error\":\"Function not found or failed to parse arguments\"}");
+                await WriteError(context, 400, "Function not found or failed to parse arguments");
                 return;
             }
 
@@ -773,7 +653,7 @@ namespace Lilium.RemoteControl
             var resultJson = new JObject();
             if (result.invokeResult != null)
             {
-                resultJson["result"] = ExposedPropertySerializer.SerializeUnityType(_GetResolver(), result.invokeResult);
+                resultJson["result"] = ExposedPropertySerializer.SerializeUnityType(GetResolver(), result.invokeResult);
             }
             else
             {
@@ -870,7 +750,7 @@ namespace Lilium.RemoteControl
             var id = PathParser.GetPathSegment(path, 2);
             if (string.IsNullOrEmpty(id))
             {
-                await WriteResponse(400, context.Response, "{\"error\":\"Invalid request format\"}");
+                await WriteError(context, 400, "Invalid request format");
                 return;
             }
 
@@ -887,7 +767,7 @@ namespace Lilium.RemoteControl
             }
             catch (JsonException)
             {
-                await WriteResponse(400, context.Response, "{\"error\":\"Invalid JSON body\"}");
+                await WriteError(context, 400, "Invalid JSON body");
                 return;
             }
 
@@ -901,7 +781,7 @@ namespace Lilium.RemoteControl
                 if (child != null)
                 {
                     value = ExposedPropertySerializer.SerializeFullToJObject(
-                        child, _GetResolver());
+                        child, GetResolver());
                     _BroadcastParentChanged(id, value);
                 }
                 return (true, (string)null, value);
@@ -909,8 +789,7 @@ namespace Lilium.RemoteControl
 
             if (!result.Item1)
             {
-                var errorJson = JsonConvert.SerializeObject(new { error = result.Item2 ?? "Unknown error" });
-                await WriteResponse(400, context.Response, errorJson);
+                await WriteError(context, 400, result.Item2 ?? "Unknown error");
                 return;
             }
 

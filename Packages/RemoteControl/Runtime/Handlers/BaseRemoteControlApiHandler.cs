@@ -41,6 +41,15 @@ namespace Lilium.RemoteControl.RestApi
             return _context?.objectContainer;
         }
 
+        /// <summary>
+        /// ExposedObject 解決用リゾルバを取得。
+        /// ObjectContainer があればそれを、無ければ既定リゾルバを返す。
+        /// </summary>
+        protected IExposedObjectResolver GetResolver()
+        {
+            return GetObjectContainer() ?? (IExposedObjectResolver)DefaultExposedObjectResolver.Instance;
+        }
+
         public abstract void Cleanup();
 
         // ---- Declarative routing (opt-in; backward compatible) ----
@@ -363,14 +372,6 @@ namespace Lilium.RemoteControl.RestApi
         }
 
         /// <summary>
-        /// タイムスタンプを取得
-        /// </summary>
-        protected long GetTimestamp()
-        {
-            return TimeUtility.GetUnixTimeMilliseconds();
-        }
-
-        /// <summary>
         /// ISO形式のタイムスタンプを取得
         /// </summary>
         protected string GetISOTimestamp()
@@ -396,7 +397,7 @@ namespace Lilium.RemoteControl.RestApi
         /// <summary>
         /// Method Not Allowedレスポンスを送信
         /// </summary>
-        private Task SendMethodNotAllowed(HttpListenerContext context)
+        protected Task SendMethodNotAllowed(HttpListenerContext context)
         {
             context.Response.StatusCode = 405;
             return WriteResponse(context.Response, "{\"error\":\"Method not allowed\"}", "application/json");
@@ -429,84 +430,6 @@ namespace Lilium.RemoteControl.RestApi
             public bool success;
             public string message;
             public string timestamp;
-        }
-
-        /// <summary>
-        /// エンドポイント設定
-        /// </summary>
-        protected class EndpointConfig
-        {
-            public string Path { get; set; }
-            public string[] SupportedMethods { get; set; }
-            public System.Func<HttpListenerContext, Task> GetHandler { get; set; }
-            public System.Func<HttpListenerContext, Task> PostHandler { get; set; }
-            public System.Func<HttpListenerContext, Task> PutHandler { get; set; }
-            public System.Func<HttpListenerContext, Task> DeleteHandler { get; set; }
-        }
-
-        /// <summary>
-        /// 複数エンドポイントを処理
-        /// </summary>
-        protected async Task HandleMultipleEndpoints(HttpListenerContext context, EndpointConfig[] endpoints)
-        {
-            var path = context.Request.Url.AbsolutePath;
-            var method = context.Request.HttpMethod;
-
-            var endpoint = System.Array.Find(endpoints, e =>
-                path.Equals(e.Path, StringComparison.OrdinalIgnoreCase));
-
-            if (endpoint == null)
-            {
-                await SendNotFound(context);
-                return;
-            }
-
-            try
-            {
-                switch (method)
-                {
-                    case "GET" when System.Array.IndexOf(endpoint.SupportedMethods, "GET") >= 0:
-                        if (endpoint.GetHandler != null)
-                            await endpoint.GetHandler(context).ConfigureAwait(false);
-                        else
-                            await SendMethodNotAllowed(context);
-                        break;
-
-                    case "POST" when System.Array.IndexOf(endpoint.SupportedMethods, "POST") >= 0:
-                        if (endpoint.PostHandler != null)
-                            await endpoint.PostHandler(context).ConfigureAwait(false);
-                        else
-                            await SendMethodNotAllowed(context);
-                        break;
-
-                    case "PUT" when System.Array.IndexOf(endpoint.SupportedMethods, "PUT") >= 0:
-                        if (endpoint.PutHandler != null)
-                            await endpoint.PutHandler(context).ConfigureAwait(false);
-                        else
-                            await SendMethodNotAllowed(context);
-                        break;
-
-                    case "DELETE" when System.Array.IndexOf(endpoint.SupportedMethods, "DELETE") >= 0:
-                        if (endpoint.DeleteHandler != null)
-                            await endpoint.DeleteHandler(context).ConfigureAwait(false);
-                        else
-                            await SendMethodNotAllowed(context);
-                        break;
-
-                    case "OPTIONS":
-                        await HandleOptionsRequest(context, string.Join(", ", endpoint.SupportedMethods), "Content-Type");
-                        break;
-
-                    default:
-                        await SendMethodNotAllowed(context);
-                        break;
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[RemoteControl] Error handling endpoint request: {ex.Message}");
-                await SendInternalServerError(context);
-            }
         }
 
     }

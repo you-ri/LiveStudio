@@ -93,25 +93,29 @@ namespace Lilium.LiveStudio
 
         protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
 
-        public override async Task HandleRequest(HttpListenerContext context)
+        protected override bool SupportsGet() => true;
+        protected override bool SupportsPost() => true;
+
+        protected override async Task HandleGetRequest(HttpListenerContext context)
         {
-            var endpoints = new EndpointConfig[]
+            if (context.Request.Url.AbsolutePath.Equals("/api/input-actions", StringComparison.OrdinalIgnoreCase))
             {
-                new EndpointConfig
-                {
-                    Path = "/api/input-actions",
-                    SupportedMethods = new[] { "GET", "OPTIONS" },
-                    GetHandler = HandleGetActionsRequest
-                },
-                new EndpointConfig
-                {
-                    Path = "/api/input-actions/bind",
-                    SupportedMethods = new[] { "POST", "OPTIONS" },
-                    PostHandler = HandleBindRequest
-                }
-            };
-            
-            await HandleMultipleEndpoints(context, endpoints);
+                await HandleGetActionsRequest(context);
+                return;
+            }
+
+            await SendMethodNotAllowed(context);
+        }
+
+        protected override async Task HandlePostRequest(HttpListenerContext context)
+        {
+            if (context.Request.Url.AbsolutePath.Equals("/api/input-actions/bind", StringComparison.OrdinalIgnoreCase))
+            {
+                await HandleBindRequest(context);
+                return;
+            }
+
+            await SendMethodNotAllowed(context);
         }
 
         private async Task HandleGetActionsRequest(HttpListenerContext context)

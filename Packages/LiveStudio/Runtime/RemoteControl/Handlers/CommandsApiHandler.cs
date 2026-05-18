@@ -24,13 +24,8 @@ namespace Lilium.LiveStudio
             public float actorHeight;
         }
 
-        [System.Serializable]
-        private class CommandResponse
-        {
-            public bool success;
-            public string message;
-            public string timestamp;
-        }
+        // レスポンス DTO は基底の protected CommandResponse を共用する
+        // （独自の private CommandResponse は基底メンバを隠蔽していたため削除）。
 
         public CommandsApiHandler(RemoteControlServerCore server) : base(server)
         {

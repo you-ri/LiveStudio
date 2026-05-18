@@ -34,11 +34,6 @@ namespace Lilium.RemoteControl.Scene
         {
         }
 
-        private IExposedObjectResolver _GetResolver()
-        {
-            return GetObjectContainer() ?? (IExposedObjectResolver)DefaultExposedObjectResolver.Instance;
-        }
-
         public override void Cleanup()
         {
         }
@@ -89,7 +84,7 @@ namespace Lilium.RemoteControl.Scene
 
             var result = await ExecuteOnMainThread(() =>
             {
-                var resolver = _GetResolver();
+                var resolver = GetResolver();
 
                 // 相対パスの場合は Saved フォルダ相対
                 var filePath = request.path;
@@ -143,7 +138,7 @@ namespace Lilium.RemoteControl.Scene
 
             var result = await ExecuteOnMainThread(() =>
             {
-                var resolver = _GetResolver();
+                var resolver = GetResolver();
 
                 // 相対パスの場合は Saved フォルダ相対
                 var filePath = request.path;
@@ -167,7 +162,9 @@ namespace Lilium.RemoteControl.Scene
 
             if (!result.success)
             {
-                await WriteResponse(400, context.Response, $"{{\"error\":\"{result.error}\"}}");
+                // result.error は Windows パス(バックスラッシュ)を含むため、
+                // 手組み補間ではなく WriteError で正しく JSON エスケープする。
+                await WriteError(context, 400, result.error);
                 return;
             }
             await WriteResponse(200, context.Response, "{\"success\":true}");
