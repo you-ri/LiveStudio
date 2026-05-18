@@ -30,8 +30,15 @@ namespace Lilium.RemoteControl.Scene
             public string path;
         }
 
+        private readonly EndpointRoute[] _postRoutes;
+
         public SceneIoHandler(RemoteControlServerCore server) : base(server)
         {
+            _postRoutes = new[]
+            {
+                new EndpointRoute("/exposed/export", RouteMatch.Exact, HandleExport),
+                new EndpointRoute("/exposed/import", RouteMatch.Exact, HandleImport),
+            };
         }
 
         public override void Cleanup()
@@ -48,23 +55,8 @@ namespace Lilium.RemoteControl.Scene
 
         protected override bool SupportsPost() => true;
 
-        protected override async Task HandlePostRequest(HttpListenerContext context)
-        {
-            var path = context.Request.Url.AbsolutePath;
-
-            if (path.Equals("/exposed/export", System.StringComparison.OrdinalIgnoreCase))
-            {
-                await HandleExport(context);
-                return;
-            }
-            if (path.Equals("/exposed/import", System.StringComparison.OrdinalIgnoreCase))
-            {
-                await HandleImport(context);
-                return;
-            }
-
-            await WriteError(context, 400, "Invalid request format");
-        }
+        protected override Task HandlePostRequest(HttpListenerContext context)
+            => DispatchEndpoints(context, _postRoutes, "Invalid request format");
 
         private async Task HandleExport(HttpListenerContext context)
         {

@@ -1,7 +1,5 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 using UnityEngine;
 using Lilium.RemoteControl;
 
@@ -21,8 +19,6 @@ namespace Lilium.RemoteControl.Server
         {
             public RemoteControlServerCore server;
             public RemoteControlContext context;
-            public Thread updateThread;
-            public volatile bool isRunning;
         }
 
         public static IReadOnlyDictionary<int, ServerInstance> servers => _servers;
@@ -61,7 +57,6 @@ namespace Lilium.RemoteControl.Server
             };
 
             _servers[port] = instance;
-            StartUpdateHandlers(instance);
         }
 
         public static RemoteControlServerCore GetServer(int port)
@@ -90,8 +85,6 @@ namespace Lilium.RemoteControl.Server
             {
                 return;
             }
-
-            StopUpdateHandlers(instance);
 
             if (instance.server != null)
             {
@@ -141,50 +134,6 @@ namespace Lilium.RemoteControl.Server
         public static IEnumerable<int> GetAllPorts()
         {
             return _servers.Keys;
-        }
-
-        public static void StartUpdateHandlers(ServerInstance instance)
-        {
-            Debug.Assert(instance != null, "ServerInstance must not be null");
-
-            if (instance.updateThread != null && instance.updateThread.IsAlive)
-            {
-                return;
-            }
-
-            instance.isRunning = true;
-            instance.updateThread = new Thread(() =>
-            {
-                while (instance.isRunning)
-                {
-                    if (instance.server != null && instance.server.IsRunning)
-                    {
-                        instance.server.UpdateHandlers();
-                    }
-                    Thread.Sleep(100);
-                }
-            })
-            {
-                IsBackground = true,
-                Name = $"StudioRemoteControlUpdate_{instance.server?.Port ?? 0}"
-            };
-
-            instance.updateThread.Start();
-        }
-
-        private static void StopUpdateHandlers(ServerInstance instance)
-        {
-            if (instance.updateThread != null && instance.updateThread.IsAlive)
-            {
-                instance.isRunning = false;
-
-                if (!instance.updateThread.Join(TimeSpan.FromSeconds(2)))
-                {
-                    Debug.LogWarning($"[Studio] UpdateHandlers thread did not stop in time for server on port {instance.server?.Port ?? 0}");
-                }
-
-                instance.updateThread = null;
-            }
         }
 
 #if UNITY_EDITOR

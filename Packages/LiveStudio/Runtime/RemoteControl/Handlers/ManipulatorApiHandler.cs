@@ -85,7 +85,7 @@ namespace Lilium.LiveStudio
             {
                 return HandleGetImage(context);
             }
-            return WriteJsonError(context, 404, "Unknown manipulator GET path.");
+            return WriteError(context, 404, "Unknown manipulator GET path.");
         }
 
         protected override Task HandlePostRequest(HttpListenerContext context)
@@ -95,7 +95,7 @@ namespace Lilium.LiveStudio
             {
                 return HandlePostOpen(context);
             }
-            return WriteJsonError(context, 404, "Unknown manipulator POST path.");
+            return WriteError(context, 404, "Unknown manipulator POST path.");
         }
 
         protected override Task HandlePutRequest(HttpListenerContext context)
@@ -105,7 +105,7 @@ namespace Lilium.LiveStudio
             {
                 return HandlePutCamera(context);
             }
-            return WriteJsonError(context, 404, "Unknown manipulator PUT path.");
+            return WriteError(context, 404, "Unknown manipulator PUT path.");
         }
 
         protected override Task HandleDeleteRequest(HttpListenerContext context)
@@ -115,7 +115,7 @@ namespace Lilium.LiveStudio
             {
                 return HandleDeleteOpen(context);
             }
-            return WriteJsonError(context, 404, "Unknown manipulator DELETE path.");
+            return WriteError(context, 404, "Unknown manipulator DELETE path.");
         }
 
         private async Task HandlePostOpen(HttpListenerContext context)
@@ -123,7 +123,7 @@ namespace Lilium.LiveStudio
             var body = await ReadRequestBody(context.Request);
             if (string.IsNullOrEmpty(body))
             {
-                await WriteJsonError(context, 400, "Empty request body.");
+                await WriteError(context, 400, "Empty request body.");
                 return;
             }
 
@@ -134,20 +134,20 @@ namespace Lilium.LiveStudio
             }
             catch (Exception ex)
             {
-                await WriteJsonError(context, 400, "Invalid JSON: " + ex.Message);
+                await WriteError(context, 400, "Invalid JSON: " + ex.Message);
                 return;
             }
 
             if (req == null || string.IsNullOrEmpty(req.objectId))
             {
-                await WriteJsonError(context, 400, "objectId is required.");
+                await WriteError(context, 400, "objectId is required.");
                 return;
             }
 
             var session = await ExecuteOnMainThread(() => ManipulatorCameraService.Open(req.objectId, req.propertyPath));
             if (session == null)
             {
-                await WriteJsonError(context, 404, "Failed to open manipulator session (object not found or invalid).");
+                await WriteError(context, 404, "Failed to open manipulator session (object not found or invalid).");
                 return;
             }
 
@@ -168,14 +168,14 @@ namespace Lilium.LiveStudio
         {
             if (!_TryGetSession(context, out var session))
             {
-                await WriteJsonError(context, 404, "Session not found.");
+                await WriteError(context, 404, "Session not found.");
                 return;
             }
 
             var payload = await ExecuteOnMainThread(() => _BuildImagePayload(session));
             if (payload.imageBytes == null || payload.imageBytes.Length == 0)
             {
-                await WriteJsonError(context, 500, "Failed to capture image.");
+                await WriteError(context, 500, "Failed to capture image.");
                 return;
             }
 
@@ -213,7 +213,7 @@ namespace Lilium.LiveStudio
         {
             if (!_TryGetSession(context, out var session))
             {
-                await WriteJsonError(context, 404, "Session not found.");
+                await WriteError(context, 404, "Session not found.");
                 return;
             }
 
@@ -226,13 +226,13 @@ namespace Lilium.LiveStudio
             }
             catch (Exception ex)
             {
-                await WriteJsonError(context, 400, "Invalid JSON: " + ex.Message);
+                await WriteError(context, 400, "Invalid JSON: " + ex.Message);
                 return;
             }
 
             if (req == null)
             {
-                await WriteJsonError(context, 400, "Empty request body.");
+                await WriteError(context, 400, "Empty request body.");
                 return;
             }
 
@@ -319,11 +319,5 @@ namespace Lilium.LiveStudio
             return ManipulatorCameraService.TryGet(id, out session);
         }
 
-        private Task WriteJsonError(HttpListenerContext context, int statusCode, string message)
-        {
-            context.Response.StatusCode = statusCode;
-            var json = JsonConvert.SerializeObject(new { error = message });
-            return WriteResponse(context.Response, json);
-        }
     }
 }

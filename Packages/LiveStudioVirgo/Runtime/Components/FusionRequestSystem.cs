@@ -16,7 +16,7 @@ namespace Lilium.LiveStudio.Virgo
         public static IEnumerator BuildAvatar(AvatarBuildData data)
         {
             string baseUrl = FusionNetwork.BaseURL;
-            var body = ExposedPropertySerializer.ToJsonForFunctionArgs(data, DefaultExposedObjectResolver.Instance);
+            var body = ExposedTypeInfoSerializer.ToJsonForFunctionArgs(data, DefaultExposedObjectResolver.Instance);
 
 
             string requestUrl = baseUrl + "/exposed/function/347f14d4-bca0-48fc-9f41-c6979afdacef/buildavatar";
@@ -61,7 +61,7 @@ namespace Lilium.LiveStudio.Virgo
             string baseUrl = FusionNetwork.BaseURL;
             string requestUrl = baseUrl + "/exposed/function/LicenseSettings/" + functionName;
             string body = keyArg != null
-                ? ExposedPropertySerializer.ToJsonForFunctionArgs(keyArg, DefaultExposedObjectResolver.Instance)
+                ? ExposedTypeInfoSerializer.ToJsonForFunctionArgs(keyArg, DefaultExposedObjectResolver.Instance)
                 : "{\"args\":[]}";
 
             UnityWebRequest request = UnityWebRequest.Post(requestUrl, body, "application/json");

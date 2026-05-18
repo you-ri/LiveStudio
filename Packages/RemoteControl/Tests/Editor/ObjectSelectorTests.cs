@@ -251,7 +251,7 @@ namespace Lilium.RemoteControl.Tests
             goB.AddComponent<TestReceiver>();
 
             // Act: types JSON を取得
-            var typeJson = ExposedPropertySerializer.ToJson(ExposedClass.Find(typeof(TestHolder)));
+            var typeJson = ExposedTypeInfoSerializer.ToJson(ExposedClass.Find(typeof(TestHolder)));
             var parsed = JObject.Parse(typeJson);
             var properties = parsed["properties"] as JArray;
             var receiverProp = properties.First(p => p["name"]?.Value<string>() == "receiver") as JObject;
@@ -281,7 +281,7 @@ namespace Lilium.RemoteControl.Tests
             _WrapGameObject(goB);
             goB.AddComponent<TestOtherComponent>(); // 型ミスマッチ
 
-            var typeJson = ExposedPropertySerializer.ToJson(ExposedClass.Find(typeof(TestHolder)));
+            var typeJson = ExposedTypeInfoSerializer.ToJson(ExposedClass.Find(typeof(TestHolder)));
             var parsed = JObject.Parse(typeJson);
             var receiverProp = (parsed["properties"] as JArray)
                 .First(p => p["name"]?.Value<string>() == "receiver") as JObject;

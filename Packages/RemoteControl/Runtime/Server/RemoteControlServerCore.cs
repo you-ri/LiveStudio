@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 
-using System.Net;
 using System.Threading.Tasks;
 using Lilium.RemoteControl.Core;
 using Lilium.RemoteControl.RestApi.Controllers;
@@ -86,10 +85,6 @@ namespace Lilium.RemoteControl.Server
             base.StopServer();
         }
 
-        public virtual void UpdateHandlers()
-        {
-        }
-
         private void HandleClientConnected(RestApiClient client)
         {
             onClientConnected?.Invoke(client);
@@ -135,25 +130,6 @@ namespace Lilium.RemoteControl.Server
         public int GetConnectionCount()
         {
             return _connectionManager?.ConnectionCount ?? 0;
-        }
-        
-        protected void WriteErrorResponse(HttpListenerResponse response, string errorMessage)
-        {
-            try
-            {
-                response.ContentType = "application/json; charset=utf-8";
-                var json = $"{{\"error\":\"{errorMessage}\"}}";
-                var buffer = System.Text.Encoding.UTF8.GetBytes(json);
-                response.ContentLength64 = buffer.Length;
-                // GC削減: 小さいバッファなので同期書き込み
-                response.OutputStream.Write(buffer, 0, buffer.Length);
-                response.OutputStream.Close();
-                response.Close();
-            }
-            catch (Exception ex)
-            {
-                UnityEngine.Debug.LogError($"[RemoteControl] Error writing error response: {ex.Message}");
-            }
         }
         
         public override void Dispose()

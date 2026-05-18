@@ -104,8 +104,7 @@ namespace Lilium.LiveStudio
 
                 if (string.IsNullOrEmpty(requestBody))
                 {
-                    response.StatusCode = 400;
-                    await WriteResponse(response, "{\"error\":\"Empty request body\"}");
+                    await WriteError(context, 400, "Empty request body");
                     return;
                 }
 
@@ -115,16 +114,14 @@ namespace Lilium.LiveStudio
 
                 if (string.IsNullOrEmpty(filePath))
                 {
-                    response.StatusCode = 400;
-                    await WriteResponse(response, "{\"error\":\"Missing filePath parameter\"}");
+                    await WriteError(context, 400, "Missing filePath parameter");
                     return;
                 }
 
                 // ファイルパス検証
                 if (!IsValidVrmFilePath(filePath))
                 {
-                    response.StatusCode = 400;
-                    await WriteResponse(response, "{\"error\":\"Invalid VRM file path\"}");
+                    await WriteError(context, 400, "Invalid VRM file path");
                     return;
                 }
 

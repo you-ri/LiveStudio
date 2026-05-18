@@ -343,7 +343,7 @@ namespace Lilium.RemoteControl
                 && valueType != null
                 && typeof(UnityEngine.Object).IsAssignableFrom(valueType))
             {
-                defaultValue = ExposedPropertySerializer.DeserializeObjectSelectorValue(
+                defaultValue = ObjectSelectorSerializer.DeserializeObjectSelectorValue(
                     resolver, defaultToken, valueType);
             }
             else
@@ -520,7 +520,7 @@ namespace Lilium.RemoteControl
         {
             if (propertyType.controlAttribute is ObjectSelectorAttribute)
             {
-                return ExposedPropertySerializer.SerializeObjectSelectorValue(value, forPersistence: true);
+                return ObjectSelectorSerializer.SerializeObjectSelectorValue(value, forPersistence: true);
             }
             return ExposedPropertySerializer.SerializeUnityType(resolver, value, propertyType.forceValue, forPersistence: true);
         }

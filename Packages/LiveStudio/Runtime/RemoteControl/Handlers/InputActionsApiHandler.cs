@@ -138,8 +138,7 @@ namespace Lilium.LiveStudio
             
             if (string.IsNullOrEmpty(body))
             {
-                context.Response.StatusCode = 400;
-                await WriteResponse(context.Response, "{\"error\":\"Empty request body\"}");
+                await WriteError(context, 400, "Empty request body");
                 return;
             }
 
@@ -147,8 +146,7 @@ namespace Lilium.LiveStudio
             
             if (request == null || string.IsNullOrEmpty(request.actionName))
             {
-                context.Response.StatusCode = 400;
-                await WriteResponse(context.Response, "{\"error\":\"Invalid request format\"}");
+                await WriteError(context, 400, "Invalid request format");
                 return;
             }
 

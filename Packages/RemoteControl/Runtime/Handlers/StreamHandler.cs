@@ -95,8 +95,7 @@ namespace Lilium.RemoteControl.RestApi.Controllers
             }
             else
             {
-                httpContext.Response.StatusCode = 405;
-                _ = WriteResponse(httpContext.Response, "{\"error\":\"Method not allowed\"}", "application/json");
+                await SendMethodNotAllowed(httpContext);
             }
         }
 

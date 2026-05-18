@@ -251,8 +251,7 @@ namespace Lilium.LiveStudio
             }
             else
             {
-                context.Response.StatusCode = 404;
-                context.Response.Close();
+                await WriteError(context, 404, "Camera image not available");
             }
         }
 
@@ -272,8 +271,7 @@ namespace Lilium.LiveStudio
 
             if (string.IsNullOrEmpty(body))
             {
-                context.Response.StatusCode = 400;
-                await WriteResponse(context.Response, "{\"error\":\"Empty request body\"}");
+                await WriteError(context, 400, "Empty request body");
                 return;
             }
 
@@ -296,8 +294,7 @@ namespace Lilium.LiveStudio
             }
             else
             {
-                context.Response.StatusCode = 400;
-                await WriteResponse(context.Response, "{\"error\":\"Invalid request format\"}");
+                await WriteError(context, 400, "Invalid request format");
             }
         }
 
@@ -307,8 +304,7 @@ namespace Lilium.LiveStudio
 
             if (string.IsNullOrEmpty(body))
             {
-                context.Response.StatusCode = 400;
-                await WriteResponse(context.Response, "{\"error\":\"Empty request body\"}");
+                await WriteError(context, 400, "Empty request body");
                 return;
             }
 
@@ -316,8 +312,7 @@ namespace Lilium.LiveStudio
 
             if (request == null || string.IsNullOrEmpty(request.cameraId) || !Guid.TryParse(request.cameraId, out Guid cameraId))
             {
-                context.Response.StatusCode = 400;
-                await WriteResponse(context.Response, "{\"error\":\"Invalid or missing cameraId\"}");
+                await WriteError(context, 400, "Invalid or missing cameraId");
                 return;
             }
 

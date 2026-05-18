@@ -75,6 +75,26 @@ namespace Lilium.RemoteControl.RestApi
         /// </summary>
         protected virtual IReadOnlyList<RouteRule> Routes => null;
 
+        /// <summary>
+        /// パスがパターンに一致するか判定する共通ロジック。
+        /// CanHandle(外側ゲート)と DispatchEndpoints(内側ディスパッチ)で共用する。
+        /// 一致判定はすべて大文字小文字非依存。
+        /// </summary>
+        protected static bool MatchPattern(string path, string pattern, RouteMatch match)
+        {
+            switch (match)
+            {
+                case RouteMatch.Exact:
+                    return path.Equals(pattern, StringComparison.OrdinalIgnoreCase);
+                case RouteMatch.Prefix:
+                    return path.StartsWith(pattern, StringComparison.OrdinalIgnoreCase);
+                case RouteMatch.Wildcard:
+                    return PathParser.IsMatchIgnoreCase(path, pattern);
+                default:
+                    return false;
+            }
+        }
+
         public virtual bool CanHandle(HttpListenerRequest request)
         {
             var routes = Routes;
@@ -84,25 +104,49 @@ namespace Lilium.RemoteControl.RestApi
             for (int i = 0; i < routes.Count; i++)
             {
                 var r = routes[i];
-                bool m;
-                switch (r.match)
-                {
-                    case RouteMatch.Exact:
-                        m = path.Equals(r.pattern, StringComparison.OrdinalIgnoreCase);
-                        break;
-                    case RouteMatch.Prefix:
-                        m = path.StartsWith(r.pattern, StringComparison.OrdinalIgnoreCase);
-                        break;
-                    case RouteMatch.Wildcard:
-                        m = PathParser.IsMatchIgnoreCase(path, r.pattern);
-                        break;
-                    default:
-                        m = false;
-                        break;
-                }
-                if (m) return true;
+                if (MatchPattern(path, r.pattern, r.match)) return true;
             }
             return false;
+        }
+
+        /// <summary>
+        /// 内側ディスパッチ用ルート: HTTP メソッド内でパスパターンと
+        /// 個別ハンドラを対応付ける。<see cref="DispatchEndpoints"/> で先頭から
+        /// 走査し最初に一致したハンドラを実行する(元の if/else 連鎖と同じ評価順)。
+        /// </summary>
+        protected readonly struct EndpointRoute
+        {
+            public readonly string pattern;
+            public readonly RouteMatch match;
+            public readonly Func<HttpListenerContext, Task> handler;
+            public EndpointRoute(string pattern, RouteMatch match, Func<HttpListenerContext, Task> handler)
+            {
+                this.pattern = pattern;
+                this.match = match;
+                this.handler = handler;
+            }
+        }
+
+        /// <summary>
+        /// <paramref name="routes"/> を宣言順に走査し、最初に一致した
+        /// ハンドラを実行する。無一致なら 400 + <paramref name="fallbackMessage"/>。
+        /// 各 Handle{Method}Request 内の手動 if/else 連鎖を置き換える。
+        /// </summary>
+        protected async Task DispatchEndpoints(HttpListenerContext context,
+            IReadOnlyList<EndpointRoute> routes, string fallbackMessage)
+        {
+            var path = context.Request.Url.AbsolutePath;
+            for (int i = 0; i < routes.Count; i++)
+            {
+                var r = routes[i];
+                if (MatchPattern(path, r.pattern, r.match))
+                {
+                    await r.handler(context);
+                    return;
+                }
+            }
+
+            await WriteError(context, 400, fallbackMessage);
         }
 
         /// <summary>
