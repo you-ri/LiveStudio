@@ -78,8 +78,6 @@ namespace Lilium.LiveStudio
 
         public MotionSourceBase motionSource => _motionSource;
 
-        [Header("States")]
-
         [ExposedProperty, Hide]
         public string[] meshPaths
         {

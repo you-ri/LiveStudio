@@ -47,7 +47,9 @@ namespace Lilium.LiveStudio
             {
                 if (!string.IsNullOrEmpty(packageName))
                 {
-                    var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForPackageName(packageName);
+                    // FindForAssetPath with the package root path is supported since Unity 2019.3,
+                    // unlike FindForPackageName (Unity 2023.1+) which breaks the declared 2022.3 minimum.
+                    var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssetPath($"Packages/{packageName}");
                     if (packageInfo != null)
                     {
                         packageRootPath = packageInfo.resolvedPath;

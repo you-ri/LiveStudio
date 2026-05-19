@@ -57,6 +57,11 @@ namespace Lilium.VRChatAvatarTransfer.Editor
 
             var host = target.gameObject;
 
+            // locked は中身(sources / atRest / offset 等)をすべて書き込んだ後に
+            // 適用する。先に locked=true にすると Unity が rest/offset を取り違え、
+            // 特に AimConstraint で rotationAtRest / rotationOffset がずれる。
+            IConstraint created;
+
             switch (vrc)
             {
                 case VRCParentConstraint vp:
@@ -64,6 +69,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     var u = Undo.AddComponent<ParentConstraint>(host);
                     CopyCommon(vp, u);
                     CopyParentSources(vp, u);
+                    created = u;
                     break;
                 }
                 case VRCPositionConstraint vp:
@@ -74,6 +80,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     u.translationAtRest = vp.PositionAtRest;
                     u.translationOffset = vp.PositionOffset;
                     u.translationAxis = ToAxis(vp.AffectsPositionX, vp.AffectsPositionY, vp.AffectsPositionZ);
+                    created = u;
                     break;
                 }
                 case VRCRotationConstraint vr:
@@ -84,6 +91,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     u.rotationAtRest = vr.RotationAtRest;
                     u.rotationOffset = vr.RotationOffset;
                     u.rotationAxis = ToAxis(vr.AffectsRotationX, vr.AffectsRotationY, vr.AffectsRotationZ);
+                    created = u;
                     break;
                 }
                 case VRCScaleConstraint vs:
@@ -94,6 +102,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     u.scaleAtRest = vs.ScaleAtRest;
                     u.scaleOffset = vs.ScaleOffset;
                     u.scalingAxis = ToAxis(vs.AffectsScaleX, vs.AffectsScaleY, vs.AffectsScaleZ);
+                    created = u;
                     break;
                 }
                 case VRCAimConstraint va:
@@ -101,11 +110,14 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     var u = Undo.AddComponent<AimConstraint>(host);
                     CopyCommon(va, u);
                     CopySources(va, u);
+                    u.rotationAtRest = va.RotationAtRest;
+                    u.rotationOffset = va.RotationOffset;
                     u.aimVector = va.AimAxis;
                     u.upVector = va.UpAxis;
                     u.worldUpVector = va.WorldUpVector;
                     u.worldUpObject = va.WorldUpTransform;
                     u.worldUpType = (AimConstraint.WorldUpType)(int)va.WorldUp;
+                    created = u;
                     break;
                 }
                 case VRCLookAtConstraint vl:
@@ -116,6 +128,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     u.roll = vl.Roll;
                     u.worldUpObject = vl.WorldUpTransform;
                     u.useUpObject = vl.UseUpTransform;
+                    created = u;
                     break;
                 }
                 default:
@@ -123,15 +136,19 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     return false;
             }
 
+            // 中身を書き込んだ後にロック状態を適用する。
+            created.locked = vrc.Locked;
+
             Undo.DestroyObjectImmediate(vrc);
             return true;
         }
 
+        // locked はここでは設定しない。中身を書き込んだ後に呼び出し側で適用する
+        // (順序を誤ると Unity が rotationAtRest / rotationOffset を取り違えるため)。
         private static void CopyCommon(VRCConstraintBase src, IConstraint dst)
         {
             dst.weight = src.GlobalWeight;
             dst.constraintActive = src.IsActive;
-            dst.locked = src.Locked;
         }
 
         private static void CopySources(VRCConstraintBase src, IConstraint dst)

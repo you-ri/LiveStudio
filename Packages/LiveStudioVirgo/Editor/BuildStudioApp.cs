@@ -1,3 +1,7 @@
+// Studio app は Unity6 (VirgoMotionStudio) からのみビルドする。Build Profile API は
+// Unity 6.0+ 専用のため、Unity 2022.3 を要する VRChat 系プロジェクトに本パッケージを
+// 追加してもコンパイルが通るよう全体をガードする (2022.3 では空コンパイル単位)。
+#if UNITY_6000_0_OR_NEWER
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
@@ -258,3 +262,4 @@ namespace Lilium.LiveStudio.Virgo
         }
     }
 }
+#endif

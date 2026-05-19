@@ -1,6 +1,7 @@
 // Copyright (c) You-Ri, 2026
 using System.IO;
 using UnityEditor;
+using UnityEditor.Animations;
 using UnityEngine;
 using VRC.Core;
 using VRC.SDK3.Avatars.Components;
@@ -27,12 +28,21 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     return false;
                 }
 
+                var safeName = Vrm10ObjectBuilder.MakeFileSafe(Path.GetFileNameWithoutExtension(assetPath));
+
                 PhysBoneToSpringBoneConverter.TryConvert(root, out _);
                 VRCConstraintToUnityConstraintConverter.Convert(root);
-                ApplyFxAnimatorController(root);
+                ApplyFxAnimatorController(root, safeName);
+
+                // VRChat 由来アバターは VRCAvatar を IAvatar として動かす。
+                // (FX controller の Viseme/Voice パラメータを ARKit から駆動)
+                if (root.GetComponent<Lilium.LiveStudio.VRCAvatar>() == null)
+                {
+                    Undo.AddComponent<Lilium.LiveStudio.VRCAvatar>(root);
+                }
+
                 StripVRChatComponents(root);
 
-                var safeName = Vrm10ObjectBuilder.MakeFileSafe(Path.GetFileNameWithoutExtension(assetPath));
                 var outPath = $"{Vrm10ObjectBuilder.OutputFolder}/{safeName}.prefab";
                 PrefabUtility.SaveAsPrefabAsset(root, outPath, out var saved);
                 if (saved)
@@ -56,7 +66,13 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             }
         }
 
-        private static void ApplyFxAnimatorController(GameObject root)
+        /// <summary>
+        /// Duplicates the avatar's FX AnimatorController into the output folder, converts any
+        /// VRChat VRCAvatarParameterDriver behaviours on the copy into VRCSDK-independent
+        /// AvatarParameterDriver, and assigns the copy to the root Animator. The original
+        /// FX controller asset is never modified.
+        /// </summary>
+        private static void ApplyFxAnimatorController(GameObject root, string safeName)
         {
             var desc = root.GetComponent<VRCAvatarDescriptor>();
             if (desc == null || desc.baseAnimationLayers == null) return;
@@ -83,8 +99,49 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 return;
             }
 
-            animator.runtimeAnimatorController = fxController;
-            VRChatAvatarTransferLog.Info($"'{root.name}': applied FX animator controller '{fxController.name}'.");
+            var applied = DuplicateAndConvertFxController(fxController, safeName) ?? fxController;
+            animator.runtimeAnimatorController = applied;
+            VRChatAvatarTransferLog.Info($"'{root.name}': applied FX animator controller '{applied.name}'.");
+        }
+
+        /// <summary>
+        /// Copies the source FX controller asset into the output folder and converts its
+        /// parameter-driver behaviours. Returns the copy, or null when duplication is not
+        /// possible (caller falls back to the original controller).
+        /// </summary>
+        private static AnimatorController DuplicateAndConvertFxController(RuntimeAnimatorController source, string safeName)
+        {
+            var srcPath = AssetDatabase.GetAssetPath(source);
+            if (string.IsNullOrEmpty(srcPath))
+            {
+                VRChatAvatarTransferLog.Warn(
+                    $"FX controller '{source.name}' has no asset path; parameter drivers not converted.");
+                return null;
+            }
+
+            var dstPath = $"{Vrm10ObjectBuilder.OutputFolder}/{safeName}.FX.controller";
+            if (AssetDatabase.LoadAssetAtPath<Object>(dstPath) != null)
+            {
+                AssetDatabase.DeleteAsset(dstPath);
+            }
+            if (!AssetDatabase.CopyAsset(srcPath, dstPath))
+            {
+                VRChatAvatarTransferLog.Warn(
+                    $"Failed to copy FX controller '{srcPath}' to '{dstPath}'; parameter drivers not converted.");
+                return null;
+            }
+
+            var copy = AssetDatabase.LoadAssetAtPath<AnimatorController>(dstPath);
+            if (copy == null)
+            {
+                VRChatAvatarTransferLog.Warn(
+                    $"Copied FX asset '{dstPath}' is not an AnimatorController; parameter drivers not converted.");
+                return null;
+            }
+
+            AvatarParameterDriverConverter.Convert(copy);
+            AvatarAnimatorTrackingControlConverter.Convert(copy);
+            return copy;
         }
 
         private static void StripVRChatComponents(GameObject root)
@@ -105,6 +162,20 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             if (removed > 0)
             {
                 VRChatAvatarTransferLog.Info($"'{root.name}': stripped {removed} VRChat-only component(s) (VRCAvatarDescriptor / PipelineManager).");
+            }
+
+            // 元 VRChat アバターには、この非 VRChat プロジェクトに存在しない
+            // サードパーティ製コンポーネントが Missing Script として残ることがある。
+            // SaveAsPrefabAsset は Missing Script を含む prefab の保存を拒否するため除去する。
+            int missingRemoved = 0;
+            foreach (var t in root.GetComponentsInChildren<Transform>(true))
+            {
+                if (t == null) continue;
+                missingRemoved += GameObjectUtility.RemoveMonoBehavioursWithMissingScript(t.gameObject);
+            }
+            if (missingRemoved > 0)
+            {
+                VRChatAvatarTransferLog.Info($"'{root.name}': removed {missingRemoved} missing script(s).");
             }
         }
     }

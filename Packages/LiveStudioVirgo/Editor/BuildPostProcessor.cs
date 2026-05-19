@@ -4,7 +4,10 @@ using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
 using System.IO;
 
-#if !FUSION_APP
+// PackageInfo.FindForPackageName は Unity 2023.1+/6 専用。Studio ビルド後処理は
+// Unity6 (VirgoMotionStudio) でのみ実行するため、Unity 2022.3 を要する VRChat 系
+// プロジェクトに本パッケージを追加してもコンパイルが通るよう Unity6 でガードする。
+#if !FUSION_APP && UNITY_6000_0_OR_NEWER
 
 using Lilium.LiveStudio;
 namespace Lilium.LiveStudio.Virgo.Editor
