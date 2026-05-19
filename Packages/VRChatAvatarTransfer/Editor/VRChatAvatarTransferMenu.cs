@@ -67,6 +67,47 @@ namespace Lilium.VRChatAvatarTransfer.Editor
         private static bool ValidateConvertAllVrmPrefabAsset()
             => CollectSelectedPrefabAssetPaths().Count > 0;
 
+        [MenuItem(MenuRoot + "Save In-Memory Assets and Make Prefab (Selected)", false)]
+        private static void SaveInMemoryAssetsAndMakePrefab()
+        {
+            var sceneObjects = CollectSelectedSceneObjects();
+            if (sceneObjects.Count == 0)
+            {
+                EditorUtility.DisplayDialog(
+                    "VRChat Avatar Transfer",
+                    "No scene GameObject selected. Select the baked avatar (e.g. 'Avatar(Clone)') in the Hierarchy.",
+                    "OK");
+                return;
+            }
+
+            int success = 0;
+            foreach (var go in sceneObjects)
+            {
+                if (BakedAvatarPrefabBuilder.Build(go)) success++;
+            }
+            VRChatAvatarTransferLog.Info(
+                $"Make prefab finished: {success}/{sceneObjects.Count} prefab(s) written to '{BakedAvatarPrefabBuilder.kOutputFolder}'.");
+        }
+
+        [MenuItem(MenuRoot + "Save In-Memory Assets and Make Prefab (Selected)", true)]
+        private static bool ValidateSaveInMemoryAssetsAndMakePrefab()
+            => CollectSelectedSceneObjects().Count > 0;
+
+        private static List<GameObject> CollectSelectedSceneObjects()
+        {
+            var result = new List<GameObject>();
+            var gameObjects = Selection.gameObjects;
+            if (gameObjects == null) return result;
+
+            foreach (var go in gameObjects)
+            {
+                if (go == null) continue;
+                if (EditorUtility.IsPersistent(go)) continue; // Project アセットは対象外
+                result.Add(go);
+            }
+            return result;
+        }
+
         private static void ForEachSelectedAvatar(System.Action<GameObject> action)
         {
             var gameObjects = Selection.gameObjects;

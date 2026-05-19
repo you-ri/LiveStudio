@@ -41,6 +41,11 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     Undo.AddComponent<Lilium.LiveStudio.VRCAvatar>(root);
                 }
 
+                // VRCAvatarDescriptor の VisemeBlendShape lipsync 設定を VRCAvatar へ移植する。
+                // descriptor が strip される前に実行する必要がある。
+                var vrcAvatar = root.GetComponent<Lilium.LiveStudio.VRCAvatar>();
+                VRCLipSyncConverter.Convert(root, vrcAvatar);
+
                 StripVRChatComponents(root);
 
                 var outPath = $"{Vrm10ObjectBuilder.OutputFolder}/{safeName}.prefab";

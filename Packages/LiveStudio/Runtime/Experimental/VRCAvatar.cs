@@ -75,6 +75,14 @@ namespace Lilium.LiveStudio
         [Tooltip("目の回転最大角度 (x: yaw, y: pitch)")]
         Vector2 _eyeRotationMax = new Vector2(40f, 40f);
 
+        [SerializeField]
+        [Tooltip("VisemeBlendShape lipsync 用メッシュ。設定時は Animator ではなく blendshape を直接駆動する")]
+        SkinnedMeshRenderer _visemeMesh;
+
+        [SerializeField]
+        [Tooltip("ローカル viseme 順 (sil/aa/E/ih/oh/ou) の blendshape index。-1 は未割当")]
+        int[] _visemeBlendShapeIndices;
+
         Animator _animator;
         MotionSourceBase _motionSource;
         bool _isTracking;
@@ -83,6 +91,10 @@ namespace Lilium.LiveStudio
         int _voiceHash;
         bool _hasViseme;
         bool _hasVoice;
+
+        // VisemeSkinnedMesh と index 配列が揃っていれば blendshape 直接駆動、
+        // 揃わなければ Animator Viseme/Voice 経路へフォールバックする。
+        bool _useVisemeBlendShapes;
 
         float[] _target;
         float[] _smoothed;
@@ -139,6 +151,11 @@ namespace Lilium.LiveStudio
                 _expressionKeys[i] = FacialKey.CreateCustom(s_localVisemeNames[i]);
             }
 
+            _useVisemeBlendShapes = _visemeMesh != null
+                                    && _visemeMesh.sharedMesh != null
+                                    && _visemeBlendShapeIndices != null
+                                    && _visemeBlendShapeIndices.Length == kVisemeCount;
+
             _SetupEyeBones();
             _isTracking = false;
 
@@ -187,7 +204,14 @@ namespace Lilium.LiveStudio
             // (スコア計算は継続し、Tracking 復帰時の不連続を防ぐ)
             if (_tracking[kTrackMouth] == AvatarTrackingType.Tracking)
             {
-                _WriteToAnimator(voice);
+                if (_useVisemeBlendShapes)
+                {
+                    _WriteToBlendShapes(voice);
+                }
+                else
+                {
+                    _WriteToAnimator(voice);
+                }
             }
 
             AvatarAnimationSystem.UpdateBodyAnimation(_animator, in _motionSource.frameData);
@@ -271,6 +295,41 @@ namespace Lilium.LiveStudio
 
             if (_hasViseme) _animator.SetInteger(_visemeHash, viseme);
             if (_hasVoice) _animator.SetFloat(_voiceHash, voice);
+        }
+
+        /// <summary>
+        /// 母音スコアから VisemeSkinnedMesh の blendshape を直接連続駆動する。
+        /// VRChat の VisemeBlendShape lipsync 相当。sil (index 0) は値を持たず、
+        /// 無音判定時は全 viseme blendshape を 0 にして口を閉じる。
+        /// </summary>
+        void _WriteToBlendShapes(float voice)
+        {
+            float bestScore = 0f;
+            for (int i = kAa; i < kVisemeCount; i++)
+            {
+                if (_smoothed[i] > bestScore) bestScore = _smoothed[i];
+            }
+            Debug.Log($"[Studio] VRCAvatar: best viseme score={bestScore:F3}, voice={voice:F3}");
+
+            bool silent = bestScore < kVisemeThreshold || voice < kVoiceThreshold;
+            for (int i = kAa; i < kVisemeCount; i++)
+            {
+                int idx = _visemeBlendShapeIndices[i];
+                if (idx < 0 || idx >= _visemeMesh.sharedMesh.blendShapeCount) continue;
+                _visemeMesh.SetBlendShapeWeight(idx, silent ? 0f : _smoothed[i] * 100f);
+                
+            }
+        }
+
+        /// <summary>
+        /// VisemeBlendShape lipsync 設定を注入する (変換ツールから呼ばれる)。
+        /// localOrderIndices はローカル viseme 順 (sil/aa/E/ih/oh/ou) の blendshape index。
+        /// 未割当は -1。設定後は実行時に Animator ではなく blendshape を直接駆動する。
+        /// </summary>
+        public void ConfigureVisemeBlendShapes(SkinnedMeshRenderer mesh, int[] localOrderIndices)
+        {
+            _visemeMesh = mesh;
+            _visemeBlendShapeIndices = localOrderIndices;
         }
 
         /// <summary>
