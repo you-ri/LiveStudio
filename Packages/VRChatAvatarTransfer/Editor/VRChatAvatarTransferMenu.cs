@@ -9,65 +9,13 @@ namespace Lilium.VRChatAvatarTransfer.Editor
     {
         private const string MenuRoot = "Tools/VRChat Avatar Transfer/";
 
-        [MenuItem(MenuRoot + "Convert PhysBone to VRM SpringBone (Selected)")]
-        private static void ConvertPhysBoneToSpringBone()
+        [MenuItem(MenuRoot + "Transfer")]
+        private static void OpenTransferWindow()
         {
-            ForEachSelectedAvatar(avatar =>
-            {
-                PhysBoneToSpringBoneConverter.TryConvert(avatar, out _);
-            });
+            VRChatAvatarTransferWindow.Open();
         }
 
-        [MenuItem(MenuRoot + "Convert VRC Constraint to Unity Constraint (Selected)")]
-        private static void ConvertConstraints()
-        {
-            ForEachSelectedAvatar(avatar =>
-            {
-                VRCConstraintToUnityConstraintConverter.Convert(avatar);
-            });
-        }
-
-        [MenuItem(MenuRoot + "Convert All (VRM SpringBone) (Selected)")]
-        private static void ConvertAllVrm()
-        {
-            ForEachSelectedAvatar(avatar =>
-            {
-                PhysBoneToSpringBoneConverter.TryConvert(avatar, out _);
-                VRCConstraintToUnityConstraintConverter.Convert(avatar);
-            });
-        }
-
-        [MenuItem(MenuRoot + "Convert All (VRM SpringBone) (Prefab Asset)", false)]
-        private static void ConvertAllVrmPrefabAsset()
-        {
-            var prefabPaths = CollectSelectedPrefabAssetPaths();
-            if (prefabPaths.Count == 0)
-            {
-                EditorUtility.DisplayDialog(
-                    "VRChat Avatar Transfer",
-                    "No prefab asset selected. Select one or more prefab assets in the Project window.",
-                    "OK");
-                return;
-            }
-
-            Vrm10ObjectBuilder.EnsureFolder(Vrm10ObjectBuilder.OutputFolder);
-
-            int success = 0;
-            foreach (var path in prefabPaths)
-            {
-                if (PrefabAssetConverter.Convert(path)) success++;
-            }
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
-            VRChatAvatarTransferLog.Info(
-                $"Prefab asset conversion finished: {success}/{prefabPaths.Count} prefab(s) written to '{Vrm10ObjectBuilder.OutputFolder}'.");
-        }
-
-        [MenuItem(MenuRoot + "Convert All (VRM SpringBone) (Prefab Asset)", true)]
-        private static bool ValidateConvertAllVrmPrefabAsset()
-            => CollectSelectedPrefabAssetPaths().Count > 0;
-
-        [MenuItem(MenuRoot + "Save In-Memory Assets and Make Prefab (Selected)", false)]
+        [MenuItem(MenuRoot + "Make Prefab (Selected)", false)]
         private static void SaveInMemoryAssetsAndMakePrefab()
         {
             var sceneObjects = CollectSelectedSceneObjects();
@@ -89,7 +37,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 $"Make prefab finished: {success}/{sceneObjects.Count} prefab(s) written to '{BakedAvatarPrefabBuilder.kOutputFolder}'.");
         }
 
-        [MenuItem(MenuRoot + "Save In-Memory Assets and Make Prefab (Selected)", true)]
+        [MenuItem(MenuRoot + "Make Prefab (Selected)", true)]
         private static bool ValidateSaveInMemoryAssetsAndMakePrefab()
             => CollectSelectedSceneObjects().Count > 0;
 

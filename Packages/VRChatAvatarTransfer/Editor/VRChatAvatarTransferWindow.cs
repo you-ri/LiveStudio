@@ -11,7 +11,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
 {
     internal class VRChatAvatarTransferWindow : EditorWindow
     {
-        private const string MenuPath = "Window/VRChat Avatar Transfer/Converter";
+        private const string MenuPath = "Window/VRChat Avatar Transfer/Transfer";
 
         [MenuItem(MenuPath)]
         public static void Open()

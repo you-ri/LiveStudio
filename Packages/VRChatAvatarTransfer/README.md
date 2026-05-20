@@ -63,9 +63,7 @@ https://github.com/you-ri/LiveStudio.git?path=/Packages/VRChatAvatarTransfer#bet
 ### From a Hierarchy GameObject
 
 1. Place a VRChat avatar (with `VRCAvatarDescriptor`) into the scene and select its root GameObject.
-2. From the menu bar, choose one of:
-   - `Tools/VRChat Avatar Transfer/Convert PhysBone to VRM SpringBone (Selected)`
-   - `Tools/VRChat Avatar Transfer/Convert VRC Constraint to Unity Constraint (Selected)`
+2. From the menu bar, choose:
    - `Tools/VRChat Avatar Transfer/Convert All (VRM SpringBone) (Selected)`
 3. The converters operate in-place on the selected avatar(s).
 
@@ -80,9 +78,9 @@ Multiple avatars can be selected and processed at once.
 
 > **VRCAvatarParameterDriver**: the avatar's FX AnimatorController is duplicated to `Assets/VRChatAvatarTransfer/{originalName}.FX.controller`, its `VRCAvatarParameterDriver` state behaviours are replaced with `AvatarParameterDriver`, and the copy is assigned to the Animator. The original FX controller asset is left untouched. This conversion runs only in the prefab-asset pipeline — the `(Selected)` hierarchy menus do not convert parameter drivers, because that would mutate the shared source controller asset in place.
 
-### From the converter window
+### From the transfer window
 
-1. Open `Window/VRChat Avatar Transfer/Converter`.
+1. Open `Window/VRChat Avatar Transfer/Transfer` (or `Tools/VRChat Avatar Transfer/Transfer`).
 2. Drop a VRChat avatar prefab into the **VRChat Avatar Prefab** field.
 3. The window verifies the prefab against the prerequisites:
    - It must be a prefab asset.
