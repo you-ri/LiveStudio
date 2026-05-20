@@ -123,8 +123,41 @@ namespace Lilium.LiveStudio
 
         public AvatarExpressionConfig config => _expressionConfig;
 
+        // True when _expressionConfig points to a clone we created in Awake (vs. the original
+        // asset reference). Guards OnDestroy so we never destroy the source asset.
+        private bool _ownsExpressionConfig;
+
         IAvatarSource[] _avatarSources = Array.Empty<IAvatarSource>();
 
+
+        void Awake()
+        {
+            // Clone the asset at Play start so runtime edits (RemoteApp, Inspector, etc.) do
+            // not write back to disk. All subsequent SetExpressionConfig calls on swapped
+            // avatars will receive this clone, keeping AvatarController the single source of
+            // truth for expression configuration.
+            if (_expressionConfig != null)
+            {
+                var sourceName = _expressionConfig.name;
+                _expressionConfig = Instantiate(_expressionConfig);
+                // Replace the trailing "(Clone)" appended by Instantiate with " (Instanced)" so
+                // the clone is visibly distinguishable from the source asset in the Inspector
+                // and any RemoteApp surface that displays the name.
+                _expressionConfig.name = $"{sourceName} (Instanced)";
+                _ownsExpressionConfig = true;
+            }
+
+            // Propagate the clone to the avatar already placed in the scene. Doing this in
+            // Awake (AvatarController is [DefaultExecutionOrder(200)], IAvatar implementations
+            // are [DefaultExecutionOrder(10)]) ensures the clone is in place before each
+            // IAvatar.Start() runs expressionResolver.Setup(), so the very first Resolve()
+            // reads from the clone rather than the source asset.
+            var initialTarget = GetComponentInChildren<Animator>()?.gameObject;
+            if (initialTarget != null)
+            {
+                initialTarget.GetComponent<IAvatar>()?.SetExpressionConfig(_expressionConfig);
+            }
+        }
 
         void OnEnable()
         {
@@ -168,6 +201,19 @@ namespace Lilium.LiveStudio
             {
                 _PostSetupAvatar(_target);
                 onAvatarChanged?.Invoke();
+            }
+        }
+
+        void OnDestroy()
+        {
+            // Destroy the clone we created in Awake. The ownership flag prevents us from
+            // touching the source asset when no clone was made (e.g. _expressionConfig was
+            // null at Awake).
+            if (_ownsExpressionConfig && _expressionConfig != null)
+            {
+                Destroy(_expressionConfig);
+                _expressionConfig = null;
+                _ownsExpressionConfig = false;
             }
         }
 

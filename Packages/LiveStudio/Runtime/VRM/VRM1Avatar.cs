@@ -25,6 +25,32 @@ namespace Lilium.LiveStudio
         [SerializeReference, Select]
         public IExpressionResolver expressionResolver = new DefaultExpressionResolver();
 
+#if UNITY_EDITOR
+        // GUID of the shipped default ExpressionConfig asset (LiveStudio package:
+        // Contents/SceneTemplate/Current Avatar Expression Config.asset).
+        // Using GUID instead of a path keeps the default working after renames/moves.
+        const string _kDefaultExpressionConfigGuid = "c7b12b2866458f44fb076018b48d8fb4";
+
+        // Editor-only: populate the resolver's ExpressionConfig with the shipped default
+        // when the component is first added (or reset). A C# field initializer cannot
+        // reference a ScriptableObject asset, so this is the standard Unity entry point
+        // for that kind of default.
+        void Reset()
+        {
+            if (expressionResolver == null) return;
+            if (expressionResolver.expressionConfig != null) return;
+
+            var path = UnityEditor.AssetDatabase.GUIDToAssetPath(_kDefaultExpressionConfigGuid);
+            if (string.IsNullOrEmpty(path)) return;
+
+            var defaultConfig = UnityEditor.AssetDatabase.LoadAssetAtPath<AvatarExpressionConfig>(path);
+            if (defaultConfig != null)
+            {
+                expressionResolver.expressionConfig = defaultConfig;
+            }
+        }
+#endif
+
         private Vrm10Instance _vrm10Instance;
 
         private Vrm10RuntimeExpression _vrm10RuntimeExpression;

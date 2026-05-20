@@ -47,11 +47,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 624d158b64538de4c9515c1005d333a6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _defaultAvatarPrefab: {fileID: -1728013695380148634, guid: 744f99b695190f54c8d612102aa77f1a, type: 3}
+  _defaultAvatarPrefab: {fileID: -1728013695380148634, guid: 744f99b695190f54c8d612102aa77f1a,
+    type: 3}
   _motionSource: {fileID: 0}
   meshStateOverrides: []
   animationParameterOverrides: []
-  _config: {fileID: 11400000, guid: c7b12b2866458f44fb076018b48d8fb4, type: 2}
+  _expressionConfig: {fileID: 11400000, guid: c7b12b2866458f44fb076018b48d8fb4, type: 2}
 --- !u!114 &1501337135711535025
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -83,6 +84,9 @@ MonoBehaviour:
     m_Asset: {fileID: 0}
     m_Actions: []
     m_Bindings: []
+  _settings:
+    deviceName: 
+    bindings: []
 --- !u!114 &-3814253721157403627
 MonoBehaviour:
   m_ObjectHideFlags: 0

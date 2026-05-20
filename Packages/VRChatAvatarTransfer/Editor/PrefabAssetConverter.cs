@@ -41,10 +41,11 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     Undo.AddComponent<Lilium.LiveStudio.VRCAvatar>(root);
                 }
 
-                // VRCAvatarDescriptor の VisemeBlendShape lipsync 設定を VRCAvatar へ移植する。
-                // descriptor が strip される前に実行する必要がある。
+                // VRCAvatarDescriptor の VisemeBlendShape lipsync / eyelid Blink 設定を
+                // VRCAvatar へ移植する。descriptor が strip される前に実行する必要がある。
                 var vrcAvatar = root.GetComponent<Lilium.LiveStudio.VRCAvatar>();
                 VRCLipSyncConverter.Convert(root, vrcAvatar);
+                VRCEyeBlinkConverter.Convert(root, vrcAvatar);
 
                 StripVRChatComponents(root);
 
@@ -124,71 +125,51 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 return null;
             }
 
-            // NDMF / Modular Avatar のベイク出力では、複数レイヤー (Base/Action/Gesture/FX...)
-            // のコントローラーが 1 つの SubAssetContainer 内のサブアセットとしてまとまっている。
-            // VRCAvatarDescriptor の FX playable layer 参照 (source) こそが目的のコントローラー
-            // なので、その local file id でコピー内の対応サブアセットを一意に特定する。
-            // (LoadAssetAtPath<AnimatorController> はコンテナ内で最初に見つかった
-            // コントローラー = 別レイヤーを返してしまうため誤アサインになっていた)
-            long srcLocalId = 0;
-            AssetDatabase.TryGetGUIDAndLocalFileIdentifier(source, out _, out srcLocalId);
-            var srcName = source.name;
-
+            // ソース非破壊のため必ずコピーして変換する (behaviour 置換は破壊的なため)。
+            // 通常の単独 .controller は AssetDatabase.CopyAsset で非破壊コピー、
+            // 別アセットのサブアセット (複数 AnimatorController を抱えるコンテナの一部) は
+            // CopyAsset で transition が一部欠落する事例があるため、AnimatorControllerCloner で
+            // 標準 AnimatorController API のみで deep-clone する。
             var dstPath = $"{Vrm10ObjectBuilder.OutputFolder}/{safeName}.FX.controller";
             if (AssetDatabase.LoadAssetAtPath<Object>(dstPath) != null)
             {
                 AssetDatabase.DeleteAsset(dstPath);
             }
-            if (!AssetDatabase.CopyAsset(srcPath, dstPath))
+
+            var srcMain = AssetDatabase.LoadMainAssetAtPath(srcPath);
+            bool sourceIsSubAsset = !ReferenceEquals(srcMain, source);
+            AnimatorController copy;
+            if (sourceIsSubAsset)
             {
-                VRChatAvatarTransferLog.Warn(
-                    $"Failed to copy FX controller '{srcPath}' to '{dstPath}'; parameter drivers not converted.");
-                return null;
+                if (!(source is AnimatorController srcCtrl))
+                {
+                    VRChatAvatarTransferLog.Warn(
+                        $"FX source '{source.name}' is a sub-asset but not an AnimatorController; parameter drivers not converted.");
+                    return null;
+                }
+                copy = AnimatorControllerCloner.CloneToPath(srcCtrl, dstPath);
+            }
+            else
+            {
+                if (!AssetDatabase.CopyAsset(srcPath, dstPath))
+                {
+                    VRChatAvatarTransferLog.Warn(
+                        $"Failed to copy FX controller '{srcPath}' to '{dstPath}'; parameter drivers not converted.");
+                    return null;
+                }
+                copy = AssetDatabase.LoadAssetAtPath<AnimatorController>(dstPath);
             }
 
-            var copy = FindCopiedFxController(dstPath, srcLocalId, srcName);
             if (copy == null)
             {
                 VRChatAvatarTransferLog.Warn(
-                    $"Copied FX asset '{dstPath}' contains no AnimatorController matching the source FX layer '{srcName}'; parameter drivers not converted.");
+                    $"Failed to produce a usable AnimatorController copy at '{dstPath}'; parameter drivers not converted.");
                 return null;
             }
 
             AvatarParameterDriverConverter.Convert(copy);
             AvatarAnimatorTrackingControlConverter.Convert(copy);
             return copy;
-        }
-
-        /// <summary>
-        /// Resolves the copied FX <see cref="AnimatorController"/> at <paramref name="assetPath"/>
-        /// that corresponds to the descriptor's FX playable-layer controller. Matching is by the
-        /// source's local file identifier (AssetDatabase.CopyAsset preserves sub-asset local ids),
-        /// which is unambiguous for multi-controller containers (NDMF / Modular Avatar bake).
-        /// Falls back to name match, then to the sole controller for a standalone .controller asset.
-        /// </summary>
-        private static AnimatorController FindCopiedFxController(string assetPath, long sourceLocalId, string controllerName)
-        {
-            var all = AssetDatabase.LoadAllAssetsAtPath(assetPath);
-            AnimatorController firstController = null;
-            AnimatorController nameMatch = null;
-            int controllerCount = 0;
-            foreach (var obj in all)
-            {
-                if (!(obj is AnimatorController ac)) continue;
-                controllerCount++;
-                if (firstController == null) firstController = ac;
-
-                if (sourceLocalId != 0
-                    && AssetDatabase.TryGetGUIDAndLocalFileIdentifier(ac, out _, out long localId)
-                    && localId == sourceLocalId)
-                {
-                    return ac; // descriptor の FX 参照と同一実体
-                }
-                if (nameMatch == null && ac.name == controllerName) nameMatch = ac;
-            }
-            if (nameMatch != null) return nameMatch;
-            // 単独 .controller (サブアセット 1 個) は一致条件を満たさなくてもそれを使う。
-            return controllerCount == 1 ? firstController : null;
         }
 
         private static void StripVRChatComponents(GameObject root)
