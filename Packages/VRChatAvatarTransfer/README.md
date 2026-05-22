@@ -74,9 +74,9 @@ Multiple avatars can be selected and processed at once.
 1. Select one or more VRChat avatar prefab assets in the Project window.
 2. From the menu bar, choose:
    - `Tools/VRChat Avatar Transfer/Convert All (VRM SpringBone) (Prefab Asset)`
-3. Converted prefabs are written to `Assets/VRChatAvatarTransfer/{originalName}.prefab`. Existing files at the destination are overwritten without confirmation. The original prefab assets are not modified.
+3. Converted prefabs are written to `Assets/VRCAT_GeneratedAssets/{originalName}.prefab`. Existing files at the destination are overwritten without confirmation. The original prefab assets are not modified.
 
-> **VRCAvatarParameterDriver**: the avatar's FX AnimatorController is duplicated to `Assets/VRChatAvatarTransfer/{originalName}.FX.controller`, its `VRCAvatarParameterDriver` state behaviours are replaced with `AvatarParameterDriver`, and the copy is assigned to the Animator. The original FX controller asset is left untouched. This conversion runs only in the prefab-asset pipeline — the `(Selected)` hierarchy menus do not convert parameter drivers, because that would mutate the shared source controller asset in place.
+> **VRCAvatarParameterDriver**: the avatar's FX AnimatorController is duplicated to `Assets/VRCAT_GeneratedAssets/{originalName}.FX.controller`, its `VRCAvatarParameterDriver` state behaviours are replaced with `AvatarParameterDriver`, and the copy is assigned to the Animator. The original FX controller asset is left untouched. This conversion runs only in the prefab-asset pipeline — the `(Selected)` hierarchy menus do not convert parameter drivers, because that would mutate the shared source controller asset in place.
 
 ### From the transfer window
 
@@ -88,7 +88,7 @@ Multiple avatars can be selected and processed at once.
    - The root must have an `Animator` configured as Humanoid.
 
    It also reports informational counts (PhysBone components, PhysBone colliders, VRC Constraints) and whether a custom FX AnimatorController is set on the avatar descriptor.
-4. The **Convert** button is enabled only when all required checks pass. Pressing it writes the converted prefab to `Assets/VRChatAvatarTransfer/{originalName}.prefab` (overwrites without confirmation).
+4. The **Convert** button is enabled only when all required checks pass. Pressing it writes the converted prefab to `Assets/VRCAT_GeneratedAssets/{originalName}.prefab` (overwrites without confirmation).
 
 ---
 

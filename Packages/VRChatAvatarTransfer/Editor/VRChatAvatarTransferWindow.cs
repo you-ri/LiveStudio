@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
+using UnityEditor.Animations;
 using UnityEngine;
 using VRC.Dynamics;
 using VRC.SDK3.Avatars.Components;
@@ -190,6 +191,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             // FX AnimatorController (informational)
             string fxLabel = "FX AnimatorController: (none)";
             Status fxStatus = Status.Info;
+            RuntimeAnimatorController fxController = null;
             if (hasDesc && desc.baseAnimationLayers != null)
             {
                 foreach (var layer in desc.baseAnimationLayers)
@@ -198,7 +200,8 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     {
                         if (layer.animatorController != null)
                         {
-                            fxLabel = $"FX AnimatorController: {layer.animatorController.name}";
+                            fxController = layer.animatorController;
+                            fxLabel = $"FX AnimatorController: {fxController.name}";
                             fxStatus = Status.Ok;
                         }
                         break;
@@ -206,6 +209,17 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 }
             }
             items.Add(new Item { status = fxStatus, label = fxLabel });
+
+            // IAvatar component selection (informational)
+            // FX controller の "FT/v2/" パラメータ有無で VRCFTAvatar / VRCAvatar を分岐する。
+            bool isVRCFT = PrefabAssetConverter.HasVRCFTV2Parameters(fxController as AnimatorController);
+            items.Add(new Item
+            {
+                status = Status.Info,
+                label = isVRCFT
+                    ? "Runtime: VRCFTAvatar (FT/v2/* detected)"
+                    : "Runtime: VRCAvatar"
+            });
 
             canConvert = isPrefab && hasDesc && hasAnimator && isHumanoid;
 

@@ -23,7 +23,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
         private const string kCloneSuffix = "(Clone)";
 
         // VRM 変換 (Convert) とは別フォルダに出力する。
-        internal const string kOutputFolder = "Assets/VRChatAvatarTransfer/Prefab";
+        internal const string kOutputFolder = "Assets/VRCAT_GeneratedAssets/Baked";
 
         /// <summary>
         /// Builds a prefab from the given scene GameObject. The source scene object is not

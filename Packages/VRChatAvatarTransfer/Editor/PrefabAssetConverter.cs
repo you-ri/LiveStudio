@@ -34,18 +34,35 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 VRCConstraintToUnityConstraintConverter.Convert(root);
                 ApplyFxAnimatorController(root, safeName);
 
-                // VRChat 由来アバターは VRCAvatar を IAvatar として動かす。
-                // (FX controller の Viseme/Voice パラメータを ARKit から駆動)
-                if (root.GetComponent<Lilium.LiveStudio.VRCAvatar>() == null)
+                // VRCFT v2 互換 (FX controller に "FT/v2/" 系パラメータが存在) の場合は
+                // VRCFTAvatar を IAvatar として採用し、ARKit を直接 FT/v2/ パラメータへ書き込む。
+                // この経路では VRCAvatar 向けの viseme/blink/expressions 移植は適用しない
+                // (FT テンプレートが Animator 内で表情を駆動するため、データソースが噛み合わない)。
+                if (IsVRCFTCompatible(root))
                 {
-                    Undo.AddComponent<Lilium.LiveStudio.VRCAvatar>(root);
+                    if (root.GetComponent<Lilium.LiveStudio.VRCFTAvatar>() == null)
+                    {
+                        Undo.AddComponent<Lilium.LiveStudio.VRCFTAvatar>(root);
+                    }
+                    VRChatAvatarTransferLog.Info(
+                        $"'{root.name}': VRCFT-compatible avatar detected; VRCFTAvatar added instead of VRCAvatar.");
                 }
+                else
+                {
+                    // VRChat 由来アバターは VRCAvatar を IAvatar として動かす。
+                    // (FX controller の Viseme/Voice パラメータを ARKit から駆動)
+                    if (root.GetComponent<Lilium.LiveStudio.VRCAvatar>() == null)
+                    {
+                        Undo.AddComponent<Lilium.LiveStudio.VRCAvatar>(root);
+                    }
 
-                // VRCAvatarDescriptor の VisemeBlendShape lipsync / eyelid Blink 設定を
-                // VRCAvatar へ移植する。descriptor が strip される前に実行する必要がある。
-                var vrcAvatar = root.GetComponent<Lilium.LiveStudio.VRCAvatar>();
-                VRCLipSyncConverter.Convert(root, vrcAvatar);
-                VRCEyeBlinkConverter.Convert(root, vrcAvatar);
+                    // VRCAvatarDescriptor の VisemeBlendShape lipsync / eyelid Blink / ExpressionsMenu を
+                    // VRCAvatar へ移植する。descriptor が strip される前に実行する必要がある。
+                    var vrcAvatar = root.GetComponent<Lilium.LiveStudio.VRCAvatar>();
+                    VRCLipSyncConverter.Convert(root, vrcAvatar);
+                    VRCEyeBlinkConverter.Convert(root, vrcAvatar);
+                    VRCExpressionsConverter.Convert(root, vrcAvatar);
+                }
 
                 StripVRChatComponents(root);
 
@@ -108,6 +125,37 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             var applied = DuplicateAndConvertFxController(fxController, safeName) ?? fxController;
             animator.runtimeAnimatorController = applied;
             VRChatAvatarTransferLog.Info($"'{root.name}': applied FX animator controller '{applied.name}'.");
+        }
+
+        /// <summary>
+        /// VRCFT v2 互換アバターかを Animator パラメータ名で判定する。
+        /// ApplyFxAnimatorController 実行後 (Animator に複製済み FX controller が割当済み) を前提とする。
+        /// </summary>
+        private static bool IsVRCFTCompatible(GameObject root)
+        {
+            var animator = root.GetComponent<Animator>();
+            if (animator == null) return false;
+            return HasVRCFTV2Parameters(animator.runtimeAnimatorController as AnimatorController);
+        }
+
+        /// <summary>
+        /// AnimatorController に VRCFT v2 テンプレートの "FT/v2/" 系パラメータが
+        /// 1 つでも存在するかを判定する。VRCFT v2 テンプレート (Adjerry91) は 99 個を
+        /// 一括で生成するため 1 個閾値でも誤検出のリスクは事実上ない。
+        /// 変換前判定 (Window) と変換後判定 (PrefabAssetConverter) で共有する。
+        /// </summary>
+        internal static bool HasVRCFTV2Parameters(AnimatorController controller)
+        {
+            const string FT_V2_PREFIX = "FT/v2/";
+            if (controller == null) return false;
+            foreach (var p in controller.parameters)
+            {
+                if (p != null && !string.IsNullOrEmpty(p.name) && p.name.StartsWith(FT_V2_PREFIX))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /// <summary>

@@ -17,7 +17,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
     /// </summary>
     internal static class Vrm10ObjectBuilder
     {
-        internal const string OutputFolder = "Assets/VRChatAvatarTransfer/Transferred";
+        internal const string OutputFolder = "Assets/VRCAT_GeneratedAssets/Transferred";
 
         /// <summary>
         /// avatarRoot 用の VRM10Object をロードまたは生成し、内容を埋めて返す。

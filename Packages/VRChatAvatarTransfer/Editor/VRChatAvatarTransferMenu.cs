@@ -15,7 +15,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             VRChatAvatarTransferWindow.Open();
         }
 
-        [MenuItem(MenuRoot + "Make Prefab (Selected)", false)]
+        [MenuItem(MenuRoot + "Make Baked Prefab (Selected)", false)]
         private static void SaveInMemoryAssetsAndMakePrefab()
         {
             var sceneObjects = CollectSelectedSceneObjects();
@@ -37,7 +37,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 $"Make prefab finished: {success}/{sceneObjects.Count} prefab(s) written to '{BakedAvatarPrefabBuilder.kOutputFolder}'.");
         }
 
-        [MenuItem(MenuRoot + "Make Prefab (Selected)", true)]
+        [MenuItem(MenuRoot + "Make Baked Prefab (Selected)", true)]
         private static bool ValidateSaveInMemoryAssetsAndMakePrefab()
             => CollectSelectedSceneObjects().Count > 0;
 

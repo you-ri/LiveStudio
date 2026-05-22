@@ -7,6 +7,7 @@
 // here to respect the minimal-change rule).
 
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 using Lilium.RemoteControl;
@@ -103,6 +104,8 @@ namespace Lilium.LiveStudio
         const int kTrackMouth = 9;
         const int kTrackCount = 10;
 
+        [Header("Viseme")]
+
         [SerializeField]
         [Tooltip("AnimatorController の viseme パラメータ名 (Int)")]
         string _visemeParam = "Viseme";
@@ -121,16 +124,18 @@ namespace Lilium.LiveStudio
         float _responsiveness = 0.5f;
 
         [SerializeField]
-        [Tooltip("目の回転最大角度 (x: yaw, y: pitch)")]
-        Vector2 _eyeRotationMax = new Vector2(40f, 40f);
-
-        [SerializeField]
         [Tooltip("VisemeBlendShape lipsync 用メッシュ。設定時は Animator ではなく blendshape を直接駆動する")]
         SkinnedMeshRenderer _visemeMesh;
 
         [SerializeField]
         [Tooltip("ローカル viseme 順 (sil/aa/E/ih/oh/ou) の blendshape index。-1 は未割当")]
         int[] _visemeBlendShapeIndices;
+
+        [Header("Eyes")]
+
+        [SerializeField]
+        [Tooltip("目の回転最大角度 (x: yaw, y: pitch)")]
+        Vector2 _eyeRotationMax = new Vector2(40f, 40f);
 
         [SerializeField]
         [Tooltip("Eyelid blink blendshape 用メッシュ。設定時は ARKit eye blink から blendshape を直接駆動する")]
@@ -139,6 +144,8 @@ namespace Lilium.LiveStudio
         [SerializeField]
         [Tooltip("Blink blendshape index。-1 は未割当")]
         int _blinkBlendShapeIndex = -1;
+
+        [Header("Expression")]
 
         [SerializeField]
         [Tooltip("VRChat 表情マッピング。表情のウェイトのうち最大値のものをアクティブとし、その parameters を Animator に書き込む")]
@@ -212,19 +219,24 @@ namespace Lilium.LiveStudio
                 Debug.LogWarning($"[Studio] VRCAvatar: '{_voiceParam}' parameter not found on Animator.");
             }
 
-            int expressionCount = _expressions != null ? _expressions.Length : 0;
-
-            // viseme (口形状) + ユーザー定義表情を統合した FacialKey 一覧を構築
-            _expressionKeys = new FacialKey[kVisemeCount + expressionCount];
+            // viseme (口形状) + ユーザー定義表情を統合した FacialKey 一覧を構築。
+            // 名前未設定のエントリは custom key を作れないためスキップする。
+            var keys = new List<FacialKey>();
             for (int i = 0; i < kVisemeCount; i++)
             {
-                _expressionKeys[i] = FacialKey.CreateCustom(s_localVisemeNames[i]);
+                keys.Add(FacialKey.CreateCustom(s_localVisemeNames[i]));
             }
-            for (int i = 0; i < expressionCount; i++)
+            if (_expressions != null)
             {
-                var exp = _expressions[i];
-                _expressionKeys[kVisemeCount + i] = FacialKey.CreateCustom(exp != null ? (exp.name ?? string.Empty) : string.Empty);
+                foreach (var exp in _expressions)
+                {
+                    if (exp != null && !string.IsNullOrEmpty(exp.name))
+                    {
+                        keys.Add(FacialKey.CreateCustom(exp.name));
+                    }
+                }
             }
+            _expressionKeys = keys.ToArray();
 
             expressionResolver.Setup();
 
@@ -458,6 +470,17 @@ namespace Lilium.LiveStudio
         {
             _eyelidsMesh = mesh;
             _blinkBlendShapeIndex = blinkIndex;
+        }
+
+        /// <summary>
+        /// VRChat ExpressionsMenu から移植した表情マッピングを注入する (変換ツールから呼ばれる)。
+        /// 各 VRCExpression.name は実行時に expressionResolver.smoothedOutputs から重みを引くキー
+        /// として参照される (FacialKey 名を前提とする)。menu の Control 名そのままだとリゾルバが
+        /// 重みを返さないため、移植直後は雛形扱いとなる。
+        /// </summary>
+        public void ConfigureExpressions(VRCExpression[] expressions)
+        {
+            _expressions = expressions ?? Array.Empty<VRCExpression>();
         }
 
         /// <summary>
