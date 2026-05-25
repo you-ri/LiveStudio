@@ -1,0 +1,192 @@
+name: Publish VPM
+
+# Publishes the VRChatAvatarTransfer package to the VPM repository hosted on
+# GitHub Pages. Fires automatically when Beta Release pushes a tag (v*), and
+# can also be dispatched manually to re-publish an existing tag.
+#
+# Output artefacts:
+# - GitHub Release asset: jp.lilium.vrchatavatartransfer-<version>.zip
+# - GitHub Pages site:    https://<owner>.github.io/<repo>/index.json
+#
+# VCC users add the index.json URL once, then receive new versions automatically
+# as new tags are pushed.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re)publish (e.g. v0.20.2). Leave blank when fired by tag push.'
+        required: false
+        type: string
+      dry_run:
+        description: 'Skip Release upload and Pages deploy. Emit the zip and merged index.json as workflow artifacts instead.'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write     # Required for uploading Release assets
+  pages: write        # Required for deploying to GitHub Pages
+  id-token: write     # Required by actions/deploy-pages OIDC
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+            if [ -z "$TAG" ]; then
+              echo "workflow_dispatch requires a non-empty 'tag' input" >&2
+              exit 2
+            fi
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Publishing tag: $TAG"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+          fetch-depth: 1
+
+      - name: Read package metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG_PATH="Packages/VRChatAvatarTransfer"
+          PKG_JSON="$PKG_PATH/package.json"
+          if [ ! -r "$PKG_JSON" ]; then
+            echo "Missing $PKG_JSON" >&2
+            exit 2
+          fi
+          NAME=$(jq -r .name "$PKG_JSON")
+          VER=$(jq -r .version "$PKG_JSON")
+          ZIP="${NAME}-${VER}.zip"
+          echo "pkg_path=$PKG_PATH" >> "$GITHUB_OUTPUT"
+          echo "pkg_json=$PKG_JSON" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME"         >> "$GITHUB_OUTPUT"
+          echo "version=$VER"       >> "$GITHUB_OUTPUT"
+          echo "zip=$ZIP"           >> "$GITHUB_OUTPUT"
+
+      - name: Pack package as zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${{ steps.meta.outputs.pkg_path }}"
+          zip -r "${GITHUB_WORKSPACE}/${{ steps.meta.outputs.zip }}" . -x ".git*"
+
+      - name: Compute SHA-256
+        id: sha
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA=$(sha256sum "${{ steps.meta.outputs.zip }}" | awk '{print $1}')
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure GitHub Release exists and upload zip
+        if: inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          ZIP="${{ steps.meta.outputs.zip }}"
+          # Beta Release creates the tag and the GitHub Release back-to-back.
+          # The tag push triggers this workflow asynchronously, so the Release
+          # may not be visible yet on the first check. Poll briefly.
+          for i in 1 2 3 4 5 6; do
+            if gh release view "$TAG" >/dev/null 2>&1; then break; fi
+            echo "Release $TAG not visible yet (attempt $i), sleeping..."
+            sleep 5
+          done
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG missing; creating prerelease shell."
+            gh release create "$TAG" --prerelease --generate-notes \
+              --title "LiveStudio $TAG"
+          fi
+          gh release upload "$TAG" "$ZIP" --clobber
+
+      - name: Fetch existing index.json (if any)
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPO_NAME="${GITHUB_REPOSITORY##*/}"
+          OWNER="${{ github.repository_owner }}"
+          PAGES_URL="https://${OWNER}.github.io/${REPO_NAME}/index.json"
+          if curl -sfL -o existing.json "$PAGES_URL"; then
+            echo "Fetched existing index.json from $PAGES_URL"
+          else
+            echo "No existing index.json at $PAGES_URL; using empty skeleton."
+            jq -n \
+              --arg url "$PAGES_URL" \
+              '{
+                name: "Lilium VPM",
+                id: "jp.lilium.vpm",
+                url: $url,
+                author: "Syrize",
+                packages: {}
+              }' > existing.json
+          fi
+
+      - name: Build merged index.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          ZIP_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ steps.tag.outputs.tag }}/${{ steps.meta.outputs.zip }}"
+          bash Scripts/MergeVpmIndex.sh \
+            existing.json \
+            "${{ steps.meta.outputs.pkg_json }}" \
+            "$ZIP_URL" \
+            "${{ steps.sha.outputs.sha256 }}" \
+            > _site/index.json
+          echo "--- index.json (head) ---"
+          jq '.packages | to_entries | map({key, versions: (.value.versions | keys)})' _site/index.json
+
+      - name: Validate merged index.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq empty _site/index.json
+          jq -e \
+            --arg name "${{ steps.meta.outputs.name }}" \
+            --arg ver  "${{ steps.meta.outputs.version }}" \
+            '.packages[$name].versions[$ver].url' \
+            _site/index.json > /dev/null
+
+      - uses: actions/upload-pages-artifact@v3
+        if: inputs.dry_run != true
+        with:
+          path: _site
+
+      - id: deploy
+        if: inputs.dry_run != true
+        uses: actions/deploy-pages@v4
+
+      - name: Upload dry-run artifacts
+        if: inputs.dry_run == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: vpm-dryrun-${{ steps.tag.outputs.tag }}
+          path: |
+            ${{ steps.meta.outputs.zip }}
+            _site/index.json
+          if-no-files-found: error
+          retention-days: 7

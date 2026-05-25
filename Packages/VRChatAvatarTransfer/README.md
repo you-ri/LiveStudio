@@ -24,12 +24,32 @@ Useful when you want to reuse a VRChat-prepared avatar in projects that target V
 
 ## Installation
 
-This package lives inside the [LiveStudio](https://github.com/you-ri/LiveStudio) monorepo, so installation uses Git URL with a `?path=` query.
+This package is distributed via Git URL inside the LiveStudio monorepo. **The prerequisite packages listed in Step 1 must be installed alongside** — UPM does not auto-resolve them transitively when the package is fetched via a Git URL.
+
+### Step 1 — Install prerequisites
+
+Add the following Git URLs to your project's `Packages/manifest.json`. Pin to the LiveStudio tag that matches the version of this package you are about to install (every package in the LiveStudio monorepo shares the same `version`):
+
+```json
+{
+  "dependencies": {
+    "jp.lilium.livestudio":    "https://github.com/you-ri/LiveStudio.git?path=/Packages/LiveStudio#v0.20.2",
+    "jp.lilium.remotecontrol": "https://github.com/you-ri/LiveStudio.git?path=/Packages/RemoteControl#v0.20.2",
+    "jp.lilium.nativegamepad": "https://github.com/you-ri/LiveStudio.git?path=/Packages/NativeGamepad#v0.20.2",
+    "com.vrmc.gltf":           "https://github.com/vrm-c/UniVRM.git?path=/Packages/UniGLTF#v0.131.0",
+    "com.vrmc.vrm":            "https://github.com/vrm-c/UniVRM.git?path=/Packages/VRM10#v0.131.0"
+  }
+}
+```
+
+VRChat SDK packages (`com.vrchat.base`, `com.vrchat.avatars`) must be installed separately via the [VRChat Creator Companion (VCC)](https://vcc.docs.vrchat.com/).
+
+### Step 2 — Install via Git URL
 
 In Unity, open `Window > Package Manager > + > Install package from git URL...` and paste:
 
 ```
-https://github.com/you-ri/LiveStudio.git?path=/Packages/VRChatAvatarTransfer
+https://github.com/you-ri/LiveStudio.git?path=/Packages/VRChatAvatarTransfer#v0.20.2
 ```
 
 Or add to `Packages/manifest.json` directly:
@@ -37,24 +57,18 @@ Or add to `Packages/manifest.json` directly:
 ```json
 {
   "dependencies": {
-    "jp.lilium.vrchatavatartransfer": "https://github.com/you-ri/LiveStudio.git?path=/Packages/VRChatAvatarTransfer"
+    "jp.lilium.vrchatavatartransfer": "https://github.com/you-ri/LiveStudio.git?path=/Packages/VRChatAvatarTransfer#v0.20.2"
   }
 }
 ```
 
-To pin a specific version (recommended for production):
-
-```
-https://github.com/you-ri/LiveStudio.git?path=/Packages/VRChatAvatarTransfer#v0.19.1
-```
-
-To preview the latest unreleased work, point at the `beta` branch:
+To preview the latest unreleased work, point at the `beta` branch instead:
 
 ```
 https://github.com/you-ri/LiveStudio.git?path=/Packages/VRChatAvatarTransfer#beta
 ```
 
-> **Versioning note**: every package in the LiveStudio monorepo shares the same `version`. Pinning `#v0.19.1` here also pins every other LiveStudio package you install at that release to a known-compatible set. See [LiveStudio README](https://github.com/you-ri/LiveStudio#versioning).
+> **Versioning note**: every package in the LiveStudio monorepo shares the same `version`. Pinning `#v0.20.2` here also pins every other LiveStudio package you install at that release to a known-compatible set. See [LiveStudio README](https://github.com/you-ri/LiveStudio#versioning).
 
 ---
 

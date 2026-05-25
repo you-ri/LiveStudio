@@ -1,0 +1,118 @@
+# Package-level .gitattributes
+#
+# Mirrors the LFS rules from the repository-root .gitattributes so that Unity
+# Package Manager (UPM) git URL resolution picks them up reliably. The root
+# .gitattributes alone is NOT sufficient when packages are fetched through
+# UPM with a `?path=<package-dir>` extension -- in that mode UPM only reads
+# attributes scoped to (or inside) the package directory.
+#
+# Background: Unity Issue Tracker #1256330 ("Package Manager fails to
+# download LFS files from Git repository when the Git URL contains a path
+# extension"). Officially marked Fixed, but regressions have been reported
+# on 2021.3 / 2022.3 / Unity 6 -- without a package-local .gitattributes,
+# LFS-tracked binaries (e.g. Tools~/VirgoMotionFusion/VirgoMotionFusion.exe)
+# come down as 134-byte pointer text files in `Library/PackageCache`, and
+# any Process.Start on them fails with Win32 ERROR_BAD_EXE_FORMAT.
+#
+# Macro attributes ([attr]...) MUST NOT appear here -- nested .gitattributes
+# files cannot define macros (Git LFS docs). Keep every rule inline.
+#
+# Keep this file in sync with the relevant subset of the repository-root
+# .gitattributes whenever LFS-tracked extensions change.
+
+# Unity binary assets
+*.bin filter=lfs diff=lfs merge=lfs -text
+*.anim filter=lfs diff=lfs merge=lfs -text
+*.unitypackage filter=lfs diff=lfs merge=lfs -text
+*.apk filter=lfs diff=lfs merge=lfs -text
+*.assets filter=lfs diff=lfs merge=lfs -text
+
+# Images
+*.bmp filter=lfs diff=lfs merge=lfs -text
+*.jpg filter=lfs diff=lfs merge=lfs -text
+*.jpeg filter=lfs diff=lfs merge=lfs -text
+*.png filter=lfs diff=lfs merge=lfs -text
+*.gif filter=lfs diff=lfs merge=lfs -text
+*.psd filter=lfs diff=lfs merge=lfs -text
+*.ai filter=lfs diff=lfs merge=lfs -text
+*.tiff filter=lfs diff=lfs merge=lfs -text
+*.iff filter=lfs diff=lfs merge=lfs -text
+*.pict filter=lfs diff=lfs merge=lfs -text
+*.tga filter=lfs diff=lfs merge=lfs -text
+*.tif filter=lfs diff=lfs merge=lfs -text
+*.dds filter=lfs diff=lfs merge=lfs -text
+*.pdf filter=lfs diff=lfs merge=lfs -text
+*.hdr filter=lfs diff=lfs merge=lfs -text
+*.exr filter=lfs diff=lfs merge=lfs -text
+*.icns filter=lfs diff=lfs merge=lfs -text
+*.ico filter=lfs diff=lfs merge=lfs -text
+
+# Audio
+*.mp3 filter=lfs diff=lfs merge=lfs -text
+*.wav filter=lfs diff=lfs merge=lfs -text
+*.ogg filter=lfs diff=lfs merge=lfs -text
+*.aiff filter=lfs diff=lfs merge=lfs -text
+*.aif filter=lfs diff=lfs merge=lfs -text
+*.mod filter=lfs diff=lfs merge=lfs -text
+*.it filter=lfs diff=lfs merge=lfs -text
+*.s3m filter=lfs diff=lfs merge=lfs -text
+*.xm filter=lfs diff=lfs merge=lfs -text
+
+# Video
+*.mp4 filter=lfs diff=lfs merge=lfs -text
+*.mov filter=lfs diff=lfs merge=lfs -text
+*.avi filter=lfs diff=lfs merge=lfs -text
+*.mpg filter=lfs diff=lfs merge=lfs -text
+*.mpeg filter=lfs diff=lfs merge=lfs -text
+*.asf filter=lfs diff=lfs merge=lfs -text
+*.wmv filter=lfs diff=lfs merge=lfs -text
+
+# 3D models
+*.fbx filter=lfs diff=lfs merge=lfs -text
+*.blend filter=lfs diff=lfs merge=lfs -text
+*.obj filter=lfs diff=lfs merge=lfs -text
+*.dae filter=lfs diff=lfs merge=lfs -text
+*.3ds filter=lfs diff=lfs merge=lfs -text
+*.dxf filter=lfs diff=lfs merge=lfs -text
+*.max filter=lfs diff=lfs merge=lfs -text
+*.ma filter=lfs diff=lfs merge=lfs -text
+*.mb filter=lfs diff=lfs merge=lfs -text
+*.pmx filter=lfs diff=lfs merge=lfs -text
+*.vrm filter=lfs diff=lfs merge=lfs -text
+
+# Fonts
+*.ttf filter=lfs diff=lfs merge=lfs -text
+*.otf filter=lfs diff=lfs merge=lfs -text
+
+# Native runtime binaries (Tools~/VirgoMotionFusion ships these)
+*.dll filter=lfs diff=lfs merge=lfs -text
+*.pdb filter=lfs diff=lfs merge=lfs -text
+*.mdb filter=lfs diff=lfs merge=lfs -text
+*.exe filter=lfs diff=lfs merge=lfs -text
+*.a filter=lfs diff=lfs merge=lfs -text
+*.so filter=lfs diff=lfs merge=lfs -text
+*.dylib filter=lfs diff=lfs merge=lfs -text
+*.aar filter=lfs diff=lfs merge=lfs -text
+*.bytes filter=lfs diff=lfs merge=lfs -text
+
+# Archives
+*.zip filter=lfs diff=lfs merge=lfs -text
+*.7z filter=lfs diff=lfs merge=lfs -text
+*.gz filter=lfs diff=lfs merge=lfs -text
+*.rar filter=lfs diff=lfs merge=lfs -text
+*.tar filter=lfs diff=lfs merge=lfs -text
+*.tgz filter=lfs diff=lfs merge=lfs -text
+*.lzh filter=lfs diff=lfs merge=lfs -text
+
+# Misc
+*.rns filter=lfs diff=lfs merge=lfs -text
+*.reason filter=lfs diff=lfs merge=lfs -text
+*.lxo filter=lfs diff=lfs merge=lfs -text
+*.pak filter=lfs diff=lfs merge=lfs -text
+*.dat filter=lfs diff=lfs merge=lfs -text
+*.dmx filter=lfs diff=lfs merge=lfs -text
+*.spm filter=lfs diff=lfs merge=lfs -text
+
+# Extensionless Unity runtime data shipped in Tools~/VirgoMotionFusion
+Tools~/VirgoMotionFusion/VirgoMotionFusion_Data/Resources/unity[[:space:]]default[[:space:]]resources filter=lfs diff=lfs merge=lfs -text
+Tools~/VirgoMotionFusion/VirgoMotionFusion_Data/globalgamemanagers filter=lfs diff=lfs merge=lfs -text
