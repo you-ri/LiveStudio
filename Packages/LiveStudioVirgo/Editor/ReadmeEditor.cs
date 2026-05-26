@@ -5,6 +5,8 @@ using UnityEditor;
 using System;
 using System.IO;
 
+namespace Lilium.LiveStudio.Virgo.Editor
+{
 [CustomEditor(typeof(Readme))]
 [InitializeOnLoad]
 public class ReadmeEditor : Editor
@@ -354,4 +356,5 @@ public class ReadmeEditor : Editor
 
         return GUI.Button(position, label, LinkStyle);
     }
+}
 }
