@@ -1,0 +1,158 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fcf7219bab7fe46a1ad266029b2fee19, type: 3}
+  m_Name: Readme
+  m_EditorClassIdentifier:
+  icon: {fileID: 2800000, guid: 727a75301c3d24613a3ebcec4a24c2c8, type: 3}
+  title: VRChatAvatarTransfer
+  titleTranslations:
+  - language: ja
+    title: VRChatAvatarTransfer
+  - language: zh-CN
+    title: VRChatAvatarTransfer
+  sections:
+  - heading: Welcome to VRChatAvatarTransfer
+    text: A starter project for porting VRChat avatars to non-VRChat environments such as VirgoMotionStudio. Generate a .unitypackage from a VRChat avatar asset and reuse it in another project.
+    linkText:
+    url:
+    buttonText:
+    buttonAction:
+    translations:
+    - language: ja
+      heading: "VRChatAvatarTransfer \u3078\u3088\u3046\u3053\u305D"
+      text: "VRChat \u7528\u30A2\u30D0\u30BF\u30FC\u3092 VirgoMotionStudio \u306A\u3069\u306E\u975E VRChat \u74B0\u5883\u3078\u79FB\u690D\u3059\u308B\u305F\u3081\u306E\u30B9\u30BF\u30FC\u30BF\u30FC\u30D7\u30ED\u30B8\u30A7\u30AF\u30C8\u3067\u3059\u3002VRChat \u30A2\u30D0\u30BF\u30FC\u30A2\u30BB\u30C3\u30C8\u304B\u3089 .unitypackage \u3092\u751F\u6210\u3057\u3001\u5225\u30D7\u30ED\u30B8\u30A7\u30AF\u30C8\u3067\u5229\u7528\u3067\u304D\u307E\u3059\u3002"
+      linkText:
+      buttonText:
+    - language: zh-CN
+      heading: "\u6B22\u8FCE\u4F7F\u7528 VRChatAvatarTransfer"
+      text: "\u7528\u4E8E\u5C06 VRChat \u5934\u50CF\u79FB\u690D\u5230 VirgoMotionStudio \u7B49\u975E VRChat \u73AF\u5883\u7684\u5165\u95E8\u9879\u76EE\u3002\u53EF\u4ECE VRChat \u5934\u50CF\u8D44\u4EA7\u751F\u6210 .unitypackage\uFF0C\u5E76\u5728\u5176\u4ED6\u9879\u76EE\u4E2D\u4F7F\u7528\u3002"
+      linkText:
+      buttonText:
+  - heading: Quick Start
+    text:
+    linkText:
+    url:
+    buttonText:
+    buttonAction:
+    translations:
+    - language: ja
+      heading: "\u30AF\u30A4\u30C3\u30AF\u30B9\u30BF\u30FC\u30C8"
+      text:
+      linkText:
+      buttonText:
+    - language: zh-CN
+      heading: "\u5FEB\u901F\u5F00\u59CB"
+      text:
+      linkText:
+      buttonText:
+  - heading:
+    text: 1. Prepare a VRChat avatar.
+    linkText:
+    url:
+    buttonText:
+    buttonAction:
+    translations:
+    - language: ja
+      heading:
+      text: "1. VRChat \u30A2\u30D0\u30BF\u30FC\u3092\u7528\u610F\u3057\u307E\u3059\u3002"
+      linkText:
+      buttonText:
+    - language: zh-CN
+      heading:
+      text: "1. \u51C6\u5907\u4E00\u4E2A VRChat \u5934\u50CF\u3002"
+      linkText:
+      buttonText:
+  - heading:
+    text: 2. Open the VRChat Avatar Transfer window.
+    linkText:
+    url:
+    buttonText: Open VRChat Avatar Transfer
+    buttonAction: openVRChatAvatarTransfer
+    translations:
+    - language: ja
+      heading:
+      text: "2. VRChat Avatar Transfer \u30A6\u30A3\u30F3\u30C9\u30A6\u3092\u958B\u304D\u307E\u3059\u3002"
+      linkText:
+      buttonText: "VRChat Avatar Transfer \u3092\u958B\u304F"
+    - language: zh-CN
+      heading:
+      text: "2. \u6253\u5F00 VRChat Avatar Transfer \u7A97\u53E3\u3002"
+      linkText:
+      buttonText: "\u6253\u5F00 VRChat Avatar Transfer"
+  - heading:
+    text: 3. Drop your prepared avatar into VRChat Avatar Transfer and click the Convert button.
+    linkText:
+    url:
+    buttonText:
+    buttonAction:
+    translations:
+    - language: ja
+      heading:
+      text: "3. \u7528\u610F\u3057\u305F\u30A2\u30D0\u30BF\u30FC\u3092 VRChat Avatar Transfer \u306B\u5165\u308C\u3001Convert \u30DC\u30BF\u30F3\u3092\u62BC\u3057\u3066\u5909\u63DB\u3057\u307E\u3059\u3002"
+      linkText:
+      buttonText:
+    - language: zh-CN
+      heading:
+      text: "3. \u5C06\u51C6\u5907\u597D\u7684\u5934\u50CF\u653E\u5165 VRChat Avatar Transfer\uFF0C\u7136\u540E\u70B9\u51FB Convert \u6309\u94AE\u8FDB\u884C\u8F6C\u6362\u3002"
+      linkText:
+      buttonText:
+  - heading:
+    text: 4. If everything looks good, click the Export button to export a .unitypackage file.
+    linkText:
+    url:
+    buttonText:
+    buttonAction:
+    translations:
+    - language: ja
+      heading:
+      text: "4. \u554F\u984C\u306A\u3051\u308C\u3070 Export \u30DC\u30BF\u30F3\u3092\u62BC\u3057\u3066 .unitypackage \u30D5\u30A1\u30A4\u30EB\u3092\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8\u3057\u307E\u3059\u3002"
+      linkText:
+      buttonText:
+    - language: zh-CN
+      heading:
+      text: "4. \u5982\u679C\u6CA1\u6709\u95EE\u9898\uFF0C\u70B9\u51FB Export \u6309\u94AE\u5BFC\u51FA .unitypackage \u6587\u4EF6\u3002"
+      linkText:
+      buttonText:
+  - heading:
+    text: 5. Import the .unitypackage into your VirgoMotionStudio project to use it.
+    linkText:
+    url:
+    buttonText:
+    buttonAction:
+    translations:
+    - language: ja
+      heading:
+      text: "5. VirgoMotionStudio \u30D7\u30ED\u30B8\u30A7\u30AF\u30C8\u306B .unitypackage \u3092\u30A4\u30F3\u30DD\u30FC\u30C8\u3057\u3066\u5229\u7528\u3057\u307E\u3059\u3002"
+      linkText:
+      buttonText:
+    - language: zh-CN
+      heading:
+      text: "5. \u5C06 .unitypackage \u5BFC\u5165\u5230 VirgoMotionStudio \u9879\u76EE\u4E2D\u5373\u53EF\u4F7F\u7528\u3002"
+      linkText:
+      buttonText:
+  - heading: Documentation
+    text:
+    linkText: docs.virgomotion.com/sdk/knowledge/vrchat-avatar
+    url: https://docs.virgomotion.com/sdk/knowledge/vrchat-avatar
+    buttonText:
+    buttonAction:
+    translations:
+    - language: ja
+      heading: "\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8"
+      text:
+      linkText:
+      buttonText:
+    - language: zh-CN
+      heading: "\u6587\u6863"
+      text:
+      linkText:
+      buttonText:
