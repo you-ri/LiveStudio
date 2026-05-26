@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Merge a single version entry into an existing VPM index.json.
+# Merge a single version entry into an existing VPM repository JSON (vpm.json).
 #
 # Usage:
-#   Scripts/MergeVpmIndex.sh <existing_index.json> <package.json> <zip_url> <zip_sha256> > out.json
+#   Scripts/MergeVpmIndex.sh <existing_vpm.json> <package.json> <zip_url> <zip_sha256> > out.json
 #
 # Arguments:
-#   existing_index.json  Path to current index.json (or an empty-skeleton file
+#   existing_vpm.json    Path to current vpm.json (or an empty-skeleton file
 #                        if this is the first publish). Read but not modified.
 #   package.json         The package's package.json at the version being
 #                        published. Its full contents become the version entry.
@@ -14,7 +14,7 @@
 #   zip_sha256           SHA-256 of the zip file (lowercase hex string).
 #
 # Output:
-#   Merged index.json is written to stdout.
+#   Merged vpm.json is written to stdout.
 #
 # Behaviour notes:
 # - The version entry mirrors the package.json contents and adds the "url" and
@@ -24,7 +24,7 @@
 set -euo pipefail
 
 if [ "$#" -ne 4 ]; then
-  echo "usage: $0 <existing_index.json> <package.json> <zip_url> <zip_sha256>" >&2
+  echo "usage: $0 <existing_vpm.json> <package.json> <zip_url> <zip_sha256>" >&2
   exit 2
 fi
 
