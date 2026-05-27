@@ -14,9 +14,7 @@
   "dependencies": {
     "jp.lilium.livestudio": "0.20.5-exp.1",
     "com.vrchat.base": "3.7.0",
-    "com.vrchat.avatars": "3.7.0",
-    "com.vrmc.gltf": "0.130.1",
-    "com.vrmc.vrm": "0.130.1"
+    "com.vrchat.avatars": "3.7.0"
   },
   "vpmDependencies": {
     "jp.lilium.livestudio": "0.20.5-exp.1",

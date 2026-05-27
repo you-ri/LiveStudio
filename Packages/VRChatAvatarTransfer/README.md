@@ -15,7 +15,7 @@ Useful when you want to reuse a VRChat-prepared avatar in projects that target V
 - Unity **2022.3** or newer
 - The following packages must already be installed in the consuming project (this package does **not** pull them in automatically):
   - **VRChat SDK** (`com.vrchat.base`, `com.vrchat.avatars`) — install via [VRChat Creator Companion (VCC) / VPM](https://vcc.docs.vrchat.com/)
-  - **UniVRM** (`com.vrmc.gltf`, `com.vrmc.vrm`) `0.130.x` — install via UPM Git URL or OpenUPM
+  - **UniVRM** (`com.vrmc.gltf`, `com.vrmc.vrm`) `0.130.x` — **installed automatically** by a one-time setup dialog the first time the package is imported. The dialog also reappears from `Tools/VRChat Avatar Transfer/Install UniVRM Dependencies` if it was skipped. Manual install via UPM Git URL still works.
 - **Lilium Live Studio** (`jp.lilium.livestudio`) is resolved automatically as a package dependency; it provides the runtime `AvatarParameterDriver` state behaviour the converted controllers reference.
 
 > The `dependencies` field in `package.json` lists VRChat SDK packages, but the VRChat SDK is distributed through VPM, not the standard Unity Package Registry. UPM cannot resolve them on its own — install them in the host project first.
@@ -32,15 +32,7 @@ Useful when you want to reuse a VRChat-prepared avatar in projects that target V
    ```
 2. Pick your project, enable **Show Pre-release Packages** (this package ships with `-exp.N` suffix), then add **Lilium VRChat Avatar Transfer**.
 3. VCC pulls in `jp.lilium.livestudio` and `jp.lilium.remotecontrol` automatically via `vpmDependencies`, and resolves `com.vrchat.base` / `com.vrchat.avatars` from the VRChat VPM you have already configured.
-4. **UniVRM is not on VPM** — install `com.vrmc.gltf` / `com.vrmc.vrm` separately via UPM Git URL:
-   ```json
-   {
-     "dependencies": {
-       "com.vrmc.gltf": "https://github.com/vrm-c/UniVRM.git?path=/Packages/UniGLTF#v0.131.0",
-       "com.vrmc.vrm":  "https://github.com/vrm-c/UniVRM.git?path=/Packages/VRM10#v0.131.0"
-     }
-   }
-   ```
+4. Open the project in Unity. On first import, a dialog appears asking whether to install UniVRM (`com.vrmc.gltf` / `com.vrmc.vrm`). Click **Install** — the installer fetches both packages from the vrm-c/UniVRM Git repository. If you skipped the dialog, re-trigger it from `Tools/VRChat Avatar Transfer/Install UniVRM Dependencies`.
 
 ### Option B — UPM Git URL
 

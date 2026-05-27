@@ -1,0 +1,16 @@
+{
+    "name": "Lilium.VRChatAvatarTransfer.Installer",
+    "rootNamespace": "Lilium.VRChatAvatarTransfer.Installer",
+    "references": [],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
