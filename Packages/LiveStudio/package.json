@@ -27,5 +27,9 @@
     "jp.lilium.nativegamepad": "0.20.4-pre.1",
     "com.unity.cinemachine": "3.1.5"
   },
+  "vpmDependencies": {
+    "jp.lilium.remotecontrol": "0.20.4-exp.1",
+    "jp.lilium.nativegamepad": "0.20.4-pre.1"
+  },
   "samples": []
 }

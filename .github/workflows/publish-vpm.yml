@@ -1,11 +1,11 @@
 name: Publish VPM
 
-# Publishes the VRChatAvatarTransfer package to the VPM repository hosted on
+# Publishes the LiveStudio packages to the VPM repository hosted on
 # GitHub Pages. Fires automatically when Beta Release pushes a tag (v*), and
 # can also be dispatched manually to re-publish an existing tag.
 #
-# Output artefacts:
-# - GitHub Release asset: jp.lilium.vrchatavatartransfer-<version>.zip
+# Output artefacts per package:
+# - GitHub Release asset: <name>-<version>.zip
 # - GitHub Pages site:    https://<owner>.github.io/<repo>/vpm.json
 #
 # VCC users add the vpm.json URL once, then receive new versions automatically
@@ -21,7 +21,7 @@ on:
         required: false
         type: string
       dry_run:
-        description: 'Skip Release upload and Pages deploy. Emit the zip and merged vpm.json as workflow artifacts instead.'
+        description: 'Skip Release upload and Pages deploy. Emit the zips and merged vpm.json as workflow artifacts instead.'
         required: false
         type: boolean
         default: false
@@ -34,6 +34,17 @@ permissions:
 concurrency:
   group: pages
   cancel-in-progress: false
+
+env:
+  # Packages published to VPM. One folder per line. Each folder must contain
+  # a package.json. To add or remove a package, edit this list only — the
+  # rest of the workflow iterates over it.
+  VPM_PACKAGES: |
+    Packages/LiveStudio
+    Packages/LiveStudioVirgo
+    Packages/RemoteControl
+    Packages/NativeGamepad
+    Packages/VRChatAvatarTransfer
 
 jobs:
   publish:
@@ -64,42 +75,43 @@ jobs:
           ref: ${{ steps.tag.outputs.tag }}
           fetch-depth: 1
 
-      - name: Read package metadata
-        id: meta
+      - name: Pack each package as zip and compute SHA-256
+        id: pack
         shell: bash
         run: |
           set -euo pipefail
-          PKG_PATH="Packages/VRChatAvatarTransfer"
-          PKG_JSON="$PKG_PATH/package.json"
-          if [ ! -r "$PKG_JSON" ]; then
-            echo "Missing $PKG_JSON" >&2
-            exit 2
-          fi
-          NAME=$(jq -r .name "$PKG_JSON")
-          VER=$(jq -r .version "$PKG_JSON")
-          ZIP="${NAME}-${VER}.zip"
-          echo "pkg_path=$PKG_PATH" >> "$GITHUB_OUTPUT"
-          echo "pkg_json=$PKG_JSON" >> "$GITHUB_OUTPUT"
-          echo "name=$NAME"         >> "$GITHUB_OUTPUT"
-          echo "version=$VER"       >> "$GITHUB_OUTPUT"
-          echo "zip=$ZIP"           >> "$GITHUB_OUTPUT"
+          mkdir -p _zips
+          # Emit a JSON array of {pkg_path, pkg_json, name, version, zip, sha256}
+          # so later steps can iterate without re-reading files.
+          ENTRIES='[]'
+          while IFS= read -r PKG_PATH; do
+            [ -z "$PKG_PATH" ] && continue
+            PKG_JSON="$PKG_PATH/package.json"
+            if [ ! -r "$PKG_JSON" ]; then
+              echo "Missing $PKG_JSON" >&2
+              exit 2
+            fi
+            NAME=$(jq -r .name "$PKG_JSON")
+            VER=$(jq -r .version "$PKG_JSON")
+            ZIP="${NAME}-${VER}.zip"
+            ZIP_ABS="${GITHUB_WORKSPACE}/_zips/${ZIP}"
+            ( cd "$PKG_PATH" && zip -r "$ZIP_ABS" . -x ".git*" )
+            SHA=$(sha256sum "$ZIP_ABS" | awk '{print $1}')
+            echo "Packed $NAME@$VER -> $ZIP ($(du -h "$ZIP_ABS" | awk '{print $1}'), sha256=${SHA:0:12}...)"
+            ENTRIES=$(echo "$ENTRIES" | jq \
+              --arg pkg_path "$PKG_PATH" \
+              --arg pkg_json "$PKG_JSON" \
+              --arg name "$NAME" \
+              --arg version "$VER" \
+              --arg zip "$ZIP" \
+              --arg sha "$SHA" \
+              '. + [{pkg_path: $pkg_path, pkg_json: $pkg_json, name: $name, version: $version, zip: $zip, sha256: $sha}]')
+          done <<< "$VPM_PACKAGES"
+          echo "$ENTRIES" > _zips/entries.json
+          echo "--- packed packages ---"
+          jq -r '.[] | "\(.name)@\(.version) -> \(.zip)"' _zips/entries.json
 
-      - name: Pack package as zip
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "${{ steps.meta.outputs.pkg_path }}"
-          zip -r "${GITHUB_WORKSPACE}/${{ steps.meta.outputs.zip }}" . -x ".git*"
-
-      - name: Compute SHA-256
-        id: sha
-        shell: bash
-        run: |
-          set -euo pipefail
-          SHA=$(sha256sum "${{ steps.meta.outputs.zip }}" | awk '{print $1}')
-          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
-
-      - name: Ensure GitHub Release exists and upload zip
+      - name: Ensure GitHub Release exists and upload zips
         if: inputs.dry_run != true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -107,7 +119,6 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${{ steps.tag.outputs.tag }}"
-          ZIP="${{ steps.meta.outputs.zip }}"
           # Beta Release creates the tag and the GitHub Release back-to-back.
           # The tag push triggers this workflow asynchronously, so the Release
           # may not be visible yet on the first check. Poll briefly.
@@ -121,7 +132,9 @@ jobs:
             gh release create "$TAG" --prerelease --generate-notes \
               --title "LiveStudio $TAG"
           fi
-          gh release upload "$TAG" "$ZIP" --clobber
+          jq -r '.[].zip' _zips/entries.json | while IFS= read -r ZIP; do
+            gh release upload "$TAG" "_zips/$ZIP" --clobber
+          done
 
       - name: Fetch existing vpm.json (if any)
         shell: bash
@@ -150,14 +163,28 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p _site
-          ZIP_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ steps.tag.outputs.tag }}/${{ steps.meta.outputs.zip }}"
-          bash Scripts/MergeVpmIndex.sh \
-            existing.json \
-            "${{ steps.meta.outputs.pkg_json }}" \
-            "$ZIP_URL" \
-            "${{ steps.sha.outputs.sha256 }}" \
-            > _site/vpm.json
-          echo "--- vpm.json (head) ---"
+          TAG="${{ steps.tag.outputs.tag }}"
+          CURRENT_INDEX=existing.json
+          # Merge each package one by one. MergeVpmIndex.sh writes the merged
+          # result to stdout, so we stage to a temp file and rotate it in.
+          jq -c '.[]' _zips/entries.json | while IFS= read -r ENTRY; do
+            NAME=$(echo "$ENTRY" | jq -r .name)
+            VER=$(echo "$ENTRY" | jq -r .version)
+            PKG_JSON=$(echo "$ENTRY" | jq -r .pkg_json)
+            ZIP=$(echo "$ENTRY" | jq -r .zip)
+            SHA=$(echo "$ENTRY" | jq -r .sha256)
+            ZIP_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${ZIP}"
+            bash Scripts/MergeVpmIndex.sh \
+              "$CURRENT_INDEX" \
+              "$PKG_JSON" \
+              "$ZIP_URL" \
+              "$SHA" \
+              > merged.json
+            mv merged.json "$CURRENT_INDEX"
+            echo "Merged $NAME@$VER (url=$ZIP_URL)"
+          done
+          cp "$CURRENT_INDEX" _site/vpm.json
+          echo "--- vpm.json (summary) ---"
           jq '.packages | to_entries | map({key, versions: (.value.versions | keys)})' _site/vpm.json
 
       - name: Validate merged vpm.json
@@ -165,11 +192,19 @@ jobs:
         run: |
           set -euo pipefail
           jq empty _site/vpm.json
-          jq -e \
-            --arg name "${{ steps.meta.outputs.name }}" \
-            --arg ver  "${{ steps.meta.outputs.version }}" \
-            '.packages[$name].versions[$ver].url' \
-            _site/vpm.json > /dev/null
+          # Every packed entry must appear in the merged index.
+          jq -c '.[]' _zips/entries.json | while IFS= read -r ENTRY; do
+            NAME=$(echo "$ENTRY" | jq -r .name)
+            VER=$(echo "$ENTRY" | jq -r .version)
+            jq -e \
+              --arg name "$NAME" \
+              --arg ver  "$VER" \
+              '.packages[$name].versions[$ver].url' \
+              _site/vpm.json > /dev/null || {
+                echo "validation failed: $NAME@$VER not in merged vpm.json" >&2
+                exit 1
+              }
+          done
 
       - uses: actions/upload-pages-artifact@v3
         if: inputs.dry_run != true
@@ -186,7 +221,7 @@ jobs:
         with:
           name: vpm-dryrun-${{ steps.tag.outputs.tag }}
           path: |
-            ${{ steps.meta.outputs.zip }}
+            _zips/*.zip
             _site/vpm.json
           if-no-files-found: error
           retention-days: 7

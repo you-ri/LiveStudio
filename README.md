@@ -27,7 +27,24 @@ This is a **package monorepo**. Each subdirectory under `Packages/` is an indepe
 
 ## Installation
 
-Each package is installed individually using the UPM Git URL `?path=` syntax.
+### Option A — VPM (VCC / ALCOM)
+
+All packages above are published as a VPM repository. Add this URL once in VCC (or ALCOM) under *Settings → Packages → Add Repository*:
+
+```
+https://you-ri.github.io/LiveStudio/vpm.json
+```
+
+Inter-package dependencies between LiveStudio packages are resolved automatically through `vpmDependencies`. VRChat SDK is also pulled in via VPM when you install `jp.lilium.vrchatavatartransfer`.
+
+External non-VPM dependencies (UniVRM for `jp.lilium.vrchatavatartransfer`, etc.) still need to be added separately — see each package's README.
+
+> [!NOTE]
+> Pre-1.0 releases ship with `-exp` / `-pre` suffixes. Enable **Show Pre-release Packages** in VCC to see them.
+
+### Option B — UPM Git URL
+
+Each package can also be installed individually via UPM Git URL with `?path=` syntax (no VPM client required):
 
 ```jsonc
 // Packages/manifest.json

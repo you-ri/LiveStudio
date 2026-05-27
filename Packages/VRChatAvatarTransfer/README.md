@@ -24,45 +24,44 @@ Useful when you want to reuse a VRChat-prepared avatar in projects that target V
 
 ## Installation
 
-This package is distributed via Git URL inside the LiveStudio monorepo. **The prerequisite packages listed in Step 1 must be installed alongside** — UPM does not auto-resolve them transitively when the package is fetched via a Git URL.
+### Option A — VPM (VCC / ALCOM, recommended)
 
-### Step 1 — Install prerequisites
+1. In VCC, open *Settings → Packages → Add Repository* and add:
+   ```
+   https://you-ri.github.io/LiveStudio/vpm.json
+   ```
+2. Pick your project, enable **Show Pre-release Packages** (this package ships with `-exp.N` suffix), then add **Lilium VRChat Avatar Transfer**.
+3. VCC pulls in `jp.lilium.livestudio` and `jp.lilium.remotecontrol` automatically via `vpmDependencies`, and resolves `com.vrchat.base` / `com.vrchat.avatars` from the VRChat VPM you have already configured.
+4. **UniVRM is not on VPM** — install `com.vrmc.gltf` / `com.vrmc.vrm` separately via UPM Git URL:
+   ```json
+   {
+     "dependencies": {
+       "com.vrmc.gltf": "https://github.com/vrm-c/UniVRM.git?path=/Packages/UniGLTF#v0.131.0",
+       "com.vrmc.vrm":  "https://github.com/vrm-c/UniVRM.git?path=/Packages/VRM10#v0.131.0"
+     }
+   }
+   ```
 
-Add the following Git URLs to your project's `Packages/manifest.json`. Pin to the LiveStudio tag that matches the version of this package you are about to install (every package in the LiveStudio monorepo shares the same `version`):
+### Option B — UPM Git URL
 
-```json
-{
-  "dependencies": {
-    "jp.lilium.livestudio":    "https://github.com/you-ri/LiveStudio.git?path=/Packages/LiveStudio#v0.20.2",
-    "jp.lilium.remotecontrol": "https://github.com/you-ri/LiveStudio.git?path=/Packages/RemoteControl#v0.20.2",
-    "jp.lilium.nativegamepad": "https://github.com/you-ri/LiveStudio.git?path=/Packages/NativeGamepad#v0.20.2",
-    "com.vrmc.gltf":           "https://github.com/vrm-c/UniVRM.git?path=/Packages/UniGLTF#v0.131.0",
-    "com.vrmc.vrm":            "https://github.com/vrm-c/UniVRM.git?path=/Packages/VRM10#v0.131.0"
-  }
-}
-```
-
-VRChat SDK packages (`com.vrchat.base`, `com.vrchat.avatars`) must be installed separately via the [VRChat Creator Companion (VCC)](https://vcc.docs.vrchat.com/).
-
-### Step 2 — Install via Git URL
-
-In Unity, open `Window > Package Manager > + > Install package from git URL...` and paste:
-
-```
-https://github.com/you-ri/LiveStudio.git?path=/Packages/VRChatAvatarTransfer#v0.20.2
-```
-
-Or add to `Packages/manifest.json` directly:
+If you prefer not to use VCC, install everything via UPM Git URL. Pin to the LiveStudio tag that matches the version you want — every package in the LiveStudio monorepo shares the same `version`:
 
 ```json
 {
   "dependencies": {
-    "jp.lilium.vrchatavatartransfer": "https://github.com/you-ri/LiveStudio.git?path=/Packages/VRChatAvatarTransfer#v0.20.2"
+    "jp.lilium.livestudio":           "https://github.com/you-ri/LiveStudio.git?path=/Packages/LiveStudio#v0.20.2",
+    "jp.lilium.remotecontrol":        "https://github.com/you-ri/LiveStudio.git?path=/Packages/RemoteControl#v0.20.2",
+    "jp.lilium.nativegamepad":        "https://github.com/you-ri/LiveStudio.git?path=/Packages/NativeGamepad#v0.20.2",
+    "jp.lilium.vrchatavatartransfer": "https://github.com/you-ri/LiveStudio.git?path=/Packages/VRChatAvatarTransfer#v0.20.2",
+    "com.vrmc.gltf":                  "https://github.com/vrm-c/UniVRM.git?path=/Packages/UniGLTF#v0.131.0",
+    "com.vrmc.vrm":                   "https://github.com/vrm-c/UniVRM.git?path=/Packages/VRM10#v0.131.0"
   }
 }
 ```
 
-To preview the latest unreleased work, point at the `beta` branch instead:
+VRChat SDK packages (`com.vrchat.base`, `com.vrchat.avatars`) must still be installed via [VRChat Creator Companion (VCC)](https://vcc.docs.vrchat.com/) — UPM cannot resolve VPM-only packages on its own.
+
+To preview the latest unreleased work, point any of these LiveStudio URLs at the `beta` branch instead of a tag:
 
 ```
 https://github.com/you-ri/LiveStudio.git?path=/Packages/VRChatAvatarTransfer#beta
