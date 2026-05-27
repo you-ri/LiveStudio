@@ -96,7 +96,20 @@ jobs:
             VER=$(jq -r .version "$PKG_JSON")
             ZIP="${NAME}-${VER}.zip"
             ZIP_ABS="${GITHUB_WORKSPACE}/_zips/${ZIP}"
-            ( cd "$PKG_PATH" && zip -r "$ZIP_ABS" . -x ".git*" )
+            # Exclude development-only folders from the distributed zip:
+            #   Tests/         — in-repo test code references nunit/test-framework and asmdefs
+            #                    are gated on UNITY_INCLUDE_TESTS, which breaks in some end-user
+            #                    VRChat projects (CS0246 on [Test]). Tests stay in the repo for
+            #                    in-repo CI but are not shipped to consumers.
+            #   Tests.meta     — corresponding folder meta entry
+            #   *.Tests.meta   — sub-folder meta entries
+            #   SourceGenerator~/ — Roslyn analyzer source tree (already not Unity-visible but
+            #                       no reason to bundle source)
+            ( cd "$PKG_PATH" && zip -r "$ZIP_ABS" . \
+                -x ".git*" \
+                -x "Tests/*" \
+                -x "Tests.meta" \
+                -x "SourceGenerator~/*" )
             SHA=$(sha256sum "$ZIP_ABS" | awk '{print $1}')
             echo "Packed $NAME@$VER -> $ZIP ($(du -h "$ZIP_ABS" | awk '{print $1}'), sha256=${SHA:0:12}...)"
             ENTRIES=$(echo "$ENTRIES" | jq \

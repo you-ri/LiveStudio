@@ -10,14 +10,15 @@
         "Editor"
     ],
     "excludePlatforms": [],
-    "optionalUnityReferences": [
-        "TestAssemblies"
-    ],
     "allowUnsafeCode": false,
     "overrideReferences": true,
-    "precompiledReferences": [],
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
     "autoReferenced": false,
-    "defineConstraints": [],
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
     "versionDefines": [],
     "noEngineReferences": false
 }
