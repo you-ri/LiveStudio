@@ -5,7 +5,9 @@ using System.Linq;
 
 using UnityEngine;
 
+#if VRMC_UNIVRM
 using VRM;
+#endif
 using UniVRM10;
 
 using GameObjectUtility = Lilium.RemoteControl.GameObjectUtility;
@@ -40,6 +42,7 @@ namespace Lilium.LiveStudio
             return false;
         }
 
+#if VRMC_UNIVRM
         private static bool HasPerfectSyncSupport(VRMBlendShapeProxy blendShapeProxy)
         {
             if (blendShapeProxy == null || blendShapeProxy.BlendShapeAvatar == null)
@@ -59,6 +62,7 @@ namespace Lilium.LiveStudio
             }
             return false;
         }
+#endif
 
 
         private static void SetupArmsTwistRelaxer(
@@ -107,9 +111,10 @@ namespace Lilium.LiveStudio
                 facialController.expressionMode = HasPerfectSyncSupport(vrm10Instance) ? ExpressionMode.PerfectSync : ExpressionMode.Preset;
                 SetUpdateWhenOffscreen(avatar, true);
             }
+#if VRMC_UNIVRM
             else
             {
-                // VRM 0.x モデルの場合
+                // VRM 0.x モデルの場合 (com.vrmc.univrm が入っているときのみ処理する)
                 var blendShapeProxy = avatar.GetComponent<VRMBlendShapeProxy>();
                 if (blendShapeProxy != null)
                 {
@@ -120,6 +125,7 @@ namespace Lilium.LiveStudio
                     SetUpdateWhenOffscreen(avatar, true);
                 }
             }
+#endif
 
 
             // 腕のコンストレイントが設定済みか？

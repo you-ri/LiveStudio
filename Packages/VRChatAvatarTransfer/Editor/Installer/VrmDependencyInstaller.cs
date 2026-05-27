@@ -32,10 +32,11 @@ namespace Lilium.VRChatAvatarTransfer.Installer
         // Versions are kept in lockstep with the corresponding entries that used to
         // live in VRChatAvatarTransfer/package.json. Bump them together when the
         // referenced UniVRM API changes.
-        // com.vrmc.univrm is required because jp.lilium.livestudio gates its VRM code on
-        // a single VRMC_VRM10 versionDefine but the same #if block also `using VRM;` (the
-        // VRM 0.x namespace from com.vrmc.univrm). Until livestudio splits the gate, we
-        // pull in all three packages together.
+        // VRChat Avatar Transfer only consumes VRM 1.0 APIs (UniVRM10 namespace from
+        // com.vrmc.vrm). com.vrmc.gltf is its hard dependency and ships UniGLTF +
+        // SpringBoneJobs. We do not pull in com.vrmc.univrm (VRM 0.x); jp.lilium.livestudio
+        // gates its VRM 0.x branch on a separate VRMC_UNIVRM define so its compile no
+        // longer requires the 0.x package.
         static readonly PackageSpec[] kRequired =
         {
             new PackageSpec
@@ -43,12 +44,6 @@ namespace Lilium.VRChatAvatarTransfer.Installer
                 Id = "com.vrmc.gltf",
                 GitUrl = "https://github.com/vrm-c/UniVRM.git?path=/Packages/UniGLTF#v0.130.1",
                 DisplayName = "UniGLTF (com.vrmc.gltf)",
-            },
-            new PackageSpec
-            {
-                Id = "com.vrmc.univrm",
-                GitUrl = "https://github.com/vrm-c/UniVRM.git?path=/Packages/VRM#v0.130.1",
-                DisplayName = "VRM 0.x (com.vrmc.univrm)",
             },
             new PackageSpec
             {

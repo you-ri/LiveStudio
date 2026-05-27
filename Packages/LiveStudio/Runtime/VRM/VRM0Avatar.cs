@@ -1,4 +1,4 @@
-#if VRMC_VRM10
+#if VRMC_UNIVRM
 using System;
 using System.Collections;
 using System.Collections.Generic;

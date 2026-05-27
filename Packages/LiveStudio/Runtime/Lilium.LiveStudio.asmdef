@@ -52,6 +52,11 @@
             "define": "VRMC_VRM10"
         },
         {
+            "name": "com.vrmc.univrm",
+            "expression": "",
+            "define": "VRMC_UNIVRM"
+        },
+        {
             "name": "com.unity.cloud.gltfast",
             "expression": "",
             "define": "UNITY_GLTFAST"
