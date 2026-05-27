@@ -74,6 +74,7 @@ jobs:
         with:
           ref: ${{ steps.tag.outputs.tag }}
           fetch-depth: 1
+          lfs: true
 
       - name: Pack each package as zip and compute SHA-256
         id: pack
