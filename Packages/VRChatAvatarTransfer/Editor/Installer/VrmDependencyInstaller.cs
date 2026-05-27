@@ -42,13 +42,13 @@ namespace Lilium.VRChatAvatarTransfer.Installer
             new PackageSpec
             {
                 Id = "com.vrmc.gltf",
-                GitUrl = "https://github.com/vrm-c/UniVRM.git?path=/Packages/UniGLTF#v0.130.1",
+                GitUrl = "https://github.com/vrm-c/UniVRM.git?path=/Packages/UniGLTF#v0.131.0",
                 DisplayName = "UniGLTF (com.vrmc.gltf)",
             },
             new PackageSpec
             {
                 Id = "com.vrmc.vrm",
-                GitUrl = "https://github.com/vrm-c/UniVRM.git?path=/Packages/VRM10#v0.130.1",
+                GitUrl = "https://github.com/vrm-c/UniVRM.git?path=/Packages/VRM10#v0.131.0",
                 DisplayName = "VRM 1.0 (com.vrmc.vrm)",
             },
         };
