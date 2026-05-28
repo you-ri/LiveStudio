@@ -1672,7 +1672,7 @@ namespace Lilium.RemoteControl
         // captureDefaults を子へ伝播。
         private static bool _FromJsonObjectProperty(IExposedObjectResolver resolver, JObject jObject, ExposedProperty property, System.Type valueType, object existingValue, bool captureDefaults)
         {
-            // デフォルト値キャプチャ（SceneFromJson経由ではスキップ：
+            // デフォルト値キャプチャ（LiveSceneFromJson経由ではスキップ：
             // デフォルトはContainer.Initializeで既にキャプチャ済み。
             // DeserializeExposedObject内のSetValueRawが先に値を変更するため、
             // ここでキャプチャすると変更後の値がデフォルトになってしまう）

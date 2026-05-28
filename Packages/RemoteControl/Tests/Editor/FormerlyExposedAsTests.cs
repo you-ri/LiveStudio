@@ -6,7 +6,7 @@ using NUnit.Framework;
 using UnityEngine;
 using Newtonsoft.Json.Linq;
 using Lilium.RemoteControl;
-using Lilium.RemoteControl.Scene;
+using Lilium.RemoteControl.LiveScene;
 
 namespace Lilium.RemoteControl.Tests
 {
@@ -181,7 +181,7 @@ namespace Lilium.RemoteControl.Tests
         #region Scene load round-trip
 
         [Test]
-        public void SceneFromJson_LoadsLegacyTypeName()
+        public void LiveSceneFromJson_LoadsLegacyTypeName()
         {
             // 旧 typeName "OldPlug" で書かれた JSON が NewPlug クラスに復元される
             ExposedClass.RegisterFromAttributes<NewPlug>();
@@ -197,14 +197,14 @@ namespace Lilium.RemoteControl.Tests
               ]
             }";
 
-            ExposedSceneSerializer.SceneFromJson(legacyJson, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(legacyJson, _resolver);
 
             Assert.AreEqual(42, target.newValue);
             Assert.AreEqual("ok", target.newLabel);
         }
 
         [Test]
-        public void SceneFromJson_LoadsLegacyFieldName()
+        public void LiveSceneFromJson_LoadsLegacyFieldName()
         {
             // 旧 field 名 "oldValue" で書かれた JSON が newValue に復元される
             ExposedClass.RegisterFromAttributes<NewPlug>();
@@ -220,14 +220,14 @@ namespace Lilium.RemoteControl.Tests
               ]
             }";
 
-            ExposedSceneSerializer.SceneFromJson(legacyJson, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(legacyJson, _resolver);
 
             Assert.AreEqual(77, target.newValue);
             Assert.AreEqual("legacy", target.newLabel);
         }
 
         [Test]
-        public void SceneFromJson_LoadsLegacyTypeAndFieldNames()
+        public void LiveSceneFromJson_LoadsLegacyTypeAndFieldNames()
         {
             // typeName とフィールド名の両方が旧名のケース
             ExposedClass.RegisterFromAttributes<NewPlug>();
@@ -243,21 +243,21 @@ namespace Lilium.RemoteControl.Tests
               ]
             }";
 
-            ExposedSceneSerializer.SceneFromJson(legacyJson, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(legacyJson, _resolver);
 
             Assert.AreEqual(9, target.newValue);
             Assert.AreEqual("ancient", target.newLabel);
         }
 
         [Test]
-        public void SceneToJson_EmitsCurrentNamesOnly()
+        public void LiveSceneToJson_EmitsCurrentNamesOnly()
         {
             // 書き出しは常に最新の typeName / field 名で行う（互換属性は読み取り専用の役割）
             ExposedClass.RegisterFromAttributes<NewPlug>();
             var ec = ExposedClass.Find(typeof(NewPlug));
             new ExposedObject("plug-4", ec, new NewPlug { newValue = 1, newLabel = "hi" });
 
-            var json = ExposedSceneSerializer.SceneToJson(
+            var json = LiveSceneSerializer.LiveSceneToJson(
                 new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver);
             var entry = (JObject)((JArray)JObject.Parse(json)["objects"])[0];
 

@@ -220,6 +220,18 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             var chains = new List<List<Transform>>();
             CollectBranchingChains(root, ignored, chains, new List<Transform>());
 
+            // VRCPhysBone normalizes its per-bone curves by bone depth from the root, where the
+            // denominator is the deepest bone (maxBoneChainIndex). Compute it over the full chain set
+            // (before the cross-spring filtering below) so the curve sampling matches VRCPhysBone.
+            int maxBoneChainIndex = 0;
+            foreach (var ch in chains)
+            {
+                foreach (var b in ch)
+                {
+                    maxBoneChainIndex = Mathf.Max(maxBoneChainIndex, BoneDepth(b, root));
+                }
+            }
+
             // 他の PhysBone と重複する transform はスキップ
             for (int ci = 0; ci < chains.Count; ci++)
             {
@@ -265,7 +277,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 var chain = chains[ci];
                 var name = chains.Count == 1 ? BuildSpringName(pb) : $"{BuildSpringName(pb)}_{ci}";
                 var spring = new Vrm10InstanceSpringBone.Spring(name);
-                int added = PopulateSpringJoints(pb, chain, spring);
+                int added = PopulateSpringJoints(pb, chain, maxBoneChainIndex, spring);
                 if (added == 0) continue;
 
                 if (sharedGroup != null) spring.ColliderGroups.Add(sharedGroup);
@@ -282,7 +294,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             return (springCount, jointCount);
         }
 
-        private static int PopulateSpringJoints(VRCPhysBone pb, List<Transform> chain, Vrm10InstanceSpringBone.Spring spring)
+        private static int PopulateSpringJoints(VRCPhysBone pb, List<Transform> chain, int maxBoneChainIndex, Vrm10InstanceSpringBone.Spring spring)
         {
             // ファイル先頭の校正マップを式にフィットさせた近似:
             //   stiffnessForce = pull * (1 - spring) * 4
@@ -295,13 +307,26 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             //   gravityPower = abs(gravity) * 20  (esperecyan に倣う)
             //
             // VRC stiffness (Advanced のみ) は本マッピングには含まれていないため使用しない。
-            // pull / spring は対応する curve でジョイント位置 t ごとに評価する。
             const float StiffnessForceScale = 4.0f;
             const float GravityPowerScale = 20.0f;
             float gravity = Mathf.Abs(pb.gravity);
             Vector3 gravityDir = pb.gravity >= 0f ? new Vector3(0f, -1f, 0f) : new Vector3(0f, 1f, 0f);
             float radius = Mathf.Max(0f, pb.radius);
             var anglelimitType = MapLimitType(pb.limitType);
+
+            // VRCPhysBone samples its per-bone curves by bone depth (boneChainIndex), not by physical
+            // distance, using two index-based ratios (verified against VRC.Dynamics):
+            //   force/limit params : CalcBoneRatio(d)      = d / (maxBoneChainIndex + endpointExtra - 1)
+            //   radius             : CalcTransformRatio(d) = d / (maxBoneChainIndex + endpointExtra)
+            // VRCPhysBone evaluates radius per segment as radiusEnd = radius * radiusCurve(transformRatio(d+1)),
+            // i.e. at the CHILD position. VRM's FastSpringBone likewise applies m_jointRadius at the tail
+            // (child) joint, so joint(depth d).radius maps to that radiusEnd. The synthetic "_end" tail this
+            // method appends is not a VRCPhysBone bone, so it never enters these denominators.
+            var root = pb.GetRootTransform();
+            int endpointExtra = pb.endpointPosition != Vector3.zero ? 1 : 0;
+            float boneDenom = maxBoneChainIndex + endpointExtra - 1;
+            float transformDenom = maxBoneChainIndex + endpointExtra;
+            int baseDepth = root != null ? BoneDepth(chain[0], root) : 0;
 
             int jointCount = 0;
             for (int i = 0; i < chain.Count; i++)
@@ -318,27 +343,32 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     continue;
                 }
 
-                float t = chain.Count <= 1 ? 0f : (float)i / (chain.Count - 1);
-                var rawLimitEuler = new Vector3(
-                    pb.limitRotation.x * EvaluateCurveOrOne(pb.limitRotationXCurve, t),
-                    pb.limitRotation.y * EvaluateCurveOrOne(pb.limitRotationYCurve, t),
-                    pb.limitRotation.z * EvaluateCurveOrOne(pb.limitRotationZCurve, t));
+                int depth = baseDepth + i;
+                // CalcBoneRatio: force / limit params, evaluated at this bone's depth.
+                float tForce = boneDenom > 0f ? Mathf.Clamp01(depth / boneDenom) : 0f;
+                // CalcTransformRatio(depth + 1): radius at the child (tail) position.
+                float tRadius = transformDenom > 0f ? Mathf.Clamp01((depth + 1) / transformDenom) : 1f;
 
-                float pullAmt   = Mathf.Max(0f,   pb.pull   * EvaluateCurveOrOne(pb.pullCurve,   t));
-                float springAmt = Mathf.Clamp01(pb.spring * EvaluateCurveOrOne(pb.springCurve, t));
+                var rawLimitEuler = new Vector3(
+                    pb.limitRotation.x * EvaluateCurveOrOne(pb.limitRotationXCurve, tForce),
+                    pb.limitRotation.y * EvaluateCurveOrOne(pb.limitRotationYCurve, tForce),
+                    pb.limitRotation.z * EvaluateCurveOrOne(pb.limitRotationZCurve, tForce));
+
+                float pullAmt   = Mathf.Max(0f,   pb.pull   * EvaluateCurveOrOne(pb.pullCurve,   tForce));
+                float springAmt = Mathf.Clamp01(pb.spring * EvaluateCurveOrOne(pb.springCurve, tForce));
 
                 joint.m_stiffnessForce = pullAmt * (1f - springAmt) * StiffnessForceScale;
                 joint.m_dragForce = Mathf.Clamp01(1f - pullAmt * springAmt);
                 joint.m_gravityPower = gravity * GravityPowerScale;
                 joint.m_gravityDir = gravityDir;
-                joint.m_jointRadius = radius * EvaluateCurveOrOne(pb.radiusCurve, t);
+                joint.m_jointRadius = radius * EvaluateCurveOrOne(pb.radiusCurve, tRadius);
                 joint.m_anglelimitType = anglelimitType;
                 joint.m_limitSpaceOffset = Quaternion.Euler(rawLimitEuler);
 
                 // VRC maxAngleX (X軸まわり) = Z 方向への振り角限界 = VRM phi (m_pitch)
                 // VRC maxAngleZ (Z軸まわり) = X 方向への振り角限界 = VRM theta (m_yaw)
-                float angleX = pb.maxAngleX * EvaluateCurveOrOne(pb.maxAngleXCurve, t) * Mathf.Deg2Rad;
-                float angleZ = pb.maxAngleZ * EvaluateCurveOrOne(pb.maxAngleZCurve, t) * Mathf.Deg2Rad;
+                float angleX = pb.maxAngleX * EvaluateCurveOrOne(pb.maxAngleXCurve, tForce) * Mathf.Deg2Rad;
+                float angleZ = pb.maxAngleZ * EvaluateCurveOrOne(pb.maxAngleZCurve, tForce) * Mathf.Deg2Rad;
                 joint.m_pitch = Mathf.Clamp(angleX, 0f, Mathf.PI);
                 joint.m_yaw = anglelimitType == AnglelimitTypes.Spherical
                     ? Mathf.Clamp(angleZ, 0f, Mathf.PI * 0.5f)
@@ -417,6 +447,14 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             return go.transform;
         }
 
+        // Depth from the PhysBone root (root => 0). Matches VRCPhysBone.boneChainIndex.
+        private static int BoneDepth(Transform bone, Transform root)
+        {
+            int depth = 0;
+            for (var t = bone; t != null && t != root; t = t.parent) depth++;
+            return depth;
+        }
+
         private static string BuildSpringName(VRCPhysBone pb)
         {
             var root = pb.GetRootTransform();
@@ -470,6 +508,10 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             {
                 var c = t.GetChild(i);
                 if (ignored.Contains(c)) continue;
+                // Skip helper GameObjects this converter parents under bones before chain collection
+                // (VRM colliders created by ConvertCollider). They are not bones, and counting them as
+                // children turns their parent bone into a spurious branch point (and a spurious "_end").
+                if (c.GetComponent<VRM10SpringBoneCollider>() != null) continue;
                 liveChildren.Add(c);
                 onlyLiveChild = c;
                 liveChildCount++;

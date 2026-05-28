@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEngine.Scripting.APIUpdating;
 using UnityEngine.Serialization;
 using Lilium.RemoteControl.Server;
-using Lilium.RemoteControl.Scene;
+using Lilium.RemoteControl.LiveScene;
 
 namespace Lilium.RemoteControl.UI
 {

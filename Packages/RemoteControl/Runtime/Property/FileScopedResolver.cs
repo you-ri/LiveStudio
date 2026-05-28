@@ -9,11 +9,11 @@ namespace Lilium.RemoteControl
 {
     /// <summary>
     /// ファイル（シーン）スコープ専用のリゾルバー拡張。
-    /// ExposedSceneSerializer が保存時に利用し、プロパティ走査中の UnityEngine.Object 参照を
+    /// LiveSceneSerializer が保存時に利用し、プロパティ走査中の UnityEngine.Object 参照を
     /// fileid ベースの @ref に置き換えつつ、参照先を別エントリとして収集する。
     /// REST API など file-scope 外の経路は通常の <see cref="IExposedObjectResolver"/> を使うため
     /// 既存挙動に影響しない。シーン保存内部専用のため internal（実装の唯一の利用者は
-    /// 同アセンブリの ExposedPropertySerializer のキャストと、IVT 経由の ExposedSceneSerializer）。
+    /// 同アセンブリの ExposedPropertySerializer のキャストと、IVT 経由の LiveSceneSerializer）。
     /// </summary>
     internal interface IFileScopedResolver : IExposedObjectResolver
     {
@@ -41,7 +41,7 @@ namespace Lilium.RemoteControl
     }
 
     /// <summary>
-    /// ExposedSceneSerializer がシーン保存時に利用する file-scope リゾルバー。
+    /// LiveSceneSerializer がシーン保存時に利用する file-scope リゾルバー。
     /// - プロパティ走査中のパスを追跡する
     /// - UnityEngine.Object 参照を source-key ベースの @ref にエンコードする
     /// - 未登録の UnityEngine.Object は @source (rootId+path) 付きエントリとして後で objects[] に書き出すようキューする
@@ -187,7 +187,7 @@ namespace Lilium.RemoteControl
         /// rootId と DotBracket 形式 path を 1 本の文字列 @source キーに結合する。
         /// 前提: rootId は '.' や '[' を含まない (GUID や typeName ベース id)。
         /// path が空 → "rootId"。path が "[" から始まる → "rootId[0]..."。それ以外 → "rootId.foo..."。
-        /// （旧 ExposedSceneSerializer._ComposeSourceKey。唯一の呼び元である本リゾルバーへ移設。）
+        /// （旧 LiveSceneSerializer._ComposeSourceKey。唯一の呼び元である本リゾルバーへ移設。）
         /// </summary>
         private static string _ComposeSourceKey(string rootId, string path)
         {

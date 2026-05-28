@@ -8,18 +8,21 @@ using Newtonsoft.Json.Linq;
 
 using Lilium.RemoteControl;
 
-namespace Lilium.RemoteControl.Scene
+namespace Lilium.RemoteControl.LiveScene
 {
     /// <summary>
     /// シーン全体のシリアライズ/デシリアライズを担当するユーティリティクラス。
     /// 依存グラフ走査は本体側 <see cref="ExposedObjectGraph"/> に分離済み。
     /// </summary>
-    public static class ExposedSceneSerializer
+    public static class LiveSceneSerializer
     {
-        public const string FormatIdentifier = "jp.lilium.remotecontrol.scene";
+        // Written into the "format" field of new files. Loading does not validate this string
+        // (only formatVersion is inspected), so legacy files carrying the old
+        // "jp.lilium.remotecontrol.scene" identifier still deserialize unchanged.
+        public const string FormatIdentifier = "jp.lilium.remotecontrol.live";
         public const int CurrentFormatVersion = 1;
 
-        public static string SceneToJson(IReadOnlyList<ExposedObject> objects, IExposedObjectResolver resolver, SerializeMode filter = SerializeMode.Snapshot, ExcludeFilter exclude = ExcludeFilter.None, string baseSceneName = null)
+        public static string LiveSceneToJson(IReadOnlyList<ExposedObject> objects, IExposedObjectResolver resolver, SerializeMode filter = SerializeMode.Snapshot, ExcludeFilter exclude = ExcludeFilter.None, string baseSceneName = null)
         {
             bool onlyDirty = filter == SerializeMode.Delta;
             bool excludeStatic = (exclude & ExcludeFilter.Static) != 0;
@@ -54,7 +57,7 @@ namespace Lilium.RemoteControl.Scene
                 if (!_IsValidObject(obj, excludeStatic)) continue;
 
                 // ExposedObjectContainer はシーンJSONには書き出さない。
-                // 1 scene.json = 1 Container 前提のため、Container 自身のエントリは冗長。
+                // 1 live.json = 1 Container 前提のため、Container 自身のエントリは冗長。
                 // 配下のオブジェクトは @prefab 付き（@source なし）でトップレベルに直接書き出される。
                 if (obj.target is ExposedObjectContainer) continue;
 
@@ -170,12 +173,12 @@ namespace Lilium.RemoteControl.Scene
 
         /// <summary>
         /// 指定 Container の現在の状態を、変更検出用の Delta JSON として生成する。
-        /// SceneToJson の Delta モード・既定フィルタを呼ぶ薄いラッパー。container が null なら null。
+        /// LiveSceneToJson の Delta モード・既定フィルタを呼ぶ薄いラッパー。container が null なら null。
         /// </summary>
-        public static string BuildSceneJson(ExposedObjectContainer container, string baseSceneName = null)
+        public static string BuildLiveSceneJson(ExposedObjectContainer container, string baseSceneName = null)
         {
             if (container == null) return null;
-            return SceneToJson(
+            return LiveSceneToJson(
                 ExposedObjectGraph.ResolveExposedObjects(container.objects, container),
                 container,
                 SerializeMode.Delta,
@@ -194,7 +197,7 @@ namespace Lilium.RemoteControl.Scene
             if (container == null) return false;
             if (baselineJson == null) return false;
             var baseSceneName = ExtractBaseSceneName(baselineJson);
-            return !string.Equals(BuildSceneJson(container, baseSceneName), baselineJson, StringComparison.Ordinal);
+            return !string.Equals(BuildLiveSceneJson(container, baseSceneName), baselineJson, StringComparison.Ordinal);
         }
 
         /// <summary>
@@ -215,7 +218,7 @@ namespace Lilium.RemoteControl.Scene
             }
         }
 
-        public static void SceneFromJson(string json, IExposedObjectResolver resolver)
+        public static void LiveSceneFromJson(string json, IExposedObjectResolver resolver)
         {
             if (string.IsNullOrEmpty(json)) return;
 
@@ -307,7 +310,7 @@ namespace Lilium.RemoteControl.Scene
 
                     // resolver が ExposedObjectContainer の場合、wrapper を _objects に追加する。
                     // Container の _objects は JSON 永続化対象外のため、ロード時にここで復元する。
-                    // 1 scene.json = 1 Container 前提のため、resolver 自身を「そのシーンのContainer」として扱う。
+                    // 1 live.json = 1 Container 前提のため、resolver 自身を「そのシーンのContainer」として扱う。
                     if (resolver is ExposedObjectContainer container)
                     {
                         if (!container._objects.Contains(wrapper))
@@ -437,7 +440,7 @@ namespace Lilium.RemoteControl.Scene
                 if (exposedObject != null)
                 {
                     // captureDefaults: false — デフォルトはContainer.Initializeで既にキャプチャ済み。
-                    // SceneFromJson中にキャプチャすると、DeserializeExposedObject内のSetValueRawで
+                    // LiveSceneFromJson中にキャプチャすると、DeserializeExposedObject内のSetValueRawで
                     // 変更された値がデフォルトとして記録され、Delta保存で差分が検出されなくなる。
                     ExposedPropertySerializer.FromJson(propertyJson, exposedObject, resolver, captureDefaults: false);
                 }
@@ -670,7 +673,7 @@ namespace Lilium.RemoteControl.Scene
                 // 自動生成のExposedObjectを破棄し、保存済みIDで再登録
                 wrapper.ReplaceId(id);
 
-                // Prefab復元時はソースキー (Asset GUID) を設定（SceneToJsonで@op/@prefab付きで出力するため）
+                // Prefab復元時はソースキー (Asset GUID) を設定（LiveSceneToJsonで@op/@prefab付きで出力するため）
                 if (prefabKey != null)
                     wrapper.prefabSourceKey = prefabKey;
 

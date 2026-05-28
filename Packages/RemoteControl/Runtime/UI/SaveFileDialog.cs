@@ -18,7 +18,7 @@ namespace Lilium.RemoteControl.UI
         /// <param name="title">ダイアログタイトル。</param>
         /// <param name="initialDirectory">初期ディレクトリ。null/存在しない場合は OS 標準。</param>
         /// <param name="defaultFileName">既定のファイル名（拡張子含む）。null可。</param>
-        /// <param name="extension">ユーザーが拡張子を付けなかった場合に補う拡張子（例: ".scene.json"）。null可。</param>
+        /// <param name="extension">ユーザーが拡張子を付けなかった場合に補う拡張子（例: ".live.json"）。null可。</param>
         /// <returns>選択されたフルパス。キャンセルされた場合は null。</returns>
         public static string Show(string title, string initialDirectory = null, string defaultFileName = null, string extension = null)
         {

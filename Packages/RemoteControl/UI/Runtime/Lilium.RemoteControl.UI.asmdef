@@ -5,7 +5,7 @@
         "Lilium.RemoteControl",
         "Lilium.RemoteControl.Reflection",
         "Lilium.RemoteControl.Core",
-        "Lilium.RemoteControl.Scene"
+        "Lilium.RemoteControl.LiveScene"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

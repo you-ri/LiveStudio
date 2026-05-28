@@ -6,7 +6,7 @@
         "Lilium.RemoteControl.Core",
         "Lilium.RemoteControl.Reflection",
         "Lilium.RemoteControl.UI",
-        "Lilium.RemoteControl.Scene",
+        "Lilium.RemoteControl.LiveScene",
         "Lilium.NativeGamepad",
         "Unity.Cinemachine",
         "Unity.InputSystem",

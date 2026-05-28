@@ -9,7 +9,7 @@ namespace Lilium.RemoteControl
     /// <summary>
     /// Holds a list of <see cref="IExposedObject"/> instances and acts as a resolver that finds
     /// objects by id or by target reference. Used to be a MonoBehaviour; the host
-    /// <see cref="Lilium.RemoteControl.Scene.RemoteControlBehaviour"/> now owns the serialized
+    /// <see cref="Lilium.RemoteControl.LiveScene.RemoteControlBehaviour"/> now owns the serialized
     /// list and forwards Unity lifecycle calls.
     /// </summary>
     [ExposedClass("ObjectContainer", Icon = "widgets", HideInScene = true)]
@@ -23,7 +23,7 @@ namespace Lilium.RemoteControl
         public IReadOnlyList<IExposedObject> objects => _objects;
 
         // List instance is owned by the host MonoBehaviour (SerializeReference) and shared by reference.
-        // Internal so ExposedSceneSerializer can append wrapper entries during deserialization.
+        // Internal so LiveSceneSerializer can append wrapper entries during deserialization.
         internal readonly List<IExposedObject> _objects;
         private string _name;
 
@@ -32,7 +32,7 @@ namespace Lilium.RemoteControl
 
         /// <summary>
         /// Optional host UnityEngine.Object reference. Used for editor undo recording when the
-        /// container's _objects list mutates (set by <see cref="Lilium.RemoteControl.Scene.RemoteControlBehaviour"/>).
+        /// container's _objects list mutates (set by <see cref="Lilium.RemoteControl.LiveScene.RemoteControlBehaviour"/>).
         /// </summary>
         public UnityEngine.Object host { get; }
 

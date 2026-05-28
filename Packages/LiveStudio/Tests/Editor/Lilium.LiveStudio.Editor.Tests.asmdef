@@ -7,7 +7,7 @@
         "Lilium.LiveStudio",
         "Lilium.LiveStudio.Editor",
         "Lilium.RemoteControl",
-        "Lilium.RemoteControl.Scene",
+        "Lilium.RemoteControl.LiveScene",
         "Unity.InputSystem"
     ],
     "includePlatforms": [

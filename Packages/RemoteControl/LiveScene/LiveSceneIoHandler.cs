@@ -9,14 +9,14 @@ using Lilium.RemoteControl;
 using Lilium.RemoteControl.Server;
 using Lilium.RemoteControl.RestApi;
 
-namespace Lilium.RemoteControl.Scene
+namespace Lilium.RemoteControl.LiveScene
 {
     /// <summary>
     /// シーンの import/export REST ハンドラ (/exposed/export, /exposed/import)。
-    /// 旧 ExposedObjectHandler から分離。<see cref="ExposedSceneSerializer"/> に依存するため
+    /// 旧 ExposedObjectHandler から分離。<see cref="LiveSceneSerializer"/> に依存するため
     /// シーン読み書きモジュール側に置く。<see cref="RemoteControlBehaviour"/> が登録/解除する。
     /// </summary>
-    public class SceneIoHandler : BaseRemoteControlApiHandler
+    public class LiveSceneIoHandler : BaseRemoteControlApiHandler
     {
         [System.Serializable]
         struct ExportRequest
@@ -32,7 +32,7 @@ namespace Lilium.RemoteControl.Scene
 
         private readonly EndpointRoute[] _postRoutes;
 
-        public SceneIoHandler(RemoteControlServerCore server) : base(server)
+        public LiveSceneIoHandler(RemoteControlServerCore server) : base(server)
         {
             _postRoutes = new[]
             {
@@ -98,7 +98,7 @@ namespace Lilium.RemoteControl.Scene
                     System.IO.Directory.CreateDirectory(directory);
                 }
 
-                var json = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), resolver);
+                var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), resolver);
                 System.IO.File.WriteAllText(filePath, json);
                 Debug.Log($"[RemoteControl] Exported to {filePath}");
                 return true;
@@ -147,7 +147,7 @@ namespace Lilium.RemoteControl.Scene
                 }
 
                 var json = System.IO.File.ReadAllText(filePath);
-                ExposedSceneSerializer.SceneFromJson(json, resolver);
+                LiveSceneSerializer.LiveSceneFromJson(json, resolver);
                 Debug.Log($"[RemoteControl] Loaded from {filePath}");
                 return (success: true, error: null as string);
             });

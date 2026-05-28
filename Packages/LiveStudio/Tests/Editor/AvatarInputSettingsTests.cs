@@ -5,7 +5,7 @@ using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using Lilium.RemoteControl;
-using Lilium.RemoteControl.Scene;
+using Lilium.RemoteControl.LiveScene;
 
 namespace Lilium.LiveStudio.EditorTests
 {
@@ -78,7 +78,7 @@ namespace Lilium.LiveStudio.EditorTests
             var exposedObject = new ExposedObject("test-input-actions", exposedClass, _controller);
             try
             {
-                var json = ExposedSceneSerializer.SceneToJson(
+                var json = LiveSceneSerializer.LiveSceneToJson(
                     new System.Collections.Generic.List<ExposedObject> { exposedObject },
                     DefaultExposedObjectResolver.Instance,
                     SerializeMode.Snapshot);
@@ -109,7 +109,7 @@ namespace Lilium.LiveStudio.EditorTests
                 Assert.IsNotNull(action);
                 action.AddBinding("<Keyboard>/c");
 
-                var json = ExposedSceneSerializer.SceneToJson(
+                var json = LiveSceneSerializer.LiveSceneToJson(
                     new System.Collections.Generic.List<ExposedObject> { source },
                     DefaultExposedObjectResolver.Instance,
                     SerializeMode.Delta);
@@ -128,7 +128,7 @@ namespace Lilium.LiveStudio.EditorTests
                 var targetExposed = new ExposedObject("test-input-actions-rt", exposedClass, target);
                 try
                 {
-                    ExposedSceneSerializer.SceneFromJson(json, DefaultExposedObjectResolver.Instance);
+                    LiveSceneSerializer.LiveSceneFromJson(json, DefaultExposedObjectResolver.Instance);
 
                     var restoredAction = target.inputActionMap.FindAction("Crouch");
                     Assert.IsNotNull(restoredAction, "Crouch action should be restored");
@@ -165,7 +165,7 @@ namespace Lilium.LiveStudio.EditorTests
                 Assert.IsNotNull(action);
                 action.AddBinding("<Mouse>/leftButton");
 
-                var json = ExposedSceneSerializer.SceneToJson(
+                var json = LiveSceneSerializer.LiveSceneToJson(
                     new System.Collections.Generic.List<ExposedObject> { exposedObject },
                     DefaultExposedObjectResolver.Instance,
                     SerializeMode.Delta);
@@ -191,7 +191,7 @@ namespace Lilium.LiveStudio.EditorTests
             {
                 ExposedPropertyUtility.SetDefault(exposedObject);
 
-                var json = ExposedSceneSerializer.SceneToJson(
+                var json = LiveSceneSerializer.LiveSceneToJson(
                     new System.Collections.Generic.List<ExposedObject> { exposedObject },
                     DefaultExposedObjectResolver.Instance,
                     SerializeMode.Delta);

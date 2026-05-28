@@ -62,7 +62,7 @@ namespace Lilium.LiveStudio
 
         /// <summary>
         /// InputActionMapの設定をシリアライズ可能な形で公開する。
-        /// SceneToJson/SceneFromJson経由で保存/復元される。
+        /// LiveSceneToJson/LiveSceneFromJson経由で保存/復元される。
         /// </summary>
         [ExposedProperty, Hide]
         public AvatarInputSettings settings

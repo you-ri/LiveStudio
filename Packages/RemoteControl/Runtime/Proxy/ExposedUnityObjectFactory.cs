@@ -229,7 +229,7 @@ namespace Lilium.RemoteControl
 
                     // componentType 単位の default 自動ラップ先は先勝ち (例: GameObject → ExposedGameObject)。
                     // 同 componentType で displayName が異なる Proxy (例: ExposedGameObjectWithTransform) は
-                    // displayName ベースの lookup (SceneFromJson など) のために _registrationList には必ず積む。
+                    // displayName ベースの lookup (LiveSceneFromJson など) のために _registrationList には必ず積む。
                     if (!_typeRegistry.ContainsKey(componentType))
                     {
                         _typeRegistry.Add(componentType, registration);

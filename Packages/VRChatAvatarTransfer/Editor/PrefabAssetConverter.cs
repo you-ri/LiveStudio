@@ -61,7 +61,8 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     var vrcAvatar = root.GetComponent<Lilium.LiveStudio.VRCAvatar>();
                     VRCLipSyncConverter.Convert(root, vrcAvatar);
                     VRCEyeBlinkConverter.Convert(root, vrcAvatar);
-                    VRCExpressionsConverter.Convert(root, vrcAvatar);
+                    // 一旦無効化: expressions (VRCExpressionsMenu) の移植を一時的にオフ
+                    // VRCExpressionsConverter.Convert(root, vrcAvatar);
                 }
 
                 StripVRChatComponents(root);

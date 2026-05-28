@@ -4,14 +4,14 @@ using System;
 using System.IO;
 using UnityEngine;
 using Lilium.RemoteControl;
-using Lilium.RemoteControl.Scene;
+using Lilium.RemoteControl.LiveScene;
 
 namespace Lilium.LiveStudio
 {
     /// <summary>
     /// アプリ起動時に <see cref="LiveStudioProjectSettings.savedBaseSubDir"/> から
     /// <see cref="SavedPaths"/> のベースディレクトリを構築し、
-    /// <see cref="SceneSaveSystem"/> の Save Scene As ダイアログ既定パスを揃える。
+    /// <see cref="LiveSceneSaveSystem"/> の Save Scene As ダイアログ既定パスを揃える。
     /// </summary>
     public static class LiveStudioPathsInitializer
     {
@@ -30,7 +30,7 @@ namespace Lilium.LiveStudio
                 SavedPaths.SetBaseDirectory(Path.Combine(_GetDocumentsRoot(), subDir));
             }
 
-            SceneSaveSystem.SetSaveAsDefaultDirectory(SavedPaths.EnsureSceneDirectory());
+            LiveSceneSaveSystem.SetSaveAsDefaultDirectory(SavedPaths.EnsureSceneDirectory());
 
             Debug.Log($"[Studio] SavedPaths base directory = {SavedPaths.baseDirectory}");
         }

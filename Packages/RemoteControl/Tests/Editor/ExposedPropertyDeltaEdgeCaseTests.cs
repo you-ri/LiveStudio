@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using Lilium.RemoteControl;
-using Lilium.RemoteControl.Scene;
+using Lilium.RemoteControl.LiveScene;
 using Newtonsoft.Json.Linq;
 
 namespace Lilium.RemoteControl.Tests
@@ -90,7 +90,7 @@ namespace Lilium.RemoteControl.Tests
         }
 
         // 追跡型(ExposedClass)のネスト要素を持つリスト。
-        // SceneFromJson(captureDefaults=false) で新規追加された要素の primitive が
+        // LiveSceneFromJson(captureDefaults=false) で新規追加された要素の primitive が
         // 段⑤(object,false)→段⑥(primitive) を通る経路の検証用。
         [Serializable]
         [ExposedClass("TestEdgeTrackedItem")]
@@ -160,7 +160,7 @@ namespace Lilium.RemoteControl.Tests
             // 要素を変更(未登録要素型のため dirty 追跡外 → 強制 include 経路)
             testObj.items = new List<PlainItem> { new PlainItem("a", 1), new PlainItem("x", 9) };
 
-            var json = ExposedSceneSerializer.SceneToJson(
+            var json = LiveSceneSerializer.LiveSceneToJson(
                 new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             var jRoot = JObject.Parse(json);
@@ -180,7 +180,7 @@ namespace Lilium.RemoteControl.Tests
             var exposedObj2 = new ExposedObject("untracked-list-1", exposedClass, testObj2);
             ExposedPropertyUtility.SetDefault(exposedObj2);
 
-            ExposedSceneSerializer.SceneFromJson(json, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(json, _resolver);
 
             Assert.AreEqual(2, testObj2.items.Count);
             Assert.AreEqual("a", testObj2.items[0].label);
@@ -264,7 +264,7 @@ namespace Lilium.RemoteControl.Tests
 
             testObj.mid.leaf.leafValue = 77;
 
-            var json = ExposedSceneSerializer.SceneToJson(
+            var json = LiveSceneSerializer.LiveSceneToJson(
                 new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             var jRoot = JObject.Parse(json);
@@ -277,7 +277,7 @@ namespace Lilium.RemoteControl.Tests
             var exposedObj2 = new ExposedObject("nest3-leaf", exposedClass, testObj2);
             ExposedPropertyUtility.SetDefault(exposedObj2);
 
-            ExposedSceneSerializer.SceneFromJson(json, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(json, _resolver);
 
             Assert.AreEqual(77, testObj2.mid.leaf.leafValue, "level-3 leaf value must round-trip");
             Assert.AreEqual(1, testObj2.rootId, "untouched root sibling must remain default");
@@ -303,7 +303,7 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void ThreeLevelNest_Callback_FiresOnLevel3Leaf_OnSceneFromJson()
+        public void ThreeLevelNest_Callback_FiresOnLevel3Leaf_OnLiveSceneFromJson()
         {
             var testObj = new Root3 { rootId = 1 };
             var exposedClass = ExposedClass.Find(typeof(Root3));
@@ -312,7 +312,7 @@ namespace Lilium.RemoteControl.Tests
 
             testObj.mid.leaf.leafValue = 42;
 
-            var json = ExposedSceneSerializer.SceneToJson(
+            var json = LiveSceneSerializer.LiveSceneToJson(
                 new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             exposedObj.Unregister();
@@ -320,7 +320,7 @@ namespace Lilium.RemoteControl.Tests
             var exposedObj2 = new ExposedObject("nest3-cb", exposedClass, testObj2);
             ExposedPropertyUtility.SetDefault(exposedObj2);
 
-            ExposedSceneSerializer.SceneFromJson(json, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(json, _resolver);
 
             Assert.AreEqual(42, testObj2.mid.leaf.leafValue, "precondition: leaf value round-trips");
             Assert.GreaterOrEqual(testObj2.mid.leaf.callbackCount, 1,
@@ -330,10 +330,10 @@ namespace Lilium.RemoteControl.Tests
         // ---- Group C: captureDefaults propagation for new array element primitive ----
 
         [Test]
-        public void NewArrayElementPrimitive_SceneFromJsonThenReDelta_DoesNotLoseValue()
+        public void NewArrayElementPrimitive_LiveSceneFromJsonThenReDelta_DoesNotLoseValue()
         {
             // 段⑥ primitive の captureDefault 不整合検証。
-            // SceneFromJson(captureDefaults=false) で新規追加された配列要素の primitive が
+            // LiveSceneFromJson(captureDefaults=false) で新規追加された配列要素の primitive が
             // 段⑤(object, captureDefault:false)→段⑥(primitive) を通る。段⑥が captureDefaults を
             // 無視して default を誤キャプチャすると、続く Delta 保存で当該値が脱落し、
             // 2 段目 round-trip でデータが失われる(保存時データ消失)。
@@ -344,20 +344,20 @@ namespace Lilium.RemoteControl.Tests
             var srcExposed = new ExposedObject("tracked-h", ec, src);
             ExposedPropertyUtility.SetDefault(srcExposed);
             src.items.Add(new TrackedItem { value = 99 });
-            var s1 = ExposedSceneSerializer.SceneToJson(
+            var s1 = LiveSceneSerializer.LiveSceneToJson(
                 new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
             srcExposed.Unregister();
 
-            // dst: 要素1個で SetDefault → SceneFromJson(s1) で2要素へ(captureDefaults=false 経路) → 再 Delta
+            // dst: 要素1個で SetDefault → LiveSceneFromJson(s1) で2要素へ(captureDefaults=false 経路) → 再 Delta
             var dst = new TrackedListHolder { items = new List<TrackedItem> { new TrackedItem { value = 1 } } };
             var dstExposed = new ExposedObject("tracked-h", ec, dst);
             ExposedPropertyUtility.SetDefault(dstExposed);
-            ExposedSceneSerializer.SceneFromJson(s1, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(s1, _resolver);
 
             Assert.AreEqual(2, dst.items.Count, "precondition: new element loaded");
             Assert.AreEqual(99, dst.items[1].value, "precondition: loaded primitive value");
 
-            var s2 = ExposedSceneSerializer.SceneToJson(
+            var s2 = LiveSceneSerializer.LiveSceneToJson(
                 new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
             dstExposed.Unregister();
 
@@ -366,7 +366,7 @@ namespace Lilium.RemoteControl.Tests
             var third = new TrackedListHolder { items = new List<TrackedItem> { new TrackedItem { value = 1 } } };
             var thirdExposed = new ExposedObject("tracked-h", ec, third);
             ExposedPropertyUtility.SetDefault(thirdExposed);
-            ExposedSceneSerializer.SceneFromJson(s2, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(s2, _resolver);
 
             Assert.AreEqual(2, third.items.Count,
                 "new element must survive a second delta round-trip");

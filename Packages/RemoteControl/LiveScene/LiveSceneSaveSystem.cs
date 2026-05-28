@@ -6,17 +6,21 @@ using UnityEngine.SceneManagement;
 using Lilium.RemoteControl;
 using Lilium.RemoteControl.UI;
 
-namespace Lilium.RemoteControl.Scene
+namespace Lilium.RemoteControl.LiveScene
 {
     /// <summary>
     /// Pure C# scene save/load helper. Used to be a MonoBehaviour; host
     /// <see cref="RemoteControlBehaviour"/> now drives Unity lifecycle
     /// (wantsToQuit / playModeStateChanged / coroutines for dialogs).
     /// </summary>
-    public class SceneSaveSystem
+    public class LiveSceneSaveSystem
     {
-        private const string kSceneFileExtension = ".scene.json";
-        private const string kSceneFileDefaultName = "Untitled.scene.json";
+        // New live scene files are written with this extension. Loading is extension-agnostic
+        // (the file content is read regardless), so legacy ".scene.json" files still open; only
+        // the "Save As" default and the editor extension auto-completion use the new value.
+        private const string kLiveSceneFileExtension = ".live.json";
+        private const string kLegacyFileExtension = ".scene.json";
+        private const string kLiveSceneFileDefaultName = "Untitled.live.json";
         private const string kSceneFileDefaultSubDir = "Virgo Motion/Saved";
 
         // Fixed PlayerPrefs key that mirrors the absolute path of the most recently used
@@ -74,7 +78,7 @@ namespace Lilium.RemoteControl.Scene
 
         public event Action onResetDataRequested;
 
-        public SceneSaveSystem(ExposedObjectContainer objectContainer, string defaultFileName, bool autoSaveOnQuit = true)
+        public LiveSceneSaveSystem(ExposedObjectContainer objectContainer, string defaultFileName, bool autoSaveOnQuit = true)
         {
             _objectContainer = objectContainer;
             _defaultFileName = defaultFileName ?? string.Empty;
@@ -106,7 +110,7 @@ namespace Lilium.RemoteControl.Scene
             try
             {
                 var json = System.IO.File.ReadAllText(fullPath);
-                baseSceneName = ExposedSceneSerializer.ExtractBaseSceneName(json);
+                baseSceneName = LiveSceneSerializer.ExtractBaseSceneName(json);
             }
             catch
             {
@@ -208,7 +212,7 @@ namespace Lilium.RemoteControl.Scene
                 return false;
             }
 
-            var baseSceneName = ExposedSceneSerializer.ExtractBaseSceneName(json);
+            var baseSceneName = LiveSceneSerializer.ExtractBaseSceneName(json);
             if (string.IsNullOrEmpty(baseSceneName)) return false;
             if (baseSceneName == SceneManager.GetActiveScene().name) return false;
 
@@ -254,13 +258,13 @@ namespace Lilium.RemoteControl.Scene
                 System.IO.Directory.CreateDirectory(dir);
 
             var baseSceneName = SceneManager.GetActiveScene().name;
-            var json = ExposedSceneSerializer.BuildSceneJson(_objectContainer, baseSceneName);
+            var json = LiveSceneSerializer.BuildLiveSceneJson(_objectContainer, baseSceneName);
             System.IO.File.WriteAllText(fullPath, json);
             _baselineJson = json;
         }
 
         public bool HasUnsavedChanges()
-            => ExposedSceneSerializer.HasChanges(_objectContainer, _baselineJson);
+            => LiveSceneSerializer.HasChanges(_objectContainer, _baselineJson);
 
         public void ClearCurrentData()
         {
@@ -318,7 +322,7 @@ namespace Lilium.RemoteControl.Scene
                 title: LocalizationSystem.Translate("DIALOG_SAVE_AS_TITLE"),
                 initialDirectory: GetSaveAsDefaultDirectory(),
                 defaultFileName: _GetSaveAsDefaultName(),
-                extension: kSceneFileExtension);
+                extension: kLiveSceneFileExtension);
 
             if (string.IsNullOrEmpty(savePath))
             {
@@ -347,16 +351,18 @@ namespace Lilium.RemoteControl.Scene
                 LocalizationSystem.Translate("DIALOG_SAVE_AS_TITLE"),
                 GetSaveAsDefaultDirectory(),
                 _GetSaveAsDefaultName(),
-                kSceneFileExtension.TrimStart('.'));
+                kLiveSceneFileExtension.TrimStart('.'));
             if (string.IsNullOrEmpty(savePath))
             {
                 Debug.Log("[Debug][RemoteControl] Save As dialog cancelled (Editor)");
                 return false;
             }
             // EditorUtility.SaveFilePanel only auto-completes a single extension, so we add the
-            // compound suffix manually.
-            if (!savePath.EndsWith(kSceneFileExtension, StringComparison.OrdinalIgnoreCase))
-                savePath += kSceneFileExtension;
+            // compound suffix manually. A legacy ".scene.json" name (overwriting an existing file)
+            // is kept as-is; otherwise the new ".live.json" extension is appended.
+            if (!savePath.EndsWith(kLiveSceneFileExtension, StringComparison.OrdinalIgnoreCase)
+                && !savePath.EndsWith(kLegacyFileExtension, StringComparison.OrdinalIgnoreCase))
+                savePath += kLiveSceneFileExtension;
             SaveCurrentDataTo(savePath);
             return true;
         }
@@ -365,7 +371,7 @@ namespace Lilium.RemoteControl.Scene
         private string _GetSaveAsDefaultName()
         {
             if (!string.IsNullOrEmpty(_defaultFileName)) return _defaultFileName;
-            return kSceneFileDefaultName;
+            return kLiveSceneFileDefaultName;
         }
 
         /// <summary>
@@ -422,13 +428,13 @@ namespace Lilium.RemoteControl.Scene
             if (System.IO.File.Exists(fullPath))
             {
                 var json = System.IO.File.ReadAllText(fullPath);
-                ExposedSceneSerializer.SceneFromJson(json, _objectContainer);
+                LiveSceneSerializer.LiveSceneFromJson(json, _objectContainer);
             }
 
             // Cache the post-load state as the baseline for HasUnsavedChanges. The baseline
             // must use the same baseSceneName the next save will write so an unchanged scene
             // does not appear dirty on round-trip.
-            _baselineJson = ExposedSceneSerializer.BuildSceneJson(_objectContainer, SceneManager.GetActiveScene().name);
+            _baselineJson = LiveSceneSerializer.BuildLiveSceneJson(_objectContainer, SceneManager.GetActiveScene().name);
         }
     }
 }

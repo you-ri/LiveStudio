@@ -6,7 +6,7 @@ namespace Lilium.RemoteControl
     /// <summary>
     /// ExposedObject の依存グラフ走査ユーティリティ。シーンのシリアライズとは独立した
     /// オブジェクトグラフ BFS で、Container の default 補足やシーン保存の到達集合構築に使う。
-    /// （旧 ExposedSceneSerializer から分離。シーン読み書きそのものではないため本体側に残す。）
+    /// （旧 LiveSceneSerializer から分離。シーン読み書きそのものではないため本体側に残す。）
     /// </summary>
     public static class ExposedObjectGraph
     {
@@ -126,10 +126,10 @@ namespace Lilium.RemoteControl
             visited.Add(exposed);
 
             // ID付き/ID無しの両方を result に含める。
-            // - hasId: SceneToJson のトップレベル出力対象。
+            // - hasId: LiveSceneToJson のトップレベル出力対象。
             // - hasId無し: 呼び出し側が SetDefault/EnsureDefaultsCaptured で
             //   inline 子オブジェクトの defaults を登録できるように含める（pending delta 判定に必要）。
-            //   SceneToJson 側では hasId チェックで出力はスキップされる。
+            //   LiveSceneToJson 側では hasId チェックで出力はスキップされる。
             result.Add(exposed);
             queue.Enqueue(exposed);
         }

@@ -431,6 +431,12 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: c380008e51e47824fa964133a5c1aa5b, type: 3}
+--- !u!1 &528939529 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 87923789013685897, guid: c380008e51e47824fa964133a5c1aa5b,
+    type: 3}
+  m_PrefabInstance: {fileID: 528939528}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &573488946
 GameObject:
   m_ObjectHideFlags: 0
@@ -487,7 +493,7 @@ MonoBehaviour:
       type: {class: ExposedGameObject, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl}
       data:
         _id: 34b9dd4b-a16b-4c8f-90cf-e84b61fb6ee9
-        _reference: {fileID: 0}
+        _reference: {fileID: 528939529}
     - rid: 7884749757681762306
       type: {class: ExposedGameObject, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl}
       data:

@@ -4,7 +4,7 @@ using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
 using Lilium.RemoteControl;
-using Lilium.RemoteControl.Scene;
+using Lilium.RemoteControl.LiveScene;
 using Newtonsoft.Json.Linq;
 
 namespace Lilium.RemoteControl.Tests
@@ -484,10 +484,10 @@ namespace Lilium.RemoteControl.Tests
 
         #endregion
 
-        #region SceneToJson Integration Tests
+        #region LiveSceneToJson Integration Tests
 
         [Test]
-        public void SceneToJson_DeltaFromDefault_OnlyOutputsDirtyProperties()
+        public void LiveSceneToJson_DeltaFromDefault_OnlyOutputsDirtyProperties()
         {
             // Arrange
             ExposedClass.RegisterFromAttributes<TestDirtyClass>();
@@ -510,7 +510,7 @@ namespace Lilium.RemoteControl.Tests
             prop.Value.SetValue("Changed");
 
             // Act
-            var json = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert
             var jRoot = JObject.Parse(json);
@@ -534,7 +534,7 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void SceneToJson_DeltaFromDefault_ArrayElementPartialDirty()
+        public void LiveSceneToJson_DeltaFromDefault_ArrayElementPartialDirty()
         {
             // Arrange
             ExposedClass.RegisterFromAttributes<TestDirtyClassWithArray>();
@@ -558,7 +558,7 @@ namespace Lilium.RemoteControl.Tests
             prop.Value.SetValue("Changed");
 
             // Act
-            var json = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert
             var jRoot = JObject.Parse(json);
@@ -611,7 +611,7 @@ namespace Lilium.RemoteControl.Tests
             }";
 
             // Act
-            ExposedSceneSerializer.SceneFromJson(json, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(json, _resolver);
 
             // Assert
             Assert.AreEqual("Updated", testObj.name, "name should be updated");
@@ -649,7 +649,7 @@ namespace Lilium.RemoteControl.Tests
             }";
 
             // Act
-            ExposedSceneSerializer.SceneFromJson(json, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(json, _resolver);
 
             // Assert
             Assert.AreEqual("UpdatedNested", testObj.nested.name, "nested.name should be updated");
@@ -766,7 +766,7 @@ namespace Lilium.RemoteControl.Tests
             }";
 
             // Act
-            ExposedSceneSerializer.SceneFromJson(json, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(json, _resolver);
 
             // Assert
             Assert.AreEqual(2, testObj.items.Length, "Array should have 2 elements");
@@ -821,7 +821,7 @@ namespace Lilium.RemoteControl.Tests
                 ]
             }";
 
-            ExposedSceneSerializer.SceneFromJson(json, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(json, _resolver);
 
             // Act - 新規要素をリセット
             var property = exposedObj.FindProperty("items[1].value");
@@ -863,7 +863,7 @@ namespace Lilium.RemoteControl.Tests
                 ]
             }";
 
-            ExposedSceneSerializer.SceneFromJson(json, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(json, _resolver);
             Assert.AreEqual(100, testObj.items[0].value, "Value should be updated to 100");
 
             // Act - 既存要素をリセット
@@ -1252,7 +1252,7 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void ContainerRefListAdd_SceneToJson_DeltaFromDefault_OutputsItems()
+        public void ContainerRefListAdd_LiveSceneToJson_DeltaFromDefault_OutputsItems()
         {
             // Arrange - ObjectContainerの保存フローを再現
             var item1 = new TestDirtyRefItem { name = "Item1", value = 10 };
@@ -1276,7 +1276,7 @@ namespace Lilium.RemoteControl.Tests
             testObj.items.Add(item2);
 
             // DeltaFromDefaultでシリアライズ（SaveCurrentDataと同等）
-            var json = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert - ObjectContainerのitemsが出力される
             var jRoot = JObject.Parse(json);
@@ -1330,10 +1330,10 @@ namespace Lilium.RemoteControl.Tests
             testObj.items.Add(item2);
 
             // DeltaFromDefaultでシリアライズ
-            var json = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
-            // SceneFromJsonでデシリアライズ（読み込み）
-            ExposedSceneSerializer.SceneFromJson(json, _resolver);
+            // LiveSceneFromJsonでデシリアライズ（読み込み）
+            LiveSceneSerializer.LiveSceneFromJson(json, _resolver);
 
             // Assert - item2のExposedObjectはデフォルト値未設定のため dirty ではない
             // hasBaseline廃止後: デフォルト値が設定されていないプロパティはdirtyと見なさない
@@ -1342,7 +1342,7 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void ContainerRefList_SceneToJson_DeltaFromDefault_NonDirtyElementsAreEmptyStubs()
+        public void ContainerRefList_LiveSceneToJson_DeltaFromDefault_NonDirtyElementsAreEmptyStubs()
         {
             // Arrange - 非dirty要素が空stubで出力されることを検証
             var item1 = new TestDirtyRefItem { name = "Item1", value = 10 };
@@ -1367,7 +1367,7 @@ namespace Lilium.RemoteControl.Tests
             new ExposedObject("item-ref-3", itemExposedClass, item3);
             testObj.items.Add(item3);
 
-            var json = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert
             var jRoot = JObject.Parse(json);
@@ -1415,7 +1415,7 @@ namespace Lilium.RemoteControl.Tests
             // Step 1: SetDefault（初期値をベースラインとしてキャプチャ）
             ExposedPropertyUtility.SetDefault(exposedObj);
 
-            // Step 2: SceneFromJson（保存済みJSON: value=42, name="Changed" をロード）
+            // Step 2: LiveSceneFromJson（保存済みJSON: value=42, name="Changed" をロード）
             var loadJson = @"{
                 ""objects"": [
                     {
@@ -1426,14 +1426,14 @@ namespace Lilium.RemoteControl.Tests
                     }
                 ]
             }";
-            ExposedSceneSerializer.SceneFromJson(loadJson, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(loadJson, _resolver);
 
             // ロードされた値が反映されていることを確認
             Assert.AreEqual(42, testObj.value, "value should be loaded from JSON");
             Assert.AreEqual("Changed", testObj.name, "name should be loaded from JSON");
 
-            // Step 3: SceneToJson(DeltaFromDefault) で保存
-            var savedJson = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            // Step 3: LiveSceneToJson(DeltaFromDefault) で保存
+            var savedJson = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert: 出力JSONにvalue=42, name="Changed"が含まれること
             var jRoot = JObject.Parse(savedJson);
@@ -1468,7 +1468,7 @@ namespace Lilium.RemoteControl.Tests
             // Step 1: SetDefault
             ExposedPropertyUtility.SetDefault(exposedObj);
 
-            // Step 2: SceneFromJson（nested.name="Updated" をロード）
+            // Step 2: LiveSceneFromJson（nested.name="Updated" をロード）
             var loadJson = @"{
                 ""objects"": [
                     {
@@ -1481,13 +1481,13 @@ namespace Lilium.RemoteControl.Tests
                     }
                 ]
             }";
-            ExposedSceneSerializer.SceneFromJson(loadJson, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(loadJson, _resolver);
 
             // ロードされた値が反映されていることを確認
             Assert.AreEqual("Updated", testObj.nested.name, "nested.name should be loaded from JSON");
 
-            // Step 3: SceneToJson(DeltaFromDefault)
-            var savedJson = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            // Step 3: LiveSceneToJson(DeltaFromDefault)
+            var savedJson = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert: nested.nameが出力に含まれること
             var jRoot = JObject.Parse(savedJson);
@@ -1525,7 +1525,7 @@ namespace Lilium.RemoteControl.Tests
             // Step 1: SetDefault
             ExposedPropertyUtility.SetDefault(exposedObj);
 
-            // Step 2: SceneFromJson（配列に新しい要素を含むJSONをロード）
+            // Step 2: LiveSceneFromJson（配列に新しい要素を含むJSONをロード）
             var loadJson = @"{
                 ""objects"": [
                     {
@@ -1538,14 +1538,14 @@ namespace Lilium.RemoteControl.Tests
                     }
                 ]
             }";
-            ExposedSceneSerializer.SceneFromJson(loadJson, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(loadJson, _resolver);
 
             // ロードされた値が反映されていることを確認
             Assert.AreEqual(2, testObj.items.Length, "Array should have 2 elements after load");
             Assert.AreEqual("NewItem", testObj.items[1].name, "Second item name should be loaded");
 
-            // Step 3: SceneToJson(DeltaFromDefault)
-            var savedJson = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            // Step 3: LiveSceneToJson(DeltaFromDefault)
+            var savedJson = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert: 配列の変更が出力に含まれること
             var jRoot = JObject.Parse(savedJson);
@@ -1596,7 +1596,7 @@ namespace Lilium.RemoteControl.Tests
             prop.Value.SetValue("Changed");
 
             // Act
-            var json = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert
             var jRoot = JObject.Parse(json);
@@ -1641,7 +1641,7 @@ namespace Lilium.RemoteControl.Tests
             prop.Value.SetValue("Modified");
 
             // Act
-            var json = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert
             var jRoot = JObject.Parse(json);
@@ -1695,7 +1695,7 @@ namespace Lilium.RemoteControl.Tests
             itemsProp.Value.SetValue(testObj.items);
 
             // Act
-            var json = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert
             var jRoot = JObject.Parse(json);
@@ -1749,7 +1749,7 @@ namespace Lilium.RemoteControl.Tests
             }";
 
             // Act
-            ExposedSceneSerializer.SceneFromJson(deltaJson, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(deltaJson, _resolver);
 
             // Assert: items[0] はデフォルト値のまま
             Assert.AreEqual(1, testObj.items[0].id);
@@ -1791,7 +1791,7 @@ namespace Lilium.RemoteControl.Tests
             }";
 
             // Act
-            ExposedSceneSerializer.SceneFromJson(deltaJson, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(deltaJson, _resolver);
 
             // Assert: 元の要素 + 追加要素
             Assert.AreEqual(2, testObj.items.Length, "Array should have 2 elements after adding");
@@ -1823,7 +1823,7 @@ namespace Lilium.RemoteControl.Tests
             intListProp.Value.SetValue(testObj.intList);
 
             // Act
-            var json = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert: プリミティブ配列はデルタ形式ではなく全要素出力
             var jRoot = JObject.Parse(json);
@@ -1863,7 +1863,7 @@ namespace Lilium.RemoteControl.Tests
             prop.Value.SetValue("Modified");
 
             // Act: シリアライズ → デシリアライズ
-            var json = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // 新しいオブジェクトで復元
             var testObj2 = new TestDirtyClassWithArray
@@ -1878,7 +1878,7 @@ namespace Lilium.RemoteControl.Tests
             var exposedObj2 = new ExposedObject("test-delta-array-7", exposedClass, testObj2);
             ExposedPropertyUtility.SetDefault(exposedObj2);
 
-            ExposedSceneSerializer.SceneFromJson(json, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(json, _resolver);
 
             // Assert: items[0] と items[2] はデフォルトのまま、items[1].name は変更後の値
             Assert.AreEqual(1, testObj2.items[0].id);
@@ -2015,7 +2015,7 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void PlainStructWithArray_SceneToJson_RoundTrip()
+        public void PlainStructWithArray_LiveSceneToJson_RoundTrip()
         {
             // Arrange - struct再代入でのシリアライズ→デシリアライズの往復テスト
             ExposedClass.RegisterFromAttributes<TestClassWithPlainStructField>();
@@ -2035,7 +2035,7 @@ namespace Lilium.RemoteControl.Tests
             testObj.structField = newStruct;
 
             // Act - シリアライズ
-            var json = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // 新しいオブジェクトにデシリアライズ
             exposedObj.Unregister();
@@ -2047,7 +2047,7 @@ namespace Lilium.RemoteControl.Tests
             var exposedObj2 = new ExposedObject("test-plain-struct-5", exposedClass, testObj2);
             ExposedPropertyUtility.SetDefault(exposedObj2);
 
-            ExposedSceneSerializer.SceneFromJson(json, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(json, _resolver);
 
             // Assert - 値が復元される
             Assert.AreEqual(0.5f, testObj2.structField.values[0], 0.001f);
@@ -2152,7 +2152,7 @@ namespace Lilium.RemoteControl.Tests
             // Assert - 変更が無いので settings は出力に含まれず、メタデータのみになること
             Assert.IsNull(jObj["settings"], "Unchanged non-ExposedClass persistable property should NOT be included in delta");
             Assert.IsFalse(ExposedPropertySerializer.HasNonMetaProperties(jObj),
-                "delta には非メタプロパティが無く、SceneToJson からは除外されるべき");
+                "delta には非メタプロパティが無く、LiveSceneToJson からは除外されるべき");
         }
 
         [Test]
@@ -2190,10 +2190,10 @@ namespace Lilium.RemoteControl.Tests
 
             ExposedPropertyUtility.SetDefault(exposedObj);
 
-            // Act - settingsを変更してSceneToJsonのDeltaモードで出力
+            // Act - settingsを変更してLiveSceneToJsonのDeltaモードで出力
             testObj.settings = new PlainSerializableSettings { deviceName = "Modified", values = new[] { 4, 5 } };
 
-            var sceneJson = ExposedSceneSerializer.SceneToJson(
+            var sceneJson = LiveSceneSerializer.LiveSceneToJson(
                 new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
             var jRoot = JObject.Parse(sceneJson);
             var jArray = jRoot["objects"] as JArray;
@@ -2225,7 +2225,7 @@ namespace Lilium.RemoteControl.Tests
             testObj.settings = new PlainSerializableSettings { deviceName = "Updated", values = new[] { 300 } };
 
             // Act - シリアライズ→デシリアライズ
-            var sceneJson = ExposedSceneSerializer.SceneToJson(
+            var sceneJson = LiveSceneSerializer.LiveSceneToJson(
                 new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // 新しいオブジェクトでデシリアライズ
@@ -2238,7 +2238,7 @@ namespace Lilium.RemoteControl.Tests
             var exposedObj2 = new ExposedObject("test-plain-serializable-3", exposedClass, testObj2);
             ExposedPropertyUtility.SetDefault(exposedObj2);
 
-            ExposedSceneSerializer.SceneFromJson(sceneJson, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(sceneJson, _resolver);
 
             // Assert - 値が復元される
             Assert.AreEqual("Updated", testObj2.settings.deviceName);
@@ -2285,7 +2285,7 @@ namespace Lilium.RemoteControl.Tests
                 Assert.AreEqual(0, testObj.items.Length, "初期状態: 配列は空");
 
                 // Save delta (配列が空 → デルタには何もない)
-                var deltaJson1 = ExposedSceneSerializer.SceneToJson(
+                var deltaJson1 = LiveSceneSerializer.LiveSceneToJson(
                     new List<ExposedObject>(ExposedObjectRegistry.instances),
                     _resolver, SerializeMode.Delta);
 
@@ -2299,12 +2299,12 @@ namespace Lilium.RemoteControl.Tests
                         ]
                     }]
                 }";
-                ExposedSceneSerializer.SceneFromJson(loadJson, _resolver);
+                LiveSceneSerializer.LiveSceneFromJson(loadJson, _resolver);
                 Assert.AreEqual(1, testObj.items.Length, "Load後: 配列に1要素追加");
                 Assert.AreEqual("added", testObj.items[0].name);
 
                 // Save delta → @op:new が含まれるべき
-                var savedJson1 = ExposedSceneSerializer.SceneToJson(
+                var savedJson1 = LiveSceneSerializer.LiveSceneToJson(
                     new List<ExposedObject>(ExposedObjectRegistry.instances),
                     _resolver, SerializeMode.Delta);
                 var jRoot1 = JObject.Parse(savedJson1);
@@ -2355,10 +2355,10 @@ namespace Lilium.RemoteControl.Tests
                         ]
                     }]
                 }";
-                ExposedSceneSerializer.SceneFromJson(loadJson, _resolver);
+                LiveSceneSerializer.LiveSceneFromJson(loadJson, _resolver);
 
                 // Save
-                var saved1 = ExposedSceneSerializer.SceneToJson(
+                var saved1 = LiveSceneSerializer.LiveSceneToJson(
                     new List<ExposedObject>(ExposedObjectRegistry.instances),
                     _resolver, SerializeMode.Delta);
                 var items1 = (JObject.Parse(saved1)["objects"] as JArray)?[0]?["items"] as JArray;
@@ -2373,10 +2373,10 @@ namespace Lilium.RemoteControl.Tests
                 ExposedPropertyUtility.SetDefault(exposedObj);
 
                 // Load same delta again
-                ExposedSceneSerializer.SceneFromJson(loadJson, _resolver);
+                LiveSceneSerializer.LiveSceneFromJson(loadJson, _resolver);
 
                 // Save
-                var saved2 = ExposedSceneSerializer.SceneToJson(
+                var saved2 = LiveSceneSerializer.LiveSceneToJson(
                     new List<ExposedObject>(ExposedObjectRegistry.instances),
                     _resolver, SerializeMode.Delta);
                 var items2 = (JObject.Parse(saved2)["objects"] as JArray)?[0]?["items"] as JArray;

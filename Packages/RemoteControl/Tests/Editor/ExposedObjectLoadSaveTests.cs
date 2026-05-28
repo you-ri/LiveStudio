@@ -6,7 +6,7 @@ using NUnit.Framework;
 using UnityEngine;
 using Newtonsoft.Json.Linq;
 using Lilium.RemoteControl;
-using Lilium.RemoteControl.Scene;
+using Lilium.RemoteControl.LiveScene;
 
 namespace Lilium.RemoteControl.Tests
 {
@@ -397,12 +397,12 @@ namespace Lilium.RemoteControl.Tests
             proxy.name = "Camera"; // name を default から変えて dirty にする
 
             // Save
-            var json1 = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json1 = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
             Assert.IsNotEmpty(json1);
 
             // 通常プロパティ name が dirty 値で含まれる
             Assert.IsTrue(json1.Contains("\"name\": \"Camera\"") || json1.Contains("\"name\":\"Camera\""),
-                "SceneToJson の出力に name プロパティが含まれるべき (dirty時)");
+                "LiveSceneToJson の出力に name プロパティが含まれるべき (dirty時)");
 
             // クリア
             var toRemove = ExposedObjectRegistry.instances.ToList();
@@ -412,7 +412,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedPropertyUtility.SetDefault(newProxy.exposedObject);
 
             // Load
-            ExposedSceneSerializer.SceneFromJson(json1, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(json1, _resolver);
 
             Assert.AreEqual("Camera", newProxy.name, "Load 後に name プロパティが復元されるべき");
             Assert.AreEqual(100, newProxy.value, "値も復元されるべき");
@@ -445,7 +445,7 @@ namespace Lilium.RemoteControl.Tests
             target3.value = 300;
 
             // シリアライズ（Save相当）
-            var json1 = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json1 = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
             Assert.IsNotEmpty(json1);
 
             // 全インスタンスをクリア（Load前状態のシミュレーション）
@@ -458,7 +458,7 @@ namespace Lilium.RemoteControl.Tests
             var newTarget3 = new TestProxy(id3);
 
             // デシリアライズ（Load相当）
-            ExposedSceneSerializer.SceneFromJson(json1, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(json1, _resolver);
 
             // デフォルト値を再キャプチャ
             if (newTarget1.exposedObject != null) ExposedPropertyUtility.SetDefault(newTarget1.exposedObject);
@@ -466,7 +466,7 @@ namespace Lilium.RemoteControl.Tests
             if (newTarget3.exposedObject != null) ExposedPropertyUtility.SetDefault(newTarget3.exposedObject);
 
             // 再シリアライズ（Save相当）
-            var json2 = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json2 = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert: 各IDのExposedObjectが正しいIDを保持している
             var obj1 = ExposedObjectRegistry.FindById(id1);
@@ -506,7 +506,7 @@ namespace Lilium.RemoteControl.Tests
 
         #endregion
 
-        #region SceneToJson includeStatic option
+        #region LiveSceneToJson includeStatic option
 
         [ExposedClass("TestStaticClass", Icon = "test")]
         public static class TestStaticClass
@@ -516,7 +516,7 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void SceneToJson_ExcludeNone_ContainsStaticObject()
+        public void LiveSceneToJson_ExcludeNone_ContainsStaticObject()
         {
             // Arrange
             var exposedClass = ExposedClass.RegisterClass(typeof(TestStaticClass));
@@ -527,7 +527,7 @@ namespace Lilium.RemoteControl.Tests
             var proxy = new TestProxy("instance-test");
 
             // Act
-            var json = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Snapshot, ExcludeFilter.None);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Snapshot, ExcludeFilter.None);
 
             // Assert
             Assert.IsTrue(json.Contains("TestStaticClass"), "staticオブジェクトがJSON出力に含まれるべき");
@@ -537,7 +537,7 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void SceneToJson_ExcludeStatic_ExcludesStaticObject()
+        public void LiveSceneToJson_ExcludeStatic_ExcludesStaticObject()
         {
             // Arrange
             var exposedClass = ExposedClass.RegisterClass(typeof(TestStaticClass));
@@ -548,7 +548,7 @@ namespace Lilium.RemoteControl.Tests
             var proxy = new TestProxy("instance-test");
 
             // Act
-            var json = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Snapshot, ExcludeFilter.Static);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Snapshot, ExcludeFilter.Static);
 
             // Assert
             Assert.IsFalse(json.Contains("TestStaticClass"), "staticオブジェクトはJSON出力から除外されるべき");
@@ -558,7 +558,7 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void SceneToJson_DefaultExclude_ContainsStaticObject()
+        public void LiveSceneToJson_DefaultExclude_ContainsStaticObject()
         {
             // Arrange
             var exposedClass = ExposedClass.RegisterClass(typeof(TestStaticClass));
@@ -566,7 +566,7 @@ namespace Lilium.RemoteControl.Tests
             var staticObj = new ExposedObject("static-test", exposedClass, null);
 
             // Act: デフォルト（exclude省略 = ExcludeFilter.None）
-            var json = ExposedSceneSerializer.SceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver);
 
             // Assert
             Assert.IsTrue(json.Contains("TestStaticClass"), "デフォルトではstaticオブジェクトがJSON出力に含まれるべき");
@@ -606,12 +606,12 @@ namespace Lilium.RemoteControl.Tests
         }
 
         /// <summary>
-        /// SceneFromJsonがExposedGameObjectのcomponents経由で
+        /// LiveSceneFromJsonがExposedGameObjectのcomponents経由で
         /// インラインScriptableObjectのプロパティを正しく適用するか検証。
         /// studio.jsonのPlay→Load→Stop→Saveで objects:[] になる問題の根本原因テスト。
         /// </summary>
         [Test]
-        public void SceneFromJson_InlineScriptableObject_AppliesValues()
+        public void LiveSceneFromJson_InlineScriptableObject_AppliesValues()
         {
             ExposedClass.RegisterFromAttributes<TestConfigSO>();
             ExposedClass.RegisterFromAttributes<TestAvatarComponent>();
@@ -656,15 +656,15 @@ namespace Lilium.RemoteControl.Tests
                 }}";
 
                 // Act
-                ExposedSceneSerializer.SceneFromJson(loadJson, _resolver);
+                LiveSceneSerializer.LiveSceneFromJson(loadJson, _resolver);
 
                 // Assert: コンポーネントのプロパティが更新されている
                 Assert.AreEqual(5, avatarComp.level,
-                    "SceneFromJsonでcomponent直接プロパティが適用されるべき");
+                    "LiveSceneFromJsonでcomponent直接プロパティが適用されるべき");
                 Assert.AreEqual(0.25f, configSO.blendTime, 0.001f,
-                    "SceneFromJsonでインラインSO内のプロパティが適用されるべき");
+                    "LiveSceneFromJsonでインラインSO内のプロパティが適用されるべき");
                 Assert.AreEqual("modified", configSO.configName,
-                    "SceneFromJsonでインラインSO内の文字列プロパティが適用されるべき");
+                    "LiveSceneFromJsonでインラインSO内の文字列プロパティが適用されるべき");
             }
             finally
             {
@@ -674,12 +674,12 @@ namespace Lilium.RemoteControl.Tests
         }
 
         /// <summary>
-        /// IDが異なりReplaceIdが行われるケースで、SceneFromJsonが
+        /// IDが異なりReplaceIdが行われるケースで、LiveSceneFromJsonが
         /// components経由のインラインScriptableObjectプロパティを正しく適用するか検証。
         /// Play mode再入時のGUID再生成シナリオ。
         /// </summary>
         [Test]
-        public void SceneFromJson_AfterReplaceId_InlineScriptableObject_AppliesValues()
+        public void LiveSceneFromJson_AfterReplaceId_InlineScriptableObject_AppliesValues()
         {
             ExposedClass.RegisterFromAttributes<TestConfigSO>();
             ExposedClass.RegisterFromAttributes<TestAvatarComponent>();
@@ -724,7 +724,7 @@ namespace Lilium.RemoteControl.Tests
                 }}";
 
                 // Act
-                ExposedSceneSerializer.SceneFromJson(loadJson, _resolver);
+                LiveSceneSerializer.LiveSceneFromJson(loadJson, _resolver);
 
                 // Assert: ReplaceIdで解決された
                 var resolved = ExposedObjectRegistry.FindById(savedId);
@@ -732,11 +732,11 @@ namespace Lilium.RemoteControl.Tests
 
                 // Assert: 値が適用されている
                 Assert.AreEqual(5, avatarComp.level,
-                    "ReplaceId後のSceneFromJsonでlevelが適用されるべき");
+                    "ReplaceId後のLiveSceneFromJsonでlevelが適用されるべき");
                 Assert.AreEqual(0.25f, configSO.blendTime, 0.001f,
-                    "ReplaceId後のSceneFromJsonでインラインSO内blendTimeが適用されるべき");
+                    "ReplaceId後のLiveSceneFromJsonでインラインSO内blendTimeが適用されるべき");
                 Assert.AreEqual("modified", configSO.configName,
-                    "ReplaceId後のSceneFromJsonでインラインSO内configNameが適用されるべき");
+                    "ReplaceId後のLiveSceneFromJsonでインラインSO内configNameが適用されるべき");
             }
             finally
             {
@@ -750,7 +750,7 @@ namespace Lilium.RemoteControl.Tests
         /// studio.jsonの実際のフォーマットに合わせたテスト。
         /// </summary>
         [Test]
-        public void SceneFromJson_WithEmptyComponentInJson_AppliesValues()
+        public void LiveSceneFromJson_WithEmptyComponentInJson_AppliesValues()
         {
             ExposedClass.RegisterFromAttributes<TestConfigSO>();
             ExposedClass.RegisterFromAttributes<TestAvatarComponent>();
@@ -800,7 +800,7 @@ namespace Lilium.RemoteControl.Tests
                 }}";
 
                 // Act
-                ExposedSceneSerializer.SceneFromJson(loadJson, _resolver);
+                LiveSceneSerializer.LiveSceneFromJson(loadJson, _resolver);
 
                 // Assert
                 Assert.AreEqual(5, avatarComp.level,
@@ -817,11 +817,11 @@ namespace Lilium.RemoteControl.Tests
 
         /// <summary>
         /// ExposedObjectContainerをリゾルバーとして使用するケースで、
-        /// ReplaceId後のSceneFromJsonが正しく値を適用するか検証。
+        /// ReplaceId後のLiveSceneFromJsonが正しく値を適用するか検証。
         /// 実際のRemoteControlProviderと同じフロー。
         /// </summary>
         [Test]
-        public void SceneFromJson_WithContainer_AfterReplaceId_AppliesValues()
+        public void LiveSceneFromJson_WithContainer_AfterReplaceId_AppliesValues()
         {
             ExposedClass.RegisterFromAttributes<TestConfigSO>();
             ExposedClass.RegisterFromAttributes<TestAvatarComponent>();
@@ -870,16 +870,16 @@ namespace Lilium.RemoteControl.Tests
                     ]
                 }}";
 
-                // Act: ContainerをリゾルバーとしてSceneFromJson
-                ExposedSceneSerializer.SceneFromJson(loadJson, container);
+                // Act: ContainerをリゾルバーとしてLiveSceneFromJson
+                LiveSceneSerializer.LiveSceneFromJson(loadJson, container);
 
                 // Assert: 値が適用されている
                 Assert.AreEqual(5, avatarComp.level,
-                    "Container経由のSceneFromJsonでlevelが適用されるべき");
+                    "Container経由のLiveSceneFromJsonでlevelが適用されるべき");
                 Assert.AreEqual(0.25f, configSO.blendTime, 0.001f,
-                    "Container経由のSceneFromJsonでインラインSO内blendTimeが適用されるべき");
+                    "Container経由のLiveSceneFromJsonでインラインSO内blendTimeが適用されるべき");
                 Assert.AreEqual("modified", configSO.configName,
-                    "Container経由のSceneFromJsonでインラインSO内configNameが適用されるべき");
+                    "Container経由のLiveSceneFromJsonでインラインSO内configNameが適用されるべき");
             }
             finally
             {
@@ -931,7 +931,7 @@ namespace Lilium.RemoteControl.Tests
                 configSO.configName = "modified";
                 avatarComp.level = 5;
 
-                var savedJson = ExposedSceneSerializer.SceneToJson(
+                var savedJson = LiveSceneSerializer.LiveSceneToJson(
                     initialResolved,
                     _resolver, SerializeMode.Delta);
 
@@ -954,8 +954,8 @@ namespace Lilium.RemoteControl.Tests
                 foreach (var obj in reResolved)
                     ExposedPropertyUtility.SetDefault(obj);
 
-                // Act: LoadCurrentData相当 - SceneFromJsonで読み込み
-                ExposedSceneSerializer.SceneFromJson(savedJson, _resolver);
+                // Act: LoadCurrentData相当 - LiveSceneFromJsonで読み込み
+                LiveSceneSerializer.LiveSceneFromJson(savedJson, _resolver);
 
                 // Assert: 値が復元されている
                 Assert.AreEqual(5, avatarComp.level, "Load後にlevelが復元されるべき");
@@ -963,7 +963,7 @@ namespace Lilium.RemoteControl.Tests
                 Assert.AreEqual("modified", configSO.configName, "Load後にconfigNameが復元されるべき");
 
                 // Act: SaveCurrentData相当 - Delta保存
-                var resavedJson = ExposedSceneSerializer.SceneToJson(
+                var resavedJson = LiveSceneSerializer.LiveSceneToJson(
                     reResolved,
                     _resolver, SerializeMode.Delta);
 
@@ -1039,11 +1039,11 @@ namespace Lilium.RemoteControl.Tests
                         }}]
                     }}]
                 }}";
-                ExposedSceneSerializer.SceneFromJson(savedJson, _resolver);
+                LiveSceneSerializer.LiveSceneFromJson(savedJson, _resolver);
                 Assert.AreEqual(0.8f, configSO.blendTime, 0.001f, "1回目Load後にblendTimeが適用されるべき");
 
                 // 3. Save: Delta保存
-                var json1 = ExposedSceneSerializer.SceneToJson(
+                var json1 = LiveSceneSerializer.LiveSceneToJson(
                     resolved1,
                     _resolver, SerializeMode.Delta);
                 Assert.IsTrue(json1.Contains("\"blendTime\""),
@@ -1067,11 +1067,11 @@ namespace Lilium.RemoteControl.Tests
                     ExposedPropertyUtility.SetDefault(obj);
 
                 // 6. Load: 1回目で保存したJSONを適用
-                ExposedSceneSerializer.SceneFromJson(json1, _resolver);
+                LiveSceneSerializer.LiveSceneFromJson(json1, _resolver);
                 Assert.AreEqual(0.8f, configSO.blendTime, 0.001f, "2回目Load後にblendTimeが適用されるべき");
 
                 // 7. Save: Delta保存（2回目）
-                var json2 = ExposedSceneSerializer.SceneToJson(
+                var json2 = LiveSceneSerializer.LiveSceneToJson(
                     resolved2,
                     _resolver, SerializeMode.Delta);
 
@@ -1096,7 +1096,7 @@ namespace Lilium.RemoteControl.Tests
         #region Delta保存: ReplaceId後のデフォルト保持
 
         /// <summary>
-        /// SceneFromJsonでReplaceIdが行われた後、Delta保存でオブジェクトが消えないことを確認。
+        /// LiveSceneFromJsonでReplaceIdが行われた後、Delta保存でオブジェクトが消えないことを確認。
         /// ExposedAsset削除後のPlay→Load→Stop→Save問題の再現テスト。
         /// </summary>
         [Test]
@@ -1112,7 +1112,7 @@ namespace Lilium.RemoteControl.Tests
 
             // 値を変更してDelta JSON（保存済みデータ）を作成
             proxy.value = 100;
-            var savedJson = ExposedSceneSerializer.SceneToJson(
+            var savedJson = LiveSceneSerializer.LiveSceneToJson(
                 new List<ExposedObject>(ExposedObjectRegistry.instances),
                 _resolver, SerializeMode.Delta);
             Assert.IsTrue(savedJson.Contains("\"value\": 100"), "保存JSONに変更値が含まれるべき");
@@ -1130,9 +1130,9 @@ namespace Lilium.RemoteControl.Tests
             // 3. デフォルトをキャプチャ（Container.Initialize相当）
             ExposedPropertyUtility.SetDefault(newExposedObject);
 
-            // Act: LoadCurrentData相当 - SceneFromJsonで読み込み
+            // Act: LoadCurrentData相当 - LiveSceneFromJsonで読み込み
             // _TryResolveByTypeNameでReplaceIdが行われるはず
-            ExposedSceneSerializer.SceneFromJson(savedJson, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(savedJson, _resolver);
 
             // Assert: ReplaceId後のExposedObjectが見つかる
             var resolved = ExposedObjectRegistry.FindById("original-guid-aaa");
@@ -1140,7 +1140,7 @@ namespace Lilium.RemoteControl.Tests
             Assert.AreEqual(100, ((TestProxy)resolved.target).value, "Load後に保存値が復元されるべき");
 
             // Act: SaveCurrentData相当 - Delta保存
-            var resavedJson = ExposedSceneSerializer.SceneToJson(
+            var resavedJson = LiveSceneSerializer.LiveSceneToJson(
                 new List<ExposedObject>(ExposedObjectRegistry.instances),
                 _resolver, SerializeMode.Delta);
 
@@ -1164,7 +1164,7 @@ namespace Lilium.RemoteControl.Tests
 
             // デフォルトと異なる値で保存JSONを作成
             proxy.value = 42;
-            var savedJson = ExposedSceneSerializer.SceneToJson(
+            var savedJson = LiveSceneSerializer.LiveSceneToJson(
                 new List<ExposedObject>(ExposedObjectRegistry.instances),
                 _resolver, SerializeMode.Delta);
 
@@ -1176,14 +1176,14 @@ namespace Lilium.RemoteControl.Tests
             ExposedPropertyUtility.SetDefault(newProxy.exposedObject);
 
             // Act: Load
-            ExposedSceneSerializer.SceneFromJson(savedJson, _resolver);
+            LiveSceneSerializer.LiveSceneFromJson(savedJson, _resolver);
 
             // Assert: 値が復元
             var resolved = ExposedObjectRegistry.FindById("original-guid-ccc");
             Assert.IsNotNull(resolved, "ReplaceId後にsaved IDで検索できるべき");
 
             // Act: Delta保存
-            var resavedJson = ExposedSceneSerializer.SceneToJson(
+            var resavedJson = LiveSceneSerializer.LiveSceneToJson(
                 new List<ExposedObject>(ExposedObjectRegistry.instances),
                 _resolver, SerializeMode.Delta);
 

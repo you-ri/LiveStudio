@@ -7,7 +7,7 @@
         "Lilium.RemoteControl.Reflection",
         "Lilium.RemoteControl.UI",
         "Lilium.RemoteControl.UI.Editor",
-        "Lilium.RemoteControl.Scene",
+        "Lilium.RemoteControl.LiveScene",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],
