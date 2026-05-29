@@ -161,6 +161,79 @@ public class ReadmeEditor : UnityEditor.Editor
 
             GUILayout.Space(k_Space);
         }
+
+        DrawOptionalPackages(readme, lang);
+    }
+
+    void OnEnable()
+    {
+        OptionalPackageInstaller.RefreshInstalled(Repaint);
+    }
+
+    static string Localize(string lang, string en, string ja, string zh)
+    {
+        switch (lang)
+        {
+            case "ja": return ja;
+            case "zh-CN": return zh;
+            default: return en;
+        }
+    }
+
+    void DrawOptionalPackages(Readme readme, string lang)
+    {
+        var packages = readme.optionalPackages;
+        if (packages == null || packages.Length == 0)
+            return;
+
+        GUILayout.Label(Localize(lang, "Optional Packages", "オプションパッケージ", "可选软件包"), HeadingStyle);
+
+        EditorGUI.BeginDisabledGroup(OptionalPackageInstaller.IsBusy);
+
+        var known = OptionalPackageInstaller.IsInstalledKnown;
+        var missing = new List<Readme.OptionalPackage>();
+        foreach (var pkg in packages)
+        {
+            if (pkg == null || string.IsNullOrEmpty(pkg.id))
+                continue;
+
+            GUILayout.BeginHorizontal();
+            var label = string.IsNullOrEmpty(pkg.displayName) ? pkg.id : pkg.displayName;
+            if (!string.IsNullOrEmpty(pkg.version))
+                label += " " + pkg.version;
+            GUILayout.Label(label, BodyStyle);
+            GUILayout.FlexibleSpace();
+
+            if (!known)
+            {
+                GUILayout.Label(Localize(lang, "Checking...", "確認中...", "检查中..."), BodyStyle);
+            }
+            else if (OptionalPackageInstaller.IsInstalled(pkg.id))
+            {
+                GUILayout.Label(Localize(lang, "Installed", "インストール済み", "已安装"), BodyStyle);
+            }
+            else
+            {
+                missing.Add(pkg);
+                if (GUILayout.Button(Localize(lang, "Install", "インストール", "安装"), ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    OptionalPackageInstaller.Install(new[] { pkg }, Repaint);
+                }
+            }
+            GUILayout.EndHorizontal();
+        }
+
+        if (known && missing.Count > 0)
+        {
+            GUILayout.Space(4f);
+            if (GUILayout.Button(Localize(lang, "Install All", "すべてインストール", "全部安装"), ButtonStyle, GUILayout.ExpandWidth(false)))
+            {
+                OptionalPackageInstaller.Install(missing.ToArray(), Repaint);
+            }
+        }
+
+        EditorGUI.EndDisabledGroup();
+        GUILayout.Space(k_Space);
     }
 
     bool m_Initialized;

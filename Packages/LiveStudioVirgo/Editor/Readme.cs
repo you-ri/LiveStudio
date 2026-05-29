@@ -9,6 +9,7 @@ namespace Lilium.LiveStudio.Virgo.Editor
         public string title;
         public TitleTranslation[] titleTranslations;
         public Section[] sections;
+        public OptionalPackage[] optionalPackages;
 
         [Serializable]
         public class TitleTranslation
@@ -34,6 +35,20 @@ namespace Lilium.LiveStudio.Virgo.Editor
             public string text;
             public string linkText;
             public string buttonText;
+        }
+
+        // An optional UPM package surfaced in the readme with an install button. The package is
+        // pulled from a scoped registry (OpenUPM by default); the registry and its scope are
+        // ensured in the project manifest before the package is added.
+        [Serializable]
+        public class OptionalPackage
+        {
+            public string id;
+            public string version;
+            public string displayName;
+            public string registryName;
+            public string registryUrl;
+            public string scope;
         }
     }
 }
