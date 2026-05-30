@@ -160,6 +160,79 @@ public class ReadmeEditor : UnityEditor.Editor
 
             GUILayout.Space(k_Space);
         }
+
+        DrawOptionalPackages(readme, lang);
+    }
+
+    void OnEnable()
+    {
+        OptionalPackageInstaller.RefreshInstalled(Repaint);
+    }
+
+    static string Localize(string lang, string en, string ja, string zh)
+    {
+        switch (lang)
+        {
+            case "ja": return ja;
+            case "zh-CN": return zh;
+            default: return en;
+        }
+    }
+
+    void DrawOptionalPackages(Readme readme, string lang)
+    {
+        var packages = readme.optionalPackages;
+        if (packages == null || packages.Length == 0)
+            return;
+
+        GUILayout.Label(Localize(lang, "Required Packages", "必要なパッケージ", "必需软件包"), HeadingStyle);
+
+        EditorGUI.BeginDisabledGroup(OptionalPackageInstaller.IsBusy);
+
+        var known = OptionalPackageInstaller.IsInstalledKnown;
+        var missing = new List<Readme.OptionalPackage>();
+        foreach (var pkg in packages)
+        {
+            if (pkg == null || string.IsNullOrEmpty(pkg.id))
+                continue;
+
+            GUILayout.BeginHorizontal();
+            var label = string.IsNullOrEmpty(pkg.displayName) ? pkg.id : pkg.displayName;
+            if (!string.IsNullOrEmpty(pkg.version))
+                label += " " + pkg.version;
+            GUILayout.Label(label, BodyStyle);
+            GUILayout.FlexibleSpace();
+
+            if (!known)
+            {
+                GUILayout.Label(Localize(lang, "Checking...", "確認中...", "检查中..."), BodyStyle);
+            }
+            else if (OptionalPackageInstaller.IsInstalled(pkg.id))
+            {
+                GUILayout.Label(Localize(lang, "Installed", "インストール済み", "已安装"), BodyStyle);
+            }
+            else
+            {
+                missing.Add(pkg);
+                if (GUILayout.Button(Localize(lang, "Install", "インストール", "安装"), ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    OptionalPackageInstaller.Install(new[] { pkg }, Repaint);
+                }
+            }
+            GUILayout.EndHorizontal();
+        }
+
+        if (known && missing.Count > 0)
+        {
+            GUILayout.Space(4f);
+            if (GUILayout.Button(Localize(lang, "Install All", "すべてインストール", "全部安装"), ButtonStyle, GUILayout.ExpandWidth(false)))
+            {
+                OptionalPackageInstaller.Install(missing.ToArray(), Repaint);
+            }
+        }
+
+        EditorGUI.EndDisabledGroup();
+        GUILayout.Space(k_Space);
     }
 
     bool m_Initialized;
@@ -275,7 +348,11 @@ public class ReadmeEditor : UnityEditor.Editor
         switch (actionId)
         {
             case "openVRChatAvatarTransfer":
-                Lilium.VRChatAvatarTransfer.Editor.VRChatAvatarTransferWindow.Open();
+                // Invoked via menu rather than a direct type reference: this editor lives in the
+                // un-gated Installer assembly so the readme renders even while UniVRM is missing,
+                // and that assembly intentionally does not reference the (VRMC_VRM10-gated) window.
+                if (!EditorApplication.ExecuteMenuItem("Tools/VRChat Avatar Transfer/Transfer"))
+                    Debug.LogWarning("[Readme] Could not open the VRChat Avatar Transfer window. Install UniVRM first.");
                 break;
             default:
                 Debug.LogWarning($"[Readme] Unknown buttonAction: '{actionId}'");

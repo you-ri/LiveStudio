@@ -182,6 +182,12 @@ MonoBehaviour:
     registryName: npmjs
     registryUrl: https://registry.npmjs.com
     scope: jp.keijiro
+  - id: jp.keijiro.minis
+    version: 1.3.2
+    displayName: Minis
+    registryName: npmjs
+    registryUrl: https://registry.npmjs.com
+    scope: jp.keijiro
   - id: com.hecomi.uosc
     version: 2.2.0
     displayName: uOSC
