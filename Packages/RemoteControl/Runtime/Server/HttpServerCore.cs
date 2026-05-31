@@ -19,6 +19,7 @@ namespace Lilium.RemoteControl.Server
         private bool _isDisposed = false;
         private readonly int _port;
         private readonly bool _enableCors;
+        private readonly bool _allowExternalConnections;
 
         // CORS header constants for optimization
         private const string kCorsOrigin = "*";
@@ -35,10 +36,11 @@ namespace Lilium.RemoteControl.Server
 
         private static readonly ProfilerMarker _processRequestMarker = new ProfilerMarker("HttpServerCore.ProcessRequest");
 
-        public HttpServerCore(int port = 3002, bool enableCors = true)
+        public HttpServerCore(int port = 3002, bool enableCors = true, bool allowExternalConnections = false)
         {
             _port = port;
             _enableCors = enableCors;
+            _allowExternalConnections = allowExternalConnections;
         }
 
         /// <summary>
@@ -80,10 +82,20 @@ namespace Lilium.RemoteControl.Server
             {
                 _listener = new HttpListener();
 
-                // localhostがIPv6(::1)に解決される環境でも
-                // 127.0.0.1(IPv4)でアクセスできるよう両方登録する
-                _listener.Prefixes.Add($"http://localhost:{_port}/");
-                _listener.Prefixes.Add($"http://127.0.0.1:{_port}/");
+                if (_allowExternalConnections)
+                {
+                    // 全インターフェースで待ち受け、LAN/外部デバイスからの接続を許可する。
+                    // Windows では非管理者の場合 netsh による URL ACL 予約が必要
+                    // (例: netsh http add urlacl url=http://+:{port}/ user=Everyone)。
+                    _listener.Prefixes.Add($"http://+:{_port}/");
+                }
+                else
+                {
+                    // localhostがIPv6(::1)に解決される環境でも
+                    // 127.0.0.1(IPv4)でアクセスできるよう両方登録する
+                    _listener.Prefixes.Add($"http://localhost:{_port}/");
+                    _listener.Prefixes.Add($"http://127.0.0.1:{_port}/");
+                }
 
                 _cancellationTokenSource = new CancellationTokenSource();
 
@@ -97,7 +109,17 @@ namespace Lilium.RemoteControl.Server
             catch (HttpListenerException ex)
             {
                 _isRunning = false;
-                Debug.LogError($"[RemoteControl] Port {_port} is already in use.");
+                // ErrorCode 5 = ERROR_ACCESS_DENIED。http://+:port/ の予約権限が無い場合に発生する。
+                if (_allowExternalConnections && ex.ErrorCode == 5)
+                {
+                    Debug.LogError($"[RemoteControl] Access denied binding http://+:{_port}/ for external connections. " +
+                                   $"Run as administrator, or reserve the URL: " +
+                                   $"netsh http add urlacl url=http://+:{_port}/ user=Everyone");
+                }
+                else
+                {
+                    Debug.LogError($"[RemoteControl] Port {_port} is already in use.");
+                }
                 OnServerError?.Invoke(ex);
                 CloseServer();
             }

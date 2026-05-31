@@ -11,9 +11,10 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f6f542fcfe240094a89537ffcda86687, type: 3}
   m_Name: ServerConfig LiveStudio
-  m_EditorClassIdentifier:
+  m_EditorClassIdentifier: 
   port: 3003
   enableCors: 1
+  allowExternalConnections: 1
   runningInEditor: 0
-  defaultFileName:
+  defaultFileName: 
   autoSaveOnQuit: 0

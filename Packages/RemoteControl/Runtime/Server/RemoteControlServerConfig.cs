@@ -21,6 +21,11 @@ namespace Lilium.RemoteControl.Server
         [Tooltip("Enable CORS for cross-origin requests")]
         public bool enableCors = true;
 
+        [Tooltip("Allow connections from other devices on the network (binds to all interfaces). " +
+                 "When off, the server only accepts loopback (localhost) connections. " +
+                 "On Windows this may require running as administrator or reserving the URL via netsh.")]
+        public bool allowExternalConnections = false;
+
         [Tooltip("Keep this server running in Unity Editor")]
         public bool runningInEditor = false;
 
@@ -44,7 +49,7 @@ namespace Lilium.RemoteControl.Server
             }
 
             var context = new RemoteControlContext($"port_{port}", container);
-            var server = new RemoteControlServerCore(port, enableCors, context);
+            var server = new RemoteControlServerCore(port, enableCors, context, allowExternalConnections);
             server.OnServerError += ex => Debug.LogError($"[RemoteControl] Server on port {port} error: {ex.Message}");
 
             RemoteControlServerManager.AddServer(port, server, context);

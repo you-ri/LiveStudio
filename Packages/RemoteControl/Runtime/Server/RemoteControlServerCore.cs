@@ -23,7 +23,8 @@ namespace Lilium.RemoteControl.Server
 
 
 
-        public RemoteControlServerCore(int port, bool enableCors, RemoteControlContext context) : base(port, enableCors)
+        public RemoteControlServerCore(int port, bool enableCors, RemoteControlContext context, bool allowExternalConnections = false)
+            : base(port, enableCors, allowExternalConnections)
         {
             this.context = context ?? throw new ArgumentNullException(nameof(context));
             InitializeRestApi();
