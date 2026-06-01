@@ -1,3 +1,4 @@
+// Copyright (c) You-Ri, 2026
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -7,7 +8,7 @@ using System.Threading.Tasks;
 using Newtonsoft.Json;
 using UnityEngine;
 
-namespace Lilium.RemoteControl.Core
+namespace Lilium.RemoteControl
 {
     /// <summary>
     /// クライアント別イベントキューシステム
@@ -18,17 +19,20 @@ namespace Lilium.RemoteControl.Core
     {
         private readonly ConcurrentDictionary<string, ClientEventQueue> _clientQueues;
         private readonly ConcurrentDictionary<string, DateTime> _clientActivity;
-        private readonly object _lockObject = new object();
+        // id 採番と各クライアントキューへの enqueue を直列化し、id 順 == enqueue 順を保証する。
+        // これがないと、複数スレッドが採番後に enqueue 順が逆転し、消費側カーソルが
+        // 未到着の小さい id を飛び越えてしまい、その id が永久に配信されなくなる。
+        private readonly object _addLock = new object();
         private long _nextEventId = 1;
         private readonly int _maxEventsPerClient = 1000;
         private readonly TimeSpan _clientTimeout = TimeSpan.FromMinutes(10);
         private CancellationTokenSource _cleanupCts;
-        
+
         public EventQueue()
         {
             _clientQueues = new ConcurrentDictionary<string, ClientEventQueue>();
             _clientActivity = new ConcurrentDictionary<string, DateTime>();
-            
+
             // 定期的な古いクライアントのクリーンアップ
             StartCleanupTask();
         }
@@ -38,88 +42,81 @@ namespace Lilium.RemoteControl.Core
         /// </summary>
         public void AddEvent(object eventData, string eventType = null, string excludeClient = null)
         {
-            var eventId = Interlocked.Increment(ref _nextEventId);
-            var eventItem = new EventItem
+            // 採番と fan-out を _addLock で直列化 (id 順 == enqueue 順を保証)。
+            lock (_addLock)
             {
-                Id = eventId,
-                Data = eventData,
-                Timestamp = DateTimeOffset.UtcNow,
-                Type = eventData.GetType().Name,
-                EventType = eventType ?? "data"
-            };
-
-            // 全クライアントのキューに追加
-            foreach (var clientId in _clientQueues.Keys.ToList())
-            {
-                if (clientId != excludeClient)
+                var eventId = Interlocked.Increment(ref _nextEventId);
+                var eventItem = new EventItem
                 {
-                    AddEventToClient(clientId, eventItem);
+                    Id = eventId,
+                    Data = eventData,
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Type = eventData.GetType().Name,
+                    EventType = eventType ?? "data"
+                };
+
+                // 全クライアントのキューに追加。ConcurrentDictionary は列挙中の変更に対して
+                // 安全なスナップショット列挙を提供するため、Keys.ToList() のコピーは不要。
+                foreach (var kvp in _clientQueues)
+                {
+                    if (kvp.Key != excludeClient)
+                    {
+                        kvp.Value.AddEvent(eventItem);
+                    }
                 }
             }
-            
         }
-        
+
         /// <summary>
         /// 特定クライアント向けイベントを追加
         /// </summary>
         public void AddEventToClient(string clientId, object eventData, string eventType = null)
         {
-            var eventId = Interlocked.Increment(ref _nextEventId);
-            var eventItem = new EventItem
+            // AddEvent と同じ _addLock で採番〜enqueue を直列化する。
+            lock (_addLock)
             {
-                Id = eventId,
-                Data = eventData,
-                Timestamp = DateTimeOffset.UtcNow,
-                Type = eventData.GetType().Name,
-                EventType = eventType ?? "data"
-            };
-            
-            AddEventToClient(clientId, eventItem);
+                var eventId = Interlocked.Increment(ref _nextEventId);
+                var eventItem = new EventItem
+                {
+                    Id = eventId,
+                    Data = eventData,
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Type = eventData.GetType().Name,
+                    EventType = eventType ?? "data"
+                };
+
+                AddEventToClient(clientId, eventItem);
+            }
         }
-        
+
         private void AddEventToClient(string clientId, EventItem eventItem)
         {
             var clientQueue = _clientQueues.GetOrAdd(clientId, id => new ClientEventQueue(id, _maxEventsPerClient));
             clientQueue.AddEvent(eventItem);
-            
-            //Debug.Log($"[RemoteControl] EventQueue: Added event {eventItem.Id} to client {clientId}");
         }
-        
+
         /// <summary>
-        /// イベントを取得（Long Polling対応）
+        /// イベントを取得（Long Polling対応）。
+        /// 新着イベントを呼び出し側が用意した <paramref name="buffer"/> に書き込み、件数を返す。
+        /// 新着が無い場合は buffer に一切触れず 0 を返す（GCAlloc 回避）。
         /// </summary>
-        public async Task<List<EventItem>> GetEventsAsync(string clientId, long lastEventId = 0, TimeSpan? timeout = null, CancellationToken cancellationToken = default)
+        /// <returns>buffer に書き込んだイベント数。タイムアウト/キャンセル時は 0。</returns>
+        public async Task<int> GetEventsAsync(string clientId, long lastEventId, List<EventItem> buffer, TimeSpan? timeout = null, CancellationToken cancellationToken = default)
         {
             UpdateClientActivity(clientId);
 
             var clientQueue = _clientQueues.GetOrAdd(clientId, id => new ClientEventQueue(id, _maxEventsPerClient));
 
-            // 即座に利用可能なイベントがあるかチェック
-            var immediateEvents = clientQueue.GetEvents(lastEventId);
-            if (immediateEvents.Any())
-            {
-                return immediateEvents;
-            }
-
-            // Long Polling: 新しいイベントを待機
-            var actualTimeout = timeout ?? TimeSpan.FromSeconds(30);
-
             // 外部の CancellationToken と内部のタイムアウトを組み合わせる
+            var actualTimeout = timeout ?? TimeSpan.FromSeconds(30);
             using var timeoutCts = new CancellationTokenSource(actualTimeout);
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
-            try
-            {
-                var events = await clientQueue.WaitForEventsAsync(lastEventId, linkedCts.Token);
-                return events;
-            }
-            catch (OperationCanceledException)
-            {
-                // タイムアウトまたは明示的なキャンセル時は空のリストを返す
-                return new List<EventItem>();
-            }
+            // 即時 drain → 無ければ long-poll 待機、をまとめて担う。
+            // タイムアウト/キャンセルは内部で吸収され 0 が返るため try-catch は不要。
+            return await clientQueue.WaitAndDrainAsync(lastEventId, buffer, linkedCts.Token);
         }
-        
+
         /// <summary>
         /// 更多イベントが利用可能かチェック
         /// </summary>
@@ -129,10 +126,10 @@ namespace Lilium.RemoteControl.Core
             {
                 return false;
             }
-            
+
             return clientQueue.HasMoreEvents(lastEventId);
         }
-        
+
         /// <summary>
         /// クライアントのイベントをクリア
         /// </summary>
@@ -144,18 +141,30 @@ namespace Lilium.RemoteControl.Core
                 Debug.Log($"[RemoteControl] EventQueue: Cleared events for client {clientId}");
             }
         }
-        
+
         /// <summary>
         /// クライアントアクティビティを更新
         /// </summary>
         public void UpdateClientActivity(string clientId)
         {
             _clientActivity.AddOrUpdate(clientId, DateTime.UtcNow, (key, oldValue) => DateTime.UtcNow);
-            
+
             // クライアントキューも作成/更新
             _clientQueues.GetOrAdd(clientId, id => new ClientEventQueue(id, _maxEventsPerClient));
         }
-        
+
+        /// <summary>
+        /// クライアントが有効期限内にアクティブだったか（O(1) 判定、Alloc 無し）。
+        /// </summary>
+        private bool _IsClientActive(string clientId)
+        {
+            if (!_clientActivity.TryGetValue(clientId, out var lastActivity))
+            {
+                return false;
+            }
+            return lastActivity > DateTime.UtcNow.Subtract(_clientTimeout);
+        }
+
         /// <summary>
         /// 接続中のクライアント数を取得
         /// </summary>
@@ -163,7 +172,7 @@ namespace Lilium.RemoteControl.Core
         {
             return _clientActivity.Count;
         }
-        
+
         /// <summary>
         /// アクティブなクライアントIDリストを取得
         /// </summary>
@@ -175,7 +184,7 @@ namespace Lilium.RemoteControl.Core
                 .Select(kvp => kvp.Key)
                 .ToList();
         }
-        
+
         /// <summary>
         /// クライアントを削除
         /// </summary>
@@ -184,7 +193,7 @@ namespace Lilium.RemoteControl.Core
             _clientQueues.TryRemove(clientId, out _);
             _clientActivity.TryRemove(clientId, out _);
         }
-        
+
         /// <summary>
         /// サーバー統計情報を取得
         /// </summary>
@@ -192,7 +201,7 @@ namespace Lilium.RemoteControl.Core
         {
             var activeClients = GetActiveClientIds();
             var totalEvents = _clientQueues.Values.Sum(q => q.EventCount);
-            
+
             return new EventQueueStats
             {
                 ActiveClientCount = activeClients.Count,
@@ -202,7 +211,7 @@ namespace Lilium.RemoteControl.Core
                 ActiveClients = activeClients
             };
         }
-        
+
         /// <summary>
         /// 全クライアントにメッセージをブロードキャスト
         /// </summary>
@@ -218,7 +227,7 @@ namespace Lilium.RemoteControl.Core
 
             return Task.FromResult(deliveredCount);
         }
-        
+
         /// <summary>
         /// 特定クライアントのリストにメッセージを送信
         /// </summary>
@@ -233,24 +242,25 @@ namespace Lilium.RemoteControl.Core
                 MessageId = Guid.NewGuid().ToString()
             };
 
-            var activeClients = GetActiveClientIds();
-            var validTargets = targetClients.Where(client => activeClients.Contains(client)).ToArray();
-
-            foreach (var clientId in validTargets)
+            var deliveredCount = 0;
+            foreach (var clientId in targetClients)
             {
-                AddEventToClient(clientId, targetedMessage);
+                if (_IsClientActive(clientId))
+                {
+                    AddEventToClient(clientId, targetedMessage);
+                    deliveredCount++;
+                }
             }
 
-            return Task.FromResult(validTargets.Length);
+            return Task.FromResult(deliveredCount);
         }
-        
+
         /// <summary>
         /// 特定クライアントにメッセージを送信
         /// </summary>
         public Task<bool> SendToClientAsync(string clientId, object message)
         {
-            var activeClients = GetActiveClientIds();
-            if (!activeClients.Contains(clientId))
+            if (!_IsClientActive(clientId))
             {
                 Debug.LogWarning($"[RemoteControl] EventQueue: Client {clientId} is not active");
                 return Task.FromResult(false);
@@ -268,7 +278,7 @@ namespace Lilium.RemoteControl.Core
             AddEventToClient(clientId, directMessage);
             return Task.FromResult(true);
         }
-        
+
         /// <summary>
         /// システム通知をブロードキャスト
         /// </summary>
@@ -299,7 +309,7 @@ namespace Lilium.RemoteControl.Core
             var deliveredCount = GetConnectedClientCount();
             return Task.FromResult(deliveredCount);
         }
-        
+
         /// <summary>
         /// クライアント接続通知をブロードキャスト
         /// </summary>
@@ -312,10 +322,10 @@ namespace Lilium.RemoteControl.Core
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 EventId = Guid.NewGuid().ToString()
             };
-            
+
             await BroadcastAsync(connectionEvent, "client_connected", clientId);
         }
-        
+
         /// <summary>
         /// クライアント切断通知をブロードキャスト
         /// </summary>
@@ -328,10 +338,10 @@ namespace Lilium.RemoteControl.Core
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 EventId = Guid.NewGuid().ToString()
             };
-            
+
             await BroadcastAsync(disconnectionEvent, "client_disconnected");
         }
-        
+
         private void StartCleanupTask()
         {
             _cleanupCts = new CancellationTokenSource();
@@ -356,7 +366,7 @@ namespace Lilium.RemoteControl.Core
                 }
             });
         }
-        
+
         private void CleanupInactiveClients()
         {
             var cutoff = DateTime.UtcNow.Subtract(_clientTimeout);
@@ -386,105 +396,203 @@ namespace Lilium.RemoteControl.Core
             _cleanupCts = null;
 
             // 全クライアントのキューをクリア
-            foreach (var clientId in _clientQueues.Keys.ToList())
+            foreach (var kvp in _clientQueues)
             {
-                RemoveClient(clientId);
+                RemoveClient(kvp.Key);
             }
         }
     }
-    
+
     /// <summary>
-    /// クライアント別のイベントキュー
+    /// クライアント別のイベントキュー。
+    /// 固定長リングバッファ + lock + TaskCompletionSource で実装し、
+    /// アイドル時のポーリングで GCAlloc が発生しないよう設計している。
+    /// イベントの Id は <see cref="EventQueue"/> の Interlocked.Increment で単調増加するため、
+    /// リング内は Id 昇順を保ち、afterEventId 以降の開始位置を二分探索できる。
+    ///
+    /// スレッド安全性: 全ての可変状態 (_ring/_count/_head/_maxId/_waiter) は単一の
+    /// _gate ロック下でのみ読み書きする。AddEvent は複数スレッドから、drain 系は単一の
+    /// SSE 接続タスクからの呼び出しを想定する (1 ClientEventQueue = 1 消費者)。
     /// </summary>
     public class ClientEventQueue
     {
         private readonly string _clientId;
-        private readonly int _maxEvents;
-        private readonly ConcurrentQueue<EventItem> _events;
-        private readonly SemaphoreSlim _eventSemaphore;
-        private readonly object _lockObject = new object();
-        
+        private readonly int _capacity;
+        private readonly EventItem[] _ring;     // ctor で1回だけ確保。以後再確保しない
+        private readonly object _gate = new object();
+
+        private int _count;                     // 保持件数 (<= _capacity)
+        private int _head;                       // 最古要素の物理 index
+        private long _maxId;                     // 保持中の最大 Id。空なら 0
+
+        // long-poll 用。新着で起床、null = 待機者なし。
+        private TaskCompletionSource<bool> _waiter;
+
         public string ClientId => _clientId;
-        public int EventCount => _events.Count;
-        
+        public int EventCount { get { lock (_gate) { return _count; } } }
+
         public ClientEventQueue(string clientId, int maxEvents = 1000)
         {
             _clientId = clientId;
-            _maxEvents = maxEvents;
-            _events = new ConcurrentQueue<EventItem>();
-            _eventSemaphore = new SemaphoreSlim(0);
+            _capacity = maxEvents < 1 ? 1 : maxEvents;
+            _ring = new EventItem[_capacity];
         }
-        
+
+        /// <summary>
+        /// イベントを追加する。呼び出し側は enqueue 順 == Id 順 (Id 単調増加) を守ること。
+        /// この契約は <see cref="EventQueue"/> が _addLock で採番〜fan-out を直列化して担保する。
+        /// 契約が守られない (採番より後に小さい Id が enqueue される) と、消費側カーソルが
+        /// その Id を飛び越えて永久に未配信になる。末尾バブルは微小な乱れへの保険に過ぎない。
+        /// </summary>
         public void AddEvent(EventItem eventItem)
         {
-            _events.Enqueue(eventItem);
-            
-            // 最大イベント数を超えた場合、古いイベントを削除
-            while (_events.Count > _maxEvents)
+            TaskCompletionSource<bool> toSignal;
+            lock (_gate)
             {
-                _events.TryDequeue(out _);
+                _PushBack(eventItem);
+
+                // 待機者がいれば取り出してロック外で起床させる (継続がロック内で走るのを防ぐ)
+                toSignal = _waiter;
+                _waiter = null;
             }
-            
-            _eventSemaphore.Release(); // 待機中のGetEventsAsyncに通知
+            toSignal?.TrySetResult(true);
         }
-        
-        public List<EventItem> GetEvents(long afterEventId = 0)
+
+        /// <summary>
+        /// リング末尾へ追加。Id 単調増加の通常ケースは O(1)。満杯時は最古を O(1) で eviction。
+        /// 採番/enqueue 逆転による稀な順序乱れは末尾からの隣接スワップ (バブル) で吸収する。
+        /// </summary>
+        private void _PushBack(EventItem item)
         {
-            var result = new List<EventItem>();
-            var tempList = new List<EventItem>();
-            
-            // 全イベントを一時的にリストに移す
-            while (_events.TryDequeue(out var item))
+            if (_count < _capacity)
             {
-                tempList.Add(item);
+                _ring[(_head + _count) % _capacity] = item;
+                _count++;
             }
-            
-            // 条件に合うイベントを選択し、残りを戻す
-            foreach (var item in tempList)
+            else
             {
-                if (item.Id > afterEventId)
+                // 満杯: 最古 (_head) を上書きし head を進める。空いた _head 物理スロットが新しい末尾になる。
+                _ring[_head] = item;
+                _head = (_head + 1) % _capacity;
+            }
+
+            // 末尾から左へバブルして Id 昇順を維持。通常 (item.Id が最大) は即 break で O(1)。
+            int i = _count - 1;
+            while (i > 0)
+            {
+                int cur = (_head + i) % _capacity;
+                int prev = (_head + i - 1) % _capacity;
+                if (_ring[prev].Id <= _ring[cur].Id) break;
+                var tmp = _ring[prev];
+                _ring[prev] = _ring[cur];
+                _ring[cur] = tmp;
+                i--;
+            }
+
+            _maxId = _ring[(_head + _count - 1) % _capacity].Id;
+        }
+
+        /// <summary>
+        /// afterEventId より大きい Id のイベントを buffer に書き込み件数を返す。
+        /// 新着が無い場合は buffer に一切触れず 0 を返す (空時 0 alloc)。
+        /// </summary>
+        public int DrainInto(long afterEventId, List<EventItem> buffer)
+        {
+            lock (_gate)
+            {
+                if (_count == 0 || afterEventId >= _maxId)
                 {
-                    result.Add(item);
+                    return 0;
                 }
-                _events.Enqueue(item); // 全イベントをキューに戻す
+
+                // afterEventId < Id となる最小の論理 index を二分探索
+                int lo = 0;
+                int hi = _count;
+                while (lo < hi)
+                {
+                    int mid = (lo + hi) >> 1;
+                    if (_ring[(_head + mid) % _capacity].Id > afterEventId)
+                        hi = mid;
+                    else
+                        lo = mid + 1;
+                }
+
+                int start = lo;
+                int n = _count - start;
+
+                buffer.Clear(); // 内部配列は再利用。容量内なら再確保なし
+                for (int i = 0; i < n; i++)
+                {
+                    buffer.Add(_ring[(_head + start + i) % _capacity]);
+                }
+                return n;
             }
-            
-            return result.OrderBy(e => e.Id).ToList();
         }
-        
-        public async Task<List<EventItem>> WaitForEventsAsync(long afterEventId, CancellationToken cancellationToken)
+
+        /// <summary>
+        /// 即時 drain → 無ければ新着 or キャンセルまで待機 → 再 drain。
+        /// キャンセル (タイムアウト含む) 時は buffer に触れず 0 を返す。
+        /// </summary>
+        public async Task<int> WaitAndDrainAsync(long afterEventId, List<EventItem> buffer, CancellationToken cancellationToken)
         {
-            // 既存のイベントをチェック
-            var existingEvents = GetEvents(afterEventId);
-            if (existingEvents.Any())
+            while (true)
             {
-                return existingEvents;
+                int n = DrainInto(afterEventId, buffer);
+                if (n > 0)
+                {
+                    return n;
+                }
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return 0;
+                }
+
+                // 「新着の再チェック」と「待機者登録」を同一ロック内で行い、
+                // drain が空を返した直後に AddEvent が来てもロストウェイクアップしない。
+                TaskCompletionSource<bool> waiter;
+                lock (_gate)
+                {
+                    if (_count > 0 && afterEventId < _maxId)
+                    {
+                        continue; // 登録直前に新着 → ループ先頭で drain
+                    }
+                    // キャンセルで完了したままの古い TCS を再利用すると await が即返りビジースピンする。
+                    // null か完了済みなら新規生成する (AddEvent は signal 時に _waiter を null にする)。
+                    if (_waiter == null || _waiter.Task.IsCompleted)
+                    {
+                        _waiter = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    }
+                    waiter = _waiter;
+                }
+
+                // キャンセルされたら待機 Task を完了させてループに戻す (例外を投げない)。
+                using (cancellationToken.Register(static s => ((TaskCompletionSource<bool>)s).TrySetResult(false), waiter))
+                {
+                    await waiter.Task;
+                }
             }
-            
-            // 新しいイベントを待機
-            await _eventSemaphore.WaitAsync(cancellationToken);
-            
-            // セマフォが解除された後、イベントを再取得
-            return GetEvents(afterEventId);
         }
-        
+
         public bool HasMoreEvents(long afterEventId)
         {
-            return _events.Any(e => e.Id > afterEventId);
+            lock (_gate)
+            {
+                return _count > 0 && afterEventId < _maxId;
+            }
         }
-        
+
         public void Clear()
         {
-            while (_events.TryDequeue(out _)) { }
-            
-            // セマフォもリセット
-            while (_eventSemaphore.CurrentCount > 0)
+            lock (_gate)
             {
-                _eventSemaphore.Wait(0);
+                Array.Clear(_ring, 0, _capacity);
+                _count = 0;
+                _head = 0;
+                _maxId = 0;
             }
         }
     }
-    
+
     /// <summary>
     /// イベントアイテム
     /// </summary>
@@ -496,7 +604,7 @@ namespace Lilium.RemoteControl.Core
         public string Type { get; set; }
         public string EventType { get; set; }
     }
-    
+
     /// <summary>
     /// EventQueue統計情報
     /// </summary>
@@ -508,7 +616,7 @@ namespace Lilium.RemoteControl.Core
         public long NextEventId { get; set; }
         public List<string> ActiveClients { get; set; }
     }
-    
+
     /// <summary>
     /// ターゲット指定メッセージ
     /// </summary>
@@ -520,7 +628,7 @@ namespace Lilium.RemoteControl.Core
         public long Timestamp { get; set; }
         public string MessageId { get; set; }
     }
-    
+
     /// <summary>
     /// ダイレクトメッセージ
     /// </summary>
@@ -532,7 +640,7 @@ namespace Lilium.RemoteControl.Core
         public long Timestamp { get; set; }
         public string MessageId { get; set; }
     }
-    
+
     /// <summary>
     /// システム通知
     /// </summary>
@@ -547,7 +655,7 @@ namespace Lilium.RemoteControl.Core
         [JsonProperty("timestamp")] public long Timestamp { get; set; }
         [JsonProperty("messageId")] public string MessageId { get; set; }
     }
-    
+
     /// <summary>
     /// クライアント接続イベント
     /// </summary>

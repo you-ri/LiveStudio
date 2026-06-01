@@ -72,11 +72,11 @@ namespace Lilium.LiveStudio
         private string _lastActiveCameraName = string.Empty;
         private bool _isImageStreamingActive = false;
         
-        public CameraApiHandler(RemoteControlServerCore server) : base(server)
-        {
-        }
-
-        public override void Cleanup()
+        public CameraApiHandler(RemoteControlServerCore server)
+            : base(server,
+                new RouteRule("/api/camera", RouteMatch.Exact),
+                new RouteRule("/api/camera/image", RouteMatch.Exact),
+                new RouteRule("/api/camera/switch", RouteMatch.Exact))
         {
         }
 
@@ -147,15 +147,6 @@ namespace Lilium.LiveStudio
                 }
             });
         }
-
-        private static readonly RouteRule[] _kRoutes =
-        {
-            new RouteRule("/api/camera", RouteMatch.Exact),
-            new RouteRule("/api/camera/image", RouteMatch.Exact),
-            new RouteRule("/api/camera/switch", RouteMatch.Exact),
-        };
-
-        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
 
         protected override bool SupportsGet() => true;
         protected override bool SupportsPost() => true;

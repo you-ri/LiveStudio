@@ -19,22 +19,11 @@ namespace Lilium.RemoteControl.RestApi
         /// </summary>
         public static event Action onQuitRequested;
 
-        public QuitApiHandler(RemoteControlServerCore server) : base(server)
+        public QuitApiHandler(RemoteControlServerCore server)
+            : base(server, new RouteRule("/api/commands/quit", RouteMatch.Exact))
         {
         }
 
-        public override void Cleanup()
-        {
-        }
-
-        private static readonly RouteRule[] _kRoutes =
-        {
-            new RouteRule("/api/commands/quit", RouteMatch.Exact)
-        };
-
-        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
-
-        protected override bool SupportsGet() => false;
         protected override bool SupportsPost() => true;
 
         protected override async Task HandlePostRequest(HttpListenerContext context)

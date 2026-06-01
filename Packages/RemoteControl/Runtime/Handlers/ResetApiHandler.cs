@@ -8,26 +8,15 @@ using Lilium.RemoteControl.Server;
 using Lilium.RemoteControl.RestApi;
 using Newtonsoft.Json;
 
-namespace Lilium.Virgo.RemoteControl
+namespace Lilium.RemoteControl
 {
     public class ResetApiHandler : BaseRemoteControlApiHandler
     {
-        public ResetApiHandler(RemoteControlServerCore server) : base(server)
+        public ResetApiHandler(RemoteControlServerCore server)
+            : base(server, new RouteRule("/api/commands/reset", RouteMatch.Exact))
         {
         }
 
-        public override void Cleanup()
-        {
-        }
-
-        private static readonly RouteRule[] _kRoutes =
-        {
-            new RouteRule("/api/commands/reset", RouteMatch.Exact)
-        };
-
-        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
-
-        protected override bool SupportsGet() => false;
         protected override bool SupportsPost() => true;
 
         protected override async Task HandlePostRequest(HttpListenerContext context)

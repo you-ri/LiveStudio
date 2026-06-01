@@ -25,12 +25,27 @@ namespace Lilium.RemoteControl.RestApi
 
         protected readonly SynchronizationContext _mainThreadContext;
 
+        // Routes supplied through the params constructor. Null when a handler
+        // overrides Routes itself (e.g. StreamHandler / HeartbeatHandler whose
+        // routes depend on a runtime path argument).
+        private readonly RouteRule[] _routesField;
+
 
         protected BaseRemoteControlApiHandler(RemoteControlServerCore server)
         {
             _server = server;
             this._context = server?.context;
             _mainThreadContext = SynchronizationContext.Current;
+        }
+
+        /// <summary>
+        /// Convenience constructor: declare the handler's routes inline so trivial
+        /// handlers no longer need a static route array plus a Routes override.
+        /// </summary>
+        protected BaseRemoteControlApiHandler(RemoteControlServerCore server, params RouteRule[] routes)
+            : this(server)
+        {
+            _routesField = routes;
         }
 
         /// <summary>
@@ -50,7 +65,8 @@ namespace Lilium.RemoteControl.RestApi
             return GetObjectContainer() ?? (IExposedObjectResolver)DefaultExposedObjectResolver.Instance;
         }
 
-        public abstract void Cleanup();
+        // Virtual no-op so handlers without teardown work don't need an empty override.
+        public virtual void Cleanup() { }
 
         // ---- Declarative routing (opt-in; backward compatible) ----
         // 既存ハンドラは CanHandle を override しているため挙動は不変。
@@ -73,7 +89,7 @@ namespace Lilium.RemoteControl.RestApi
         /// 宣言的ルート定義。null（既定）を返すハンドラは従来どおり CanHandle の
         /// override 実装が使われる。Routes を返すと共通の一致判定が使われる。
         /// </summary>
-        protected virtual IReadOnlyList<RouteRule> Routes => null;
+        protected virtual IReadOnlyList<RouteRule> Routes => _routesField;
 
         /// <summary>
         /// パスがパターンに一致するか判定する共通ロジック。
@@ -423,11 +439,17 @@ namespace Lilium.RemoteControl.RestApi
             return TimeUtility.GetISOTimestamp();
         }
 
+        // サポートメソッド集合はハンドラ毎に不変なので初回のみ構築してキャッシュする
+        // (OPTIONS/405 のたびに List + string.Join を確保しない)。
+        private string _supportedMethodsCache;
+
         /// <summary>
         /// サポートするHTTPメソッドの文字列を取得
         /// </summary>
         private string GetSupportedMethods()
         {
+            if (_supportedMethodsCache != null) return _supportedMethodsCache;
+
             var methods = new System.Collections.Generic.List<string>();
             if (SupportsGet()) methods.Add("GET");
             if (SupportsPost()) methods.Add("POST");
@@ -435,7 +457,8 @@ namespace Lilium.RemoteControl.RestApi
             if (SupportsDelete()) methods.Add("DELETE");
             if (SupportsPatch()) methods.Add("PATCH");
             methods.Add("OPTIONS");
-            return string.Join(", ", methods);
+            _supportedMethodsCache = string.Join(", ", methods);
+            return _supportedMethodsCache;
         }
 
         /// <summary>

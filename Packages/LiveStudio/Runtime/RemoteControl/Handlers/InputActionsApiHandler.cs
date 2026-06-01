@@ -59,7 +59,10 @@ namespace Lilium.LiveStudio
         private double _lastUpdateTime = 0f;
         private const float UPDATE_INTERVAL = 1.0f; // 1秒間隔で更新
 
-        public InputActionsApiHandler(RemoteControlServerCore server) : base(server)
+        public InputActionsApiHandler(RemoteControlServerCore server)
+            : base(server,
+                new RouteRule("/api/input-actions", RouteMatch.Exact),
+                new RouteRule("/api/input-actions/bind", RouteMatch.Exact))
         {
         }
 
@@ -84,14 +87,6 @@ namespace Lilium.LiveStudio
                 }
             }
         }
-
-        private static readonly RouteRule[] _kRoutes =
-        {
-            new RouteRule("/api/input-actions", RouteMatch.Exact),
-            new RouteRule("/api/input-actions/bind", RouteMatch.Exact),
-        };
-
-        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
 
         protected override bool SupportsGet() => true;
         protected override bool SupportsPost() => true;

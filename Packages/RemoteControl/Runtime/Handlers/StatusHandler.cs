@@ -28,22 +28,12 @@ namespace Lilium.RemoteControl
         private readonly string _applicationName;
         private readonly string _applicationVersion;
 
-        public StatusHandler(RemoteControlServerCore server) : base(server)
+        public StatusHandler(RemoteControlServerCore server)
+            : base(server, new RouteRule("/api/status", RouteMatch.Exact))
         {
             _applicationName = Application.productName;
             _applicationVersion = Application.version;
         }
-
-        public override void Cleanup()
-        {
-        }
-
-        private static readonly RouteRule[] _kRoutes =
-        {
-            new RouteRule("/api/status", RouteMatch.Exact)
-        };
-
-        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
 
         protected override bool SupportsGet() => true;
 

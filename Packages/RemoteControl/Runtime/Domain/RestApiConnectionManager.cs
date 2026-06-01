@@ -6,7 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 
-namespace Lilium.RemoteControl.Core
+namespace Lilium.RemoteControl
 {
     /// <summary>
     /// REST APIクライアント接続管理システム

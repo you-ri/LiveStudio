@@ -1,7 +1,7 @@
 using System.Net;
 using System.Threading.Tasks;
 
-namespace Lilium.RemoteControl.Core
+namespace Lilium.RemoteControl
 {
     public interface IRequestHandler
     {

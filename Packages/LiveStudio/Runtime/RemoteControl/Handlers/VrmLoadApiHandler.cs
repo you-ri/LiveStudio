@@ -18,16 +18,15 @@ namespace Lilium.LiveStudio
     /// </summary>
     public class VrmLoadApiHandler : BaseRemoteControlApiHandler, IVRMLoadObserver
     {
-        private readonly string _path;
-
         // VRM読み込み状態追跡用
         private string _currentClientId;
         private string _currentFilePath;
 
-        public VrmLoadApiHandler(RemoteControlServerCore server) : base(server)
+        public VrmLoadApiHandler(RemoteControlServerCore server)
+            : base(server,
+                new RouteRule("/api/vrm/load", RouteMatch.Exact),
+                new RouteRule("/api/vrm/reset", RouteMatch.Exact))
         {
-            _path = "/api/vrm/load";
-
             // IVRMLoadObserverとしてサービスに登録
             Service<IVRMLoadObserver>.Register(this);
 
@@ -61,14 +60,6 @@ namespace Lilium.LiveStudio
             }
         }
         
-        private static readonly RouteRule[] _kRoutes =
-        {
-            new RouteRule("/api/vrm/load", RouteMatch.Exact),
-            new RouteRule("/api/vrm/reset", RouteMatch.Exact),
-        };
-
-        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
-
         protected override bool SupportsPost() => true;
 
         protected override async Task HandlePostRequest(HttpListenerContext context)

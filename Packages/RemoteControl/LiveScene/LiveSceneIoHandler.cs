@@ -32,7 +32,10 @@ namespace Lilium.RemoteControl.LiveScene
 
         private readonly EndpointRoute[] _postRoutes;
 
-        public LiveSceneIoHandler(RemoteControlServerCore server) : base(server)
+        public LiveSceneIoHandler(RemoteControlServerCore server)
+            : base(server,
+                new RouteRule("/exposed/export", RouteMatch.Exact),
+                new RouteRule("/exposed/import", RouteMatch.Exact))
         {
             _postRoutes = new[]
             {
@@ -40,18 +43,6 @@ namespace Lilium.RemoteControl.LiveScene
                 new EndpointRoute("/exposed/import", RouteMatch.Exact, HandleImport),
             };
         }
-
-        public override void Cleanup()
-        {
-        }
-
-        private static readonly RouteRule[] _kRoutes =
-        {
-            new RouteRule("/exposed/export", RouteMatch.Exact),
-            new RouteRule("/exposed/import", RouteMatch.Exact),
-        };
-
-        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
 
         protected override bool SupportsPost() => true;
 

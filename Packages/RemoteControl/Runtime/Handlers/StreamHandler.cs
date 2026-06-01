@@ -129,9 +129,11 @@ namespace Lilium.RemoteControl.RestApi.Controllers
                 // チャンク転送エンコーディングを有効化
                 response.SendChunked = true;
 
+                // AutoFlush=false: 1イベント分の細かい Write をバッファし、各送信メソッド末尾の
+                // 明示 Flush() で1回にまとめる。フラグメント化を防ぎつつ中間文字列確保を避ける。
                 writer = new StreamWriter(response.OutputStream, Encoding.UTF8)
                 {
-                    AutoFlush = true
+                    AutoFlush = false
                 };
                 cancellationTokenSource = _shutdownCts != null
                     ? CancellationTokenSource.CreateLinkedTokenSource(_shutdownCts.Token)
@@ -190,6 +192,10 @@ namespace Lilium.RemoteControl.RestApi.Controllers
             var keepAliveInterval = TimeSpan.FromSeconds(30);
             var lastKeepAlive = DateTime.UtcNow;
 
+            // 接続ごとに1回だけ確保し、ポーリングのたびに GetEventsAsync が再利用する。
+            // 新着が無いポーリングでは buffer に触れないため定常 0 alloc。
+            var buffer = new List<EventItem>(64);
+
             try
             {
                 while (!cancellationToken.IsCancellationRequested)
@@ -200,28 +206,21 @@ namespace Lilium.RemoteControl.RestApi.Controllers
                         break;
                     }
 
-                    // イベントを取得 (短いタイムアウトで、CancellationTokenを渡す)
-                    List<EventItem> events = null;
-                    try
-                    {
-                        events = await this._context.eventQueue.GetEventsAsync(clientId, lastEventId, TimeSpan.FromMilliseconds(500), cancellationToken);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        // キャンセル時は正常終了
-                        break;
-                    }
+                    // イベントを取得 (短いタイムアウトで、CancellationTokenを渡す)。
+                    // タイムアウト/キャンセルは内部で吸収され 0 が返るため try-catch は不要。
+                    int eventCount = await this._context.eventQueue.GetEventsAsync(clientId, lastEventId, buffer, TimeSpan.FromMilliseconds(500), cancellationToken);
 
                     // イベントがある場合は送信 (送信前に再度ストリーム状態を確認)
-                    if (events != null && events.Count > 0 && !cancellationToken.IsCancellationRequested)
+                    if (eventCount > 0 && !cancellationToken.IsCancellationRequested)
                     {
                         if (!writer.BaseStream.CanWrite)
                             break;
 
                         using (s_SendEventsMarker.Auto())
                         {
-                            foreach (var eventItem in events)
+                            for (int i = 0; i < eventCount; i++)
                             {
+                                var eventItem = buffer[i];
                                 SendSseEvent(writer, eventItem.EventType, eventItem.Data, eventItem.Id);
                                 lastEventId = eventItem.Id;
                                 lastKeepAlive = DateTime.UtcNow;
@@ -269,42 +268,39 @@ namespace Lilium.RemoteControl.RestApi.Controllers
         {
             if (eventId.HasValue)
             {
-                writer.WriteLine($"id: {eventId}");
+                // 文字列補間 ($"id: {eventId}") の中間文字列確保を避けて分割書き込みする。
+                writer.Write("id: ");
+                writer.WriteLine(eventId.Value);
             }
 
-            // 統一形式への変換
+            // 統一形式への変換。送信される event 種別は常に "data"。
             object unifiedData;
-            string finalEventType;
             using (s_ConvertToUnifiedFormatMarker.Auto())
             {
                 if (eventType == "data")
                 {
                     // 既に統一形式の場合はそのまま送信
                     unifiedData = data;
-                    finalEventType = "data";
                 }
                 else
                 {
                     // 既存のイベントタイプを統一形式に変換
-                    // dataオブジェクトにtypeとtimestampを追加
+                    // dataオブジェクトにtypeとtimestampを追加（既存の値を上書きしないように）
                     var dataObj = JObject.FromObject(data);
-
-                    // typeとtimestampを追加（既存の値を上書きしないように）
                     if (dataObj["type"] == null)
                         dataObj["type"] = eventType;
                     if (dataObj["timestamp"] == null)
                         dataObj["timestamp"] = TimeUtility.GetISOTimestamp();
 
-                    unifiedData = new
+                    unifiedData = new JObject
                     {
-                        type = "data",
-                        data = dataObj
+                        ["type"] = "data",
+                        ["data"] = dataObj
                     };
-                    finalEventType = "data";
                 }
             }
 
-            writer.WriteLine($"event: {finalEventType}");
+            writer.WriteLine("event: data");
 
             string jsonData;
             using (s_JsonSerializeMarker.Auto())
@@ -313,22 +309,47 @@ namespace Lilium.RemoteControl.RestApi.Controllers
             }
             //Debug.Log($"[RemoteControl] Send SSE {jsonData}");
 
-            // データに改行が含まれる場合は複数行に分割
+            // データを SSE の data: 行へ。改行を含む場合のみ分割し、Split による配列確保を避ける。
             using (s_WriteDataMarker.Auto())
             {
-                var lines = jsonData.Split('\n');
-                foreach (var line in lines)
-                {
-                    writer.WriteLine($"data: {line}");
-                }
+                _WriteDataLines(writer, jsonData);
 
                 // 空行でイベント終了を示す
                 writer.WriteLine();
                 writer.Flush();
             }
         }
-        
-        
+
+        /// <summary>
+        /// JSON を SSE の data: 行として書き込む。改行が無い通常ケースは Substring も Split も発生しない。
+        /// </summary>
+        private static void _WriteDataLines(StreamWriter writer, string json)
+        {
+            int newline = json.IndexOf('\n');
+            if (newline < 0)
+            {
+                // 高速パス: Formatting.None の単一行 JSON
+                writer.Write("data: ");
+                writer.WriteLine(json);
+                return;
+            }
+
+            int start = 0;
+            while (true)
+            {
+                writer.Write("data: ");
+                if (newline < 0)
+                {
+                    writer.WriteLine(json.Substring(start));
+                    break;
+                }
+                writer.WriteLine(json.Substring(start, newline - start));
+                start = newline + 1;
+                newline = json.IndexOf('\n', start);
+            }
+        }
+
+
         private void SendSseComment(StreamWriter writer, string comment)
         {
             writer.WriteLine($": {comment}");

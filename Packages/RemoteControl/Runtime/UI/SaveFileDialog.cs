@@ -4,7 +4,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using UnityEngine;
 
-namespace Lilium.RemoteControl.UI
+namespace Lilium.RemoteControl.Dialogs
 {
     /// <summary>
     /// OS ネイティブの「名前を付けて保存」ダイアログ。

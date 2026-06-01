@@ -37,9 +37,9 @@ namespace Lilium.RemoteControl
             var property = exposedObject.FindProperty(propertyPath);
             if (property == null) return;
 
-            var json = ExposedPropertySerializer.ToJson(
+            // ToJson(string) → JObject.Parse の往復を避け、JObject を直接受け取る。
+            var jObject = ExposedPropertySerializer.ToJObject(
                 property.Value, DefaultExposedObjectResolver.Instance);
-            var jObject = JObject.Parse(json);
             jObject["type"] = "exposed_object_updated";
             jObject["id"] = target.GetInstanceID().ToString();
 
@@ -61,10 +61,9 @@ namespace Lilium.RemoteControl
             var property = exposedObj.FindProperty(propertyPath);
             if (property == null) return;
 
-            var json = ExposedPropertySerializer.ToJson(
+            // ToJson(string) → JObject.Parse の往復を避け、JObject を直接受け取る。
+            var jObject = ExposedPropertySerializer.ToJObject(
                 property.Value, DefaultExposedObjectResolver.Instance);
-
-            var jObject = JObject.Parse(json);
             jObject["type"] = "exposed_object_updated";
 
             foreach (var instance in RemoteControlServerManager.servers.Values)

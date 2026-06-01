@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 using Lilium.RemoteControl;
-using Lilium.RemoteControl.UI;
+using Lilium.RemoteControl.Dialogs;
 
 namespace Lilium.RemoteControl.LiveScene
 {

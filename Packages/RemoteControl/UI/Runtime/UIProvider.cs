@@ -14,7 +14,6 @@ namespace Lilium.RemoteControl.UI
     [MovedFrom(true, "Lilium.RemoteControl.WebUI", "Lilium.RemoteControl.WebUI", "WebUIProvider")]
     public class UIProvider
     {
-        private const string kRoute = "/ui";
 
         private readonly UIDefinition _uiDefinition;
         private readonly string _ownerName;
@@ -40,7 +39,7 @@ namespace Lilium.RemoteControl.UI
 
             _server = server;
             _handler = new UIHandler(_server, _uiDefinition);
-            _server.RegisterRoute(kRoute, _handler);
+            _server.RegisterRoute(_handler);
         }
 
         public void Unregister()
@@ -48,7 +47,7 @@ namespace Lilium.RemoteControl.UI
             if (_handler == null) return;
 
             // UnregisterRoute calls handler.Cleanup() internally.
-            _server?.UnregisterRoute(kRoute);
+            _server?.UnregisterRoute(_handler);
             _handler = null;
             _server = null;
         }

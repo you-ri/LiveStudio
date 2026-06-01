@@ -57,21 +57,12 @@ namespace Lilium.LiveStudio
     /// </summary>
     public class ManipulatorApiHandler : BaseRemoteControlApiHandler
     {
-        public ManipulatorApiHandler(RemoteControlServerCore server) : base(server) { }
-
-        public override void Cleanup()
+        public ManipulatorApiHandler(RemoteControlServerCore server)
+            : base(server, new RouteRule("/api/manipulator/", RouteMatch.Prefix))
         {
             // セッションの破棄は Close エンドポイント経由で行う。
-            // サーバー停止時に残存セッションを解放する処理はここで実装してもよいが、
-            // 現状はアプリ終了時に自動で破棄される想定。
+            // 残存セッションはアプリ終了時に自動で破棄される想定のため Cleanup は不要。
         }
-
-        private static readonly RouteRule[] _kRoutes =
-        {
-            new RouteRule("/api/manipulator/", RouteMatch.Prefix)
-        };
-
-        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
 
         protected override bool SupportsGet() => true;
         protected override bool SupportsPost() => true;

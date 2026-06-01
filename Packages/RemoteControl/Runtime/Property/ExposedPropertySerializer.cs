@@ -1396,7 +1396,11 @@ namespace Lilium.RemoteControl
             return ToJson(value, DefaultExposedObjectResolver.Instance);
         }
 
-        public static string ToJson(ExposedProperty property, IExposedObjectResolver resolver)
+        /// <summary>
+        /// プロパティを {value, id, path, changed} の JObject に変換する。
+        /// 文字列化してから再パースする往復を避けたい呼び出し側 (SSE ブロードキャスト等) はこちらを使う。
+        /// </summary>
+        public static JObject ToJObject(ExposedProperty property, IExposedObjectResolver resolver)
         {
             JToken valueToken;
             if (property.type.controlAttribute is ObjectSelectorAttribute)
@@ -1408,15 +1412,18 @@ namespace Lilium.RemoteControl
                 valueToken = SerializeUnityType(resolver, property.GetValue());
             }
 
-            var jObject = new JObject
+            return new JObject
             {
                 ["value"] = valueToken,
                 ["id"] = property.owner.id,
                 ["path"] = property.path.ToSlash(),
                 ["changed"] = new JValue(property.isDirty)
             };
+        }
 
-            return JsonConvert.SerializeObject(jObject, Formatting.None);
+        public static string ToJson(ExposedProperty property, IExposedObjectResolver resolver)
+        {
+            return JsonConvert.SerializeObject(ToJObject(property, resolver), Formatting.None);
         }
 
         // -------------------------------------------------------

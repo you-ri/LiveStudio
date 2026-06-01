@@ -67,11 +67,8 @@ namespace Lilium.LiveStudio
         private const float kUpdateInterval = 0.1f; // 100ms間隔で更新
         private int _lastSentExpressionCount = 0;
         
-        public ExpressionsApiHandler(RemoteControlServerCore server) : base(server)
-        {
-        }
-
-        public override void Cleanup()
+        public ExpressionsApiHandler(RemoteControlServerCore server)
+            : base(server, new RouteRule("/api/expressions", RouteMatch.Exact))
         {
         }
 
@@ -92,12 +89,6 @@ namespace Lilium.LiveStudio
             }
         }
 
-        private static readonly RouteRule[] _kRoutes =
-        {
-            new RouteRule("/api/expressions", RouteMatch.Exact)
-        };
-
-        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
 
         protected override bool SupportsGet() => true;
         protected override bool SupportsPost() => true;

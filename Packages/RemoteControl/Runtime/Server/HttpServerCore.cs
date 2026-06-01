@@ -13,7 +13,9 @@ namespace Lilium.RemoteControl.Server
     {
         private HttpListener _listener;
         private CancellationTokenSource _cancellationTokenSource;
-        private Dictionary<string, IRequestHandler> _routes = new Dictionary<string, IRequestHandler>();
+        // Handlers are matched by their own declared Routes (CanHandle), so the
+        // server keeps a plain ordered list rather than a string-keyed map.
+        private readonly List<IRequestHandler> _handlers = new List<IRequestHandler>();
         private bool _isRunning = false;
         private bool _isManualStop = false;
         private bool _isDisposed = false;
@@ -274,17 +276,17 @@ namespace Lilium.RemoteControl.Server
             }
 
             // Route search phase - find matching handler
-            foreach (var route in _routes)
+            foreach (var handler in _handlers)
             {
-                if (route.Value.CanHandle(context.Request))
+                if (handler.CanHandle(context.Request))
                 {
                     // [Debug] quit ルートに到達したか可視化
                     if (context.Request.Url != null &&
                         context.Request.Url.AbsolutePath.IndexOf("/api/commands/quit", System.StringComparison.OrdinalIgnoreCase) >= 0)
                     {
-                        Debug.Log($"[Debug][RemoteControl] quit route matched: handler={route.Value.GetType().Name}");
+                        Debug.Log($"[Debug][RemoteControl] quit route matched: handler={handler.GetType().Name}");
                     }
-                    return route.Value.HandleRequest(context);
+                    return handler.HandleRequest(context);
                 }
             }
 
@@ -303,28 +305,31 @@ namespace Lilium.RemoteControl.Server
             response.Headers.Add("Access-Control-Max-Age", kCorsMaxAge);
         }
 
-        public virtual void RegisterRoute(string pattern, IRequestHandler handler)
+        /// <summary>
+        /// Register a handler. The handler declares which paths it serves through
+        /// its own Routes/CanHandle, so no route string is passed here.
+        /// </summary>
+        public virtual void RegisterRoute(IRequestHandler handler)
         {
-            if (_routes.ContainsKey(pattern))
-            {
-                Debug.LogError($"[RemoteControl] Route already registered: {pattern}");
-                return;
-            }
             if (handler == null)
             {
-                Debug.LogError($"[RemoteControl] Handler cannot be null for route: {pattern}");
+                Debug.LogError("[RemoteControl] Handler cannot be null.");
+                return;
+            }
+            if (_handlers.Contains(handler))
+            {
+                Debug.LogError($"[RemoteControl] Handler already registered: {handler.GetType().Name}");
                 return;
             }
 
-            _routes[pattern] = handler;
+            _handlers.Add(handler);
         }
 
-        public virtual void UnregisterRoute(string pattern)
+        public virtual void UnregisterRoute(IRequestHandler handler)
         {
-            if (_routes.TryGetValue(pattern, out var handler))
+            if (handler != null && _handlers.Remove(handler))
             {
                 handler.Cleanup();
-                _routes.Remove(pattern);
             }
         }
 
@@ -339,11 +344,11 @@ namespace Lilium.RemoteControl.Server
         private void CloseServer()
         {
             // ルートのクリーンアップ
-            foreach (var route in _routes.Values)
+            foreach (var handler in _handlers)
             {
-                route?.Cleanup();
+                handler?.Cleanup();
             }
-            _routes.Clear();
+            _handlers.Clear();
 
             // キャンセレーショントークンの解放
             DisposeCancellationToken();

@@ -14,6 +14,7 @@ namespace Lilium.RemoteControl.Server
         public RemoteControlContext context { get; private set; }
         private EventQueue _eventQueue;
         private RestApiConnectionManager _connectionManager;
+        private StreamHandler _streamHandler;
         private ExposedObjectHandler _exposedObjectHandler;
         private StatusHandler _statusHandler;
         private LanguageHandler _languageHandler;
@@ -42,26 +43,26 @@ namespace Lilium.RemoteControl.Server
         
         public void RegisterDefaultRoutes()
         {
-            RegisterRoute("/api/stream", new StreamHandler(this, "/api/stream"));
+            _streamHandler = new StreamHandler(this, "/api/stream");
+            RegisterRoute(_streamHandler);
             _exposedObjectHandler = new ExposedObjectHandler(this);
-            RegisterRoute("/exposed", _exposedObjectHandler);
+            RegisterRoute(_exposedObjectHandler);
             _statusHandler = new StatusHandler(this);
-            RegisterRoute("/api/status", _statusHandler);
+            RegisterRoute(_statusHandler);
             _languageHandler = new LanguageHandler(this);
-            RegisterRoute("/api/language", _languageHandler);
+            RegisterRoute(_languageHandler);
         }
-        
+
         public void UnregisterDefaultRoutes()
         {
-            UnregisterRoute("/api/stream");
-            UnregisterRoute("/exposed");
-            _exposedObjectHandler?.Cleanup();
+            // UnregisterRoute calls handler.Cleanup() internally.
+            UnregisterRoute(_streamHandler);
+            _streamHandler = null;
+            UnregisterRoute(_exposedObjectHandler);
             _exposedObjectHandler = null;
-            UnregisterRoute("/api/status");
-            _statusHandler?.Cleanup();
+            UnregisterRoute(_statusHandler);
             _statusHandler = null;
-            UnregisterRoute("/api/language");
-            _languageHandler?.Cleanup();
+            UnregisterRoute(_languageHandler);
             _languageHandler = null;
         }
         

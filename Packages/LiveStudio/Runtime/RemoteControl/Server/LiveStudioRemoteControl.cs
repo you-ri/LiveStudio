@@ -3,7 +3,7 @@
 using Lilium.RemoteControl.Server;
 using Lilium.RemoteControl.RestApi;
 using Lilium.RemoteControl.UI;
-using Lilium.Virgo.RemoteControl;
+using Lilium.RemoteControl;
 
 namespace Lilium.LiveStudio
 {
@@ -28,51 +28,42 @@ namespace Lilium.LiveStudio
         protected override void OnRegisterHandlers(RemoteControlServerCore server)
         {
             _cameraHandler = new CameraApiHandler(server);
-            server.RegisterRoute("/api/camera", _cameraHandler);
+            server.RegisterRoute(_cameraHandler);
 
             _manipulatorHandler = new ManipulatorApiHandler(server);
-            server.RegisterRoute("/api/manipulator", _manipulatorHandler);
+            server.RegisterRoute(_manipulatorHandler);
 
             _vrmLoadHandler = new VrmLoadApiHandler(server);
-            server.RegisterRoute("/api/vrm/load", _vrmLoadHandler);
+            server.RegisterRoute(_vrmLoadHandler);
 
+            // Serves both /api/input-actions and /api/input-actions/bind via its own Routes.
             _inputActionsHandler = new InputActionsApiHandler(server);
-            server.RegisterRoute("/api/input-actions", _inputActionsHandler);
-            server.RegisterRoute("/api/input-actions/bind", _inputActionsHandler);
+            server.RegisterRoute(_inputActionsHandler);
 
             _expressionsHandler = new ExpressionsApiHandler(server);
-            server.RegisterRoute("/api/expressions", _expressionsHandler);
+            server.RegisterRoute(_expressionsHandler);
 
             _commandsHandler = new CommandsApiHandler(server);
-            server.RegisterRoute("/api/commands", _commandsHandler);
+            server.RegisterRoute(_commandsHandler);
 
             _resetHandler = new ResetApiHandler(server);
-            server.RegisterRoute("/api/commands/reset", _resetHandler);
+            server.RegisterRoute(_resetHandler);
 
             _quitHandler = new QuitApiHandler(server);
-            server.RegisterRoute("/api/commands/quit", _quitHandler);
+            server.RegisterRoute(_quitHandler);
         }
 
         protected override void OnUnregisterHandlers(RemoteControlServerCore server)
         {
-            server.UnregisterRoute("/api/camera");
-            server.UnregisterRoute("/api/manipulator");
-            server.UnregisterRoute("/api/vrm/load");
-            server.UnregisterRoute("/api/input-actions");
-            server.UnregisterRoute("/api/input-actions/bind");
-            server.UnregisterRoute("/api/expressions");
-            server.UnregisterRoute("/api/commands");
-            server.UnregisterRoute("/api/commands/reset");
-            server.UnregisterRoute("/api/commands/quit");
-
-            _cameraHandler?.Cleanup();
-            _manipulatorHandler?.Cleanup();
-            _vrmLoadHandler?.Cleanup();
-            _inputActionsHandler?.Cleanup();
-            _expressionsHandler?.Cleanup();
-            _commandsHandler?.Cleanup();
-            _resetHandler?.Cleanup();
-            _quitHandler?.Cleanup();
+            // UnregisterRoute calls handler.Cleanup() internally.
+            server.UnregisterRoute(_cameraHandler);
+            server.UnregisterRoute(_manipulatorHandler);
+            server.UnregisterRoute(_vrmLoadHandler);
+            server.UnregisterRoute(_inputActionsHandler);
+            server.UnregisterRoute(_expressionsHandler);
+            server.UnregisterRoute(_commandsHandler);
+            server.UnregisterRoute(_resetHandler);
+            server.UnregisterRoute(_quitHandler);
 
             _cameraHandler = null;
             _manipulatorHandler = null;

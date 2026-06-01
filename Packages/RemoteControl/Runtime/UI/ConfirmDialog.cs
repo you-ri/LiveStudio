@@ -3,7 +3,7 @@ using System;
 using System.Runtime.InteropServices;
 using UnityEngine;
 
-namespace Lilium.RemoteControl.UI
+namespace Lilium.RemoteControl.Dialogs
 {
     /// <summary>
     /// OS ネイティブの同期確認ダイアログ。OK/Cancel の 2 択、または Yes/No/Cancel の 3 択。

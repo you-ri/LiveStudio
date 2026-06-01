@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 using Lilium.RemoteControl;
-using Lilium.RemoteControl.UI;
+using Lilium.RemoteControl.Dialogs;
 using Lilium.RemoteControl.Server;
 
 namespace Lilium.RemoteControl.LiveScene
@@ -39,10 +39,6 @@ namespace Lilium.RemoteControl.LiveScene
         private RemoteControlServerRunner _serverRunner;
         private LiveSceneSaveSystem _sceneSave;
         private LiveSceneIoHandler _sceneIoHandler;
-
-        // Route key for the scene import/export handler. The value is only a dictionary key;
-        // actual matching is done by LiveSceneIoHandler.CanHandle (/exposed/export, /exposed/import).
-        private const string kSceneIoRoute = "/exposed/io";
 
         private bool _serverStarted;
         private bool _handlersRegistered;
@@ -191,7 +187,7 @@ namespace Lilium.RemoteControl.LiveScene
             // OnRegisterHandlers hook) so subclasses that override the hook without calling
             // base still get scene I/O. ExposedObjectHandler no longer claims these routes.
             if (_sceneIoHandler == null) _sceneIoHandler = new LiveSceneIoHandler(srv);
-            srv.RegisterRoute(kSceneIoRoute, _sceneIoHandler);
+            srv.RegisterRoute(_sceneIoHandler);
 
             OnPreRegisterHandlers(srv);
             OnRegisterHandlers(srv);
@@ -205,8 +201,8 @@ namespace Lilium.RemoteControl.LiveScene
             {
                 OnUnregisterHandlers(srv);
                 OnPreUnregisterHandlers(srv);
-                srv.UnregisterRoute(kSceneIoRoute);
-                _sceneIoHandler?.Cleanup();
+                // UnregisterRoute calls handler.Cleanup() internally.
+                srv.UnregisterRoute(_sceneIoHandler);
                 _sceneIoHandler = null;
                 _handlersRegistered = false;
             }

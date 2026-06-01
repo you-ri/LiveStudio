@@ -27,24 +27,11 @@ namespace Lilium.LiveStudio
         // レスポンス DTO は基底の protected CommandResponse を共用する
         // （独自の private CommandResponse は基底メンバを隠蔽していたため削除）。
 
-        public CommandsApiHandler(RemoteControlServerCore server) : base(server)
+        public CommandsApiHandler(RemoteControlServerCore server)
+            : base(server, new RouteRule("/api/commands", RouteMatch.Exact))
         {
         }
 
-
-
-        public override void Cleanup()
-        {
-        }
-
-        private static readonly RouteRule[] _kRoutes =
-        {
-            new RouteRule("/api/commands", RouteMatch.Exact)
-        };
-
-        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
-
-        protected override bool SupportsGet() => false;
         protected override bool SupportsPost() => true;
 
         protected override async Task HandlePostRequest(HttpListenerContext context)

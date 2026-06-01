@@ -6,7 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 
-namespace Lilium.RemoteControl.Core
+namespace Lilium.RemoteControl
 {
     /// <summary>
     /// ポーリング最適化システム

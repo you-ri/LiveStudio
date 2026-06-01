@@ -14,20 +14,10 @@ namespace Lilium.RemoteControl
 {
     public class LanguageHandler : BaseRemoteControlApiHandler
     {
-        public LanguageHandler(RemoteControlServerCore server) : base(server)
+        public LanguageHandler(RemoteControlServerCore server)
+            : base(server, new RouteRule("/api/language", RouteMatch.Exact))
         {
         }
-
-        public override void Cleanup()
-        {
-        }
-
-        private static readonly RouteRule[] _kRoutes =
-        {
-            new RouteRule("/api/language", RouteMatch.Exact)
-        };
-
-        protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
 
         protected override bool SupportsGet() => true;
         protected override bool SupportsPut() => true;
