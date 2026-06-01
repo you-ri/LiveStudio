@@ -308,7 +308,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             //
             // VRC stiffness (Advanced のみ) は本マッピングには含まれていないため使用しない。
             const float StiffnessForceScale = 4.0f;
-            const float GravityPowerScale = 20.0f;
+            const float GravityPowerScale = 1.0f;
             float gravity = Mathf.Abs(pb.gravity);
             Vector3 gravityDir = pb.gravity >= 0f ? new Vector3(0f, -1f, 0f) : new Vector3(0f, 1f, 0f);
             float radius = Mathf.Max(0f, pb.radius);
