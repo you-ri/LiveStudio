@@ -35,6 +35,9 @@ namespace Lilium.LiveStudio.Virgo.Networking
         private int _bufferSize;                                  // バッファサイズ
         private readonly object _sendLock = new object();         // 送信用ロック
 
+        // 受信待ちの Poll タイムアウト(マイクロ秒)。データが無くてもこの間隔で停止フラグを再評価する。
+        const int kPollTimeoutMicroseconds = 100_000; // 100ms
+
         public delegate void DataReceivedHandler(byte[] data);
 
         /// <summary>
@@ -192,22 +195,38 @@ namespace Lilium.LiveStudio.Virgo.Networking
 
         /// <summary>
         /// データを受信して登録されたイベントにディスパッチする。
+        /// Poll で最大 kPollTimeoutMicroseconds だけ待機し、ビジーウェイトと無限ブロックの双方を避ける。
         /// </summary>
         private void _ReceiveAndDispatch()
         {
-            if (_udpClient == null)
-            {
-                return;
-            }
-            if (_udpClient.Available == 0)
+            var client = _udpClient;
+            if (client == null)
             {
                 return;
             }
 
-            byte[] rawData = _udpClient.Receive(ref _remoteEndPoint);
+            try
+            {
+                // データが来るまで最大 100ms ブロックする。来なければ false で抜けて停止フラグを再評価する。
+                if (!client.Client.Poll(kPollTimeoutMicroseconds, SelectMode.SelectRead))
+                {
+                    return;
+                }
 
-            // 通常のデータ受信イベント
-            onDataReceived?.Invoke(rawData);
+                byte[] rawData = client.Receive(ref _remoteEndPoint);
+
+                // 通常のデータ受信イベント
+                onDataReceived?.Invoke(rawData);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Close() によりソケットが破棄された。次ループの停止フラグ評価で正常終了する。
+            }
+            catch (SocketException e)
+            {
+                // 受信エラー（ICMP port unreachable 等）。致命的でなければ次ループで再試行する。
+                Debug.LogWarning($"[Core] UDP receive failed: {e.Message}");
+            }
         }
 
         public void Close()

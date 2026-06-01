@@ -44,6 +44,12 @@ namespace Lilium.LiveStudio.Virgo
             set { _port = value; }
         }
 
+        /// <summary>これまでに受信したフレーム数。受信検知のインジケータ用。</summary>
+        public int receivedFrameCount => _receivedFrameCount;
+
+        /// <summary>UDP 受信ソケットが開いているか。</summary>
+        public bool isOpened => _udpConnection.isOpened;
+
         [SerializeField]
         [ExposedField]
         private int _port = 0;
@@ -80,7 +86,8 @@ namespace Lilium.LiveStudio.Virgo
         /// </summary>
         public bool resetCameraAtReceived = true;
 
-        private int _receivedFrameCount = 0;
+        // バックグラウンドスレッドで ++、メインスレッド(エディタ)で読むため volatile で可視性を担保する。
+        private volatile int _receivedFrameCount = 0;
 
         void OnEnable()
         {
