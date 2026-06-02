@@ -84,38 +84,26 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
-        /// Graceful stop for windowless child processes (e.g. a -batchmode app) where
-        /// <see cref="Process.CloseMainWindow"/> is a no-op. Invokes
-        /// <paramref name="requestGracefulShutdown"/> (which asks the child to quit and lets it run
-        /// its own save-on-quit logic), waits up to <paramref name="gracefulTimeoutMs"/> for a clean
-        /// exit, then falls back to <see cref="Process.Kill()"/>. The reference is set to null after
-        /// disposal so the caller's field is left in a clean state.
+        /// Stop a child that shuts itself down on request (e.g. a windowless -batchmode app with its
+        /// own quit listener, where <see cref="Process.CloseMainWindow"/> is a no-op). Invokes
+        /// <paramref name="requestGracefulShutdown"/> and returns immediately WITHOUT waiting for or
+        /// forcing exit, so the parent's own shutdown is never delayed; the child is responsible for
+        /// exiting on its own. The reference is disposed and set to null.
         /// </summary>
-        public static void Stop(ref Process process, Action requestGracefulShutdown, int gracefulTimeoutMs = 5000)
+        public static void RequestStopAndRelease(ref Process process, Action requestGracefulShutdown)
         {
             if (process == null) return;
 
             try
             {
-                if (process.HasExited)
+                if (!process.HasExited)
                 {
-                    return;
+                    requestGracefulShutdown?.Invoke();
                 }
-
-                requestGracefulShutdown?.Invoke();
-
-                if (process.WaitForExit(gracefulTimeoutMs))
-                {
-                    UnityEngine.Debug.Log("[Studio] Child application terminated gracefully.");
-                    return;
-                }
-
-                process.Kill();
-                UnityEngine.Debug.LogWarning("[Studio] Child application was forcibly terminated.");
             }
             catch (Exception ex)
             {
-                UnityEngine.Debug.LogError($"[Studio] Error stopping child application: {ex.Message}");
+                UnityEngine.Debug.LogError($"[Studio] Error requesting child stop: {ex.Message}");
             }
             finally
             {

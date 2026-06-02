@@ -61,12 +61,11 @@ namespace Lilium.LiveStudio.Virgo
         {
             if (_process == null) return;
 
-            // Fusion runs with -batchmode -nographics, so CloseMainWindow is a no-op and the
-            // process would otherwise be killed outright (skipping OnApplicationQuit / save-on-quit).
-            // Signal this specific child (by PID) to quit gracefully first, then fall back to Kill.
-            // PID capture happens before ChildProcessHost.Stop nulls the reference.
+            // Fusion runs with -batchmode -nographics (no main window), so just signal it to quit by
+            // PID and return immediately. Fusion's own quit listener handles Application.Quit() and
+            // save-on-quit; we do not wait for its exit so Studio shuts down without delay.
             int pid = _process.Id;
-            ChildProcessHost.Stop(ref _process, () => ChildProcessQuitSignal.Signal(pid));
+            ChildProcessHost.RequestStopAndRelease(ref _process, () => ChildProcessQuitSignal.Signal(pid));
         }
 
 #if UNITY_EDITOR
