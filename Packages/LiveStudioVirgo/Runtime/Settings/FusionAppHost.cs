@@ -59,7 +59,14 @@ namespace Lilium.LiveStudio.Virgo
 
         static void _Stop()
         {
-            ChildProcessHost.Stop(ref _process);
+            if (_process == null) return;
+
+            // Fusion runs with -batchmode -nographics, so CloseMainWindow is a no-op and the
+            // process would otherwise be killed outright (skipping OnApplicationQuit / save-on-quit).
+            // Signal this specific child (by PID) to quit gracefully first, then fall back to Kill.
+            // PID capture happens before ChildProcessHost.Stop nulls the reference.
+            int pid = _process.Id;
+            ChildProcessHost.Stop(ref _process, () => ChildProcessQuitSignal.Signal(pid));
         }
 
 #if UNITY_EDITOR

@@ -261,6 +261,8 @@ namespace Lilium.RemoteControl.LiveScene
             var json = LiveSceneSerializer.BuildLiveSceneJson(_objectContainer, baseSceneName);
             System.IO.File.WriteAllText(fullPath, json);
             _baselineJson = json;
+
+            Debug.Log($"[RemoteControl] Live scene saved to '{fullPath}'");
         }
 
         public bool HasUnsavedChanges()
