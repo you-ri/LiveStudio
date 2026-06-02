@@ -18,6 +18,9 @@ namespace Lilium.LiveStudio.Virgo
         /// <summary>Read-only package default referenced when no per-project override exists.</summary>
         public const string kPackageDefaultPath = "Packages/jp.lilium.livestudio.virgo/Contents/Settings/LiveStudioVirgoProjectSettings.asset";
 
+        /// <summary>Name of the inbound firewall rule that allows the capture UDP ports.</summary>
+        public const string kCaptureFirewallRuleName = "VirgoMotion Capture (UDP)";
+
         [Header("Fusion App")]
         [Tooltip("If enabled, VirgoMotionFusion is launched on application startup and stopped on shutdown.")]
         [SerializeField] bool _launchFusionOnStartup = true;
@@ -34,12 +37,20 @@ namespace Lilium.LiveStudio.Virgo
 
         [SerializeField] bool _fusionHideWindow = true;
 
+        [Tooltip("If enabled, an inbound UDP allow rule for the capture ports is registered (one-time UAC prompt) before Fusion launches. The default inbound firewall policy blocks LAN capture packets otherwise.")]
+        [SerializeField] bool _registerFusionFirewallRule = true;
+
+        [Tooltip("netsh localport value for the capture inbound firewall rule. Covers capture channels (9005/9006) and camera frames (9007).")]
+        [SerializeField] string _fusionCapturePorts = "9005-9010";
+
         public bool launchFusionOnStartup => _launchFusionOnStartup;
         public PathType fusionPathType => _fusionPathType;
         public string fusionApplicationPath => _fusionApplicationPath;
         public string fusionPackageName => _fusionPackageName;
         public string fusionArguments => _fusionArguments;
         public bool fusionHideWindow => _fusionHideWindow;
+        public bool registerFusionFirewallRule => _registerFusionFirewallRule;
+        public string fusionCapturePorts => _fusionCapturePorts;
 
         static LiveStudioVirgoProjectSettings _instance;
 

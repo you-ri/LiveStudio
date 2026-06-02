@@ -39,6 +39,15 @@ namespace Lilium.LiveStudio.Virgo
                 settings.fusionApplicationPath,
                 settings.fusionPackageName);
 
+            // The default Windows inbound policy blocks LAN capture UDP, and Fusion is launched
+            // with -batchmode (no UI), so no allow dialog would ever appear. Register a port-based
+            // allow rule up front so capture packets reach Fusion regardless of its install path.
+            if (settings.registerFusionFirewallRule)
+            {
+                WindowsFirewall.EnsureInboundUdpPortsAllowed(
+                    settings.fusionCapturePorts, LiveStudioVirgoProjectSettings.kCaptureFirewallRuleName);
+            }
+
             _process = ChildProcessHost.Start(fullPath, settings.fusionArguments, settings.fusionHideWindow);
             if (_process == null) return;
 

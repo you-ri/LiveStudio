@@ -48,5 +48,44 @@ namespace Lilium.LiveStudio.Virgo
             UnityEditor.EditorUtility.RevealInFinder(Application.persistentDataPath);
         }
 
+        [UnityEditor.MenuItem("Tools/Virgo Motion/Allow Capture Ports through Firewall")]
+        public static void AllowCapturePortsThroughFirewall()
+        {
+            const string kDialogTitle = "Allow Capture Ports";
+
+            var s = LiveStudioVirgoProjectSettings.Instance;
+            if (s == null)
+            {
+                Debug.LogError("[Studio] LiveStudioVirgoProjectSettings is not available.");
+                UnityEditor.EditorUtility.DisplayDialog(
+                    kDialogTitle, "LiveStudioVirgoProjectSettings is not available.", "OK");
+                return;
+            }
+
+            var ruleName = LiveStudioVirgoProjectSettings.kCaptureFirewallRuleName;
+            var ports = s.fusionCapturePorts;
+
+            // The rule is idempotent and added automatically when Fusion launches, so it
+            // often already exists. Report that explicitly instead of silently doing nothing.
+            if (WindowsFirewall.IsInboundRulePresent(ruleName))
+            {
+                UnityEditor.EditorUtility.DisplayDialog(
+                    kDialogTitle,
+                    $"Capture ports ({ports}) are already allowed through Windows Firewall.",
+                    "OK");
+                return;
+            }
+
+            bool added = WindowsFirewall.EnsureInboundUdpPortsAllowed(ports, ruleName);
+            UnityEditor.EditorUtility.DisplayDialog(
+                kDialogTitle,
+                added
+                    ? $"Capture ports ({ports}) are now allowed through Windows Firewall."
+                    : $"Could not add the firewall rule (it may have been cancelled).\n\n" +
+                      $"Run manually as administrator:\n" +
+                      $"netsh advfirewall firewall add rule name=\"{ruleName}\" dir=in action=allow protocol=UDP localport={ports} profile=any",
+                "OK");
+        }
+
     }
 }

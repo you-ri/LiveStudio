@@ -187,6 +187,13 @@ public class ReadmeEditor : UnityEditor.Editor
             return;
 
         GUILayout.Label(Localize(lang, "Optional Packages", "オプションパッケージ", "可选软件包"), HeadingStyle);
+        GUILayout.Label(
+            Localize(lang,
+                "Install the following packages as needed.",
+                "必要に合わせて以下のパッケージをインストールしてください。",
+                "请根据需要安装以下软件包。"),
+            BodyStyle);
+        GUILayout.Space(4f);
 
         EditorGUI.BeginDisabledGroup(OptionalPackageInstaller.IsBusy);
 
@@ -359,6 +366,9 @@ public class ReadmeEditor : UnityEditor.Editor
                 break;
             case "buildAndRun":
                 BuildAndRun();
+                break;
+            case "allowCapturePorts":
+                ToolMenu.AllowCapturePortsThroughFirewall();
                 break;
             default:
                 Debug.LogWarning($"[Readme] Unknown buttonAction: '{actionId}'");
