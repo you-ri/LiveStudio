@@ -16,8 +16,33 @@ namespace Lilium.VRChatAvatarTransfer.Editor
     /// </summary>
     internal static class PrefabAssetConverter
     {
-        public static bool Convert(string assetPath)
+        /// <summary>
+        /// 変換結果。<see cref="success"/> が false の場合は他のフィールドは未確定。
+        /// 削除コンポーネント数は <see cref="StripVRChatComponents"/> の集計値。
+        /// </summary>
+        internal struct ConvertResult
         {
+            public bool success;
+            public int vrchatComponentsRemoved; // VRCAvatarDescriptor / PipelineManager
+            public int editorOnlyRemoved;       // NDMF / Modular Avatar 等
+            public int missingScriptsRemoved;   // Missing Script
+
+            public int physBonesConverted;          // VRCPhysBone → VRM SpringBone
+            public int physCollidersConverted;      // VRCPhysBoneCollider → SpringBone Collider
+            public int vrcConstraintsConverted;     // VRCConstraint → Unity Constraint
+
+            public bool fxControllerApplied;        // FX AnimatorController を複製・適用したか
+            public int parameterDriversConverted;   // VRCAvatarParameterDriver → AvatarParameterDriver
+            public int trackingControlsConverted;   // VRCAnimatorTrackingControl → AvatarAnimatorTrackingControl
+
+            public bool usesVRCFTAvatar;            // IAvatar として VRCFTAvatar を採用したか (false = VRCAvatar)
+
+            public int TotalRemoved => vrchatComponentsRemoved + editorOnlyRemoved + missingScriptsRemoved;
+        }
+
+        public static ConvertResult Convert(string assetPath)
+        {
+            var result = new ConvertResult();
             GameObject root = null;
             try
             {
@@ -25,14 +50,18 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 if (root == null)
                 {
                     VRChatAvatarTransferLog.Error($"Failed to load prefab contents: '{assetPath}'.");
-                    return false;
+                    return result;
                 }
 
                 var safeName = Vrm10ObjectBuilder.MakeFileSafe(Path.GetFileNameWithoutExtension(assetPath));
 
-                PhysBoneToSpringBoneConverter.TryConvert(root, out _);
-                VRCConstraintToUnityConstraintConverter.Convert(root);
-                ApplyFxAnimatorController(root, safeName);
+                if (PhysBoneToSpringBoneConverter.TryConvert(root, out var pbResult))
+                {
+                    result.physBonesConverted = pbResult.PhysBoneCount;
+                    result.physCollidersConverted = pbResult.ColliderCount;
+                }
+                result.vrcConstraintsConverted = VRCConstraintToUnityConstraintConverter.Convert(root);
+                ApplyFxAnimatorController(root, safeName, ref result);
 
                 // VRCFT v2 互換 (FX controller に "FT/v2/" 系パラメータが存在) の場合は
                 // VRCFTAvatar を IAvatar として採用し、ARKit を直接 FT/v2/ パラメータへ書き込む。
@@ -40,6 +69,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 // (FT テンプレートが Animator 内で表情を駆動するため、データソースが噛み合わない)。
                 if (IsVRCFTCompatible(root))
                 {
+                    result.usesVRCFTAvatar = true;
                     if (root.GetComponent<Lilium.LiveStudio.VRCFTAvatar>() == null)
                     {
                         Undo.AddComponent<Lilium.LiveStudio.VRCFTAvatar>(root);
@@ -65,7 +95,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     // VRCExpressionsConverter.Convert(root, vrcAvatar);
                 }
 
-                StripVRChatComponents(root);
+                StripVRChatComponents(root, ref result);
 
                 var outPath = $"{Vrm10ObjectBuilder.OutputFolder}/{safeName}.prefab";
                 PrefabUtility.SaveAsPrefabAsset(root, outPath, out var saved);
@@ -77,12 +107,13 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 {
                     VRChatAvatarTransferLog.Error($"Failed to save converted prefab to '{outPath}'.");
                 }
-                return saved;
+                result.success = saved;
+                return result;
             }
             catch (System.Exception ex)
             {
                 VRChatAvatarTransferLog.Error($"Prefab asset conversion failed for '{assetPath}': {ex}");
-                return false;
+                return result;
             }
             finally
             {
@@ -96,7 +127,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
         /// AvatarParameterDriver, and assigns the copy to the root Animator. The original
         /// FX controller asset is never modified.
         /// </summary>
-        private static void ApplyFxAnimatorController(GameObject root, string safeName)
+        private static void ApplyFxAnimatorController(GameObject root, string safeName, ref ConvertResult result)
         {
             var desc = root.GetComponent<VRCAvatarDescriptor>();
             if (desc == null || desc.baseAnimationLayers == null) return;
@@ -123,8 +154,9 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 return;
             }
 
-            var applied = DuplicateAndConvertFxController(fxController, safeName) ?? fxController;
+            var applied = DuplicateAndConvertFxController(fxController, safeName, ref result) ?? fxController;
             animator.runtimeAnimatorController = applied;
+            result.fxControllerApplied = true;
             VRChatAvatarTransferLog.Info($"'{root.name}': applied FX animator controller '{applied.name}'.");
         }
 
@@ -164,7 +196,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
         /// parameter-driver behaviours. Returns the copy, or null when duplication is not
         /// possible (caller falls back to the original controller).
         /// </summary>
-        private static AnimatorController DuplicateAndConvertFxController(RuntimeAnimatorController source, string safeName)
+        private static AnimatorController DuplicateAndConvertFxController(RuntimeAnimatorController source, string safeName, ref ConvertResult result)
         {
             var srcPath = AssetDatabase.GetAssetPath(source);
             if (string.IsNullOrEmpty(srcPath))
@@ -216,12 +248,12 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 return null;
             }
 
-            AvatarParameterDriverConverter.Convert(copy);
-            AvatarAnimatorTrackingControlConverter.Convert(copy);
+            result.parameterDriversConverted = AvatarParameterDriverConverter.Convert(copy);
+            result.trackingControlsConverted = AvatarAnimatorTrackingControlConverter.Convert(copy);
             return copy;
         }
 
-        private static void StripVRChatComponents(GameObject root)
+        private static void StripVRChatComponents(GameObject root, ref ConvertResult result)
         {
             int removed = 0;
             foreach (var desc in root.GetComponentsInChildren<VRCAvatarDescriptor>(true))
@@ -236,6 +268,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 Object.DestroyImmediate(pm);
                 removed++;
             }
+            result.vrchatComponentsRemoved = removed;
             if (removed > 0)
             {
                 VRChatAvatarTransferLog.Info($"'{root.name}': stripped {removed} VRChat-only component(s) (VRCAvatarDescriptor / PipelineManager).");
@@ -255,6 +288,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     editorOnlyRemoved++;
                 }
             }
+            result.editorOnlyRemoved = editorOnlyRemoved;
             if (editorOnlyRemoved > 0)
             {
                 VRChatAvatarTransferLog.Info($"'{root.name}': stripped {editorOnlyRemoved} editor-only component(s) (NDMF / Modular Avatar, etc.).");
@@ -269,6 +303,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 if (t == null) continue;
                 missingRemoved += GameObjectUtility.RemoveMonoBehavioursWithMissingScript(t.gameObject);
             }
+            result.missingScriptsRemoved = missingRemoved;
             if (missingRemoved > 0)
             {
                 VRChatAvatarTransferLog.Info($"'{root.name}': removed {missingRemoved} missing script(s).");

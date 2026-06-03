@@ -4,9 +4,7 @@ using System.IO;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
-using VRC.Dynamics;
 using VRC.SDK3.Avatars.Components;
-using VRC.SDK3.Dynamics.PhysBone.Components;
 
 namespace Lilium.VRChatAvatarTransfer.Editor
 {
@@ -33,11 +31,17 @@ namespace Lilium.VRChatAvatarTransfer.Editor
         [SerializeField] private GameObject avatarPrefab;
         [SerializeField] private GameObject convertedPrefab;
         private readonly List<Item> items = new List<Item>();
+        private readonly List<Item> resultItems = new List<Item>();
+        private bool hasResult;
         private bool canConvert;
         private string outputPath;
 
-        private static GUIStyle iconStyle;
-        private static GUIStyle IconStyle => iconStyle ??= new GUIStyle
+        private static readonly Color kOkDotColor = new Color(0.36f, 0.78f, 0.36f);   // green
+        private static readonly Color kOffDotColor = new Color(0.55f, 0.55f, 0.55f); // gray
+        private static readonly GUIContent kDotContent = new GUIContent("●");    // ●
+
+        private static GUIStyle dotStyle;
+        private static GUIStyle DotStyle => dotStyle ??= new GUIStyle(EditorStyles.label)
         {
             padding = new RectOffset(0, 0, 0, 0),
             margin = new RectOffset(0, 4, 0, 0),
@@ -61,6 +65,9 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 allowSceneObjects: false);
             if (EditorGUI.EndChangeCheck())
             {
+                // 対象 prefab が変わったら前回の変換結果を破棄する。
+                resultItems.Clear();
+                hasResult = false;
                 Verify();
             }
 
@@ -79,13 +86,6 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                         DrawItem(item);
                     }
                 }
-            }
-
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Output", EditorStyles.boldLabel);
-            using (new EditorGUI.IndentLevelScope())
-            {
-                EditorGUILayout.LabelField(string.IsNullOrEmpty(outputPath) ? "—" : outputPath, EditorStyles.miniLabel);
             }
 
             EditorGUILayout.Space();
@@ -111,16 +111,18 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     DoExportPackage();
                 }
             }
-        }
 
-        private static GUIContent IconFor(Status s)
-        {
-            switch (s)
+            if (hasResult)
             {
-                case Status.Ok:      return EditorGUIUtility.IconContent("TestPassed");
-                case Status.Warning: return EditorGUIUtility.IconContent("console.warnicon.sml");
-                case Status.Error:   return EditorGUIUtility.IconContent("TestFailed");
-                default:             return EditorGUIUtility.IconContent("console.infoicon.sml");
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Conversion Result", EditorStyles.boldLabel);
+                using (new EditorGUI.IndentLevelScope())
+                {
+                    foreach (var item in resultItems)
+                    {
+                        DrawItem(item);
+                    }
+                }
             }
         }
 
@@ -128,7 +130,12 @@ namespace Lilium.VRChatAvatarTransfer.Editor
         {
             using (new EditorGUILayout.HorizontalScope())
             {
-                GUILayout.Label(IconFor(item.status), IconStyle, GUILayout.Width(18), GUILayout.Height(18));
+                // Ok のみ緑丸、それ以外はすべて灰色丸で表示する。
+                // 灰色丸は情報表示なので一回り小さくして「未処理」に見えないようにする。
+                bool ok = item.status == Status.Ok;
+                DotStyle.normal.textColor = ok ? kOkDotColor : kOffDotColor;
+                DotStyle.fontSize = ok ? 0 : 8; // 0 = デフォルトサイズ
+                GUILayout.Label(kDotContent, DotStyle, GUILayout.Width(18), GUILayout.Height(18));
                 GUILayout.Label(item.label, GUILayout.Height(18));
             }
         }
@@ -136,6 +143,8 @@ namespace Lilium.VRChatAvatarTransfer.Editor
         private void Verify()
         {
             items.Clear();
+            // 変換結果は対象 prefab が変わると無効になるためここでは消さず、
+            // ClearResult() を介してプレハブ変更時のみクリアする。
             canConvert = false;
             outputPath = null;
 
@@ -180,14 +189,6 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 items.Add(new Item { status = Status.Ok, label = "Animator (Humanoid)" });
             }
 
-            // Informational counts
-            int physBones = avatarPrefab.GetComponentsInChildren<VRCPhysBone>(true).Length;
-            int physColliders = avatarPrefab.GetComponentsInChildren<VRCPhysBoneCollider>(true).Length;
-            int constraints = avatarPrefab.GetComponentsInChildren<VRCConstraintBase>(true).Length;
-            items.Add(new Item { status = Status.Info, label = $"PhysBone components: {physBones}" });
-            items.Add(new Item { status = Status.Info, label = $"PhysBone colliders: {physColliders}" });
-            items.Add(new Item { status = Status.Info, label = $"VRC Constraints: {constraints}" });
-
             // FX AnimatorController (informational)
             string fxLabel = "FX AnimatorController: (none)";
             Status fxStatus = Status.Info;
@@ -210,17 +211,6 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             }
             items.Add(new Item { status = fxStatus, label = fxLabel });
 
-            // IAvatar component selection (informational)
-            // FX controller の "FT/v2/" パラメータ有無で VRCFTAvatar / VRCAvatar を分岐する。
-            bool isVRCFT = PrefabAssetConverter.HasVRCFTV2Parameters(fxController as AnimatorController);
-            items.Add(new Item
-            {
-                status = Status.Info,
-                label = isVRCFT
-                    ? "Runtime: VRCFTAvatar (FT/v2/* detected)"
-                    : "Runtime: VRCAvatar"
-            });
-
             canConvert = isPrefab && hasDesc && hasAnimator && isHumanoid;
 
             var safeName = Vrm10ObjectBuilder.MakeFileSafe(Path.GetFileNameWithoutExtension(assetPath));
@@ -233,11 +223,11 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             if (string.IsNullOrEmpty(assetPath)) return;
 
             Vrm10ObjectBuilder.EnsureFolder(Vrm10ObjectBuilder.OutputFolder);
-            bool ok = PrefabAssetConverter.Convert(assetPath);
+            var result = PrefabAssetConverter.Convert(assetPath);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
-            if (ok && !string.IsNullOrEmpty(outputPath))
+            if (result.success && !string.IsNullOrEmpty(outputPath))
             {
                 var converted = AssetDatabase.LoadAssetAtPath<GameObject>(outputPath);
                 if (converted != null)
@@ -246,7 +236,46 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     EditorGUIUtility.PingObject(converted);
                 }
             }
+            // Verify() は items のみ作り直すので、変換結果はその後で構築する。
             Verify();
+            BuildResultItems(result);
+        }
+
+        private void BuildResultItems(PrefabAssetConverter.ConvertResult result)
+        {
+            resultItems.Clear();
+            hasResult = result.success;
+            if (!result.success) return;
+
+            // 採用した IAvatar ランタイムコンポーネント
+            resultItems.Add(new Item
+            {
+                status = Status.Info,
+                label = result.usesVRCFTAvatar
+                    ? "Runtime: VRCFTAvatar (FT/v2/* detected)"
+                    : "Runtime: VRCAvatar"
+            });
+
+            // PhysBone / Constraint の変換数
+            resultItems.Add(new Item { status = Status.Info, label = $"Converted PhysBones: {result.physBonesConverted}" });
+            resultItems.Add(new Item { status = Status.Info, label = $"Converted PhysBone colliders: {result.physCollidersConverted}" });
+            resultItems.Add(new Item { status = Status.Info, label = $"Converted VRC Constraints: {result.vrcConstraintsConverted}" });
+
+            // 削除したコンポーネント数
+            resultItems.Add(new Item { status = Status.Info, label = $"Removed VRChat components: {result.vrchatComponentsRemoved}" });
+            resultItems.Add(new Item { status = Status.Info, label = $"Removed editor-only components: {result.editorOnlyRemoved}" });
+            resultItems.Add(new Item { status = Status.Info, label = $"Removed missing scripts: {result.missingScriptsRemoved}" });
+
+            // AnimatorController 内の変換結果
+            if (result.fxControllerApplied)
+            {
+                resultItems.Add(new Item { status = Status.Info, label = $"Converted parameter drivers: {result.parameterDriversConverted}" });
+                resultItems.Add(new Item { status = Status.Info, label = $"Converted tracking controls: {result.trackingControlsConverted}" });
+            }
+            else
+            {
+                resultItems.Add(new Item { status = Status.Info, label = "FX AnimatorController: not applied" });
+            }
         }
 
         private void DoExportPackage()
