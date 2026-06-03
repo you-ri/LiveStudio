@@ -119,6 +119,13 @@ public class ReadmeEditor : UnityEditor.Editor
         var readme = (Readme)target;
         Init();
 
+        // The Readme ships inside the package, so when the package is consumed as an immutable
+        // (registry / git) dependency Unity draws its inspector read-only (GUI.enabled = false),
+        // which would make the language toggle, section actions and Install buttons unclickable.
+        // This inspector only triggers actions and never edits the asset's serialized fields, so
+        // force-enable the GUI to keep the buttons usable regardless of the package's mutability.
+        GUI.enabled = true;
+
         var currentIndex = LanguageIndex;
         var newIndex = GUILayout.Toolbar(currentIndex, k_LanguageLabels);
         if (newIndex != currentIndex)
