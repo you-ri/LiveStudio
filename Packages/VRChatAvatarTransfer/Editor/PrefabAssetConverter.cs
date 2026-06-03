@@ -241,6 +241,25 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 VRChatAvatarTransferLog.Info($"'{root.name}': stripped {removed} VRChat-only component(s) (VRCAvatarDescriptor / PipelineManager).");
             }
 
+            // NDMF / Modular Avatar 等のエディタ専用コンポーネントを除去する。これらは
+            // VRChat のアバタービルド (ベイク) 時に取り除かれ、ランタイムには一切存在しない
+            // (共通マーカー VRC.SDKBase.IEditorOnly を実装する)。非 VRChat 環境では何も
+            // しないため、ビルド時除去を再現する形で削除する。
+            int editorOnlyRemoved = 0;
+            foreach (var comp in root.GetComponentsInChildren<MonoBehaviour>(true))
+            {
+                if (comp == null) continue; // Missing Script は後段で処理する
+                if (comp is VRC.SDKBase.IEditorOnly)
+                {
+                    Object.DestroyImmediate(comp);
+                    editorOnlyRemoved++;
+                }
+            }
+            if (editorOnlyRemoved > 0)
+            {
+                VRChatAvatarTransferLog.Info($"'{root.name}': stripped {editorOnlyRemoved} editor-only component(s) (NDMF / Modular Avatar, etc.).");
+            }
+
             // 元 VRChat アバターには、この非 VRChat プロジェクトに存在しない
             // サードパーティ製コンポーネントが Missing Script として残ることがある。
             // SaveAsPrefabAsset は Missing Script を含む prefab の保存を拒否するため除去する。

@@ -70,6 +70,14 @@ namespace Lilium.VRChatAvatarTransfer.Editor
 
                 int persisted = InMemoryAssetCollector.CollectAndPersist(work, container);
 
+                // NDMF / Modular Avatar 等のエディタ専用コンポーネント (VRChat ビルド時に
+                // 取り除かれ、ランタイムには存在しないもの) を除去する。
+                int editorOnly = _StripEditorOnlyComponents(work);
+                if (editorOnly > 0)
+                {
+                    VRChatAvatarTransferLog.Info($"'{safeName}': stripped {editorOnly} editor-only component(s) (NDMF / Modular Avatar, etc.).");
+                }
+
                 // SaveAsPrefabAsset は Missing Script を含む階層の保存を拒否する。
                 // 元 VRChat アバターには当プロジェクトに無いコンポーネントが残ることがある。
                 int missing = _RemoveMissingScripts(work);
@@ -119,6 +127,23 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             {
                 if (t == null) continue;
                 removed += GameObjectUtility.RemoveMonoBehavioursWithMissingScript(t.gameObject);
+            }
+            return removed;
+        }
+
+        // NDMF / Modular Avatar 等のエディタ専用コンポーネント (VRC.SDKBase.IEditorOnly を実装し、
+        // VRChat ビルド時に取り除かれてランタイムには存在しないもの) を除去する。
+        private static int _StripEditorOnlyComponents(GameObject root)
+        {
+            int removed = 0;
+            foreach (var comp in root.GetComponentsInChildren<MonoBehaviour>(true))
+            {
+                if (comp == null) continue; // Missing Script は _RemoveMissingScripts で処理する
+                if (comp is VRC.SDKBase.IEditorOnly)
+                {
+                    Object.DestroyImmediate(comp);
+                    removed++;
+                }
             }
             return removed;
         }
