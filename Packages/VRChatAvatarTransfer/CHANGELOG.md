@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.20.11] - 2026-06-03
+
+### Added
+
+- Editor-only components implementing `VRC.SDKBase.IEditorOnly` (NDMF / Modular Avatar, etc.) are now stripped during both Convert and Make Baked Prefab.
+
+### Fixed
+
+- The Readme inspector buttons are now clickable even when the package is consumed as an immutable git/registry dependency.
+
 ## [0.20.10] - 2026-06-02
 
 - No functional changes (version synchronized with the monorepo release).

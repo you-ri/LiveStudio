@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.20.11] - 2026-06-03
+
+### Added
+
+- Log the live scene file path when a scene is saved.
+
 ## [0.20.10] - 2026-06-02
 
 - No functional changes (version synchronized with the monorepo release).

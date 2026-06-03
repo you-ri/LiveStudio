@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.20.11] - 2026-06-03
+
+### Added
+
+- Fusion is now asked to quit gracefully on Studio shutdown via a PID-keyed quit signal (`FusionQuitSignalListener`), so the windowless Fusion process saves its state instead of being hard-killed.
+
+### Changed
+
+- Studio no longer blocks on Fusion's exit when stopping it; the quit signal is sent and Studio returns immediately.
+
+### Fixed
+
+- The Readme inspector buttons are now clickable even when LiveStudioVirgo is consumed as an immutable git/registry dependency.
+
 ## [0.20.10] - 2026-06-02
 
 ### Added

@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.20.11] - 2026-06-03
+
+### Added
+
+- `ChildProcessQuitSignal`: signals a specific child process (keyed by its PID) to quit gracefully via a Windows named event, so a windowless child can run its own save-on-quit instead of being hard-killed.
+- "Assets/Lilium Live Studio/Remove Missing Scripts" context-menu command that removes missing scripts from the selected prefab assets.
+
+### Changed
+
+- Stopping a windowless child process now signals it to quit and returns immediately without waiting for it to exit (`ChildProcessHost.RequestStopAndRelease`).
+
+### Fixed
+
+- The package Readme inspector buttons (language toggle, section actions, Install) are now clickable even when the package is consumed as an immutable git/registry dependency.
+
 ## [0.20.10] - 2026-06-02
 
 ### Added
