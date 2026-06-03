@@ -63,8 +63,10 @@ namespace Lilium.RemoteControl.LiveScene
                 PlayerPrefs.SetString(_prefsKey, value ?? "");
                 // Mirror the absolute path into a fixed key so the BeforeSceneLoad hook
                 // can read it on next launch without knowing the per-app defaultFileName.
+                // When scene switching is disabled, write empty so the static startup hook
+                // (which has no access to this config) bails out and never switches.
                 var fullPath = string.IsNullOrEmpty(value) ? "" : _ResolvePath(value);
-                PlayerPrefs.SetString(kLastScenePathKey, fullPath);
+                PlayerPrefs.SetString(kLastScenePathKey, _switchSceneOnLoad ? fullPath : "");
             }
         }
 
@@ -73,16 +75,18 @@ namespace Lilium.RemoteControl.LiveScene
         private readonly ExposedObjectContainer _objectContainer;
         private readonly string _defaultFileName;
         private readonly string _prefsKey;
+        private readonly bool _switchSceneOnLoad;
         private string _currentFilePath;
         private string _baselineJson;
 
         public event Action onResetDataRequested;
 
-        public LiveSceneSaveSystem(ExposedObjectContainer objectContainer, string defaultFileName, bool autoSaveOnQuit = true)
+        public LiveSceneSaveSystem(ExposedObjectContainer objectContainer, string defaultFileName, bool autoSaveOnQuit = true, bool switchSceneOnLoad = true)
         {
             _objectContainer = objectContainer;
             _defaultFileName = defaultFileName ?? string.Empty;
             this.autoSaveOnQuit = autoSaveOnQuit;
+            _switchSceneOnLoad = switchSceneOnLoad;
             _prefsKey = "RemoteControl_ScenePath_" + _defaultFileName;
             _currentFilePath = PlayerPrefs.GetString(_prefsKey, _defaultFileName);
         }
@@ -177,7 +181,9 @@ namespace Lilium.RemoteControl.LiveScene
             // switch first and let the new scene's RemoteControlBehaviour.Start() re-enter
             // LoadCurrentData(). This unifies the order "read JSON -> switch scene -> deserialize"
             // for both startup loads (PlayerPrefs-backed) and explicit LoadScene calls.
-            if (_TrySwitchBaseScene(fullPath)) return;
+            // When switching is disabled, skip the switch but still deserialize the saved
+            // property values into the current scene.
+            if (_switchSceneOnLoad && _TrySwitchBaseScene(fullPath)) return;
 
             _LoadFrom(fullPath);
         }

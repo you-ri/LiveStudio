@@ -62,6 +62,7 @@ namespace Lilium.RemoteControl.LiveScene
         }
 
         public string defaultFileName => _serverConfig != null ? _serverConfig.defaultFileName : null;
+        public bool switchSceneOnLoad => _serverConfig != null ? _serverConfig.switchSceneOnLoad : true;
         public string currentFilePath
         {
             get => _sceneSave?.currentFilePath;
@@ -170,7 +171,7 @@ namespace Lilium.RemoteControl.LiveScene
             if (_serverRunner == null)
                 _serverRunner = new RemoteControlServerRunner(_serverConfig, _container);
             if (_sceneSave == null)
-                _sceneSave = new LiveSceneSaveSystem(_container, defaultFileName, autoSaveOnQuit);
+                _sceneSave = new LiveSceneSaveSystem(_container, defaultFileName, autoSaveOnQuit, switchSceneOnLoad);
         }
 
         private void _StartServerAndRegister()

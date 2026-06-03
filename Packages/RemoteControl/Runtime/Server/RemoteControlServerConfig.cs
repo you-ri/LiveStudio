@@ -35,6 +35,10 @@ namespace Lilium.RemoteControl.Server
         [Tooltip("Auto-save the current scene file when the app quits with unsaved changes.")]
         public bool autoSaveOnQuit = true;
 
+        [Tooltip("Switch the active Unity scene to the file's baseSceneName when loading. " +
+                 "Turn off for apps that always run in a single scene (e.g. Fusion).")]
+        public bool switchSceneOnLoad = true;
+
         public RemoteControlServerCore CreateServer()
         {
             return CreateServer(null);
