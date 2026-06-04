@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.20.12] - 2026-06-04
+
+### Added
+
+- VRM10 `LookAt` is now configured during conversion so the transferred avatar's eye gaze can be delegated to LookAt.
+
 ## [0.20.11] - 2026-06-03
 
 ### Added

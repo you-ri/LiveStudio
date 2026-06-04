@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.20.12] - 2026-06-04
+
+### Added
+
+- Eye gaze is now delegated to the VRM10 `LookAt` component, so the avatar's eyes follow the configured look-at target instead of being driven directly.
+
 ## [0.20.11] - 2026-06-03
 
 ### Added

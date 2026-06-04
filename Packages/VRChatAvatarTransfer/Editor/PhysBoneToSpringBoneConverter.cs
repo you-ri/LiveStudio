@@ -309,13 +309,15 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             //   dragForce = 1 - pull * spring
             //     (pull=1, spring=1) → 0 (自由振動)
             //     その他              → 1 寄り (ひも風 / 固定はどちらも完全減衰)
-            //   gravityPower = abs(gravity) * 20  (esperecyan に倣う)
+            //   gravityPower = abs(gravity * gravityCurve(t)) * (1 - falloff)
+            //     gravityCurve を骨深さでサンプルする。gravityFalloff (角度依存) は VRM の
+            //     定数重力では表現できないため、ボーンが ↓ へ垂れる前提で減衰をベイク近似する。
+            //     スケール係数 GravityPowerScale は VRM10 基準の暫定値。
+            //     (esperecyan の *20 は VRM0 用スケールなので踏襲しない。)
             //
             // VRC stiffness (Advanced のみ) は本マッピングには含まれていないため使用しない。
-            const float StiffnessForceScale = 4.0f;
-            const float GravityPowerScale = 1.0f;
-            float gravity = Mathf.Abs(pb.gravity);
-            Vector3 gravityDir = pb.gravity >= 0f ? new Vector3(0f, -1f, 0f) : new Vector3(0f, 1f, 0f);
+            const float StiffnessForceScale = 10.0f;
+            const float GravityPowerScale = 10.0f;
             float radius = Mathf.Max(0f, pb.radius);
             var anglelimitType = MapLimitType(pb.limitType);
 
@@ -362,9 +364,20 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 float pullAmt   = Mathf.Max(0f,   pb.pull   * EvaluateCurveOrOne(pb.pullCurve,   tForce));
                 float springAmt = Mathf.Clamp01(pb.spring * EvaluateCurveOrOne(pb.springCurve, tForce));
 
-                joint.m_stiffnessForce = pullAmt * (1f - springAmt) * StiffnessForceScale;
+                joint.m_stiffnessForce = pullAmt *  StiffnessForceScale;
                 joint.m_dragForce = Mathf.Clamp01(1f - pullAmt * springAmt);
-                joint.m_gravityPower = gravity * GravityPowerScale;
+
+                // gravity: 他パラメータ同様 gravityCurve を骨深さ tForce でサンプルする。
+                float gSampled = pb.gravity * EvaluateCurveOrOne(pb.gravityCurve, tForce);
+                Vector3 gravityDir = gSampled >= 0f ? new Vector3(0f, -1f, 0f) : new Vector3(0f, 1f, 0f);
+
+                // gravityFalloff: VRC ではボーンが重力方向(↓)に近づくほど重力を弱める角度依存項。
+                // VRM SpringBone の重力は定数で角度項を持たない。近似ベイクが過減衰を招くため一旦無効化し、
+                // falloff を考慮しない素の重力量を使う。
+                // TODO: 角度依存の falloff 近似は要再検討。
+                float gEff = Mathf.Abs(gSampled);
+
+                joint.m_gravityPower = Mathf.Clamp(gEff * GravityPowerScale, 0, 5f);
                 joint.m_gravityDir = gravityDir;
                 joint.m_jointRadius = radius * EvaluateCurveOrOne(pb.radiusCurve, tRadius);
                 joint.m_anglelimitType = anglelimitType;

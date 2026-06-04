@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.20.12] - 2026-06-04
+
+### Added
+
+- `switchSceneOnLoad` option for LiveScene loading, controlling whether loading a scene also switches to it.
+
 ## [0.20.11] - 2026-06-03
 
 ### Added
