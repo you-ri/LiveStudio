@@ -109,12 +109,17 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 EditorUtility.SetDirty(existing);
             }
 
-            // SpringBone を Update タイミングで動かす (デフォルトの LateUpdate だとアニメーション後の
-            // ボーンに対して 1 frame 遅れて反映される)。
-            if (existing.UpdateType != Vrm10Instance.UpdateTypes.Update)
+            // SpringBone / LookAt は LateUpdate で処理する。VRCFTAvatar は Update で
+            // SetYawPitchManually() に視線を渡し、VRM 側 (LateUpdate, order 11000) が
+            // 最終ポーズに対して眼球と SpringBone を適用する。
+            // LookAtTargetType は手動 yaw/pitch を尊重させるため YawPitchValue にする
+            // (SpecifiedTransform だと Transform 追跡で視線が上書きされる)。
+            if (existing.UpdateType != Vrm10Instance.UpdateTypes.LateUpdate
+                || existing.LookAtTargetType != VRM10ObjectLookAt.LookAtTargetTypes.YawPitchValue)
             {
-                Undo.RecordObject(existing, "Set Vrm10Instance UpdateType to Update");
-                existing.UpdateType = Vrm10Instance.UpdateTypes.Update;
+                Undo.RecordObject(existing, "Configure Vrm10Instance LookAt / UpdateType");
+                existing.UpdateType = Vrm10Instance.UpdateTypes.LateUpdate;
+                existing.LookAtTargetType = VRM10ObjectLookAt.LookAtTargetTypes.YawPitchValue;
                 EditorUtility.SetDirty(existing);
             }
             return existing;

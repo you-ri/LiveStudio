@@ -4,6 +4,9 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+#if VRMC_VRM10
+using UniVRM10;
+#endif
 
 namespace Lilium.LiveStudio
 {
@@ -253,7 +256,7 @@ namespace Lilium.LiveStudio
 
         [SerializeField]
         [Tooltip("目の回転最大角度 (x: yaw, y: pitch)")]
-        Vector2 _eyeRotationMax = new Vector2(40f, 40f);
+        Vector2 _eyeRotationMax = new Vector2(90f, 90f);
 
         Animator _animator;
         MotionSourceBase _motionSource;
@@ -273,6 +276,14 @@ namespace Lilium.LiveStudio
         Quaternion _rightEyeNeutral;
         Quaternion _leftEyeOffset;
         Quaternion _rightEyeOffset;
+
+#if VRMC_VRM10
+        // Vrm10Instance がある場合は VRM の LookAt に視線を委譲する。
+        // VRCFT が眼球ボーンを直接書くと、Vrm10Instance(order 11000) の LateUpdate
+        // Process が後から眼球をニュートラルに上書きして競合するため。
+        Vrm10Instance _vrm10Instance;
+        Vrm10RuntimeLookAt _vrm10LookAt;
+#endif
 
         void Start()
         {
@@ -319,6 +330,16 @@ namespace Lilium.LiveStudio
             _SetupEyeBones();
             _isTracking = false;
 
+#if VRMC_VRM10
+            // Vrm10Instance が同居していれば VRM の LookAt 経由で眼球を適用する。
+            // Runtime プロパティは実行時のみアクセス可（内部で Transform 操作を行う）。
+            _vrm10Instance = GetComponent<Vrm10Instance>();
+            if (_vrm10Instance != null)
+            {
+                _vrm10LookAt = _vrm10Instance.Runtime.LookAt;
+            }
+#endif
+
             ((IAvatar)this).BuildAvatar();
         }
 
@@ -361,6 +382,7 @@ namespace Lilium.LiveStudio
             _ComputeTargetValues();
             _ComputeCombinedValues();
             _WriteToAnimator();
+            _ApplyEyeLookAt();
 
             AvatarAnimationSystem.UpdateBodyAnimation(_animator, in _motionSource.frameData);
         }
@@ -370,7 +392,29 @@ namespace Lilium.LiveStudio
             if (!_isTracking || _motionSource == null) return;
 
             AvatarAnimationSystem.UpdateBodyAnimation(_animator, in _motionSource.frameData);
+
+#if VRMC_VRM10
+            // VRM 委譲時は Vrm10Instance の Process(order 11000) が眼球を適用するため
+            // ここでの直接書き込みは行わない（行うと VRM に上書きされる/競合する）。
+            if (_vrm10LookAt != null) return;
+#endif
             _ApplyEyeRotation();
+        }
+
+        // Vrm10Instance がある場合のみ、VRM の LookAt に視線(yaw/pitch)を委譲する。
+        // VRM が VRM10Object の HorizontalOuter/Inner/VerticalUp/Down で範囲をクランプする。
+        void _ApplyEyeLookAt()
+        {
+#if VRMC_VRM10
+            if (_vrm10LookAt == null) return;
+
+            // 水平は左右眼で LookOut の向きが逆のため combined(FT_EyeX) では打ち消し合う。
+            // 右眼(LookOut=右)から左眼(LookOut=左)を引いて統一視線を作る (正=右向き)。
+            // VRM の SetYawPitchManually も正の yaw=右向き / 正の pitch=上向き。
+            float yaw = (_targetValues[FT_EyeRightX] - _targetValues[FT_EyeLeftX]) * 0.5f * _eyeRotationMax.x;
+            float pitch = _targetValues[FT_EyeY] * _eyeRotationMax.y;
+            _vrm10LookAt.SetYawPitchManually(yaw, pitch);
+#endif
         }
 
         unsafe void _ComputeTargetValues()

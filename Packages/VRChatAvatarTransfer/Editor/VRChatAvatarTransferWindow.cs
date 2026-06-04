@@ -37,6 +37,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
         private string outputPath;
 
         private static readonly Color kOkDotColor = new Color(0.36f, 0.78f, 0.36f);   // green
+        private static readonly Color kErrorDotColor = new Color(0.85f, 0.33f, 0.33f); // red
         private static readonly Color kOffDotColor = new Color(0.55f, 0.55f, 0.55f); // gray
         private static readonly GUIContent kDotContent = new GUIContent("●");    // ●
 
@@ -130,11 +131,12 @@ namespace Lilium.VRChatAvatarTransfer.Editor
         {
             using (new EditorGUILayout.HorizontalScope())
             {
-                // Ok のみ緑丸、それ以外はすべて灰色丸で表示する。
-                // 灰色丸は情報表示なので一回り小さくして「未処理」に見えないようにする。
+                // Ok は緑丸、Error(NG) は赤丸でどちらも通常サイズで目立たせる。
+                // Warning/Info は灰色丸で一回り小さくして「未処理」に見えないようにする。
                 bool ok = item.status == Status.Ok;
-                DotStyle.normal.textColor = ok ? kOkDotColor : kOffDotColor;
-                DotStyle.fontSize = ok ? 0 : 8; // 0 = デフォルトサイズ
+                bool error = item.status == Status.Error;
+                DotStyle.normal.textColor = ok ? kOkDotColor : error ? kErrorDotColor : kOffDotColor;
+                DotStyle.fontSize = (ok || error) ? 0 : 8; // 0 = デフォルトサイズ
                 GUILayout.Label(kDotContent, DotStyle, GUILayout.Width(18), GUILayout.Height(18));
                 GUILayout.Label(item.label, GUILayout.Height(18));
             }

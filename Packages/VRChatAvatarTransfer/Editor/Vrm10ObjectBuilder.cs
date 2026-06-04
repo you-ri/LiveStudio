@@ -111,7 +111,15 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             var head = animator.GetBoneTransform(HumanBodyBones.Head);
             if (head == null) return;
 
-            // 既に手動で値が編集されている可能性を尊重し、新規生成時のみ上書きする。
+            // 眼球の最大可動域を 30 度にする。デフォルトの出力 10 度では VRCFTAvatar の
+            // 視線委譲時に目がほとんど動かないため。入力レンジ (CurveXRangeDegree=90) は既定のまま。
+            // 既定挙動を保証するため再変換時も常に上書きする。
+            lookAt.HorizontalOuter.CurveYRangeDegree = 30f;
+            lookAt.HorizontalInner.CurveYRangeDegree = 30f;
+            lookAt.VerticalUp.CurveYRangeDegree = 30f;
+            lookAt.VerticalDown.CurveYRangeDegree = 30f;
+
+            // OffsetFromHead は手動調整される可能性があるため新規生成時のみ上書きする。
             if (!overwrite) return;
 
             var worldView = avatarRoot.transform.TransformPoint(desc.ViewPosition);

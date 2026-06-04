@@ -9,6 +9,9 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+#if VRMC_VRM10
+using UniVRM10;
+#endif
 
 using Lilium.RemoteControl;
 
@@ -188,6 +191,14 @@ namespace Lilium.LiveStudio
         Quaternion _rightEyeOffset;
         float _eyeLeftX, _eyeLeftY, _eyeRightX, _eyeRightY;
 
+#if VRMC_VRM10
+        // Vrm10Instance がある場合は VRM の LookAt に視線を委譲する。
+        // VRCAvatar が眼球ボーンを直接書くと、Vrm10Instance(order 11000) の LateUpdate
+        // Process が後から眼球をニュートラルに上書きして競合するため。
+        Vrm10Instance _vrm10Instance;
+        Vrm10RuntimeLookAt _vrm10LookAt;
+#endif
+
         void Start()
         {
             _animator = GetComponent<Animator>();
@@ -252,6 +263,16 @@ namespace Lilium.LiveStudio
 
             _SetupEyeBones();
             _isTracking = false;
+
+#if VRMC_VRM10
+            // Vrm10Instance が同居していれば VRM の LookAt 経由で眼球を適用する。
+            // Runtime プロパティは実行時のみアクセス可 (内部で Transform 操作を行う)。
+            _vrm10Instance = GetComponent<Vrm10Instance>();
+            if (_vrm10Instance != null)
+            {
+                _vrm10LookAt = _vrm10Instance.Runtime.LookAt;
+            }
+#endif
 
             ((IAvatar)this).BuildAvatar();
         }
@@ -323,6 +344,14 @@ namespace Lilium.LiveStudio
                 _WriteBlinkBlendShape();
             }
 
+#if VRMC_VRM10
+            // VRM がある場合は視線を VRM LookAt へ委譲する (VRM が LateUpdate で適用)。
+            if (_vrm10LookAt != null && _tracking[kTrackEyes] == AvatarTrackingType.Tracking)
+            {
+                _ApplyEyeLookAt();
+            }
+#endif
+
             // VRChat 表情: 最大ウェイトの表情の AnimationParameterOverride を Animator へ反映
             _UpdateExpressionAnimationParameters();
 
@@ -334,11 +363,33 @@ namespace Lilium.LiveStudio
             if (!_isTracking || _motionSource == null) return;
 
             AvatarAnimationSystem.UpdateBodyAnimation(_animator, in _motionSource.frameData);
+
+#if VRMC_VRM10
+            // VRM 委譲時は Update で SetYawPitchManually 済み。Vrm10Instance の Process
+            // (order 11000) が眼球を適用するため、ここでの直接書き込みは行わない。
+            if (_vrm10LookAt != null) return;
+#endif
             // Eyes & Eyelids が Animation のときは eye bone 回転を止め FX に明け渡す。
             if (_tracking[kTrackEyes] == AvatarTrackingType.Tracking)
             {
                 _ApplyEyeRotation();
             }
+        }
+
+        // Vrm10Instance がある場合のみ、VRM の LookAt に視線(yaw/pitch)を委譲する。
+        // VRM が VRM10Object の HorizontalOuter/Inner/VerticalUp/Down で範囲をクランプする。
+        void _ApplyEyeLookAt()
+        {
+#if VRMC_VRM10
+            if (_vrm10LookAt == null) return;
+
+            // 水平は左右眼で LookOut の向きが逆のため、右眼(LookOut=右)から左眼(LookOut=左)を
+            // 引いて統一視線を作る (正=右向き)。垂直は左右同方向なので平均でよい。
+            // VRM の SetYawPitchManually も正の yaw=右向き / 正の pitch=上向き。
+            float yaw = (_eyeRightX - _eyeLeftX) * 0.5f * _eyeRotationMax.x;
+            float pitch = (_eyeRightY + _eyeLeftY) * 0.5f * _eyeRotationMax.y;
+            _vrm10LookAt.SetYawPitchManually(yaw, pitch);
+#endif
         }
 
         /// <summary>
