@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Lilium.RemoteControl
 {
     /// <summary>
-    /// ExposedObject の依存グラフ走査ユーティリティ。シーンのシリアライズとは独立した
+    /// ExposedObjectHandle の依存グラフ走査ユーティリティ。シーンのシリアライズとは独立した
     /// オブジェクトグラフ BFS で、Container の default 補足やシーン保存の到達集合構築に使う。
     /// （旧 LiveSceneSerializer から分離。シーン読み書きそのものではないため本体側に残す。）
     /// </summary>
@@ -14,12 +14,12 @@ namespace Lilium.RemoteControl
         /// 任意のオブジェクトリストからExposedObjectリストを構築する。
         /// 依存するExposedObjectも幅優先探索で自動的に追加される。
         /// </summary>
-        public static List<ExposedObject> ResolveExposedObjects(IReadOnlyList<object> objects, IExposedObjectResolver resolver)
+        public static List<ExposedObjectHandle> ResolveExposedObjects(IReadOnlyList<object> objects, IExposedObjectResolver resolver)
         {
-            var result = new List<ExposedObject>();
-            var visited = new HashSet<ExposedObject>();
+            var result = new List<ExposedObjectHandle>();
+            var visited = new HashSet<ExposedObjectHandle>();
             var visitedTargets = new HashSet<object>(ExposedObjectRegistry.ReferenceEqualityComparer.Instance);
-            var queue = new Queue<ExposedObject>();
+            var queue = new Queue<ExposedObjectHandle>();
 
             // 初期オブジェクトをExposedObjectに変換
             for (int i = 0; i < objects.Count; i++)
@@ -28,7 +28,7 @@ namespace Lilium.RemoteControl
                 if (target == null) continue;
 
                 // IExposedObjectの場合は直接exposedObjectを取得
-                ExposedObject? exposed;
+                ExposedObjectHandle? exposed;
                 if (target is IExposedObject ieo)
                 {
                     exposed = ieo.exposedObject;
@@ -103,7 +103,7 @@ namespace Lilium.RemoteControl
         }
 
         private static void _TryEnqueueDependency(object target, IExposedObjectResolver resolver,
-            HashSet<ExposedObject> visited, HashSet<object> visitedTargets, List<ExposedObject> result, Queue<ExposedObject> queue)
+            HashSet<ExposedObjectHandle> visited, HashSet<object> visitedTargets, List<ExposedObjectHandle> result, Queue<ExposedObjectHandle> queue)
         {
             if (target == null) return;
 
@@ -118,7 +118,7 @@ namespace Lilium.RemoteControl
                 var exposedClass = ExposedClass.Find(target.GetType());
                 if (exposedClass != null)
                 {
-                    exposed = ExposedObject.CreateUnregistered(exposedClass, target);
+                    exposed = ExposedObjectHandle.CreateUnregistered(exposedClass, target);
                 }
             }
 

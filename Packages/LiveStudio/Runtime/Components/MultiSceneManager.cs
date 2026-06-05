@@ -56,7 +56,7 @@ namespace Lilium.LiveStudio
 
         public string name { get; set; } = "Scene Manager";
 
-        public ExposedObject? exposedObject => ExposedObjectRegistry.FindByTarget(this);
+        public ExposedObjectHandle? exposedObject => ExposedObjectRegistry.FindByTarget(this);
 
         public string id => kId;
 

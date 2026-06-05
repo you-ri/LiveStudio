@@ -6,7 +6,7 @@ namespace Lilium.RemoteControl.UI.Editor
 {
     public struct PropertyControlContext
     {
-        public ExposedObject obj;
+        public ExposedObjectHandle obj;
         public ExposedPropertyType propType;
         public ExposedProperty prop;
         public object currentValue;

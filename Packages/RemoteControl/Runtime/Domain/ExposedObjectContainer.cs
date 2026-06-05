@@ -27,7 +27,7 @@ namespace Lilium.RemoteControl
         internal readonly List<IExposedObject> _objects;
         private string _name;
 
-        private ExposedObject? _selfExposedObject;
+        private ExposedObjectHandle? _selfExposedObject;
         private readonly HashSet<string> _persistentIds = new HashSet<string>();
 
         /// <summary>
@@ -73,7 +73,7 @@ namespace Lilium.RemoteControl
             if (_selfExposedObject != null)
                 ExposedPropertyUtility.SetDefault(_selfExposedObject.Value);
 
-            // Capture defaults of each contained ExposedObject.
+            // Capture defaults of each contained ExposedObjectHandle.
             foreach (var obj in _objects)
             {
                 if (obj == null) continue;
@@ -171,7 +171,7 @@ namespace Lilium.RemoteControl
 
         // --- IExposedObjectResolver ---
 
-        public ExposedObject? FindById(string id)
+        public ExposedObjectHandle? FindById(string id)
         {
             for (int i = 0; i < _objects.Count; i++)
             {
@@ -183,7 +183,7 @@ namespace Lilium.RemoteControl
             return ExposedObjectRegistry.FindById(id);
         }
 
-        public ExposedObject? FindByTarget(object target)
+        public ExposedObjectHandle? FindByTarget(object target)
         {
             if (target == null) return null;
 

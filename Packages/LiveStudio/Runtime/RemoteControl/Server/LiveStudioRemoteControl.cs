@@ -9,7 +9,7 @@ namespace Lilium.LiveStudio
 {
     /// <summary>
     /// LiveStudio アプリ用に Remote Control ランタイム一式を保持する単一 MonoBehaviour。
-    /// サーバ・ExposedObject コンテナ・シーン保存/読込・UI サイドバー
+    /// サーバ・ExposedObjectHandle コンテナ・シーン保存/読込・UI サイドバー
     /// (<see cref="UIRemoteControlBehaviour"/> 経由) を束ね、LiveStudio 固有の
     /// API ハンドラ (Camera / Manipulator / VrmLoad / InputActions / Expressions / Commands /
     /// Reset / Quit) を上乗せ登録する。

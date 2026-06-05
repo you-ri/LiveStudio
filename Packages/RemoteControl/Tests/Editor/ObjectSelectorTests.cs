@@ -108,7 +108,7 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = receiver;
-            var holderExposed = new ExposedObject("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
 
             // Act
             var fullJson = ExposedPropertySerializer.ToJson(holderExposed, _resolver);
@@ -131,7 +131,7 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = null;
-            var holderExposed = new ExposedObject("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
 
             var fullJson = ExposedPropertySerializer.ToJson(holderExposed, _resolver);
             var root = JObject.Parse(fullJson);
@@ -151,7 +151,7 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = receiver;
-            var holderExposed = new ExposedObject("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
 
             // Act
             var fullJson = ExposedPropertySerializer.ToJson(holderExposed, _resolver);
@@ -178,7 +178,7 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = null;
-            var holderExposed = new ExposedObject("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
 
             var payload = "{\"value\":{\"@type\":\"TestReceiver\",\"@ref\":\"" + receiverWrapper.id + ".components[0]\"}}";
             var property = holderExposed.FindProperty("receiver");
@@ -202,7 +202,7 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = receiver;
-            var holderExposed = new ExposedObject("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
 
             var property = holderExposed.FindProperty("receiver");
             Assert.IsTrue(property.HasValue);
@@ -224,7 +224,7 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = receiver;
-            var holderExposed = new ExposedObject("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
 
             var property = holderExposed.FindProperty("receiver");
 
@@ -304,7 +304,7 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = receiver;
-            var holderExposed = new ExposedObject("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
 
             // Serialize full object, extract receiver token, wrap in {value:...}, and apply back after clearing
             var fullJson = ExposedPropertySerializer.ToJson(holderExposed, _resolver);
@@ -335,7 +335,7 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = receiver;
-            var holderExposed = new ExposedObject("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
 
             // Act: デフォルト値をキャプチャ（Play開始相当）
             ExposedPropertyUtility.SetDefault(holderExposed);
@@ -363,7 +363,7 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = receiverA;
-            var holderExposed = new ExposedObject("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
 
             ExposedPropertyUtility.SetDefault(holderExposed);
 
@@ -390,7 +390,7 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = receiver;
-            var holderExposed = new ExposedObject("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
 
             ExposedPropertyUtility.SetDefault(holderExposed);
 
@@ -418,7 +418,7 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = receiverA;
-            var holderExposed = new ExposedObject("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
 
             ExposedPropertyUtility.SetDefault(holderExposed);
 
@@ -442,7 +442,7 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = null;
-            var holderExposed = new ExposedObject("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
 
             ExposedPropertyUtility.SetDefault(holderExposed);
 

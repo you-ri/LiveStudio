@@ -89,7 +89,7 @@ namespace Lilium.RemoteControl.LiveScene
                     System.IO.Directory.CreateDirectory(directory);
                 }
 
-                var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), resolver);
+                var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), resolver);
                 System.IO.File.WriteAllText(filePath, json);
                 Debug.Log($"[RemoteControl] Exported to {filePath}");
                 return true;

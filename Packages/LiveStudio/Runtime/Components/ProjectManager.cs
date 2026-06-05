@@ -86,7 +86,7 @@ namespace Lilium.LiveStudio
         }
 
         // Convention-based static deserialize callback fired by ExposedClass when
-        // the owning ExposedObject's target is null (static class). Re-applies
+        // the owning ExposedObjectHandle's target is null (static class). Re-applies
         // _quality to QualitySettings since the shadow field write bypasses the
         // property setter.
         public static void OnAfterExposedDeserialize()

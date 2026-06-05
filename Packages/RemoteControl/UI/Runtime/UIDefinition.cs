@@ -11,7 +11,7 @@ namespace Lilium.RemoteControl.UI
 {
     /// <summary>
     /// ScriptableObject defining the page structure of the Remote Control UI.
-    /// Declares the side menu items and their associated ExposedObject categories.
+    /// Declares the side menu items and their associated ExposedObjectHandle categories.
     /// </summary>
     [CreateAssetMenu(fileName = "UIDefinition", menuName = "Remote Control/UI Definition")]
     [MovedFrom(true, "Lilium.RemoteControl.WebUI", "Lilium.RemoteControl.WebUI", "WebUIDefinition")]

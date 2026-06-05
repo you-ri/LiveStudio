@@ -18,8 +18,8 @@ namespace Lilium.RemoteControl
     ///
     /// GameObject 引数を採用する理由: TransformRef.ownerName は GameObject の name 文字列で
     /// 永続化されるため、broadcasting する側も「どの GameObject の配下が変わったか」を
-    /// 直接渡すのが整合的。ExposedObject インスタンスを経由する必要がなく、owner が
-    /// ExposedObject として登録されていないケース (例: MonoBehaviour が直接 ExposedObject 化
+    /// 直接渡すのが整合的。ExposedObjectHandle インスタンスを経由する必要がなく、owner が
+    /// ExposedObjectHandle として登録されていないケース (例: MonoBehaviour が直接 ExposedObjectHandle 化
     /// されていない AvatarController) でも自然に動く。
     /// </summary>
     public static class TransformStructureService

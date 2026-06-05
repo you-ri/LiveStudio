@@ -9,7 +9,7 @@ namespace Lilium.RemoteControl
     /// シーンファイル保存/読み込み中の source-key (文字列) と UnityEngine.Object の対応を保持する
     /// ランタイム専用キャッシュ。
     ///
-    /// source-key は登録済み ExposedObject の id (rootId) またはルートからの `rootId+path` 形式。
+    /// source-key は登録済み ExposedObjectHandle の id (rootId) またはルートからの `rootId+path` 形式。
     /// SceneSerializer は保存/読み込みの先頭で <see cref="Clear"/> を呼び、
     /// 必要に応じてエントリから再登録する。永続化はしない。
     /// </summary>

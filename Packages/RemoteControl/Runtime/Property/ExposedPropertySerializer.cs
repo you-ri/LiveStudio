@@ -57,7 +57,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// ExposedObjectのメタデータ(@type, @id, @name)を含むJObjectを生成する。
         /// </summary>
-        private static JObject _CreateMetadataJObject(ExposedObject exposedObject, bool forPersistence = false)
+        private static JObject _CreateMetadataJObject(ExposedObjectHandle exposedObject, bool forPersistence = false)
         {
             var jObject = new JObject();
             jObject["@type"] = exposedObject.targetTypeName;
@@ -120,7 +120,7 @@ namespace Lilium.RemoteControl
 
             // ExposedObjectインスタンスが直接渡された場合は参照としてシリアライズ
             // （静的クラスのExposedObjectはtargetがnullのため、FindByTargetで解決できない）
-            if (value is ExposedObject exposedObj && exposedObj.hasId)
+            if (value is ExposedObjectHandle exposedObj && exposedObj.hasId)
             {
                 var refObj = new JObject
                 {
@@ -861,7 +861,7 @@ namespace Lilium.RemoteControl
         /// ExposedObjectをフルシリアライズしてJObjectを返す（dirty判定なし）。
         /// ExposedObjectDefaultRegistryおよびdelta serialization用にinternalで公開。
         /// </summary>
-        internal static JObject SerializeFullToJObject(ExposedObject exposedObject, IExposedObjectResolver resolver, bool forPersistence = false)
+        internal static JObject SerializeFullToJObject(ExposedObjectHandle exposedObject, IExposedObjectResolver resolver, bool forPersistence = false)
         {
             return SerializeFullToJObject(exposedObject, resolver, forPersistence, skipPropertyRef: forPersistence);
         }
@@ -871,7 +871,7 @@ namespace Lilium.RemoteControl
         /// <paramref name="skipPropertyRef"/> が true の場合、<see cref="ExposedPropertyType.isExposedPropertyReference"/>
         /// のフィールドを出力から除外する。baseline/dirty比較用など、参照先の値を含めたくない用途に使う。
         /// </summary>
-        internal static JObject SerializeFullToJObject(ExposedObject exposedObject, IExposedObjectResolver resolver, bool forPersistence, bool skipPropertyRef)
+        internal static JObject SerializeFullToJObject(ExposedObjectHandle exposedObject, IExposedObjectResolver resolver, bool forPersistence, bool skipPropertyRef)
         {
             if (exposedObject == null) return new JObject();
 
@@ -936,7 +936,7 @@ namespace Lilium.RemoteControl
                     ? propertyType.shadowField.GetValue(exposedObject.target)
                     : ExposedPropertyUtility.GetValueRaw(exposedObject.target, propertyType);
 
-                // ObjectSelector: GameObject 側の ExposedObject を @ref として出力する
+                // ObjectSelector: GameObject 側の ExposedObjectHandle を @ref として出力する
                 if (propertyType.controlAttribute is ObjectSelectorAttribute)
                 {
                     jObject[propertyType.name] = ObjectSelectorSerializer.SerializeObjectSelectorValue(value, forPersistence);
@@ -1211,7 +1211,7 @@ namespace Lilium.RemoteControl
         // ToJson (string JSON API)
         // -------------------------------------------------------
 
-        internal static string ToJson(ExposedObject exposedObject, IExposedObjectResolver resolver, bool isDirtyOnly = false, bool forPersistence = false)
+        internal static string ToJson(ExposedObjectHandle exposedObject, IExposedObjectResolver resolver, bool isDirtyOnly = false, bool forPersistence = false)
         {
             if (exposedObject == null) return "{}";
 
@@ -1228,7 +1228,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// Delta mode: デフォルトJSONとcurrentJSONを比較し、差分のみを出力する。
         /// </summary>
-        private static string _ToJsonDelta(ExposedObject exposedObject, IExposedObjectResolver resolver, bool forPersistence)
+        private static string _ToJsonDelta(ExposedObjectHandle exposedObject, IExposedObjectResolver resolver, bool forPersistence)
         {
             // 1. currentのフルシリアライズ
             var currentJson = SerializeFullToJObject(exposedObject, resolver, forPersistence);
@@ -1274,7 +1274,7 @@ namespace Lilium.RemoteControl
         /// readOnlyプロパティは除外する。差分が無ければデルタには含めない
         /// （未操作の再生終了で objects[] が空になるようにするため）。
         /// </summary>
-        private static JToken _ForceIncludeUntrackedProperties(ExposedObject exposedObject, JObject currentJson, JObject defaultJson, JToken deltaToken, bool forPersistence)
+        private static JToken _ForceIncludeUntrackedProperties(ExposedObjectHandle exposedObject, JObject currentJson, JObject defaultJson, JToken deltaToken, bool forPersistence)
         {
             var properties = exposedObject.propertyTypes;
             JObject deltaObj = null;
@@ -1351,13 +1351,13 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// Snapshot mode: 全プロパティをシリアライズする（dirty判定なし）。
         /// </summary>
-        private static string _ToJsonFull(ExposedObject exposedObject, IExposedObjectResolver resolver, bool forPersistence)
+        private static string _ToJsonFull(ExposedObjectHandle exposedObject, IExposedObjectResolver resolver, bool forPersistence)
         {
             var jObject = SerializeFullToJObject(exposedObject, resolver, forPersistence);
             return JsonConvert.SerializeObject(jObject, Formatting.None);
         }
 
-        internal static string ToJson(IEnumerable<ExposedObject> exposedObjects, IExposedObjectResolver resolver)
+        internal static string ToJson(IEnumerable<ExposedObjectHandle> exposedObjects, IExposedObjectResolver resolver)
         {
             if (exposedObjects == null || !exposedObjects.Any()) return "[]";
 
@@ -1486,7 +1486,7 @@ namespace Lilium.RemoteControl
             // the side-effect Apply. Firing the owner's IExposedDeserializeCallback here
             // would double-apply (heavy work for callbacks like AvatarInput.ApplySettings).
             //
-            // For non-shadow properties (e.g. nested ExposedObject rewritten via
+            // For non-shadow properties (e.g. nested ExposedObjectHandle rewritten via
             // DeserializeExposedObject), the parent setter does NOT run, so the owner
             // callback is the only place that can re-apply parent-side state.
             if (result && property.type.shadowField == null)
@@ -1868,7 +1868,7 @@ namespace Lilium.RemoteControl
             }
         }
 
-        internal static bool FromJson(string json, ExposedObject exposedObject, IExposedObjectResolver resolver, bool captureDefaults = true)
+        internal static bool FromJson(string json, ExposedObjectHandle exposedObject, IExposedObjectResolver resolver, bool captureDefaults = true)
         {
             if (string.IsNullOrEmpty(json)) return false;
             if (exposedObject == null) throw new System.ArgumentNullException(nameof(exposedObject));
@@ -1967,7 +1967,7 @@ namespace Lilium.RemoteControl
             return hasUpdates;
         }
 
-        internal static bool FromJson(string json, ExposedObject exposedObject)
+        internal static bool FromJson(string json, ExposedObjectHandle exposedObject)
         {
             return FromJson(json, exposedObject, DefaultExposedObjectResolver.Instance);
         }

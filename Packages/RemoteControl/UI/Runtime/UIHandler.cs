@@ -17,8 +17,8 @@ namespace Lilium.RemoteControl.UI
     {
         private readonly UIDefinition _definition;
         private readonly string _appTitle;
-        private readonly List<ExposedObject> _selectorExposedObjects = new List<ExposedObject>();
-        private readonly List<ExposedObject> _factoryExposedObjects = new List<ExposedObject>();
+        private readonly List<ExposedObjectHandle> _selectorExposedObjects = new List<ExposedObjectHandle>();
+        private readonly List<ExposedObjectHandle> _factoryExposedObjects = new List<ExposedObjectHandle>();
 
         public UIHandler(RemoteControlServerCore server, UIDefinition definition) : base(server)
         {

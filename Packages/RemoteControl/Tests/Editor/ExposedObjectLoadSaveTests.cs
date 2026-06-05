@@ -397,7 +397,7 @@ namespace Lilium.RemoteControl.Tests
             proxy.name = "Camera"; // name を default から変えて dirty にする
 
             // Save
-            var json1 = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json1 = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
             Assert.IsNotEmpty(json1);
 
             // 通常プロパティ name が dirty 値で含まれる
@@ -445,7 +445,7 @@ namespace Lilium.RemoteControl.Tests
             target3.value = 300;
 
             // シリアライズ（Save相当）
-            var json1 = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json1 = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
             Assert.IsNotEmpty(json1);
 
             // 全インスタンスをクリア（Load前状態のシミュレーション）
@@ -466,7 +466,7 @@ namespace Lilium.RemoteControl.Tests
             if (newTarget3.exposedObject != null) ExposedPropertyUtility.SetDefault(newTarget3.exposedObject.Value);
 
             // 再シリアライズ（Save相当）
-            var json2 = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json2 = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert: 各IDのExposedObjectが正しいIDを保持している
             var obj1 = ExposedObjectRegistry.FindById(id1);
@@ -522,12 +522,12 @@ namespace Lilium.RemoteControl.Tests
             var exposedClass = ExposedClass.RegisterClass(typeof(TestStaticClass));
             Assert.IsNotNull(exposedClass);
             Assert.IsTrue(exposedClass.isStatic);
-            var staticObj = new ExposedObject("static-test", exposedClass, null);
+            var staticObj = new ExposedObjectHandle("static-test", exposedClass, null);
 
             var proxy = new TestProxy("instance-test");
 
             // Act
-            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Snapshot, ExcludeFilter.None);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Snapshot, ExcludeFilter.None);
 
             // Assert
             Assert.IsTrue(json.Contains("TestStaticClass"), "staticオブジェクトがJSON出力に含まれるべき");
@@ -543,12 +543,12 @@ namespace Lilium.RemoteControl.Tests
             var exposedClass = ExposedClass.RegisterClass(typeof(TestStaticClass));
             Assert.IsNotNull(exposedClass);
             Assert.IsTrue(exposedClass.isStatic);
-            var staticObj = new ExposedObject("static-test", exposedClass, null);
+            var staticObj = new ExposedObjectHandle("static-test", exposedClass, null);
 
             var proxy = new TestProxy("instance-test");
 
             // Act
-            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Snapshot, ExcludeFilter.Static);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Snapshot, ExcludeFilter.Static);
 
             // Assert
             Assert.IsFalse(json.Contains("TestStaticClass"), "staticオブジェクトはJSON出力から除外されるべき");
@@ -563,10 +563,10 @@ namespace Lilium.RemoteControl.Tests
             // Arrange
             var exposedClass = ExposedClass.RegisterClass(typeof(TestStaticClass));
             Assert.IsNotNull(exposedClass);
-            var staticObj = new ExposedObject("static-test", exposedClass, null);
+            var staticObj = new ExposedObjectHandle("static-test", exposedClass, null);
 
             // Act: デフォルト（exclude省略 = ExcludeFilter.None）
-            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver);
 
             // Assert
             Assert.IsTrue(json.Contains("TestStaticClass"), "デフォルトではstaticオブジェクトがJSON出力に含まれるべき");
@@ -916,7 +916,7 @@ namespace Lilium.RemoteControl.Tests
                 // ExposedGameObject プロキシを作成（Container登録相当）
                 var proxy = new ExposedGameObject(go);
                 proxy.OnEnable();
-                Assert.IsNotNull(proxy.exposedObject, "ExposedGameObject should have ExposedObject");
+                Assert.IsNotNull(proxy.exposedObject, "ExposedGameObject should have ExposedObjectHandle");
 
                 // デフォルト値をキャプチャ（Container.Initialize相当）
                 // inline children（コンポーネント・ScriptableObject）の defaults も
@@ -1113,7 +1113,7 @@ namespace Lilium.RemoteControl.Tests
             // 値を変更してDelta JSON（保存済みデータ）を作成
             proxy.value = 100;
             var savedJson = LiveSceneSerializer.LiveSceneToJson(
-                new List<ExposedObject>(ExposedObjectRegistry.instances),
+                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances),
                 _resolver, SerializeMode.Delta);
             Assert.IsTrue(savedJson.Contains("\"value\": 100"), "保存JSONに変更値が含まれるべき");
 
@@ -1141,7 +1141,7 @@ namespace Lilium.RemoteControl.Tests
 
             // Act: SaveCurrentData相当 - Delta保存
             var resavedJson = LiveSceneSerializer.LiveSceneToJson(
-                new List<ExposedObject>(ExposedObjectRegistry.instances),
+                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances),
                 _resolver, SerializeMode.Delta);
 
             // Assert: オブジェクトが空でないこと
@@ -1165,7 +1165,7 @@ namespace Lilium.RemoteControl.Tests
             // デフォルトと異なる値で保存JSONを作成
             proxy.value = 42;
             var savedJson = LiveSceneSerializer.LiveSceneToJson(
-                new List<ExposedObject>(ExposedObjectRegistry.instances),
+                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances),
                 _resolver, SerializeMode.Delta);
 
             // Play mode再入シミュレーション
@@ -1184,7 +1184,7 @@ namespace Lilium.RemoteControl.Tests
 
             // Act: Delta保存
             var resavedJson = LiveSceneSerializer.LiveSceneToJson(
-                new List<ExposedObject>(ExposedObjectRegistry.instances),
+                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances),
                 _resolver, SerializeMode.Delta);
 
             // Assert: 値が保持される

@@ -137,16 +137,16 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// /exposed/objects の対象 ExposedObject 集合を収集する。
+        /// /exposed/objects の対象 ExposedObjectHandle 集合を収集する。
         /// category 指定 > typeName 指定 > 全件 の優先順。Unity API を含むため
         /// メインスレッド上で呼ぶこと。
         /// </summary>
-        private IEnumerable<ExposedObject> _CollectExposedObjects(string typeName, string category)
+        private IEnumerable<ExposedObjectHandle> _CollectExposedObjects(string typeName, string category)
         {
             var container = GetObjectContainer();
             if (container == null)
             {
-                return Enumerable.Empty<ExposedObject>();
+                return Enumerable.Empty<ExposedObjectHandle>();
             }
 
             // カテゴリ指定
@@ -155,7 +155,7 @@ namespace Lilium.RemoteControl
                 return FindExposedObjectsByCategory(category);
             }
 
-            var instanceObjects = Enumerable.Empty<ExposedObject>();
+            var instanceObjects = Enumerable.Empty<ExposedObjectHandle>();
 
             // TypeName指定なし
             if (string.IsNullOrEmpty(typeName))
@@ -196,7 +196,7 @@ namespace Lilium.RemoteControl
                     {
                         var foundObjects = list.Select(v =>
                         {
-                            return ExposedObjectRegistry.FindByTarget(v) ?? ExposedObject.CreateUnregistered(exposedClass, v);
+                            return ExposedObjectRegistry.FindByTarget(v) ?? ExposedObjectHandle.CreateUnregistered(exposedClass, v);
                         });
                         instanceObjects = instanceObjects.Concat(foundObjects);
                     }
@@ -236,13 +236,13 @@ namespace Lilium.RemoteControl
         /// </summary>
         private readonly struct PropertyPipelineContext
         {
-            public readonly ExposedObject exposedObject;
+            public readonly ExposedObjectHandle exposedObject;
             public readonly string id;
             public readonly string slashPath;
             public readonly string propertyPath; // DotBracket 形式 (PropertyPath.Value)
             public readonly string body;         // readBody=false の場合は null
 
-            public PropertyPipelineContext(ExposedObject exposedObject, string id,
+            public PropertyPipelineContext(ExposedObjectHandle exposedObject, string id,
                 string slashPath, string propertyPath, string body)
             {
                 this.exposedObject = exposedObject;
@@ -281,7 +281,7 @@ namespace Lilium.RemoteControl
 
         /// <summary>
         /// /exposed/object/{id}/{slashPath} 系の共通定型:
-        /// id/slashPath 解析 → ExposedObject 解決 → (任意で body 読込) →
+        /// id/slashPath 解析 → ExposedObjectHandle 解決 → (任意で body 読込) →
         /// メインスレッドで <paramref name="onProperty"/> 実行 → 応答書き込み。
         /// 一貫した REST エラースキーム: パス不正=400 "Invalid request format"、
         /// オブジェクト未解決=404 "Object not found"、プロパティ未解決=404
@@ -374,8 +374,8 @@ namespace Lilium.RemoteControl
 
                     // onPropertyChanged で親要素の他フィールドが書き換わる場合に備え、
                     // 親が配列要素ならその要素全体を SSE でブロードキャストする。
-                    // 親インスタンスは property.obj で既に手元にあるので、登録済み ExposedObject を
-                    // 検索するのではなく、その場で CreateUnregistered で ExposedObject を作って使う。
+                    // 親インスタンスは property.obj で既に手元にあるので、登録済み ExposedObjectHandle を
+                    // 検索するのではなく、その場で CreateUnregistered で ExposedObjectHandle を作って使う。
                     _BroadcastParentElement(ctx.id, ctx.slashPath, property.Value);
 
                     return PropertyResult.Success(json);
@@ -567,7 +567,7 @@ namespace Lilium.RemoteControl
         /// 解決できなければ null(理由は Debug.LogError で出力)。メインスレッド前提。
         /// </summary>
         private ExposedFunctionType _ResolveInvokeFunction(
-            ExposedObject exposedObject, string propertyPath, string functionName,
+            ExposedObjectHandle exposedObject, string propertyPath, string functionName,
             string id, out object functionTarget)
         {
             functionTarget = null;
@@ -652,7 +652,7 @@ namespace Lilium.RemoteControl
             return args;
         }
 
-        private ExposedObject? FindExposedObjectById(string id)
+        private ExposedObjectHandle? FindExposedObjectById(string id)
         {
             var container = GetObjectContainer();
 
@@ -667,7 +667,7 @@ namespace Lilium.RemoteControl
             }
 
             // staticクラス名で検索 (target=null で生成できるのは static class のみ。
-            // MonoBehaviour 等の非 static 型を null target で生成すると ExposedObject.cs:47 の警告が出て、
+            // MonoBehaviour 等の非 static 型を null target で生成すると ExposedObjectHandle.cs:47 の警告が出て、
             // 以降の SetValue などが target=null に対して走り壊れる)
             var exposedType = ExposedClass.Find(id);
             if (exposedType != null && exposedType.isStatic)
@@ -696,7 +696,7 @@ namespace Lilium.RemoteControl
             }
 
             // 最終フォールバック: 数値 instanceId として Unity の内部 API から逆引きして
-            // 未登録の UnityEngine.Object を一時的な ExposedObject にラップする（レジストリ登録しない）
+            // 未登録の UnityEngine.Object を一時的な ExposedObjectHandle にラップする（レジストリ登録しない）
             if (int.TryParse(id, out var unityInstanceId))
             {
                 var unityObj = ExposedObjectUtility.InstanceIDToObject(unityInstanceId);
@@ -705,7 +705,7 @@ namespace Lilium.RemoteControl
                     var exposedClass = ExposedClass.Find(unityObj.GetType());
                     if (exposedClass != null)
                     {
-                        return ExposedObject.CreateUnregistered(exposedClass, unityObj);
+                        return ExposedObjectHandle.CreateUnregistered(exposedClass, unityObj);
                     }
                 }
             }
@@ -716,7 +716,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// カテゴリに一致するExposedObjectを収集する。
         /// </summary>
-        private List<ExposedObject> FindExposedObjectsByCategory(string category)
+        private List<ExposedObjectHandle> FindExposedObjectsByCategory(string category)
         {
             return ExposedObjectRegistry.FindByCategory(category, GetObjectContainer());
         }
@@ -731,7 +731,7 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// PUT /exposed/object/{id}/@parent: ExposedObject 同士の親子関係を変更する。
+        /// PUT /exposed/object/{id}/@parent: ExposedObjectHandle 同士の親子関係を変更する。
         /// body: { "parentId": "...id..." | null }
         /// 成功時は child 全体のフルシリアライズを返しつつ SSE で exposed_object_updated を broadcast。
         /// </summary>
@@ -825,7 +825,7 @@ namespace Lilium.RemoteControl
         /// その要素全体を exposed_object_updated SSE でブロードキャストする。
         /// 目的は、onPropertyChanged を介して書き換わった依存フィールド（ShowIf 参照先など）を
         /// 他クライアントに伝播させること。親インスタンスは property.obj から直接取得し、
-        /// その場で CreateUnregistered の ExposedObject を生成してシリアライズする。
+        /// その場で CreateUnregistered の ExposedObjectHandle を生成してシリアライズする。
         /// </summary>
         private static void _BroadcastParentElement(string requestId, string slashPath, ExposedProperty property)
         {
@@ -844,7 +844,7 @@ namespace Lilium.RemoteControl
             if (parentClass == null) return;
 
             var parentSlashPath = string.Join("/", parts, 0, parts.Length - 1);
-            var parentExposed = ExposedObject.CreateUnregistered(parentClass, parentInstance);
+            var parentExposed = ExposedObjectHandle.CreateUnregistered(parentClass, parentInstance);
             var valueJObject = ExposedPropertySerializer.SerializeFullToJObject(
                 parentExposed, DefaultExposedObjectResolver.Instance);
 

@@ -935,7 +935,7 @@ namespace Lilium.RemoteControl.Tests
             // Assert
             Assert.IsTrue(meshNamesProp.isReadOnly);
             Assert.IsFalse(meshNamesProp.containsExposedObjectReference,
-                "string[] should not be treated as ExposedObject reference");
+                "string[] should not be treated as ExposedObjectHandle reference");
         }
 
         [Test]
@@ -950,7 +950,7 @@ namespace Lilium.RemoteControl.Tests
             // Assert
             Assert.IsTrue(refObjProp.isReadOnly);
             Assert.IsTrue(refObjProp.containsExposedObjectReference,
-                "ScriptableObject reference should be treated as ExposedObject reference");
+                "ScriptableObject reference should be treated as ExposedObjectHandle reference");
         }
 
         [Test]
@@ -965,7 +965,7 @@ namespace Lilium.RemoteControl.Tests
             // Assert
             Assert.IsTrue(refArrayProp.isReadOnly);
             Assert.IsTrue(refArrayProp.containsExposedObjectReference,
-                "ScriptableObject[] should be treated as containing ExposedObject references");
+                "ScriptableObject[] should be treated as containing ExposedObjectHandle references");
         }
 
         [Test]
@@ -982,7 +982,7 @@ namespace Lilium.RemoteControl.Tests
             Assert.IsFalse(ExposedClass.Has(typeof(ScriptableObject)),
                 "ScriptableObject itself should not be registered as ExposedClass");
             Assert.IsTrue(baseRefArrayProp.containsExposedObjectReference,
-                "ScriptableObject[] (base type array) should be treated as containing ExposedObject references");
+                "ScriptableObject[] (base type array) should be treated as containing ExposedObjectHandle references");
         }
 
         [Test]
@@ -997,7 +997,7 @@ namespace Lilium.RemoteControl.Tests
             // Assert
             Assert.IsTrue(readonlyIntProp.isReadOnly);
             Assert.IsFalse(readonlyIntProp.containsExposedObjectReference,
-                "readonly int should not be treated as ExposedObject reference");
+                "readonly int should not be treated as ExposedObjectHandle reference");
         }
 
         [Test]
@@ -1008,7 +1008,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<TestReadonlyRefClass>();
             var exposedClass = ExposedClass.Find(typeof(TestReadonlyRefClass));
             var testObj = new TestReadonlyRefClass { writableValue = 42 };
-            var exposedObj = new ExposedObject("test-readonly-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-readonly-1", exposedClass, testObj);
             var resolver = new TestExposedObjectResolver();
 
             try
@@ -1045,12 +1045,12 @@ namespace Lilium.RemoteControl.Tests
             var soInstance = ScriptableObject.CreateInstance<TestRefScriptableObject>();
             soInstance.soValue = 10;
             var soExposedClass = ExposedClass.Find(typeof(TestRefScriptableObject));
-            var soExposedObj = new ExposedObject("so-ref-1", soExposedClass, soInstance);
+            var soExposedObj = new ExposedObjectHandle("so-ref-1", soExposedClass, soInstance);
 
             var exposedClass = ExposedClass.Find(typeof(TestReadonlyRefClass));
             var testObj = new TestReadonlyRefClass { writableValue = 1 };
             testObj.SetRefObj(soInstance);
-            var exposedObj = new ExposedObject("test-readonly-2", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-readonly-2", exposedClass, testObj);
             var resolver = new TestExposedObjectResolver();
 
             try
@@ -1062,9 +1062,9 @@ namespace Lilium.RemoteControl.Tests
                 // Assert — readonly ScriptableObject参照は含まれる（@ref情報が必要）
                 var refObjToken = jObject["refObj"];
                 Assert.IsNotNull(refObjToken,
-                    "readonly ExposedObject reference (refObj) should be included in persistence output");
+                    "readonly ExposedObjectHandle reference (refObj) should be included in persistence output");
                 Assert.AreEqual("so-ref-1", refObjToken["@ref"]?.Value<string>(),
-                    "refObj should contain @ref pointing to the ExposedObject id");
+                    "refObj should contain @ref pointing to the ExposedObjectHandle id");
             }
             finally
             {
@@ -1084,13 +1084,13 @@ namespace Lilium.RemoteControl.Tests
             var so1 = ScriptableObject.CreateInstance<TestRefScriptableObject>();
             var so2 = ScriptableObject.CreateInstance<TestRefScriptableObject>();
             var soExposedClass = ExposedClass.Find(typeof(TestRefScriptableObject));
-            var soExposed1 = new ExposedObject("so-arr-1", soExposedClass, so1);
-            var soExposed2 = new ExposedObject("so-arr-2", soExposedClass, so2);
+            var soExposed1 = new ExposedObjectHandle("so-arr-1", soExposedClass, so1);
+            var soExposed2 = new ExposedObjectHandle("so-arr-2", soExposedClass, so2);
 
             var exposedClass = ExposedClass.Find(typeof(TestReadonlyRefClass));
             var testObj = new TestReadonlyRefClass { writableValue = 2 };
             testObj.SetRefArray(new[] { so1, so2 });
-            var exposedObj = new ExposedObject("test-readonly-3", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-readonly-3", exposedClass, testObj);
             var resolver = new TestExposedObjectResolver();
 
             try
@@ -1102,7 +1102,7 @@ namespace Lilium.RemoteControl.Tests
                 // Assert — readonly ScriptableObject[] は含まれる
                 var refArrayToken = jObject["refArray"] as JArray;
                 Assert.IsNotNull(refArrayToken,
-                    "readonly ExposedObject[] (refArray) should be included in persistence output");
+                    "readonly ExposedObjectHandle[] (refArray) should be included in persistence output");
                 Assert.AreEqual(2, refArrayToken.Count,
                     "refArray should contain 2 elements");
             }
@@ -1126,14 +1126,14 @@ namespace Lilium.RemoteControl.Tests
             var so1 = ScriptableObject.CreateInstance<TestRefScriptableObject>();
             var so2 = ScriptableObject.CreateInstance<TestRefScriptableObject>();
             var soExposedClass = ExposedClass.Find(typeof(TestRefScriptableObject));
-            var soExposed1 = new ExposedObject("so-base-1", soExposedClass, so1);
-            var soExposed2 = new ExposedObject("so-base-2", soExposedClass, so2);
+            var soExposed1 = new ExposedObjectHandle("so-base-1", soExposedClass, so1);
+            var soExposed2 = new ExposedObjectHandle("so-base-2", soExposedClass, so2);
 
             var exposedClass = ExposedClass.Find(typeof(TestReadonlyRefClass));
             var testObj = new TestReadonlyRefClass { writableValue = 3 };
             // ScriptableObject[]（ベース型）として格納
             testObj.SetBaseTypeRefArray(new ScriptableObject[] { so1, so2 });
-            var exposedObj = new ExposedObject("test-readonly-5", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-readonly-5", exposedClass, testObj);
             var resolver = new TestExposedObjectResolver();
 
             try
@@ -1167,7 +1167,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<TestReadonlyRefClass>();
             var exposedClass = ExposedClass.Find(typeof(TestReadonlyRefClass));
             var testObj = new TestReadonlyRefClass { writableValue = 5 };
-            var exposedObj = new ExposedObject("test-readonly-4", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-readonly-4", exposedClass, testObj);
             var resolver = new TestExposedObjectResolver();
 
             try
@@ -1191,7 +1191,7 @@ namespace Lilium.RemoteControl.Tests
 
         #endregion
 
-        #region Nested ExposedObject Readonly Persistence Tests
+        #region Nested ExposedObjectHandle Readonly Persistence Tests
 
         // ネストされたExposedClassオブジェクト内のreadonly/非persistableプロパティのテスト用
         [Serializable]
@@ -1239,7 +1239,7 @@ namespace Lilium.RemoteControl.Tests
                 parentValue = 10,
                 child = new TestNestedChild { writableValue = 5 }
             };
-            var exposedObj = new ExposedObject("test-nested-readonly", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-nested-readonly", exposedClass, testObj);
             var resolver = new TestExposedObjectResolver();
 
             try
@@ -1287,7 +1287,7 @@ namespace Lilium.RemoteControl.Tests
                 parentValue = 10,
                 child = new TestNestedChild { writableValue = 5 }
             };
-            var exposedObj = new ExposedObject("test-nested-nonpersist", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-nested-nonpersist", exposedClass, testObj);
             var resolver = new TestExposedObjectResolver();
 
             try
@@ -1314,7 +1314,7 @@ namespace Lilium.RemoteControl.Tests
 
         #endregion
 
-        #region DeltaFromDefault ExposedObject Reference Tests
+        #region DeltaFromDefault ExposedObjectHandle Reference Tests
 
         // DeltaFromDefaultテスト用: 書き込み可能なExposedObject参照を持つクラス
         [Serializable]
@@ -1339,11 +1339,11 @@ namespace Lilium.RemoteControl.Tests
             var soInstance = ScriptableObject.CreateInstance<TestRefScriptableObject>();
             soInstance.soValue = 10;
             var soExposedClass = ExposedClass.Find(typeof(TestRefScriptableObject));
-            var soExposedObj = new ExposedObject("dirty-so-1", soExposedClass, soInstance);
+            var soExposedObj = new ExposedObjectHandle("dirty-so-1", soExposedClass, soInstance);
 
             var exposedClass = ExposedClass.Find(typeof(TestDeltaFromDefaultRefClass));
             var testObj = new TestDeltaFromDefaultRefClass { normalValue = 5, config = soInstance };
-            var exposedObj = new ExposedObject("dirty-ref-test", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("dirty-ref-test", exposedClass, testObj);
             var resolver = new TestExposedObjectResolver();
 
             // デフォルト値を設定（dirty判定のベースライン）
@@ -1362,7 +1362,7 @@ namespace Lilium.RemoteControl.Tests
 
                 // Assert — dirtyでないExposedObject参照もスキップされる
                 Assert.IsNull(jObject["config"],
-                    "non-dirty ExposedObject reference (config) should be skipped in DeltaFromDefault mode");
+                    "non-dirty ExposedObjectHandle reference (config) should be skipped in DeltaFromDefault mode");
             }
             finally
             {

@@ -40,7 +40,7 @@ namespace Lilium.RemoteControl
         /// インスタンス型: target（参照等価）
         /// static型: ExposedClass.type（Type参照）
         /// </summary>
-        private static object _GetKey(ExposedObject obj)
+        private static object _GetKey(ExposedObjectHandle obj)
         {
             if (obj.target != null) return obj.target;
             if (obj.targetType?.type != null) return obj.targetType.type;
@@ -56,7 +56,7 @@ namespace Lilium.RemoteControl
         /// ExposedObjectの現在の状態をデフォルトJSONとしてキャプチャする。
         /// _serializationBaselineを設定し、_userChangeBaselineをリセットする。
         /// </summary>
-        public static void CaptureDefaults(ExposedObject obj, IExposedObjectResolver resolver)
+        public static void CaptureDefaults(ExposedObjectHandle obj, IExposedObjectResolver resolver)
         {
             var key = _GetKey(obj);
             // forPersistence: true でシリアライズし、Delta比較時のcurrent（同じくforPersistence: true）と
@@ -69,7 +69,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// 指定ExposedObjectのデフォルトを削除する。
         /// </summary>
-        public static void Remove(ExposedObject obj)
+        public static void Remove(ExposedObjectHandle obj)
         {
             var key = _GetKey(obj);
             _serializationBaseline.Remove(key);
@@ -89,7 +89,7 @@ namespace Lilium.RemoteControl
         /// _serializationBaselineのJObjectを取得する（delta serialization用）。
         /// 未登録の場合はnull。
         /// </summary>
-        public static JObject GetDefaults(ExposedObject obj)
+        public static JObject GetDefaults(ExposedObjectHandle obj)
         {
             var key = _GetKey(obj);
             _serializationBaseline.TryGetValue(key, out var result);
@@ -113,7 +113,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// いずれかのプロパティがデフォルトから変更されているか。
         /// </summary>
-        public static bool IsDirty(ExposedObject obj, IExposedObjectResolver resolver)
+        public static bool IsDirty(ExposedObjectHandle obj, IExposedObjectResolver resolver)
         {
             var key = _GetKey(obj);
             var defaultJson = _GetUserChangeBaseline(key);
@@ -142,7 +142,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// 指定プロパティパスがデフォルトから変更されているか。
         /// </summary>
-        public static bool IsPropertyDirty(ExposedObject obj, string propertyPath, IExposedObjectResolver resolver)
+        public static bool IsPropertyDirty(ExposedObjectHandle obj, string propertyPath, IExposedObjectResolver resolver)
         {
             if (string.IsNullOrEmpty(propertyPath)) return false;
             var key = _GetKey(obj);
@@ -165,7 +165,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// 指定パスまたはその子プロパティがdirtyかチェック。
         /// </summary>
-        public static bool HasDirtyChildProperty(ExposedObject obj, string propertyPath, IExposedObjectResolver resolver)
+        public static bool HasDirtyChildProperty(ExposedObjectHandle obj, string propertyPath, IExposedObjectResolver resolver)
         {
             if (string.IsNullOrEmpty(propertyPath)) return IsDirty(obj, resolver);
             var key = _GetKey(obj);
@@ -201,7 +201,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// dirtyなルートプロパティ名のリストを返す。
         /// </summary>
-        public static IReadOnlyCollection<string> GetDirtyProperties(ExposedObject obj, IExposedObjectResolver resolver)
+        public static IReadOnlyCollection<string> GetDirtyProperties(ExposedObjectHandle obj, IExposedObjectResolver resolver)
         {
             var key = _GetKey(obj);
             var defaultJson = _GetUserChangeBaseline(key);
@@ -254,7 +254,7 @@ namespace Lilium.RemoteControl
         /// 全プロパティのdirty状態を解消する（現在値をデフォルトとして再キャプチャ）。
         /// _serializationBaselineを再設定し、_userChangeBaselineをリセット。
         /// </summary>
-        public static void ClearDirty(ExposedObject obj, IExposedObjectResolver resolver)
+        public static void ClearDirty(ExposedObjectHandle obj, IExposedObjectResolver resolver)
         {
             CaptureDefaults(obj, resolver);
         }
@@ -264,7 +264,7 @@ namespace Lilium.RemoteControl
         /// _userChangeBaselineのルートプロパティを再シリアライズして更新する。
         /// _serializationBaselineは変更しない（配列長やdelta serialization用に保持）。
         /// </summary>
-        public static void ClearPropertyDirty(ExposedObject obj, string propertyPath, IExposedObjectResolver resolver)
+        public static void ClearPropertyDirty(ExposedObjectHandle obj, string propertyPath, IExposedObjectResolver resolver)
         {
             if (string.IsNullOrEmpty(propertyPath)) return;
             var key = _GetKey(obj);
@@ -296,7 +296,7 @@ namespace Lilium.RemoteControl
         /// 指定プロパティをデフォルト値に戻す。
         /// _serializationBaselineから値を取得する。
         /// </summary>
-        public static bool Revert(ExposedObject obj, string propertyPath, IExposedObjectResolver resolver)
+        public static bool Revert(ExposedObjectHandle obj, string propertyPath, IExposedObjectResolver resolver)
         {
             if (string.IsNullOrEmpty(propertyPath)) return false;
             var key = _GetKey(obj);
@@ -357,7 +357,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// デフォルトがまだキャプチャされていなければキャプチャする。
         /// </summary>
-        public static void EnsureDefaultsCaptured(ExposedObject obj, IExposedObjectResolver resolver)
+        public static void EnsureDefaultsCaptured(ExposedObjectHandle obj, IExposedObjectResolver resolver)
         {
             var key = _GetKey(obj);
             if (!_serializationBaseline.ContainsKey(key))
@@ -371,7 +371,7 @@ namespace Lilium.RemoteControl
         /// 新規配列要素など、CaptureDefaults時に存在しなかったパスを遅延登録する。
         /// SetValue呼び出し前に実行されることで、変更前の値がデフォルトとして記録される。
         /// </summary>
-        public static void EnsurePropertyDefaultCaptured(ExposedObject obj, string propertyPath, IExposedObjectResolver resolver)
+        public static void EnsurePropertyDefaultCaptured(ExposedObjectHandle obj, string propertyPath, IExposedObjectResolver resolver)
         {
             if (string.IsNullOrEmpty(propertyPath)) return;
 
@@ -398,7 +398,7 @@ namespace Lilium.RemoteControl
         /// 指定パスのデフォルトJTokenを取得する（_serializationBaselineから）。
         /// 配列長チェック等、初期状態に基づく判定に使用。
         /// </summary>
-        public static JToken GetDefaultToken(ExposedObject obj, string propertyPath)
+        public static JToken GetDefaultToken(ExposedObjectHandle obj, string propertyPath)
         {
             if (string.IsNullOrEmpty(propertyPath)) return null;
             var key = _GetKey(obj);
@@ -481,7 +481,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// 指定プロパティパスの現在値をJTokenにシリアライズする。
         /// </summary>
-        private static JToken _SerializePropertyValue(ExposedObject obj, string propertyPath, IExposedObjectResolver resolver)
+        private static JToken _SerializePropertyValue(ExposedObjectHandle obj, string propertyPath, IExposedObjectResolver resolver)
         {
             var property = obj.FindProperty(propertyPath);
             if (property == null) return null;
@@ -493,7 +493,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// ルートプロパティの現在値をJTokenにシリアライズする。
         /// </summary>
-        private static JToken _SerializeRootPropertyValue(ExposedObject obj, string rootName, IExposedObjectResolver resolver)
+        private static JToken _SerializeRootPropertyValue(ExposedObjectHandle obj, string rootName, IExposedObjectResolver resolver)
         {
             var propertyType = obj.targetType?.FindProperty(rootName);
             if (propertyType == null) return null;

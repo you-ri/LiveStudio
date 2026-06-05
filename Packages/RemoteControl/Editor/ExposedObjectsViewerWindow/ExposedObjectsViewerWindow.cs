@@ -22,7 +22,7 @@ namespace Lilium.RemoteControl.Editor
         private ScrollView _contentScrollView;
 
         private string _filterText = "";
-        private object _selectedItem; // ExposedClass, ExposedEnum, or ExposedObject
+        private object _selectedItem; // ExposedClass, ExposedEnum, or ExposedObjectHandle
 
         // Objects用
         private int _lastInstanceCount;
@@ -58,7 +58,7 @@ namespace Lilium.RemoteControl.Editor
                 }
 
                 // 選択中オブジェクトのプロパティ値をリアルタイム更新
-                var selectedObject = _selectedItem as ExposedObject?;
+                var selectedObject = _selectedItem as ExposedObjectHandle?;
                 if (selectedObject != null && _contentScrollView != null)
                 {
                     _UpdateObjectPropertyValues(selectedObject.Value);
@@ -331,11 +331,11 @@ namespace Lilium.RemoteControl.Editor
             return false;
         }
 
-        // --- ExposedObject リスト ---
+        // --- ExposedObjectHandle リスト ---
 
         private void _RebuildObjectList()
         {
-            var filtered = new List<ExposedObject>();
+            var filtered = new List<ExposedObjectHandle>();
             foreach (var obj in ExposedObjectRegistry.instances)
             {
                 if (_MatchesObjectFilter(obj))
@@ -379,7 +379,7 @@ namespace Lilium.RemoteControl.Editor
                     button.style.color = new Color(0.4f, 0.7f, 0.4f);
                 }
 
-                if (_selectedItem is ExposedObject selObj && selObj.Equals(obj))
+                if (_selectedItem is ExposedObjectHandle selObj && selObj.Equals(obj))
                 {
                     button.style.backgroundColor = new Color(0.2f, 0.4f, 0.6f, 0.5f);
                 }
@@ -389,7 +389,7 @@ namespace Lilium.RemoteControl.Editor
             }
 
             // 選択中オブジェクトが無効になった場合クリア
-            var selectedObject = _selectedItem as ExposedObject?;
+            var selectedObject = _selectedItem as ExposedObjectHandle?;
             if (selectedObject != null && !selectedObject.Value.isValid)
             {
                 _selectedItem = null;
@@ -397,7 +397,7 @@ namespace Lilium.RemoteControl.Editor
             }
         }
 
-        private bool _MatchesObjectFilter(ExposedObject obj)
+        private bool _MatchesObjectFilter(ExposedObjectHandle obj)
         {
             if (string.IsNullOrEmpty(_filterText)) return true;
             if (obj.name != null && obj.name.IndexOf(_filterText, System.StringComparison.OrdinalIgnoreCase) >= 0) return true;
@@ -743,9 +743,9 @@ namespace Lilium.RemoteControl.Editor
             _contentArea.Add(_contentScrollView);
         }
 
-        // --- ExposedObject 詳細 ---
+        // --- ExposedObjectHandle 詳細 ---
 
-        private void _ShowObjectDetails(ExposedObject? objOrNull)
+        private void _ShowObjectDetails(ExposedObjectHandle? objOrNull)
         {
             _contentArea.Clear();
             _contentScrollView = null;
@@ -841,7 +841,7 @@ namespace Lilium.RemoteControl.Editor
             _contentArea.Add(_contentScrollView);
         }
 
-        private VisualElement _CreateObjectPropertyRow(ExposedObject obj, ExposedPropertyType propType)
+        private VisualElement _CreateObjectPropertyRow(ExposedObjectHandle obj, ExposedPropertyType propType)
         {
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
@@ -900,7 +900,7 @@ namespace Lilium.RemoteControl.Editor
             return row;
         }
 
-        private VisualElement _CreateObjectFunctionRow(ExposedObject obj, ExposedFunctionType funcType)
+        private VisualElement _CreateObjectFunctionRow(ExposedObjectHandle obj, ExposedFunctionType funcType)
         {
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
@@ -947,7 +947,7 @@ namespace Lilium.RemoteControl.Editor
             return row;
         }
 
-        private string _GetObjectPropertyValueText(ExposedObject obj, ExposedPropertyType propType)
+        private string _GetObjectPropertyValueText(ExposedObjectHandle obj, ExposedPropertyType propType)
         {
             var prop = obj.FindProperty(propType.name);
             if (prop == null) return "(not found)";
@@ -963,7 +963,7 @@ namespace Lilium.RemoteControl.Editor
             }
         }
 
-        private void _UpdateObjectPropertyValues(ExposedObject obj)
+        private void _UpdateObjectPropertyValues(ExposedObjectHandle obj)
         {
             if (obj == null || !obj.isValid || _contentScrollView == null) return;
 

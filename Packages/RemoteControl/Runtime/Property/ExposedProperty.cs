@@ -26,7 +26,7 @@ namespace Lilium.RemoteControl
     {
         public readonly ExposedPropertyType type;
 
-        public readonly ExposedObject owner;
+        public readonly ExposedObjectHandle owner;
 
         public readonly object obj;
 
@@ -34,7 +34,7 @@ namespace Lilium.RemoteControl
 
         public readonly PropertyPath path;
 
-        public ExposedProperty(ExposedPropertyType type, ExposedObject owner, object obj, string path = null)
+        public ExposedProperty(ExposedPropertyType type, ExposedObjectHandle owner, object obj, string path = null)
         {
             this.type = type;
             this.owner = owner;
@@ -43,7 +43,7 @@ namespace Lilium.RemoteControl
             this.isArray = ExposedPropertyUtility.IsArrayType(type?.valueType);
         }
 
-        public ExposedProperty(ExposedPropertyType type, ExposedObject owner, object obj, PropertyPath path)
+        public ExposedProperty(ExposedPropertyType type, ExposedObjectHandle owner, object obj, PropertyPath path)
         {
             this.type = type;
             this.owner = owner;
@@ -57,7 +57,7 @@ namespace Lilium.RemoteControl
         /// </summary>
         public bool PathContains(string memberName) => path.Value.Contains(memberName);
 
-        // owner は struct。default(ExposedObject) は targetType==null なので、これで「owner が存在する」を表す
+        // owner は struct。default(ExposedObjectHandle) は targetType==null なので、これで「owner が存在する」を表す
         // (旧 class 実装の owner != null と等価。target 破棄の有無は問わない)
         public bool isValid => type != null && owner.targetType != null;
 
@@ -143,12 +143,12 @@ namespace Lilium.RemoteControl
             else if (this.isExposedObjectReference)
             {
                 var polymorphicExposedType = ExposedClass.Find(GetPolymorphicValueType());
-                Debug.Assert(polymorphicExposedType != null, "Polymorphic ExposedClass should not be null for ExposedObject reference");
+                Debug.Assert(polymorphicExposedType != null, "Polymorphic ExposedClass should not be null for ExposedObjectHandle reference");
 
                 var value = this.GetValue();
                 // 既存のExposedObjectがあればそれを使用、なければIDなしで生成
                 var existingExposed = ExposedObjectRegistry.FindByTarget(value);
-                ExposedObject newOwner = existingExposed ?? ExposedObject.CreateUnregistered(polymorphicExposedType, value);
+                ExposedObjectHandle newOwner = existingExposed ?? ExposedObjectHandle.CreateUnregistered(polymorphicExposedType, value);
                 // FindProperty は [FormerlyExposedAs] の旧名もエイリアスとして解決する
                 var propertyType = polymorphicExposedType.FindProperty(name);
                 if (propertyType != null)
@@ -162,7 +162,7 @@ namespace Lilium.RemoteControl
             // struct, primitive, stringなどの実体型の場合
             else
             {
-                ExposedObject newOwner = this.owner;
+                ExposedObjectHandle newOwner = this.owner;
 
                 var polymorphicType = GetPolymorphicValueType();
                 if (polymorphicType == null) return null;
@@ -188,7 +188,7 @@ namespace Lilium.RemoteControl
                     // 正しいExposedClass上でonPropertyChangedイベントが発火するようにする。
                     else if (value is UnityEngine.Object && polymorphicExposedType != null)
                     {
-                        newOwner = ExposedObject.CreateUnregistered(polymorphicExposedType, value);
+                        newOwner = ExposedObjectHandle.CreateUnregistered(polymorphicExposedType, value);
                         ownerSwitched = true;
                     }
                 }

@@ -8,11 +8,13 @@ using UnityEngine.Serialization;
 
 namespace Lilium.RemoteControl
 {
-    //TODO: ExposedObject役割が違うのに名称がかぶるのはややこしいので、リネームするべき。
+    // 実体 (GameObject / Component / ScriptableObject など) を公開オブジェクトとして
+    // ラップする wrapper の共通インターフェース。値型ハンドルである ExposedObjectHandle
+    // (旧 ExposedObject) とは役割が異なる。
     public interface IExposedObject
     {
         string name { get; set; }
-        ExposedObject? exposedObject { get; }
+        ExposedObjectHandle? exposedObject { get; }
         string id { get; }
         void OnEnable();
         void OnDisable();
@@ -36,10 +38,10 @@ namespace Lilium.RemoteControl
 
         public virtual string id { get; }
 
-        public ExposedObject? exposedObject => _exposedObject;
+        public ExposedObjectHandle? exposedObject => _exposedObject;
 
         [NonSerialized]
-        protected ExposedObject? _exposedObject;
+        protected ExposedObjectHandle? _exposedObject;
 
         /// <summary>
         /// このオブジェクトの生成元 Prefab の Asset GUID。
@@ -54,8 +56,8 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// 親 ExposedObject の id。Unity hierarchy を真実として派生する。
-        /// reference の Transform を起点に祖先方向へ辿り、最初に見つかった登録済み ExposedObject の id を返す。
+        /// 親 ExposedObjectHandle の id。Unity hierarchy を真実として派生する。
+        /// reference の Transform を起点に祖先方向へ辿り、最初に見つかった登録済み ExposedObjectHandle の id を返す。
         /// Transform を持たない reference (ScriptableObject 等) やルート (親なし) は null。
         /// シリアライズ時はメタデータ `@parent` として出力され、デシリアライズ時は Registry.SetParent で復元される。
         /// </summary>

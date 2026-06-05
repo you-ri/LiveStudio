@@ -94,7 +94,7 @@ namespace Lilium.RemoteControl
             return Guid.Empty;
         }
 
-        internal static ExposedPropertyType GetPropertyType(ExposedObject exposedObject, string propertyName)
+        internal static ExposedPropertyType GetPropertyType(ExposedObjectHandle exposedObject, string propertyName)
         {
             if (exposedObject == null) throw new ArgumentNullException(nameof(exposedObject));
             if (propertyName == null) throw new ArgumentNullException(nameof(propertyName));
@@ -277,7 +277,7 @@ namespace Lilium.RemoteControl
         // Reset / Default
         // -------------------------------------------------------
 
-        public static bool ResetValue(ExposedObject exposedObject, in ExposedProperty property)
+        public static bool ResetValue(ExposedObjectHandle exposedObject, in ExposedProperty property)
         {
             if (exposedObject == null) throw new ArgumentNullException(nameof(exposedObject));
 
@@ -286,7 +286,7 @@ namespace Lilium.RemoteControl
             return true;
         }
 
-        public static void SetDefault(ExposedObject exposedObject)
+        public static void SetDefault(ExposedObjectHandle exposedObject)
         {
             if (exposedObject == null) throw new ArgumentNullException(nameof(exposedObject));
 
@@ -375,9 +375,9 @@ namespace Lilium.RemoteControl
         // Property count
         // -------------------------------------------------------
 
-        internal static int GetPropertyCount(ExposedObject exposedObject, bool isDirtyOnly = false, bool forPersistence = false)
+        internal static int GetPropertyCount(ExposedObjectHandle exposedObject, bool isDirtyOnly = false, bool forPersistence = false)
         {
-            Debug.Assert(exposedObject != null, "ExposedObject cannot be null");
+            Debug.Assert(exposedObject != null, "ExposedObjectHandle cannot be null");
 
             var properties = exposedObject.propertyTypes;
 

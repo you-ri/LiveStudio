@@ -15,7 +15,7 @@ namespace Lilium.RemoteControl
     /// 状態 (デフォルト値・dirty) は <see cref="ExposedObjectDefaultRegistry"/> が target 参照キーで保持するため、
     /// このハンドル自体は不変な readonly struct として使い捨てできる。
     /// </summary>
-    public readonly struct ExposedObject : IEquatable<ExposedObject>
+    public readonly struct ExposedObjectHandle : IEquatable<ExposedObjectHandle>
     {
         public readonly ExposedClass targetType;
 
@@ -42,13 +42,13 @@ namespace Lilium.RemoteControl
 
         public bool isDirty => ExposedObjectDefaultRegistry.IsDirty(this, DefaultExposedObjectResolver.Instance);
 
-        public ExposedObject(string id, ExposedClass type, object target)
+        public ExposedObjectHandle(string id, ExposedClass type, object target)
         {
             Debug.Assert(type != null, "ExposedClass type cannot be null");
 
             if (target == null && type != null && !type.isStatic)
             {
-                Debug.LogWarning($"[RemoteControl] Creating ExposedObject with null target for non-static type:{type.typeName} id:{id}");
+                Debug.LogWarning($"[RemoteControl] Creating ExposedObjectHandle with null target for non-static type:{type.typeName} id:{id}");
             }
 
             this.targetType = type;
@@ -71,13 +71,13 @@ namespace Lilium.RemoteControl
         /// レジストリに登録しないExposedObjectを生成する。
         /// プロパティ走査やAPI応答など、一時的なコンテキストとして使用する。
         /// </summary>
-        internal static ExposedObject CreateUnregistered(ExposedClass type, object target)
+        internal static ExposedObjectHandle CreateUnregistered(ExposedClass type, object target)
         {
             Debug.Assert(type != null, "ExposedClass type cannot be null");
-            return new ExposedObject(type, target);
+            return new ExposedObjectHandle(type, target);
         }
 
-        private ExposedObject(ExposedClass type, object target)
+        private ExposedObjectHandle(ExposedClass type, object target)
         {
             this.targetType = type;
             this.target = target;
@@ -85,7 +85,7 @@ namespace Lilium.RemoteControl
         }
 
         // 値だけを設定する内部ctor（登録/デフォルトキャプチャを行わない）。引数順を変えて公開ctorとシグネチャを分ける。
-        private ExposedObject(ExposedClass type, object target, string id)
+        private ExposedObjectHandle(ExposedClass type, object target, string id)
         {
             this.targetType = type;
             this.target = target;
@@ -95,7 +95,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// id だけを差し替えた新しいハンドルを返す（副作用なし）。Registry の再キー専用。
         /// </summary>
-        internal ExposedObject WithId(string newId) => new ExposedObject(targetType, target, newId);
+        internal ExposedObjectHandle WithId(string newId) => new ExposedObjectHandle(targetType, target, newId);
 
         public bool ResolveReferences(IExposedPropertyTable resolver)
         {
@@ -121,7 +121,7 @@ namespace Lilium.RemoteControl
             {
                 if (property == null)
                 {
-                    // ExposedObject.GetProperty は ReadOnlySpan<char> を受け取る
+                    // ExposedObjectHandle.GetProperty は ReadOnlySpan<char> を受け取る
                     property = GetProperty(segment.name);
                 }
                 else
@@ -266,14 +266,14 @@ namespace Lilium.RemoteControl
 
         // --- 値等価 (struct なので参照同一性ではなく targetType + target(参照) + id で比較) ---
 
-        public bool Equals(ExposedObject other)
+        public bool Equals(ExposedObjectHandle other)
         {
             return ReferenceEquals(targetType, other.targetType)
                 && ReferenceEquals(target, other.target)
                 && string.Equals(id, other.id, StringComparison.Ordinal);
         }
 
-        public override bool Equals(object obj) => obj is ExposedObject other && Equals(other);
+        public override bool Equals(object obj) => obj is ExposedObjectHandle other && Equals(other);
 
         public override int GetHashCode()
         {
@@ -287,8 +287,8 @@ namespace Lilium.RemoteControl
             }
         }
 
-        public static bool operator ==(ExposedObject a, ExposedObject b) => a.Equals(b);
+        public static bool operator ==(ExposedObjectHandle a, ExposedObjectHandle b) => a.Equals(b);
 
-        public static bool operator !=(ExposedObject a, ExposedObject b) => !a.Equals(b);
+        public static bool operator !=(ExposedObjectHandle a, ExposedObjectHandle b) => !a.Equals(b);
     }
 }

@@ -13,7 +13,7 @@ namespace Lilium.RemoteControl
     /// performed in a setter must be re-applied here.
     ///
     /// Called exactly once per object after all properties on that object have
-    /// been deserialized. Nested ExposedObject instances each get their own
+    /// been deserialized. Nested ExposedObjectHandle instances each get their own
     /// callback.
     /// </summary>
     public interface IExposedDeserializeCallback

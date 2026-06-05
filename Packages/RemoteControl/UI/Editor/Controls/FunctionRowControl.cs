@@ -9,7 +9,7 @@ namespace Lilium.RemoteControl.UI.Editor
 {
     public static class FunctionRowControl
     {
-        public static VisualElement CreateFunctionRow(ExposedObject obj, ExposedFunctionType funcType)
+        public static VisualElement CreateFunctionRow(ExposedObjectHandle obj, ExposedFunctionType funcType)
         {
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;

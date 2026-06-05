@@ -10,7 +10,7 @@ using GameObjectUtility = Lilium.RemoteControl.GameObjectUtility;
 namespace Lilium.RemoteControl.Tests
 {
     /// <summary>
-    /// ExposedObject 同士の親子関係の動作検証。
+    /// ExposedObjectHandle 同士の親子関係の動作検証。
     /// - parentId は Unity hierarchy から派生する getter-only プロパティ
     /// - 親子関係の変更は ExposedObjectRegistry.SetParent 経由 (内部で GameObjectUtility.SetTransformParent)
     /// - @parent シリアライズは desired Unity hierarchy の復元ポイント
@@ -91,7 +91,7 @@ namespace Lilium.RemoteControl.Tests
             grand.OnEnable();
             child.OnEnable();
 
-            // middle は ExposedObject ではないので透過して grand が親として返る
+            // middle は ExposedObjectHandle ではないので透過して grand が親として返る
             Assert.AreEqual(grand.id, child.parentId);
         }
 
@@ -310,7 +310,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void TransformRef_ResolveOwner_ReturnsNullWhenNameUnregistered()
         {
-            // name に対応する ExposedObject が Registry に未登録なら null。
+            // name に対応する ExposedObjectHandle が Registry に未登録なら null。
             // 起動シーケンス中の「親がまだ登録されていない」状態をシミュレート。
             _CreateGO("Main Avatar"); // ExposedGameObject を作らない = Registry に未登録
 
@@ -595,7 +595,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Attach_UnresolvedOwner_DoesNotDetach()
         {
-            // Play mode 突入時、親 ExposedObject がまだ registry に未登録の状態で Attach が走るケース。
+            // Play mode 突入時、親 ExposedObjectHandle がまだ registry に未登録の状態で Attach が走るケース。
             // ownerName は指定されているが Registry の name 検索でヒットしない → 現状の Unity hierarchy を維持する。
             var actualParentGO = _CreateGO("actual-parent");
             var selfGO = _CreateGO("self");

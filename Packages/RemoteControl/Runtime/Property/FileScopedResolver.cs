@@ -28,9 +28,9 @@ namespace Lilium.RemoteControl
         void PopPath();
 
         /// <summary>
-        /// 現在処理中の root ExposedObject を設定する。null で解除。
+        /// 現在処理中の root ExposedObjectHandle を設定する。null で解除。
         /// </summary>
-        void SetCurrentRoot(ExposedObject? root);
+        void SetCurrentRoot(ExposedObjectHandle? root);
 
         /// <summary>
         /// UnityEngine.Object 参照を fileid 付きの @ref トークンとしてエンコードし、
@@ -45,7 +45,7 @@ namespace Lilium.RemoteControl
     /// - プロパティ走査中のパスを追跡する
     /// - UnityEngine.Object 参照を source-key ベースの @ref にエンコードする
     /// - 未登録の UnityEngine.Object は @source (rootId+path) 付きエントリとして後で objects[] に書き出すようキューする
-    /// - 登録済み ExposedObject を持つ UnityEngine.Object は、その ExposedObject.id を source-key として再利用する
+    /// - 登録済み ExposedObjectHandle を持つ UnityEngine.Object は、その ExposedObjectHandle.id を source-key として再利用する
     /// </summary>
     internal sealed class FileScopedResolver : IFileScopedResolver
     {
@@ -63,7 +63,7 @@ namespace Lilium.RemoteControl
         private readonly Dictionary<UnityEngine.Object, string> _objectFileIds = new Dictionary<UnityEngine.Object, string>();
         private readonly List<PendingReference> _pending = new List<PendingReference>();
 
-        private ExposedObject? _currentRoot;
+        private ExposedObjectHandle? _currentRoot;
 
         public FileScopedResolver(IExposedObjectResolver inner)
         {
@@ -72,8 +72,8 @@ namespace Lilium.RemoteControl
 
         public IReadOnlyList<PendingReference> pending => _pending;
 
-        public ExposedObject? FindById(string id) => _inner.FindById(id);
-        public ExposedObject? FindByTarget(object target) => _inner.FindByTarget(target);
+        public ExposedObjectHandle? FindById(string id) => _inner.FindById(id);
+        public ExposedObjectHandle? FindByTarget(object target) => _inner.FindByTarget(target);
 
         public void PushPath(string segment)
         {
@@ -87,7 +87,7 @@ namespace Lilium.RemoteControl
             _pathStack.RemoveAt(_pathStack.Count - 1);
         }
 
-        public void SetCurrentRoot(ExposedObject? root)
+        public void SetCurrentRoot(ExposedObjectHandle? root)
         {
             _currentRoot = root;
             _pathStack.Clear();
@@ -128,7 +128,7 @@ namespace Lilium.RemoteControl
 
         /// <summary>
         /// 対象オブジェクトの source-key を採番（既に割当済みなら再利用）。
-        /// 登録済み ExposedObject を持つ target はその ExposedObject.id を再利用する。
+        /// 登録済み ExposedObjectHandle を持つ target はその ExposedObjectHandle.id を再利用する。
         /// 未登録 target には `rootId + 現在パス` を source-key として割り当てる。
         /// pending は未登録の UnityEngine.Object の場合にのみ追加する。
         /// </summary>
@@ -139,7 +139,7 @@ namespace Lilium.RemoteControl
                 return existing;
             }
 
-            // 登録済み ExposedObject がある場合はその id を source-key として再利用する
+            // 登録済み ExposedObjectHandle がある場合はその id を source-key として再利用する
             string sourceKey;
             var registered = _inner.FindByTarget(obj);
             if (registered != null && registered.Value.hasId)
@@ -174,7 +174,7 @@ namespace Lilium.RemoteControl
         {
             if (obj == null) return JValue.CreateNull();
 
-            // 登録済み ExposedObject を持つ場合: source-key 採番のみ、pending には積まない
+            // 登録済み ExposedObjectHandle を持つ場合: source-key 採番のみ、pending には積まない
             // （root 側が別エントリとして出力済みになる）
             var registered = _inner.FindByTarget(obj);
             bool isRegisteredRoot = registered != null && registered.Value.hasId;

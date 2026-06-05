@@ -9,7 +9,7 @@ namespace Lilium.RemoteControl.Tests
 {
     /// <summary>
     /// Verifies that <see cref="IExposedDeserializeCallback.OnAfterExposedDeserialize"/> fires
-    /// at the documented points: after a full <c>FromJson(string, ExposedObject, ...)</c>,
+    /// at the documented points: after a full <c>FromJson(string, ExposedObjectHandle, ...)</c>,
     /// after deserialization of a nested <c>[ExposedClass]</c>, and after the SetProperty path
     /// <c>FromJson(string, in ExposedProperty, ...)</c> writes a single property.
     ///
@@ -96,13 +96,13 @@ namespace Lilium.RemoteControl.Tests
             foreach (var obj in toRemove) obj.Unregister();
         }
 
-        #region Full FromJson(string, ExposedObject) — top-level deserialize
+        #region Full FromJson(string, ExposedObjectHandle) — top-level deserialize
 
         [Test]
         public void FromJson_FullObject_FiresOwnerCallbackOnce()
         {
             var target = new TestOuter { outerValue = 0, inner = new TestInner { value = 0 } };
-            var exposedObj = new ExposedObject("test-cb-1", ExposedClass.Get<TestOuter>(), target);
+            var exposedObj = new ExposedObjectHandle("test-cb-1", ExposedClass.Get<TestOuter>(), target);
 
             var json = "{\"outerValue\": 42, \"inner\": {\"value\": 7}}";
             ExposedPropertySerializer.FromJson(json, exposedObj, _resolver);
@@ -116,13 +116,13 @@ namespace Lilium.RemoteControl.Tests
         public void FromJson_FullObject_FiresNestedCallback()
         {
             var target = new TestOuter { outerValue = 0, inner = new TestInner { value = 0 } };
-            var exposedObj = new ExposedObject("test-cb-2", ExposedClass.Get<TestOuter>(), target);
+            var exposedObj = new ExposedObjectHandle("test-cb-2", ExposedClass.Get<TestOuter>(), target);
 
             var json = "{\"outerValue\": 1, \"inner\": {\"value\": 99}}";
             ExposedPropertySerializer.FromJson(json, exposedObj, _resolver);
 
             Assert.GreaterOrEqual(target.inner.callbackCount, 1,
-                "Nested ExposedObject's OnAfterExposedDeserialize should fire when its data is deserialized.");
+                "Nested ExposedObjectHandle's OnAfterExposedDeserialize should fire when its data is deserialized.");
             Assert.AreEqual(99, target.inner.value);
         }
 
@@ -136,7 +136,7 @@ namespace Lilium.RemoteControl.Tests
             // Phase 2.5 regression: SetProperty for a primitive bypasses the property setter
             // (field reflection write) so the owner needs the callback to re-apply state.
             var target = new TestOuter { outerValue = 10, inner = new TestInner { value = 0 } };
-            var exposedObj = new ExposedObject("test-cb-3", ExposedClass.Get<TestOuter>(), target);
+            var exposedObj = new ExposedObjectHandle("test-cb-3", ExposedClass.Get<TestOuter>(), target);
             var prop = exposedObj.FindProperty("outerValue");
             Assert.IsNotNull(prop, "outerValue property must be findable");
 
@@ -152,11 +152,11 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void FromJsonProperty_NestedExposedObject_FiresOwnerAndNestedCallbacks()
         {
-            // The user-reported bug: updating a nested ExposedObject (e.g.
+            // The user-reported bug: updating a nested ExposedObjectHandle (e.g.
             // SkyboxBackground._backgroundTexture as ExternalTexture) fires the nested
             // callback (Reload) but the owner's callback (_ApplyTexture) was missed.
             var target = new TestOuter { outerValue = 0, inner = new TestInner { value = 0 } };
-            var exposedObj = new ExposedObject("test-cb-4", ExposedClass.Get<TestOuter>(), target);
+            var exposedObj = new ExposedObjectHandle("test-cb-4", ExposedClass.Get<TestOuter>(), target);
             var prop = exposedObj.FindProperty("inner");
             Assert.IsNotNull(prop, "inner property must be findable");
 
@@ -166,7 +166,7 @@ namespace Lilium.RemoteControl.Tests
             Assert.IsTrue(ok);
             Assert.AreEqual(77, target.inner.value);
             Assert.GreaterOrEqual(target.inner.callbackCount, 1,
-                "Nested ExposedObject callback should fire after SetProperty on a nested object.");
+                "Nested ExposedObjectHandle callback should fire after SetProperty on a nested object.");
             Assert.AreEqual(1, target.callbackCount,
                 "Owner callback should fire after SetProperty on a nested object so the parent can re-apply.");
         }
@@ -174,9 +174,9 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void FromJsonProperty_NestedChild_FiresOwnerCallback()
         {
-            // Path navigates into nested ExposedObject (inner.value). Owner is still the outer.
+            // Path navigates into nested ExposedObjectHandle (inner.value). Owner is still the outer.
             var target = new TestOuter { outerValue = 0, inner = new TestInner { value = 0 } };
-            var exposedObj = new ExposedObject("test-cb-5", ExposedClass.Get<TestOuter>(), target);
+            var exposedObj = new ExposedObjectHandle("test-cb-5", ExposedClass.Get<TestOuter>(), target);
             var prop = exposedObj.FindProperty("inner.value");
             Assert.IsNotNull(prop, "inner.value path must be findable");
 
@@ -196,7 +196,7 @@ namespace Lilium.RemoteControl.Tests
             // is not a UnityEngine.Object that allows null). The callback should NOT fire
             // in that no-op case, since nothing actually changed on the target.
             var target = new TestOuter { outerValue = 10, inner = new TestInner { value = 0 } };
-            var exposedObj = new ExposedObject("test-cb-6", ExposedClass.Get<TestOuter>(), target);
+            var exposedObj = new ExposedObjectHandle("test-cb-6", ExposedClass.Get<TestOuter>(), target);
             var prop = exposedObj.FindProperty("outerValue");
             Assert.IsNotNull(prop);
 
@@ -214,7 +214,7 @@ namespace Lilium.RemoteControl.Tests
         {
             // Targets that did not opt in to IExposedDeserializeCallback must still work.
             var target = new TestNoOptIn { value = 1 };
-            var exposedObj = new ExposedObject("test-cb-7", ExposedClass.Get<TestNoOptIn>(), target);
+            var exposedObj = new ExposedObjectHandle("test-cb-7", ExposedClass.Get<TestNoOptIn>(), target);
             var prop = exposedObj.FindProperty("value");
             Assert.IsNotNull(prop);
 

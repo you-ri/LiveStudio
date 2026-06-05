@@ -22,7 +22,7 @@ namespace Lilium.RemoteControl
 
         /// <summary>
         /// 未登録の UnityEngine.Object ターゲットのプロパティを instanceID キーで SSE ブロードキャストする。
-        /// Registry 検索は行わず、その場で <see cref="ExposedObject.CreateUnregistered"/> して使う。
+        /// Registry 検索は行わず、その場で <see cref="ExposedObjectHandle.CreateUnregistered"/> して使う。
         /// RemoteApp 側は selector 配下のインライン要素の <c>@id</c> を instanceID で受信しているため、
         /// 同じ instanceID でルーティングすれば該当要素が更新される。
         /// </summary>
@@ -33,7 +33,7 @@ namespace Lilium.RemoteControl
             var exposedClass = ExposedClass.Find(target.GetType());
             if (exposedClass == null) return;
 
-            var exposedObject = ExposedObject.CreateUnregistered(exposedClass, target);
+            var exposedObject = ExposedObjectHandle.CreateUnregistered(exposedClass, target);
             var property = exposedObject.FindProperty(propertyPath);
             if (property == null) return;
 
@@ -54,7 +54,7 @@ namespace Lilium.RemoteControl
         /// <paramref name="propertyPath"/> にはトップレベル名だけでなく、DotBracket 形式の
         /// ネストパス (例: "animationParameterOverrides[0].type") も指定できる。
         /// </summary>
-        public static void BroadcastProperty(ExposedObject exposedObj, string propertyPath)
+        public static void BroadcastProperty(ExposedObjectHandle exposedObj, string propertyPath)
         {
             if (exposedObj == null) return;
 

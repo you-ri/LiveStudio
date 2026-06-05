@@ -57,7 +57,7 @@ namespace Lilium.RemoteControl.RestApi
         }
 
         /// <summary>
-        /// ExposedObject 解決用リゾルバを取得。
+        /// ExposedObjectHandle 解決用リゾルバを取得。
         /// ObjectContainer があればそれを、無ければ既定リゾルバを返す。
         /// </summary>
         protected IExposedObjectResolver GetResolver()

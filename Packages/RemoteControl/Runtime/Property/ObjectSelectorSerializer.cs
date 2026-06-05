@@ -64,9 +64,9 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// GameObject を包む ExposedObject (ExposedGameObject など) を検索する。
+        /// GameObject を包む ExposedObjectHandle (ExposedGameObject など) を検索する。
         /// </summary>
-        private static ExposedObject? _FindGameObjectWrapper(GameObject gameObject)
+        private static ExposedObjectHandle? _FindGameObjectWrapper(GameObject gameObject)
         {
             if (gameObject == null) return null;
             foreach (var candidate in ExposedObjectRegistry.instances)
@@ -80,8 +80,8 @@ namespace Lilium.RemoteControl
 
         /// <summary>
         /// ObjectSelector フィールドの値を @ref 形式にシリアライズする。
-        /// - 直接登録済み (value 自身が ExposedObject.target) → その id を @ref に使用
-        /// - Component かつ所属 GameObject を包む ExposedObject があれば → "rootId.components[N]" 形式で @ref
+        /// - 直接登録済み (value 自身が ExposedObjectHandle.target) → その id を @ref に使用
+        /// - Component かつ所属 GameObject を包む ExposedObjectHandle があれば → "rootId.components[N]" 形式で @ref
         /// - wrapper が見つからなければ null (未選択扱い)
         /// </summary>
         internal static JToken SerializeObjectSelectorValue(object value, bool forPersistence)
@@ -89,7 +89,7 @@ namespace Lilium.RemoteControl
             if (value == null) return JValue.CreateNull();
             if (value is UnityEngine.Object uo && uo == null) return JValue.CreateNull();
 
-            // 1) 直接登録済み: value 自身が ExposedObject.target なら、その id を @ref に使う
+            // 1) 直接登録済み: value 自身が ExposedObjectHandle.target なら、その id を @ref に使う
             var direct = ExposedObjectRegistry.FindByTarget(value);
             if (direct != null && direct.Value.hasId)
             {

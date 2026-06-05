@@ -5,7 +5,7 @@ using UnityEngine;
 namespace Lilium.RemoteControl
 {
     /// <summary>
-    /// ExposedObject 関連の共通ユーティリティ。
+    /// ExposedObjectHandle 関連の共通ユーティリティ。
     /// </summary>
     public static class ExposedObjectUtility
     {

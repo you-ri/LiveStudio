@@ -107,7 +107,7 @@ namespace Lilium.RemoteControl.Tests
         {
             // Arrange
             var target = new TestTarget { intValue = 10 };
-            var exposedObj = new ExposedObject("test-events-1", _exposedClass, target);
+            var exposedObj = new ExposedObjectHandle("test-events-1", _exposedClass, target);
             var prop = exposedObj.FindProperty("intValue");
             Assert.IsNotNull(prop);
 
@@ -126,7 +126,7 @@ namespace Lilium.RemoteControl.Tests
         {
             // Arrange
             var target = new TestTarget { stringValue = "old" };
-            var exposedObj = new ExposedObject("test-events-2", _exposedClass, target);
+            var exposedObj = new ExposedObjectHandle("test-events-2", _exposedClass, target);
             var prop = exposedObj.FindProperty("stringValue");
             Assert.IsNotNull(prop);
 
@@ -148,7 +148,7 @@ namespace Lilium.RemoteControl.Tests
         {
             // Arrange
             var target = new TestTarget { intValue = 10 };
-            var exposedObj = new ExposedObject("test-events-3", _exposedClass, target);
+            var exposedObj = new ExposedObjectHandle("test-events-3", _exposedClass, target);
             var prop = exposedObj.FindProperty("intValue");
             Assert.IsNotNull(prop);
 
@@ -169,7 +169,7 @@ namespace Lilium.RemoteControl.Tests
         {
             // Arrange
             var target = new TestTarget { stringValue = "old" };
-            var exposedObj = new ExposedObject("test-events-4", _exposedClass, target);
+            var exposedObj = new ExposedObjectHandle("test-events-4", _exposedClass, target);
             var prop = exposedObj.FindProperty("stringValue");
             Assert.IsNotNull(prop);
 
@@ -190,7 +190,7 @@ namespace Lilium.RemoteControl.Tests
         {
             // Arrange
             var target = new TestTarget { nested = new TestNestedStruct { value = 1 } };
-            var exposedObj = new ExposedObject("test-events-5", _exposedClass, target);
+            var exposedObj = new ExposedObjectHandle("test-events-5", _exposedClass, target);
             var prop = exposedObj.FindProperty("nested");
             Assert.IsNotNull(prop);
 
@@ -219,7 +219,7 @@ namespace Lilium.RemoteControl.Tests
                     new TestElement { flag = true, label = "second" }
                 }
             };
-            var exposedObj = new ExposedObject("test-events-6", _exposedClass, target);
+            var exposedObj = new ExposedObjectHandle("test-events-6", _exposedClass, target);
 
             // 配列要素[0]のflagプロパティを指定して更新
             var prop = exposedObj.FindProperty("items[0].flag");
@@ -249,7 +249,7 @@ namespace Lilium.RemoteControl.Tests
                     new TestElement { flag = false, label = "a" }
                 }
             };
-            var exposedObj = new ExposedObject("test-events-7", _exposedClass, target);
+            var exposedObj = new ExposedObjectHandle("test-events-7", _exposedClass, target);
 
             var prop = exposedObj.FindProperty("items");
             Assert.IsNotNull(prop);
@@ -276,7 +276,7 @@ namespace Lilium.RemoteControl.Tests
         {
             // Arrange — CreateUnregisteredで生成したExposedObjectでもイベントが発火するか検証
             var target = new TestTarget { intValue = 10 };
-            var unregisteredObj = ExposedObject.CreateUnregistered(_exposedClass, target);
+            var unregisteredObj = ExposedObjectHandle.CreateUnregistered(_exposedClass, target);
             var prop = unregisteredObj.FindProperty("intValue");
             Assert.IsNotNull(prop);
 
@@ -293,7 +293,7 @@ namespace Lilium.RemoteControl.Tests
         {
             // Arrange — RemoteAppフォールバック経路の再現
             var target = new TestTarget { intValue = 10 };
-            var unregisteredObj = ExposedObject.CreateUnregistered(_exposedClass, target);
+            var unregisteredObj = ExposedObjectHandle.CreateUnregistered(_exposedClass, target);
             var prop = unregisteredObj.FindProperty("intValue");
             Assert.IsNotNull(prop);
 
@@ -312,7 +312,7 @@ namespace Lilium.RemoteControl.Tests
         {
             // Arrange — targetTypeの同一性を確認
             var target = new TestTarget();
-            var unregisteredObj = ExposedObject.CreateUnregistered(_exposedClass, target);
+            var unregisteredObj = ExposedObjectHandle.CreateUnregistered(_exposedClass, target);
 
             // Assert
             Assert.AreSame(_exposedClass, unregisteredObj.targetType,
@@ -346,11 +346,11 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<TestSelector>();
 
             var target = new TestTarget { intValue = 10, items = new TestElement[0] };
-            var targetExposedObj = new ExposedObject("test-target-obj", _exposedClass, target);
+            var targetExposedObj = new ExposedObjectHandle("test-target-obj", _exposedClass, target);
 
             var selector = new TestSelector(target);
             var selectorClass = ExposedClass.Get<TestSelector>();
-            var selectorExposedObj = new ExposedObject("test-selector", selectorClass, selector);
+            var selectorExposedObj = new ExposedObjectHandle("test-selector", selectorClass, selector);
 
             // Act — selector経由でobjects[0].intValueを見つけてSetValue
             var prop = selectorExposedObj.FindProperty("objects[0].intValue");
@@ -373,11 +373,11 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<TestSelector>();
 
             var target = new TestTarget { intValue = 10, items = new TestElement[0] };
-            var targetExposedObj = new ExposedObject("test-target-add", _exposedClass, target);
+            var targetExposedObj = new ExposedObjectHandle("test-target-add", _exposedClass, target);
 
             var selector = new TestSelector(target);
             var selectorClass = ExposedClass.Get<TestSelector>();
-            var selectorExposedObj = new ExposedObject("test-selector-add", selectorClass, selector);
+            var selectorExposedObj = new ExposedObjectHandle("test-selector-add", selectorClass, selector);
 
             // Act — selector経由でobjects[0].itemsを見つけてAddArrayElement
             var prop = selectorExposedObj.FindProperty("objects[0].items");
@@ -409,7 +409,7 @@ namespace Lilium.RemoteControl.Tests
 
             var selector = new TestSelector(target);
             var selectorClass = ExposedClass.Get<TestSelector>();
-            var selectorExposedObj = new ExposedObject("test-selector-unreg", selectorClass, selector);
+            var selectorExposedObj = new ExposedObjectHandle("test-selector-unreg", selectorClass, selector);
 
             // Act — selector経由でobjects[0].intValueを見つけてSetValue
             var prop = selectorExposedObj.FindProperty("objects[0].intValue");
@@ -442,7 +442,7 @@ namespace Lilium.RemoteControl.Tests
 
             // 差し替わっている場合でも、イベントが移行されて発火することを検証
             var target = new TestTarget { intValue = 10 };
-            var exposedObj = new ExposedObject("test-events-reregister", classAfterReRegister, target);
+            var exposedObj = new ExposedObjectHandle("test-events-reregister", classAfterReRegister, target);
             var prop = exposedObj.FindProperty("intValue");
             prop.Value.SetValue(42);
 

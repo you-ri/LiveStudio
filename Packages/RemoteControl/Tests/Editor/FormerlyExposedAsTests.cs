@@ -187,7 +187,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<NewPlug>();
             var ec = ExposedClass.Find(typeof(NewPlug));
             var target = new NewPlug();
-            new ExposedObject("plug-1", ec, target);
+            new ExposedObjectHandle("plug-1", ec, target);
 
             var legacyJson = @"{
               ""format"": ""jp.lilium.remotecontrol.scene"",
@@ -210,7 +210,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<NewPlug>();
             var ec = ExposedClass.Find(typeof(NewPlug));
             var target = new NewPlug();
-            new ExposedObject("plug-2", ec, target);
+            new ExposedObjectHandle("plug-2", ec, target);
 
             var legacyJson = @"{
               ""format"": ""jp.lilium.remotecontrol.scene"",
@@ -233,7 +233,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<NewPlug>();
             var ec = ExposedClass.Find(typeof(NewPlug));
             var target = new NewPlug();
-            new ExposedObject("plug-3", ec, target);
+            new ExposedObjectHandle("plug-3", ec, target);
 
             var legacyJson = @"{
               ""format"": ""jp.lilium.remotecontrol.scene"",
@@ -255,10 +255,10 @@ namespace Lilium.RemoteControl.Tests
             // 書き出しは常に最新の typeName / field 名で行う（互換属性は読み取り専用の役割）
             ExposedClass.RegisterFromAttributes<NewPlug>();
             var ec = ExposedClass.Find(typeof(NewPlug));
-            new ExposedObject("plug-4", ec, new NewPlug { newValue = 1, newLabel = "hi" });
+            new ExposedObjectHandle("plug-4", ec, new NewPlug { newValue = 1, newLabel = "hi" });
 
             var json = LiveSceneSerializer.LiveSceneToJson(
-                new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver);
+                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver);
             var entry = (JObject)((JArray)JObject.Parse(json)["objects"])[0];
 
             Assert.AreEqual("NewPlug", entry["@type"]?.Value<string>(),

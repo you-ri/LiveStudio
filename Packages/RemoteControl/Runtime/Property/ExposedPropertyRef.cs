@@ -7,7 +7,7 @@ using UnityEngine;
 namespace Lilium.RemoteControl
 {
     /// <summary>
-    /// 他の ExposedObject のプロパティへの参照を表す値型。
+    /// 他の ExposedObjectHandle のプロパティへの参照を表す値型。
     /// FusionPage のような「集約ページ」で、実体の ExposedProperty を代理露出するために使う。
     ///
     /// `[ExposedField] public static readonly ExposedPropertyRef smoothness = ExposedPropertyRef.To&lt;AvatarProvider&gt;("_smoothness");`
@@ -18,10 +18,10 @@ namespace Lilium.RemoteControl
     /// </summary>
     public readonly struct ExposedPropertyRef
     {
-        /// <summary>対象 ExposedObject の id (ExposedObjectRegistry のキー、通常は ExposedClass.typeName)</summary>
+        /// <summary>対象 ExposedObjectHandle の id (ExposedObjectRegistry のキー、通常は ExposedClass.typeName)</summary>
         public readonly string targetTypeName;
 
-        /// <summary>対象 ExposedObject 内のプロパティパス (例: "_smoothness")</summary>
+        /// <summary>対象 ExposedObjectHandle 内のプロパティパス (例: "_smoothness")</summary>
         public readonly string propertyPath;
 
         /// <summary>
@@ -106,7 +106,7 @@ namespace Lilium.RemoteControl
                     return resolvedOwner.FindProperty(propertyPath);
                 }
 
-                // target 付きで登録済み ExposedObject を作成 (コンストラクタで default capture も走る)
+                // target 付きで登録済み ExposedObjectHandle を作成 (コンストラクタで default capture も走る)
                 var instanceOwner = ExposedObjectRegistry.GetOrCreate(exposedClass.typeName, exposedClass, target);
                 return instanceOwner.FindProperty(propertyPath);
             }

@@ -75,11 +75,11 @@ namespace Lilium.LiveStudio.EditorTests
             var exposedClass = ExposedClass.Find(typeof(AvatarInput));
             Assert.IsNotNull(exposedClass, "AvatarInput must have ExposedClass registered");
 
-            var exposedObject = new ExposedObject("test-input-actions", exposedClass, _controller);
+            var exposedObject = new ExposedObjectHandle("test-input-actions", exposedClass, _controller);
             try
             {
                 var json = LiveSceneSerializer.LiveSceneToJson(
-                    new System.Collections.Generic.List<ExposedObject> { exposedObject },
+                    new System.Collections.Generic.List<ExposedObjectHandle> { exposedObject },
                     DefaultExposedObjectResolver.Instance,
                     SerializeMode.Snapshot);
 
@@ -100,7 +100,7 @@ namespace Lilium.LiveStudio.EditorTests
             // SetDefault は空状態でキャプチャし、その後にバインディングを追加して
             // delta に bindings を載せる。
             var exposedClass = ExposedClass.Find(typeof(AvatarInput));
-            var source = new ExposedObject("test-input-actions-rt", exposedClass, _controller);
+            var source = new ExposedObjectHandle("test-input-actions-rt", exposedClass, _controller);
             try
             {
                 ExposedPropertyUtility.SetDefault(source);
@@ -110,7 +110,7 @@ namespace Lilium.LiveStudio.EditorTests
                 action.AddBinding("<Keyboard>/c");
 
                 var json = LiveSceneSerializer.LiveSceneToJson(
-                    new System.Collections.Generic.List<ExposedObject> { source },
+                    new System.Collections.Generic.List<ExposedObjectHandle> { source },
                     DefaultExposedObjectResolver.Instance,
                     SerializeMode.Delta);
 
@@ -125,7 +125,7 @@ namespace Lilium.LiveStudio.EditorTests
                 field.SetValue(target, new InputActionMap("TargetMap"));
                 targetGo.SetActive(true);
 
-                var targetExposed = new ExposedObject("test-input-actions-rt", exposedClass, target);
+                var targetExposed = new ExposedObjectHandle("test-input-actions-rt", exposedClass, target);
                 try
                 {
                     LiveSceneSerializer.LiveSceneFromJson(json, DefaultExposedObjectResolver.Instance);
@@ -157,7 +157,7 @@ namespace Lilium.LiveStudio.EditorTests
             // Delta モードでバインディング変更を反映した settings が出力されること。
             // SetDefault で空状態を固定してから追加し、差分として現れることを確認する。
             var exposedClass = ExposedClass.Find(typeof(AvatarInput));
-            var exposedObject = new ExposedObject("test-input-actions-delta", exposedClass, _controller);
+            var exposedObject = new ExposedObjectHandle("test-input-actions-delta", exposedClass, _controller);
             try
             {
                 ExposedPropertyUtility.SetDefault(exposedObject);
@@ -167,7 +167,7 @@ namespace Lilium.LiveStudio.EditorTests
                 action.AddBinding("<Mouse>/leftButton");
 
                 var json = LiveSceneSerializer.LiveSceneToJson(
-                    new System.Collections.Generic.List<ExposedObject> { exposedObject },
+                    new System.Collections.Generic.List<ExposedObjectHandle> { exposedObject },
                     DefaultExposedObjectResolver.Instance,
                     SerializeMode.Delta);
 
@@ -187,13 +187,13 @@ namespace Lilium.LiveStudio.EditorTests
             // SetDefault 後に何も変更しなければ delta から settings が消え、
             // objects[] が空になること (delta 空化の回帰テスト)。
             var exposedClass = ExposedClass.Find(typeof(AvatarInput));
-            var exposedObject = new ExposedObject("test-input-actions-no-change", exposedClass, _controller);
+            var exposedObject = new ExposedObjectHandle("test-input-actions-no-change", exposedClass, _controller);
             try
             {
                 ExposedPropertyUtility.SetDefault(exposedObject);
 
                 var json = LiveSceneSerializer.LiveSceneToJson(
-                    new System.Collections.Generic.List<ExposedObject> { exposedObject },
+                    new System.Collections.Generic.List<ExposedObjectHandle> { exposedObject },
                     DefaultExposedObjectResolver.Instance,
                     SerializeMode.Delta);
 

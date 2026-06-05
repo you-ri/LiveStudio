@@ -286,7 +286,7 @@ namespace Lilium.RemoteControl.LiveScene
         }
 
         /// <summary>
-        /// Reverts every dirty property in every contained ExposedObject back to its captured
+        /// Reverts every dirty property in every contained ExposedObjectHandle back to its captured
         /// default. Used at editor Play-mode exit to restore ScriptableObject state.
         /// </summary>
         public void RevertAllToDefault()

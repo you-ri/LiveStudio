@@ -255,7 +255,7 @@ namespace Lilium.RemoteControl.Tests
             {
                 ExposedClass.Register<GameObject>("DestroyTest", new ExposedPropertyDefine[0]);
                 var exposedClass = ExposedClass.Find(typeof(GameObject));
-                var exposedObj = new ExposedObject("destroy-test-1", exposedClass, instance);
+                var exposedObj = new ExposedObjectHandle("destroy-test-1", exposedClass, instance);
 
                 var factory = new StandardObjectFactory();
                 factory.DestroyObject("destroy-test-1");
@@ -405,14 +405,14 @@ namespace Lilium.RemoteControl.Tests
                     page = new CategoryPage()
                 });
 
-                // UIHandler のコンストラクタで selector が ExposedObject として登録される
+                // UIHandler のコンストラクタで selector が ExposedObjectHandle として登録される
                 var handler = new UIHandler(null, definition);
 
                 var selectorObj = ExposedObjectRegistry.FindById("ui.selector.test-page");
-                Assert.IsNotNull(selectorObj, "Selector should be registered as ExposedObject");
+                Assert.IsNotNull(selectorObj, "Selector should be registered as ExposedObjectHandle");
 
                 var factoryObj = ExposedObjectRegistry.FindById("ui.factory.test-page");
-                Assert.IsNotNull(factoryObj, "Factory should be registered as ExposedObject");
+                Assert.IsNotNull(factoryObj, "Factory should be registered as ExposedObjectHandle");
 
                 handler.Cleanup();
             }
@@ -552,7 +552,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void NavigateObjectSelector_SerializesStaticExposedObjectAsReference()
         {
-            // ExposedClass.Reset() で属性スキャン + 静的クラスの ExposedObject 登録を行う。
+            // ExposedClass.Reset() で属性スキャン + 静的クラスの ExposedObjectHandle 登録を行う。
             ExposedClass.Reset();
             var staticClass = ExposedClass.Find(typeof(NavigateSelectorTestPage));
             Assert.IsNotNull(staticClass, "static ExposedClass must be registered");
@@ -577,7 +577,7 @@ namespace Lilium.RemoteControl.Tests
                 try
                 {
                     var selectorObj = ExposedObjectRegistry.FindById("ui.selector.settings");
-                    Assert.IsNotNull(selectorObj, "selector ExposedObject must be registered");
+                    Assert.IsNotNull(selectorObj, "selector ExposedObjectHandle must be registered");
 
                     var json = ExposedPropertySerializer.ToJson(selectorObj.Value, DefaultExposedObjectResolver.Instance);
                     var parsed = JObject.Parse(json);

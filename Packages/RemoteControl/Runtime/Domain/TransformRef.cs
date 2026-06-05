@@ -9,9 +9,9 @@ using UnityEngine;
 namespace Lilium.RemoteControl
 {
     /// <summary>
-    /// 親 ExposedObject の配下にある Transform への相対参照。
+    /// 親 ExposedObjectHandle の配下にある Transform への相対参照。
     ///
-    /// `_ownerName` は親 ExposedObject の表示 name (= 紐づく GameObject 名) を保持する source of truth。
+    /// `_ownerName` は親 ExposedObjectHandle の表示 name (= 紐づく GameObject 名) を保持する source of truth。
     /// 解決は <see cref="ExposedObjectRegistry"/> 配下を name で検索することで行うため、
     /// 起動時に対象がまだ未登録であっても name 文字列だけは復元され、後続フレームで
     /// 対象が登録され次第 <see cref="Resolve"/> / <see cref="ResolveOwner"/> が成功するようになる。
@@ -57,7 +57,7 @@ namespace Lilium.RemoteControl
 
         public TransformRef() { }
 
-        /// <param name="ownerName">親 ExposedObject の表示 name (= 紐づく GameObject 名)。</param>
+        /// <param name="ownerName">親 ExposedObjectHandle の表示 name (= 紐づく GameObject 名)。</param>
         /// <param name="transformPath">searchType に応じて解釈される値: Path モードなら親 root からの相対 path (例: "Armature/Hips/Head")、Name モードなら検索対象の name。</param>
         /// <param name="searchType">検索方式。デフォルトは Path (旧挙動互換)。</param>
         public TransformRef(string ownerName, string transformPath, SearchType searchType = SearchType.Path)
@@ -68,7 +68,7 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// この TransformRef を保持している ExposedObject (= self / 宿主) を紐付ける。
+        /// この TransformRef を保持している ExposedObjectHandle (= self / 宿主) を紐付ける。
         /// <see cref="availableOwnerNames"/> の循環除外 (self + 子孫をドロップダウンから外す) のためだけに使用する。
         /// </summary>
         public void SetSelf(ExposedUnityObjectBase self)
@@ -83,7 +83,7 @@ namespace Lilium.RemoteControl
         public bool isEmpty => string.IsNullOrEmpty(_ownerName) && string.IsNullOrEmpty(_transformPath);
 
         /// <summary>
-        /// ownerName が指定されているか (= 親 ExposedObject の解決を意図しているか)。
+        /// ownerName が指定されているか (= 親 ExposedObjectHandle の解決を意図しているか)。
         /// 「指定済みだが ResolveOwner が null を返す」= 未登録の未解決状態を判定するために使う。
         /// </summary>
         public bool hasOwner => !string.IsNullOrEmpty(_ownerName);
@@ -92,16 +92,16 @@ namespace Lilium.RemoteControl
         /// 現在の設定で参照先 Transform を解決できるか。
         /// RemoteApp 側が「target 有効か」を判定するための公開フラグ。
         /// false のときは ResolveOwner / Resolve のいずれかが失敗している
-        /// (= 親 ExposedObject 未登録、または bone path 未解決)。
+        /// (= 親 ExposedObjectHandle 未登録、または bone path 未解決)。
         /// </summary>
         [ExposedProperty, Hide]
         public bool isResolved => Resolve() != null;
 
         /// <summary>
-        /// 親 ExposedObject の表示 name。永続化はこのプロパティが直接担う。
+        /// 親 ExposedObjectHandle の表示 name。永続化はこのプロパティが直接担う。
         /// 起動時に対象がまだ Registry に登録されていなくても、name 文字列自体は保存・復元され、
         /// 登録され次第 Resolve が解決できるようになる。
-        /// RemoteApp からは StringSelector によるドロップダウンで親 ExposedObject の name を選択する。
+        /// RemoteApp からは StringSelector によるドロップダウンで親 ExposedObjectHandle の name を選択する。
         /// </summary>
         [ExposedProperty]
         [StringSelector(nameof(availableOwnerNames))]
@@ -118,8 +118,8 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// 親 ExposedObject の候補となる name 一覧。
-        /// 空文字 (ルート = 親なし) を先頭に、ExposedObject として登録済みの UnityObject 系の名前を列挙する。
+        /// 親 ExposedObjectHandle の候補となる name 一覧。
+        /// 空文字 (ルート = 親なし) を先頭に、ExposedObjectHandle として登録済みの UnityObject 系の名前を列挙する。
         /// self 自身と self の子孫は循環防止のため除外する (除外判定には引き続き Registry の id を内部利用)。
         /// </summary>
         [ExposedProperty, Hide]
@@ -303,7 +303,7 @@ namespace Lilium.RemoteControl
 
         /// <summary>
         /// _ownerName から親 GameObject を取得する。
-        /// ExposedObjectRegistry を name で検索し、ヒットした ExposedObject の target から GameObject を抽出する。
+        /// ExposedObjectRegistry を name で検索し、ヒットした ExposedObjectHandle の target から GameObject を抽出する。
         /// 未登録 / name 不一致のときは null を返す。
         /// </summary>
         public GameObject ResolveOwner()
@@ -358,7 +358,7 @@ namespace Lilium.RemoteControl
 
         /// <summary>
         /// 指定 Transform を指すように参照を初期化する。
-        /// t の祖先を辿り、ExposedObjectRegistry に登録済みの ExposedObject (GameObject を伴うもの) を
+        /// t の祖先を辿り、ExposedObjectRegistry に登録済みの ExposedObjectHandle (GameObject を伴うもの) を
         /// 親として特定し、その GameObject 名を ownerName にセットする。
         /// _transformPath は target が親 root と同じなら空、子孫なら root からの相対 path (Path モード) または
         /// leaf name (Name モード) を格納する。
@@ -425,10 +425,10 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// GameObject に対応する ExposedObject を Registry から検索する。
+        /// GameObject に対応する ExposedObjectHandle を Registry から検索する。
         /// Proxy 系 (target=Proxy) と直 UnityObject 系 (target=UnityObject) の両方を拾う。
         /// </summary>
-        static ExposedObject? _FindExposedByGameObject(GameObject go)
+        static ExposedObjectHandle? _FindExposedByGameObject(GameObject go)
         {
             if (go == null) return null;
 
@@ -449,12 +449,12 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// name から owner として扱える ExposedObject を検索する。
+        /// name から owner として扱える ExposedObjectHandle を検索する。
         /// ExposedUnityObjectBase 派生 (proxy) と、target が直接 GameObject/Component の
-        /// ExposedObject (例: <c>[ExposedClass]</c> を持つ MonoBehaviour) の両方を対象にする。
-        /// 比較は <see cref="ExposedObject.name"/> ベースなので Unity の GameObject 名と一致する。
+        /// ExposedObjectHandle (例: <c>[ExposedClass]</c> を持つ MonoBehaviour) の両方を対象にする。
+        /// 比較は <see cref="ExposedObjectHandle.name"/> ベースなので Unity の GameObject 名と一致する。
         /// </summary>
-        static ExposedObject? _FindExposedByName(string name)
+        static ExposedObjectHandle? _FindExposedByName(string name)
         {
             if (string.IsNullOrEmpty(name)) return null;
             foreach (var obj in ExposedObjectRegistry.instances)

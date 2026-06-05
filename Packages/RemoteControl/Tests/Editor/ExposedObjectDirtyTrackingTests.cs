@@ -95,7 +95,7 @@ namespace Lilium.RemoteControl.Tests
         public class TestDirtyRefItem : IExposedObject
         {
             public string name { get; set; }
-            public ExposedObject? exposedObject => null;
+            public ExposedObjectHandle? exposedObject => null;
             public string id => null;
             public void OnEnable() { }
             public void OnDisable() { }
@@ -167,7 +167,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<TestDirtyClass>();
             var testObj = new TestDirtyClass { value = 42, name = "Test", position = 1.0f };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-dirty-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-dirty-1", exposedClass, testObj);
 
             // Act - デフォルト値をキャプチャしてから値を変更
             exposedObj.SetDefault("value", testObj.value);
@@ -185,7 +185,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<TestDirtyClass>();
             var testObj = new TestDirtyClass { value = 42, name = "Test", position = 1.0f };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-dirty-2", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-dirty-2", exposedClass, testObj);
 
             // Act - デフォルト値をキャプチャしてから値を変更
             exposedObj.SetDefault("value", testObj.value);
@@ -207,7 +207,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<TestDirtyClass>();
             var testObj = new TestDirtyClass { value = 42, name = "Test", position = 1.0f };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-dirty-3", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-dirty-3", exposedClass, testObj);
 
             // Act & Assert - EnsureDefaultCapturedは例外を投げない
             Assert.DoesNotThrow(() => exposedObj.EnsureDefaultCaptured("nonExistent"));
@@ -232,7 +232,7 @@ namespace Lilium.RemoteControl.Tests
                 nested = new TestDirtyNestedStruct { id = 1, name = "Nested" }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-dirty-4", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-dirty-4", exposedClass, testObj);
 
             // Act - デフォルト値をキャプチャしてから値を変更
             exposedObj.SetDefault("nested.name", testObj.nested.name);
@@ -257,7 +257,7 @@ namespace Lilium.RemoteControl.Tests
                 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithArray));
-            var exposedObj = new ExposedObject("test-dirty-6", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-dirty-6", exposedClass, testObj);
 
             // Act - SetValue経由で値を変更（EnsureDefaultCapturedが自動で呼ばれる）
             var prop = exposedObj.FindProperty("items[0].name");
@@ -281,7 +281,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<TestDirtyClass>();
             var testObj = new TestDirtyClass { value = 42, name = "Test", position = 1.0f };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-dirty-7", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-dirty-7", exposedClass, testObj);
 
             // Act - nameのみ変更
             exposedObj.SetDefault("name", testObj.name);
@@ -305,7 +305,7 @@ namespace Lilium.RemoteControl.Tests
                 nested = new TestDirtyNestedStruct { id = 1, name = "Nested" }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-dirty-8", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-dirty-8", exposedClass, testObj);
 
             // Act - nested.nameのみ変更
             exposedObj.SetDefault("nested.name", testObj.nested.name);
@@ -332,7 +332,7 @@ namespace Lilium.RemoteControl.Tests
                 nested = new TestDirtyNestedStruct { id = 1, name = "Nested" }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-dirty-9", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-dirty-9", exposedClass, testObj);
 
             // Act - SetValue経由で値を変更
             var prop = exposedObj.FindProperty("nested.name");
@@ -353,7 +353,7 @@ namespace Lilium.RemoteControl.Tests
                 nested = new TestDirtyNestedStruct { id = 1, name = "Nested" }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-dirty-10", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-dirty-10", exposedClass, testObj);
 
             // Act - ベースライン設定後、別のプロパティを変更
             ExposedPropertyUtility.SetDefault(exposedObj);
@@ -370,7 +370,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<TestDirtyClass>();
             var testObj = new TestDirtyClass { value = 42 };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-dirty-11", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-dirty-11", exposedClass, testObj);
 
             // Act
             exposedObj.SetDefault("value", testObj.value);
@@ -392,7 +392,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<TestDirtyClass>();
             var testObj = new TestDirtyClass { value = 42, name = "Test", position = 1.0f };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-dirty-12", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-dirty-12", exposedClass, testObj);
 
             // デフォルト値をキャプチャしてから値を変更
             exposedObj.SetDefault("value", testObj.value);
@@ -421,7 +421,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<TestDirtyClass>();
             var testObj = new TestDirtyClass { value = 42, name = "Test", position = 1.0f };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-dirty-13", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-dirty-13", exposedClass, testObj);
 
             // デフォルト値をキャプチャしてから値を変更
             exposedObj.SetDefault("value", testObj.value);
@@ -449,7 +449,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<TestDirtyClass>();
             var testObj = new TestDirtyClass { value = 42, name = "Test", position = 1.0f };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-dirty-14", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-dirty-14", exposedClass, testObj);
 
             // デフォルト値をキャプチャ
             exposedObj.SetDefault("value", testObj.value);
@@ -473,7 +473,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<TestDirtyClass>();
             var testObj = new TestDirtyClass { value = 42, name = "Test", position = 1.0f };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-dirty-15", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-dirty-15", exposedClass, testObj);
 
             // Act: コンストラクタでSetDefaultが自動実行されるため、デフォルト値が存在しRevertは成功する
             bool result = exposedObj.Revert("value");
@@ -499,7 +499,7 @@ namespace Lilium.RemoteControl.Tests
                 nested = new TestDirtyNestedStruct { id = 1, name = "Nested" }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-dirty-16", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-dirty-16", exposedClass, testObj);
 
             // ベースライン設定
             ExposedPropertyUtility.SetDefault(exposedObj);
@@ -510,7 +510,7 @@ namespace Lilium.RemoteControl.Tests
             prop.Value.SetValue("Changed");
 
             // Act
-            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert
             var jRoot = JObject.Parse(json);
@@ -547,7 +547,7 @@ namespace Lilium.RemoteControl.Tests
                 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithArray));
-            var exposedObj = new ExposedObject("test-dirty-17", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-dirty-17", exposedClass, testObj);
 
             // ベースライン設定
             ExposedPropertyUtility.SetDefault(exposedObj);
@@ -558,7 +558,7 @@ namespace Lilium.RemoteControl.Tests
             prop.Value.SetValue("Changed");
 
             // Act
-            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert
             var jRoot = JObject.Parse(json);
@@ -597,7 +597,7 @@ namespace Lilium.RemoteControl.Tests
                 nested = new TestDirtyNestedStruct { id = 1, name = "Nested" }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-dirty-18", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-dirty-18", exposedClass, testObj);
 
             // nameのみを更新するJSON
             var json = @"{
@@ -633,7 +633,7 @@ namespace Lilium.RemoteControl.Tests
                 nested = new TestDirtyNestedStruct { id = 1, name = "OriginalNested" }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-dirty-19", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-dirty-19", exposedClass, testObj);
 
             // nested.nameのみを更新するJSON
             var json = @"{
@@ -670,7 +670,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<TestDirtyClass>();
             var testObj = new TestDirtyClass { value = 42, name = "Test", position = 1.0f };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-dirty-20", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-dirty-20", exposedClass, testObj);
 
             // デフォルト値をキャプチャしてから値を変更
             exposedObj.SetDefault("value", testObj.value);
@@ -703,7 +703,7 @@ namespace Lilium.RemoteControl.Tests
                 items = new TestDirtyNestedStruct[0]
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithArray));
-            var exposedObj = new ExposedObject("test-add-dirty-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-add-dirty-1", exposedClass, testObj);
 
             var property = exposedObj.FindProperty("items");
             Assert.IsNotNull(property);
@@ -745,7 +745,7 @@ namespace Lilium.RemoteControl.Tests
                 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithDefaultArray));
-            var exposedObj = new ExposedObject("test-default-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-default-1", exposedClass, testObj);
 
             // デフォルト値を設定
             ExposedPropertyUtility.SetDefault(exposedObj);
@@ -802,7 +802,7 @@ namespace Lilium.RemoteControl.Tests
                 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithDefaultArray));
-            var exposedObj = new ExposedObject("test-default-2", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-default-2", exposedClass, testObj);
 
             // デフォルト値を設定
             ExposedPropertyUtility.SetDefault(exposedObj);
@@ -845,7 +845,7 @@ namespace Lilium.RemoteControl.Tests
                 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithDefaultArray));
-            var exposedObj = new ExposedObject("test-default-3", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-default-3", exposedClass, testObj);
 
             // デフォルト値を設定
             ExposedPropertyUtility.SetDefault(exposedObj);
@@ -891,7 +891,7 @@ namespace Lilium.RemoteControl.Tests
                 nested = new TestDirtyNestedStruct { id = 1, name = "Nested" }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-setdefault-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-setdefault-1", exposedClass, testObj);
 
             // nested.nameのみをSetValue経由で変更（EnsureDefaultCapturedが呼ばれる）
             var nestedNameProp = exposedObj.FindProperty("nested.name");
@@ -919,7 +919,7 @@ namespace Lilium.RemoteControl.Tests
             // Arrange
             var testObj = new TestDirtyClass { value = 42, name = "Test" };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-setdefault-2", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-setdefault-2", exposedClass, testObj);
 
             // SetValue経由で値を変更（EnsureDefaultCapturedが呼ばれる）
             var valueProp = exposedObj.FindProperty("value") ?? throw new Exception("Property not found");
@@ -943,7 +943,7 @@ namespace Lilium.RemoteControl.Tests
                 nested = new TestDirtyNestedStruct { id = 1, name = "Test" }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-setdefault-3", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-setdefault-3", exposedClass, testObj);
 
             // nested.nameのみをSetValue経由で変更
             var nestedNameProp = exposedObj.FindProperty("nested.name") ?? throw new Exception("Property not found");
@@ -982,7 +982,7 @@ namespace Lilium.RemoteControl.Tests
             // Arrange - 値を変更せずにデフォルト値をキャプチャ
             var testObj = new TestDirtyClass { value = 42, name = "Test" };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-compare-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-compare-1", exposedClass, testObj);
 
             // Act - デフォルト値をキャプチャするが値は変更しない
             exposedObj.SetDefault("value", testObj.value);
@@ -997,7 +997,7 @@ namespace Lilium.RemoteControl.Tests
             // Arrange - API経由ではなく直接フィールドを変更
             var testObj = new TestDirtyClass { value = 42, name = "Test" };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-compare-2", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-compare-2", exposedClass, testObj);
 
             exposedObj.SetDefault("value", testObj.value);
 
@@ -1021,7 +1021,7 @@ namespace Lilium.RemoteControl.Tests
                 intList = new List<int> { 1, 2, 3 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithList));
-            var exposedObj = new ExposedObject("test-list-add-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-list-add-1", exposedClass, testObj);
 
             exposedObj.SetDefault("intList", testObj.intList);
 
@@ -1041,7 +1041,7 @@ namespace Lilium.RemoteControl.Tests
                 intList = new List<int> { 10, 20, 30 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithList));
-            var exposedObj = new ExposedObject("test-list-remove-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-list-remove-1", exposedClass, testObj);
 
             exposedObj.SetDefault("intList", testObj.intList);
 
@@ -1061,7 +1061,7 @@ namespace Lilium.RemoteControl.Tests
                 intList = new List<int> { 1, 2, 3 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithList));
-            var exposedObj = new ExposedObject("test-list-reorder-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-list-reorder-1", exposedClass, testObj);
 
             exposedObj.SetDefault("intList", testObj.intList);
 
@@ -1082,7 +1082,7 @@ namespace Lilium.RemoteControl.Tests
                 intList = new List<int> { 1, 2, 3 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithList));
-            var exposedObj = new ExposedObject("test-list-unchanged-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-list-unchanged-1", exposedClass, testObj);
 
             exposedObj.SetDefault("intList", testObj.intList);
 
@@ -1101,7 +1101,7 @@ namespace Lilium.RemoteControl.Tests
                 intList = new List<int> { 1, 2, 3 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithList));
-            var exposedObj = new ExposedObject("test-list-clear-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-list-clear-1", exposedClass, testObj);
 
             exposedObj.SetDefault("intList", testObj.intList);
 
@@ -1121,7 +1121,7 @@ namespace Lilium.RemoteControl.Tests
                 stringList = new List<string> { "a", "b" }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithList));
-            var exposedObj = new ExposedObject("test-list-string-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-list-string-1", exposedClass, testObj);
 
             exposedObj.SetDefault("stringList", testObj.stringList);
 
@@ -1144,7 +1144,7 @@ namespace Lilium.RemoteControl.Tests
                 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithList));
-            var exposedObj = new ExposedObject("test-list-struct-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-list-struct-1", exposedClass, testObj);
 
             exposedObj.SetDefault("structList", testObj.structList);
 
@@ -1164,7 +1164,7 @@ namespace Lilium.RemoteControl.Tests
                 intList = new List<int> { 1, 2, 3 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithList));
-            var exposedObj = new ExposedObject("test-list-cleardirty-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-list-cleardirty-1", exposedClass, testObj);
 
             exposedObj.SetDefault("intList", testObj.intList);
             testObj.intList.Add(4);
@@ -1190,7 +1190,7 @@ namespace Lilium.RemoteControl.Tests
                 intList = new List<int> { 10, 20, 30 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithList));
-            var exposedObj = new ExposedObject("test-list-modify-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-list-modify-1", exposedClass, testObj);
 
             exposedObj.SetDefault("intList", testObj.intList);
 
@@ -1215,7 +1215,7 @@ namespace Lilium.RemoteControl.Tests
                 items = new List<TestDirtyRefItem> { item1 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyContainerWithRefList));
-            var containerExposedObj = new ExposedObject("test-container-1", exposedClass, testObj);
+            var containerExposedObj = new ExposedObjectHandle("test-container-1", exposedClass, testObj);
 
             // デフォルト値をキャプチャ（ObjectContainer.Initializeと同等）
             ExposedPropertyUtility.SetDefault(containerExposedObj);
@@ -1240,7 +1240,7 @@ namespace Lilium.RemoteControl.Tests
                 items = new List<TestDirtyRefItem> { item1, item2 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyContainerWithRefList));
-            var containerExposedObj = new ExposedObject("test-container-2", exposedClass, testObj);
+            var containerExposedObj = new ExposedObjectHandle("test-container-2", exposedClass, testObj);
 
             ExposedPropertyUtility.SetDefault(containerExposedObj);
 
@@ -1261,22 +1261,22 @@ namespace Lilium.RemoteControl.Tests
                 items = new List<TestDirtyRefItem> { item1 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyContainerWithRefList));
-            var containerExposedObj = new ExposedObject("test-container-3", exposedClass, testObj);
+            var containerExposedObj = new ExposedObjectHandle("test-container-3", exposedClass, testObj);
 
             // 子要素のExposedObjectを登録
             var itemExposedClass = ExposedClass.Find(typeof(TestDirtyRefItem));
-            var item1ExposedObj = new ExposedObject("item-1", itemExposedClass, item1);
+            var item1ExposedObj = new ExposedObjectHandle("item-1", itemExposedClass, item1);
 
             // デフォルト値をキャプチャ
             ExposedPropertyUtility.SetDefault(containerExposedObj);
 
             // Act - 新しい要素を追加
             var item2 = new TestDirtyRefItem { name = "Item2", value = 20 };
-            var item2ExposedObj = new ExposedObject("item-2", itemExposedClass, item2);
+            var item2ExposedObj = new ExposedObjectHandle("item-2", itemExposedClass, item2);
             testObj.items.Add(item2);
 
             // DeltaFromDefaultでシリアライズ（SaveCurrentDataと同等）
-            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert - ObjectContainerのitemsが出力される
             var jRoot = JObject.Parse(json);
@@ -1316,21 +1316,21 @@ namespace Lilium.RemoteControl.Tests
                 items = new List<TestDirtyRefItem> { item1 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyContainerWithRefList));
-            var containerExposedObj = new ExposedObject("test-container-save-load", exposedClass, testObj);
+            var containerExposedObj = new ExposedObjectHandle("test-container-save-load", exposedClass, testObj);
 
             var itemExposedClass = ExposedClass.Find(typeof(TestDirtyRefItem));
-            var item1ExposedObj = new ExposedObject("item-sl-1", itemExposedClass, item1);
+            var item1ExposedObj = new ExposedObjectHandle("item-sl-1", itemExposedClass, item1);
 
             // ベースラインキャプチャ
             ExposedPropertyUtility.SetDefault(containerExposedObj);
 
             // Act - 新しい要素を追加
             var item2 = new TestDirtyRefItem { name = "Item2", value = 20 };
-            var item2ExposedObj = new ExposedObject("item-sl-2", itemExposedClass, item2);
+            var item2ExposedObj = new ExposedObjectHandle("item-sl-2", itemExposedClass, item2);
             testObj.items.Add(item2);
 
             // DeltaFromDefaultでシリアライズ
-            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // LiveSceneFromJsonでデシリアライズ（読み込み）
             LiveSceneSerializer.LiveSceneFromJson(json, _resolver);
@@ -1352,22 +1352,22 @@ namespace Lilium.RemoteControl.Tests
                 items = new List<TestDirtyRefItem> { item1, item2 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyContainerWithRefList));
-            var containerExposedObj = new ExposedObject("test-container-4", exposedClass, testObj);
+            var containerExposedObj = new ExposedObjectHandle("test-container-4", exposedClass, testObj);
 
             // 子要素のExposedObjectを登録
             var itemExposedClass = ExposedClass.Find(typeof(TestDirtyRefItem));
-            new ExposedObject("item-ref-1", itemExposedClass, item1);
-            new ExposedObject("item-ref-2", itemExposedClass, item2);
+            new ExposedObjectHandle("item-ref-1", itemExposedClass, item1);
+            new ExposedObjectHandle("item-ref-2", itemExposedClass, item2);
 
             // デフォルト値をキャプチャ
             ExposedPropertyUtility.SetDefault(containerExposedObj);
 
             // Act - 新しい要素を追加してdirtyにする
             var item3 = new TestDirtyRefItem { name = "Item3", value = 30 };
-            new ExposedObject("item-ref-3", itemExposedClass, item3);
+            new ExposedObjectHandle("item-ref-3", itemExposedClass, item3);
             testObj.items.Add(item3);
 
-            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert
             var jRoot = JObject.Parse(json);
@@ -1410,7 +1410,7 @@ namespace Lilium.RemoteControl.Tests
                 nested = new TestDirtyNestedStruct { id = 0, name = "" }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-roundtrip-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-roundtrip-1", exposedClass, testObj);
 
             // Step 1: SetDefault（初期値をベースラインとしてキャプチャ）
             ExposedPropertyUtility.SetDefault(exposedObj);
@@ -1433,7 +1433,7 @@ namespace Lilium.RemoteControl.Tests
             Assert.AreEqual("Changed", testObj.name, "name should be loaded from JSON");
 
             // Step 3: LiveSceneToJson(DeltaFromDefault) で保存
-            var savedJson = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var savedJson = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert: 出力JSONにvalue=42, name="Changed"が含まれること
             var jRoot = JObject.Parse(savedJson);
@@ -1463,7 +1463,7 @@ namespace Lilium.RemoteControl.Tests
                 nested = new TestDirtyNestedStruct { id = 0, name = "" }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
-            var exposedObj = new ExposedObject("test-roundtrip-2", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-roundtrip-2", exposedClass, testObj);
 
             // Step 1: SetDefault
             ExposedPropertyUtility.SetDefault(exposedObj);
@@ -1487,7 +1487,7 @@ namespace Lilium.RemoteControl.Tests
             Assert.AreEqual("Updated", testObj.nested.name, "nested.name should be loaded from JSON");
 
             // Step 3: LiveSceneToJson(DeltaFromDefault)
-            var savedJson = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var savedJson = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert: nested.nameが出力に含まれること
             var jRoot = JObject.Parse(savedJson);
@@ -1520,7 +1520,7 @@ namespace Lilium.RemoteControl.Tests
                 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithArray));
-            var exposedObj = new ExposedObject("test-roundtrip-3", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-roundtrip-3", exposedClass, testObj);
 
             // Step 1: SetDefault
             ExposedPropertyUtility.SetDefault(exposedObj);
@@ -1545,7 +1545,7 @@ namespace Lilium.RemoteControl.Tests
             Assert.AreEqual("NewItem", testObj.items[1].name, "Second item name should be loaded");
 
             // Step 3: LiveSceneToJson(DeltaFromDefault)
-            var savedJson = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var savedJson = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert: 配列の変更が出力に含まれること
             var jRoot = JObject.Parse(savedJson);
@@ -1587,7 +1587,7 @@ namespace Lilium.RemoteControl.Tests
                 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithArray));
-            var exposedObj = new ExposedObject("test-delta-array-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-delta-array-1", exposedClass, testObj);
             ExposedPropertyUtility.SetDefault(exposedObj);
 
             // items[1].name のみ変更
@@ -1596,7 +1596,7 @@ namespace Lilium.RemoteControl.Tests
             prop.Value.SetValue("Changed");
 
             // Act
-            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert
             var jRoot = JObject.Parse(json);
@@ -1632,7 +1632,7 @@ namespace Lilium.RemoteControl.Tests
                 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithArray));
-            var exposedObj = new ExposedObject("test-delta-array-2", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-delta-array-2", exposedClass, testObj);
             ExposedPropertyUtility.SetDefault(exposedObj);
 
             // items[0].name のみ変更（items[1], items[2] は未変更）
@@ -1641,7 +1641,7 @@ namespace Lilium.RemoteControl.Tests
             prop.Value.SetValue("Modified");
 
             // Act
-            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert
             var jRoot = JObject.Parse(json);
@@ -1680,7 +1680,7 @@ namespace Lilium.RemoteControl.Tests
                 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithArray));
-            var exposedObj = new ExposedObject("test-delta-array-3", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-delta-array-3", exposedClass, testObj);
             ExposedPropertyUtility.SetDefault(exposedObj);
 
             // 要素追加
@@ -1695,7 +1695,7 @@ namespace Lilium.RemoteControl.Tests
             itemsProp.Value.SetValue(testObj.items);
 
             // Act
-            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert
             var jRoot = JObject.Parse(json);
@@ -1731,7 +1731,7 @@ namespace Lilium.RemoteControl.Tests
                 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithArray));
-            var exposedObj = new ExposedObject("test-delta-array-4", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-delta-array-4", exposedClass, testObj);
             ExposedPropertyUtility.SetDefault(exposedObj);
 
             // デルタ形式のJSON: items[1].nameのみ変更
@@ -1774,7 +1774,7 @@ namespace Lilium.RemoteControl.Tests
                 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithArray));
-            var exposedObj = new ExposedObject("test-delta-array-5", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-delta-array-5", exposedClass, testObj);
             ExposedPropertyUtility.SetDefault(exposedObj);
 
             // デルタ形式JSON: 追加要素
@@ -1813,7 +1813,7 @@ namespace Lilium.RemoteControl.Tests
                 structList = new List<TestDirtyNestedStruct>()
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithList));
-            var exposedObj = new ExposedObject("test-delta-array-6", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-delta-array-6", exposedClass, testObj);
             ExposedPropertyUtility.SetDefault(exposedObj);
 
             // intList[1] を変更
@@ -1823,7 +1823,7 @@ namespace Lilium.RemoteControl.Tests
             intListProp.Value.SetValue(testObj.intList);
 
             // Act
-            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // Assert: プリミティブ配列はデルタ形式ではなく全要素出力
             var jRoot = JObject.Parse(json);
@@ -1854,7 +1854,7 @@ namespace Lilium.RemoteControl.Tests
                 }
             };
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithArray));
-            var exposedObj = new ExposedObject("test-delta-array-7", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-delta-array-7", exposedClass, testObj);
             ExposedPropertyUtility.SetDefault(exposedObj);
 
             // items[1].name のみ変更
@@ -1863,7 +1863,7 @@ namespace Lilium.RemoteControl.Tests
             prop.Value.SetValue("Modified");
 
             // Act: シリアライズ → デシリアライズ
-            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // 新しいオブジェクトで復元
             var testObj2 = new TestDirtyClassWithArray
@@ -1875,7 +1875,7 @@ namespace Lilium.RemoteControl.Tests
                     new TestDirtyNestedStruct { id = 3, name = "Third" }
                 }
             };
-            var exposedObj2 = new ExposedObject("test-delta-array-7", exposedClass, testObj2);
+            var exposedObj2 = new ExposedObjectHandle("test-delta-array-7", exposedClass, testObj2);
             ExposedPropertyUtility.SetDefault(exposedObj2);
 
             LiveSceneSerializer.LiveSceneFromJson(json, _resolver);
@@ -1933,7 +1933,7 @@ namespace Lilium.RemoteControl.Tests
                 structField = TestPlainStructWithArray.Default()
             };
             var exposedClass = ExposedClass.Find(typeof(TestClassWithPlainStructField));
-            var exposedObj = new ExposedObject("test-plain-struct-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-plain-struct-1", exposedClass, testObj);
 
             ExposedPropertyUtility.SetDefault(exposedObj);
 
@@ -1957,7 +1957,7 @@ namespace Lilium.RemoteControl.Tests
                 structField = TestPlainStructWithArray.Default()
             };
             var exposedClass = ExposedClass.Find(typeof(TestClassWithPlainStructField));
-            var exposedObj = new ExposedObject("test-plain-struct-2", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-plain-struct-2", exposedClass, testObj);
 
             ExposedPropertyUtility.SetDefault(exposedObj);
 
@@ -1982,7 +1982,7 @@ namespace Lilium.RemoteControl.Tests
                 structField = TestPlainStructWithArray.Default()
             };
             var exposedClass = ExposedClass.Find(typeof(TestClassWithPlainStructField));
-            var exposedObj = new ExposedObject("test-plain-struct-3", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-plain-struct-3", exposedClass, testObj);
 
             ExposedPropertyUtility.SetDefault(exposedObj);
 
@@ -2002,7 +2002,7 @@ namespace Lilium.RemoteControl.Tests
                 structField = TestPlainStructWithArray.Default()
             };
             var exposedClass = ExposedClass.Find(typeof(TestClassWithPlainStructField));
-            var exposedObj = new ExposedObject("test-plain-struct-4", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-plain-struct-4", exposedClass, testObj);
 
             ExposedPropertyUtility.SetDefault(exposedObj);
 
@@ -2025,7 +2025,7 @@ namespace Lilium.RemoteControl.Tests
                 structField = TestPlainStructWithArray.Default()
             };
             var exposedClass = ExposedClass.Find(typeof(TestClassWithPlainStructField));
-            var exposedObj = new ExposedObject("test-plain-struct-5", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-plain-struct-5", exposedClass, testObj);
 
             ExposedPropertyUtility.SetDefault(exposedObj);
 
@@ -2035,7 +2035,7 @@ namespace Lilium.RemoteControl.Tests
             testObj.structField = newStruct;
 
             // Act - シリアライズ
-            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var json = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // 新しいオブジェクトにデシリアライズ
             exposedObj.Unregister();
@@ -2044,7 +2044,7 @@ namespace Lilium.RemoteControl.Tests
                 id = 1,
                 structField = TestPlainStructWithArray.Default()
             };
-            var exposedObj2 = new ExposedObject("test-plain-struct-5", exposedClass, testObj2);
+            var exposedObj2 = new ExposedObjectHandle("test-plain-struct-5", exposedClass, testObj2);
             ExposedPropertyUtility.SetDefault(exposedObj2);
 
             LiveSceneSerializer.LiveSceneFromJson(json, _resolver);
@@ -2112,7 +2112,7 @@ namespace Lilium.RemoteControl.Tests
                 settings = new PlainSerializableSettings { deviceName = "TestDevice", values = new[] { 10, 20 } }
             };
             var exposedClass = ExposedClass.Find(typeof(TestClassWithPlainSerializableProperty));
-            var exposedObj = new ExposedObject("test-plain-serializable-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-plain-serializable-1", exposedClass, testObj);
 
             ExposedPropertyUtility.SetDefault(exposedObj);
 
@@ -2141,7 +2141,7 @@ namespace Lilium.RemoteControl.Tests
                 settings = new PlainSerializableSettings { deviceName = "Unchanged", values = new[] { 1, 2 } }
             };
             var exposedClass = ExposedClass.Find(typeof(TestClassWithPlainSerializableProperty));
-            var exposedObj = new ExposedObject("test-plain-serializable-unchanged", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-plain-serializable-unchanged", exposedClass, testObj);
 
             ExposedPropertyUtility.SetDefault(exposedObj);
 
@@ -2163,7 +2163,7 @@ namespace Lilium.RemoteControl.Tests
             var testObj = new TestClassWithReadOnlyPlainProperty(
                 new PlainSerializableSettings { deviceName = "ReadOnly", values = new[] { 5 } });
             var exposedClass = ExposedClass.Find(typeof(TestClassWithReadOnlyPlainProperty));
-            var exposedObj = new ExposedObject("test-readonly-plain", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-readonly-plain", exposedClass, testObj);
 
             ExposedPropertyUtility.SetDefault(exposedObj);
 
@@ -2186,7 +2186,7 @@ namespace Lilium.RemoteControl.Tests
                 settings = new PlainSerializableSettings { deviceName = "Original", values = new[] { 1, 2, 3 } }
             };
             var exposedClass = ExposedClass.Find(typeof(TestClassWithPlainSerializableProperty));
-            var exposedObj = new ExposedObject("test-plain-serializable-2", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-plain-serializable-2", exposedClass, testObj);
 
             ExposedPropertyUtility.SetDefault(exposedObj);
 
@@ -2194,7 +2194,7 @@ namespace Lilium.RemoteControl.Tests
             testObj.settings = new PlainSerializableSettings { deviceName = "Modified", values = new[] { 4, 5 } };
 
             var sceneJson = LiveSceneSerializer.LiveSceneToJson(
-                new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
             var jRoot = JObject.Parse(sceneJson);
             var jArray = jRoot["objects"] as JArray;
 
@@ -2217,7 +2217,7 @@ namespace Lilium.RemoteControl.Tests
                 settings = new PlainSerializableSettings { deviceName = "RoundTrip", values = new[] { 100, 200 } }
             };
             var exposedClass = ExposedClass.Find(typeof(TestClassWithPlainSerializableProperty));
-            var exposedObj = new ExposedObject("test-plain-serializable-3", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-plain-serializable-3", exposedClass, testObj);
 
             ExposedPropertyUtility.SetDefault(exposedObj);
 
@@ -2226,7 +2226,7 @@ namespace Lilium.RemoteControl.Tests
 
             // Act - シリアライズ→デシリアライズ
             var sceneJson = LiveSceneSerializer.LiveSceneToJson(
-                new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             // 新しいオブジェクトでデシリアライズ
             exposedObj.Unregister();
@@ -2235,7 +2235,7 @@ namespace Lilium.RemoteControl.Tests
                 id = 1,
                 settings = new PlainSerializableSettings { deviceName = "Default", values = new int[0] }
             };
-            var exposedObj2 = new ExposedObject("test-plain-serializable-3", exposedClass, testObj2);
+            var exposedObj2 = new ExposedObjectHandle("test-plain-serializable-3", exposedClass, testObj2);
             ExposedPropertyUtility.SetDefault(exposedObj2);
 
             LiveSceneSerializer.LiveSceneFromJson(sceneJson, _resolver);
@@ -2276,7 +2276,7 @@ namespace Lilium.RemoteControl.Tests
             };
 
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithArray));
-            var exposedObj = new ExposedObject("test-revert-array", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-revert-array", exposedClass, testObj);
 
             try
             {
@@ -2286,7 +2286,7 @@ namespace Lilium.RemoteControl.Tests
 
                 // Save delta (配列が空 → デルタには何もない)
                 var deltaJson1 = LiveSceneSerializer.LiveSceneToJson(
-                    new List<ExposedObject>(ExposedObjectRegistry.instances),
+                    new List<ExposedObjectHandle>(ExposedObjectRegistry.instances),
                     _resolver, SerializeMode.Delta);
 
                 // Load delta: @op:new で1要素追加
@@ -2305,7 +2305,7 @@ namespace Lilium.RemoteControl.Tests
 
                 // Save delta → @op:new が含まれるべき
                 var savedJson1 = LiveSceneSerializer.LiveSceneToJson(
-                    new List<ExposedObject>(ExposedObjectRegistry.instances),
+                    new List<ExposedObjectHandle>(ExposedObjectRegistry.instances),
                     _resolver, SerializeMode.Delta);
                 var jRoot1 = JObject.Parse(savedJson1);
                 var objects1 = jRoot1["objects"] as JArray;
@@ -2338,7 +2338,7 @@ namespace Lilium.RemoteControl.Tests
             };
 
             var exposedClass = ExposedClass.Find(typeof(TestDirtyClassWithArray));
-            var exposedObj = new ExposedObject("test-play-stop-play", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("test-play-stop-play", exposedClass, testObj);
 
             try
             {
@@ -2359,7 +2359,7 @@ namespace Lilium.RemoteControl.Tests
 
                 // Save
                 var saved1 = LiveSceneSerializer.LiveSceneToJson(
-                    new List<ExposedObject>(ExposedObjectRegistry.instances),
+                    new List<ExposedObjectHandle>(ExposedObjectRegistry.instances),
                     _resolver, SerializeMode.Delta);
                 var items1 = (JObject.Parse(saved1)["objects"] as JArray)?[0]?["items"] as JArray;
                 Assert.IsNotNull(items1, "Session1: items配列がデルタに含まれるべき");
@@ -2377,7 +2377,7 @@ namespace Lilium.RemoteControl.Tests
 
                 // Save
                 var saved2 = LiveSceneSerializer.LiveSceneToJson(
-                    new List<ExposedObject>(ExposedObjectRegistry.instances),
+                    new List<ExposedObjectHandle>(ExposedObjectRegistry.instances),
                     _resolver, SerializeMode.Delta);
                 var items2 = (JObject.Parse(saved2)["objects"] as JArray)?[0]?["items"] as JArray;
                 Assert.IsNotNull(items2, $"Session2: items配列がデルタに含まれるべき。JSON: {saved2}");

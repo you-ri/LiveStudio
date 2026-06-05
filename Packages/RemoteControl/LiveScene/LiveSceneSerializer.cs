@@ -22,7 +22,7 @@ namespace Lilium.RemoteControl.LiveScene
         public const string FormatIdentifier = "jp.lilium.remotecontrol.live";
         public const int CurrentFormatVersion = 1;
 
-        public static string LiveSceneToJson(IReadOnlyList<ExposedObject> objects, IExposedObjectResolver resolver, SerializeMode filter = SerializeMode.Snapshot, ExcludeFilter exclude = ExcludeFilter.None, string baseSceneName = null)
+        public static string LiveSceneToJson(IReadOnlyList<ExposedObjectHandle> objects, IExposedObjectResolver resolver, SerializeMode filter = SerializeMode.Snapshot, ExcludeFilter exclude = ExcludeFilter.None, string baseSceneName = null)
         {
             bool onlyDirty = filter == SerializeMode.Delta;
             bool excludeStatic = (exclude & ExcludeFilter.Static) != 0;
@@ -132,7 +132,7 @@ namespace Lilium.RemoteControl.LiveScene
                     // 再起点として、元の root/path をベースに展開する
                     // （ここで pending 内部の Unity.Object 参照が更なる pending として追加されうる）
                     var originalRoot = !string.IsNullOrEmpty(pending.rootId) ? resolver.FindById(pending.rootId) : null;
-                    var tempExposed = ExposedObject.CreateUnregistered(pendingExposedClass, pending.target);
+                    var tempExposed = ExposedObjectHandle.CreateUnregistered(pendingExposedClass, pending.target);
 
                     fileResolver.SetCurrentRoot(originalRoot);
                     fileResolver.SetBasePath(pending.path);
@@ -398,8 +398,8 @@ namespace Lilium.RemoteControl.LiveScene
             }
 
             // Pass 3: プロパティデシリアライズ
-            // pending 子参照 (@source に path あり) は FileRegistry の target に一時 ExposedObject で適用、
-            // それ以外は entryKey で登録済み ExposedObject を引いて適用する。
+            // pending 子参照 (@source に path あり) は FileRegistry の target に一時 ExposedObjectHandle で適用、
+            // それ以外は entryKey で登録済み ExposedObjectHandle を引いて適用する。
             foreach (var jEntry in jArray)
             {
                 if (!(jEntry is JObject jObject)) continue;
@@ -421,7 +421,7 @@ namespace Lilium.RemoteControl.LiveScene
                     var pendingClass = ExposedClass.Find(entryTypeName);
                     if (pendingClass == null) continue;
 
-                    var tempExposed = ExposedObject.CreateUnregistered(pendingClass, pendingTarget);
+                    var tempExposed = ExposedObjectHandle.CreateUnregistered(pendingClass, pendingTarget);
 
                     // FromJson で値を書き換える前に、現在の（プレハブ初期値相当の）状態を
                     // defaults として登録する。Container.Initialize 時点で存在しなかった
@@ -446,7 +446,7 @@ namespace Lilium.RemoteControl.LiveScene
                 }
                 else
                 {
-                    Debug.LogWarning($"[RemoteControl] ExposedObject with key '{entryKey}@{entryTypeName}' not found in the scene.");
+                    Debug.LogWarning($"[RemoteControl] ExposedObjectHandle with key '{entryKey}@{entryTypeName}' not found in the scene.");
                 }
             }
         }
@@ -469,7 +469,7 @@ namespace Lilium.RemoteControl.LiveScene
             return false;
         }
 
-        private static bool _IsValidObject(ExposedObject obj, bool excludeStatic)
+        private static bool _IsValidObject(ExposedObjectHandle obj, bool excludeStatic)
         {
             if (obj == null) return false;
             if (excludeStatic && obj.targetType != null && obj.targetType.isStatic) return false;
@@ -498,7 +498,7 @@ namespace Lilium.RemoteControl.LiveScene
 
         /// <summary>
         /// @source (rootId と path を "." で結合した文字列) から UnityEngine.Object を引き当てる。
-        /// 登録済み ExposedObject を起点に PropertyPath で辿る。
+        /// 登録済み ExposedObjectHandle を起点に PropertyPath で辿る。
         /// </summary>
         private static UnityEngine.Object _ResolveObjectBySource(string sourceKey, IExposedObjectResolver resolver)
         {
@@ -583,7 +583,7 @@ namespace Lilium.RemoteControl.LiveScene
         /// </summary>
         private static void _TryResolveByTypeName(string typeName, string savedId, string objectName)
         {
-            ExposedObject? match = null;
+            ExposedObjectHandle? match = null;
             int matchCount = 0;
 
             foreach (var instance in ExposedObjectRegistry.instances)
@@ -613,7 +613,7 @@ namespace Lilium.RemoteControl.LiveScene
             }
         }
 
-        private static GameObject _GetGameObject(ExposedObject obj)
+        private static GameObject _GetGameObject(ExposedObjectHandle obj)
         {
             if (obj.target is Component comp) return comp.gameObject;
             if (obj.target is GameObject g) return g;

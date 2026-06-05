@@ -25,27 +25,27 @@ namespace Lilium.RemoteControl
 
         // --- ストレージ ---
 
-        private static readonly HashSet<ExposedObject> _instances = new HashSet<ExposedObject>();
+        private static readonly HashSet<ExposedObjectHandle> _instances = new HashSet<ExposedObjectHandle>();
 
-        private static readonly Dictionary<string, ExposedObject> _byId = new Dictionary<string, ExposedObject>();
+        private static readonly Dictionary<string, ExposedObjectHandle> _byId = new Dictionary<string, ExposedObjectHandle>();
 
-        private static readonly Dictionary<object, ExposedObject> _byTarget = new Dictionary<object, ExposedObject>(ReferenceEqualityComparer.Instance);
+        private static readonly Dictionary<object, ExposedObjectHandle> _byTarget = new Dictionary<object, ExposedObjectHandle>(ReferenceEqualityComparer.Instance);
 
         // --- 公開プロパティ ---
 
         /// <summary>
         /// 登録されている全ExposedObjectインスタンス
         /// </summary>
-        public static IReadOnlyCollection<ExposedObject> instances => _instances;
+        public static IReadOnlyCollection<ExposedObjectHandle> instances => _instances;
 
         /// <summary>
-        /// 指定された型に代入可能な候補を持つ ExposedObject を列挙する。
+        /// 指定された型に代入可能な候補を持つ ExposedObjectHandle を列挙する。
         /// ObjectSelector 属性の候補列挙に使用する。
         /// - target 自体が代入可能なら直接ヒット
         /// - targetType が Component 派生で、target が GameObject (またはそれを包む Proxy) の場合は、
         ///   GetComponent(targetType) で該当コンポーネントがあればヒット (Unity Editor の Object field と同様の挙動)
         /// </summary>
-        public static IEnumerable<ExposedObject> GetByTargetType(Type targetType)
+        public static IEnumerable<ExposedObjectHandle> GetByTargetType(Type targetType)
         {
             if (targetType == null) yield break;
             bool lookingForComponent = typeof(Component).IsAssignableFrom(targetType);
@@ -76,7 +76,7 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// ObjectSelector の @ref 解決用: ExposedObject の target から GameObject を取り出す。
+        /// ObjectSelector の @ref 解決用: ExposedObjectHandle の target から GameObject を取り出す。
         /// target が GameObject / Component / Proxy のいずれかを想定。見つからなければ null。
         /// </summary>
         internal static GameObject ResolveGameObject(object target) => _ResolveGameObject(target);
@@ -109,7 +109,7 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// 指定 Transform の祖先方向に辿り、最初に見つかった ExposedObject の id を返す。
+        /// 指定 Transform の祖先方向に辿り、最初に見つかった ExposedObjectHandle の id を返す。
         /// 自身は含めず parent 方向から探索する。見つからなければ null。
         /// ExposedUnityObjectBase.parentId getter の派生実装で使用。
         /// </summary>
@@ -154,7 +154,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// ExposedObjectをレジストリに登録する。ExposedObjectのコンストラクタから呼び出される。
         /// </summary>
-        internal static void Register(ExposedObject obj)
+        internal static void Register(ExposedObjectHandle obj)
         {
             _instances.Add(obj);
             if (!string.IsNullOrEmpty(obj.id))
@@ -170,7 +170,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// ExposedObjectをレジストリから登録解除する。
         /// </summary>
-        public static void Unregister(ExposedObject obj)
+        public static void Unregister(ExposedObjectHandle obj)
         {
             _instances.Remove(obj);
             if (!string.IsNullOrEmpty(obj.id))
@@ -187,15 +187,15 @@ namespace Lilium.RemoteControl
         /// IDなしのExposedObjectにIDを後から割り当てる。
         /// struct は不変なので、古いエントリを除去して新しい id を持つ値で再登録し、新しい値を返す。
         /// </summary>
-        internal static ExposedObject AssignId(ExposedObject obj, string newId)
+        internal static ExposedObjectHandle AssignId(ExposedObjectHandle obj, string newId)
         {
             return ReplaceId(obj, newId);
         }
 
         /// <summary>
-        /// 登録済み ExposedObject の id を差し替えて再登録し、新しい値を返す。
+        /// 登録済み ExposedObjectHandle の id を差し替えて再登録し、新しい値を返す。
         /// </summary>
-        internal static ExposedObject ReplaceId(ExposedObject obj, string newId)
+        internal static ExposedObjectHandle ReplaceId(ExposedObjectHandle obj, string newId)
         {
             if (string.Equals(obj.id, newId, StringComparison.Ordinal)) return obj;
             // defaults は target キーで保持されるため、ここでは Registry のみ付け替える (Unregister 静的版を使う)。
@@ -207,14 +207,14 @@ namespace Lilium.RemoteControl
 
         // --- 検索 ---
 
-        public static bool TryFindById(string id, out ExposedObject exposedObject)
+        public static bool TryFindById(string id, out ExposedObjectHandle exposedObject)
         {
             var found = FindById(id);
             exposedObject = found ?? default;
             return found.HasValue;
         }
 
-        public static ExposedObject? FindById(string id)
+        public static ExposedObjectHandle? FindById(string id)
         {
             if (string.IsNullOrEmpty(id)) return null;
 
@@ -228,7 +228,7 @@ namespace Lilium.RemoteControl
             return null;
         }
 
-        public static bool TryFindByTarget(object target, out ExposedObject exposedObject)
+        public static bool TryFindByTarget(object target, out ExposedObjectHandle exposedObject)
         {
             var found = FindByTarget(target);
             exposedObject = found ?? default;
@@ -238,7 +238,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// ターゲットオブジェクトからExposedObjectを検索
         /// </summary>
-        public static ExposedObject? FindByTarget(object target)
+        public static ExposedObjectHandle? FindByTarget(object target)
         {
             if (target == null) return null;
 
@@ -260,7 +260,7 @@ namespace Lilium.RemoteControl
         public static void CleanupInvalidInstances()
         {
             // 無効エントリを収集してから一括削除（辞書も同期）
-            var toRemove = new List<ExposedObject>();
+            var toRemove = new List<ExposedObjectHandle>();
             foreach (var obj in _instances)
             {
                 if (!obj.isValid) toRemove.Add(obj);
@@ -273,7 +273,7 @@ namespace Lilium.RemoteControl
 
         // --- ファクトリ ---
 
-        public static ExposedObject? Create(Type type, object target, string id)
+        public static ExposedObjectHandle? Create(Type type, object target, string id)
         {
             var exposedClass = ExposedClass.Find(type);
             if (exposedClass == null)
@@ -285,7 +285,7 @@ namespace Lilium.RemoteControl
             return GetOrCreate(id, exposedClass, target);
         }
 
-        public static ExposedObject? Create<T>(T target, string id) where T : class
+        public static ExposedObjectHandle? Create<T>(T target, string id) where T : class
         {
             var exposedClass = ExposedClass.Find(typeof(T));
             if (exposedClass == null)
@@ -301,20 +301,20 @@ namespace Lilium.RemoteControl
         /// IDなしのExposedObjectを取得または生成する。
         /// コンテナ管理外のオブジェクトに使用。シリアライズ時はインライン展開される。
         /// </summary>
-        public static ExposedObject GetOrCreateWithoutId(ExposedClass type, object target)
+        public static ExposedObjectHandle GetOrCreateWithoutId(ExposedClass type, object target)
         {
             if (target != null)
             {
                 var existing = FindByTarget(target);
                 if (existing != null) return existing.Value;
             }
-            return new ExposedObject(null, type, target);
+            return new ExposedObjectHandle(null, type, target);
         }
 
         /// <summary>
         /// 既存のExposedObjectを取得、なければ新規作成
         /// </summary>
-        public static ExposedObject GetOrCreate(string id, ExposedClass type, object target)
+        public static ExposedObjectHandle GetOrCreate(string id, ExposedClass type, object target)
         {
             // targetが同じ既存インスタンスがあればそれを返す
             if (target != null)
@@ -339,14 +339,14 @@ namespace Lilium.RemoteControl
             }
 
             // なければ新規作成
-            return new ExposedObject(id, type, target);
+            return new ExposedObjectHandle(id, type, target);
         }
 
         /// <summary>
         /// IDで既存のExposedObjectを検索、なければ型情報を使って新規作成
         /// FromJsonで@ref解決時に使用
         /// </summary>
-        public static ExposedObject? GetOrCreate(string id, ExposedClass exposedClass)
+        public static ExposedObjectHandle? GetOrCreate(string id, ExposedClass exposedClass)
         {
             if (string.IsNullOrEmpty(id)) return null;
             if (exposedClass == null) return null;
@@ -373,16 +373,16 @@ namespace Lilium.RemoteControl
                 return null;
             }
             var target = System.Activator.CreateInstance(exposedClass.type);
-            return new ExposedObject(id, exposedClass, target);
+            return new ExposedObjectHandle(id, exposedClass, target);
         }
 
         // --- 親子関係 ---
 
         /// <summary>
-        /// 指定 id を親に持つ ExposedObject を列挙する。
+        /// 指定 id を親に持つ ExposedObjectHandle を列挙する。
         /// Unity hierarchy を真実として派生判定する。
         /// </summary>
-        public static IEnumerable<ExposedObject> GetChildren(string parentId)
+        public static IEnumerable<ExposedObjectHandle> GetChildren(string parentId)
         {
             if (string.IsNullOrEmpty(parentId)) yield break;
             foreach (var obj in _instances)
@@ -400,7 +400,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// 親を持たない ExposedUnityObjectBase 派生のルート群を列挙する。
         /// </summary>
-        public static IEnumerable<ExposedObject> GetRootObjects()
+        public static IEnumerable<ExposedObjectHandle> GetRootObjects()
         {
             foreach (var obj in _instances)
             {
@@ -426,7 +426,7 @@ namespace Lilium.RemoteControl
             var child = FindById(childId);
             if (child == null)
             {
-                error = $"Child ExposedObject not found: id='{childId}'";
+                error = $"Child ExposedObjectHandle not found: id='{childId}'";
                 return false;
             }
             if (!(child.Value.target is ExposedUnityObjectBase childProxy))
@@ -453,20 +453,20 @@ namespace Lilium.RemoteControl
 
             if (normalizedParentId == null)
             {
-                GameObjectUtility.SetTransformParent(childTransform, null, "Reparent ExposedObject");
+                GameObjectUtility.SetTransformParent(childTransform, null, "Reparent ExposedObjectHandle");
                 return true;
             }
 
             if (childId == normalizedParentId)
             {
-                error = "Cannot parent ExposedObject to itself";
+                error = "Cannot parent ExposedObjectHandle to itself";
                 return false;
             }
 
             var parent = FindById(normalizedParentId);
             if (parent == null)
             {
-                error = $"Parent ExposedObject not found: id='{normalizedParentId}'";
+                error = $"Parent ExposedObjectHandle not found: id='{normalizedParentId}'";
                 return false;
             }
             if (!(parent.Value.target is ExposedUnityObjectBase parentProxy))
@@ -491,7 +491,7 @@ namespace Lilium.RemoteControl
                 }
             }
 
-            GameObjectUtility.SetTransformParent(childTransform, parentTransform, "Reparent ExposedObject");
+            GameObjectUtility.SetTransformParent(childTransform, parentTransform, "Reparent ExposedObjectHandle");
             return true;
         }
 
@@ -514,7 +514,7 @@ namespace Lilium.RemoteControl
             var obj = FindById(id);
             if (obj == null)
             {
-                Debug.LogError($"[RemoteControl] ExposedObject not found for id '{id}'");
+                Debug.LogError($"[RemoteControl] ExposedObjectHandle not found for id '{id}'");
                 return null;
             }
             return obj.Value.InvokeFunction(functionName, args);
@@ -572,10 +572,10 @@ namespace Lilium.RemoteControl
         /// カテゴリに一致するExposedObjectを収集する。
         /// ExposedObjectContainer登録済みオブジェクト、ExposedObjectRegistry.instances、Staticクラス、シーン上のコンポーネントを対象とする。
         /// </summary>
-        public static List<ExposedObject> FindByCategory(string category, ExposedObjectContainer container = null)
+        public static List<ExposedObjectHandle> FindByCategory(string category, ExposedObjectContainer container = null)
         {
-            var result = new List<ExposedObject>();
-            var added = new HashSet<ExposedObject>();
+            var result = new List<ExposedObjectHandle>();
+            var added = new HashSet<ExposedObjectHandle>();
 
             // Containerに登録されているオブジェクト
             if (container != null)
@@ -631,7 +631,7 @@ namespace Lilium.RemoteControl
                         if (existing != null && added.Contains(existing.Value))
                             continue;
 
-                        var obj = existing ?? ExposedObject.CreateUnregistered(exposedClass, found);
+                        var obj = existing ?? ExposedObjectHandle.CreateUnregistered(exposedClass, found);
                         if (added.Add(obj))
                         {
                             result.Add(obj);

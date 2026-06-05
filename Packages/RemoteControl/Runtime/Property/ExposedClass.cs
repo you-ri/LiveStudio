@@ -421,14 +421,14 @@ namespace Lilium.RemoteControl
                     if (ExposedObjectRegistry.FindById(exposedClass.typeName) != null)
                         continue;
 
-                    new ExposedObject(exposedClass.typeName, exposedClass, null);
+                    new ExposedObjectHandle(exposedClass.typeName, exposedClass, null);
                 }
             }
         }
 
 #if UNITY_EDITOR
         /// <summary>
-        /// Edit モードのエディタ起動時 / ドメインリロード後にも静的 ExposedObject を登録する。
+        /// Edit モードのエディタ起動時 / ドメインリロード後にも静的 ExposedObjectHandle を登録する。
         /// `RuntimeInitializeOnLoadMethod` は Play 起動時のみ発火するため、Edit モードで動作する
         /// `RemoteControlServerManager` / `UIDesignerWindow` から静的クラスが引けるようにここで補完する。
         /// `_RegisterStaticExposedObjects` は FindById で重複スキップするため冪等。
@@ -568,7 +568,7 @@ namespace Lilium.RemoteControl
 
         private readonly Dictionary<string, ExposedFunctionType> _functionByApiName;
 
-        // Convention-based callbacks for static-classed ExposedObject (target == null).
+        // Convention-based callbacks for static-classed ExposedObjectHandle (target == null).
         // C# 9 cannot put static abstract members on an interface, so we resolve a
         // public static parameterless method by name during registration.
         private readonly MethodInfo _staticOnAfterDeserialize;
@@ -651,7 +651,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// Fires the convention-based static deserialize callback if one exists.
         /// Used by <see cref="ExposedPropertySerializer"/> when the owning
-        /// ExposedObject's target is null (static class).
+        /// ExposedObjectHandle's target is null (static class).
         /// </summary>
         internal void InvokeStaticAfterDeserialize()
         {
@@ -661,7 +661,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// Fires the convention-based static serialize callback if one exists.
         /// Used by <see cref="ExposedPropertySerializer.SerializeFullToJObject"/>
-        /// when the owning ExposedObject's target is null (static class).
+        /// when the owning ExposedObjectHandle's target is null (static class).
         /// </summary>
         internal void InvokeStaticBeforeSerialize()
         {

@@ -8,7 +8,7 @@ namespace Lilium.RemoteControl.Tests
     /// </summary>
     internal sealed class TestExposedObjectResolver : IExposedObjectResolver
     {
-        public ExposedObject? FindById(string id) => ExposedObjectRegistry.FindById(id);
-        public ExposedObject? FindByTarget(object target) => ExposedObjectRegistry.FindByTarget(target);
+        public ExposedObjectHandle? FindById(string id) => ExposedObjectRegistry.FindById(id);
+        public ExposedObjectHandle? FindByTarget(object target) => ExposedObjectRegistry.FindByTarget(target);
     }
 }

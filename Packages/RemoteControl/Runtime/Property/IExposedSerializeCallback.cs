@@ -13,7 +13,7 @@ namespace Lilium.RemoteControl
     /// getters.
     ///
     /// Called exactly once per object before any property on that object is
-    /// serialized. Nested ExposedObject instances each get their own callback.
+    /// serialized. Nested ExposedObjectHandle instances each get their own callback.
     /// </summary>
     public interface IExposedSerializeCallback
     {

@@ -160,7 +160,7 @@ namespace Lilium.RemoteControl.Tests
         public void Shadow_FindProperty_ByPropertyName_ReturnsProperty()
         {
             var target = new TestHost();
-            var exposedObj = new ExposedObject("test-shadow-1", ExposedClass.Get<TestHost>(), target);
+            var exposedObj = new ExposedObjectHandle("test-shadow-1", ExposedClass.Get<TestHost>(), target);
             var prop = exposedObj.FindProperty("value");
             Assert.IsNotNull(prop);
             Assert.IsNotNull(prop.Value.type.properyInfo,
@@ -174,7 +174,7 @@ namespace Lilium.RemoteControl.Tests
             // Property so existing scene.json files (Phase 1〜2 era) that use "_value" as the
             // JSON key still resolve to a usable property.
             var target = new TestHost();
-            var exposedObj = new ExposedObject("test-shadow-2", ExposedClass.Get<TestHost>(), target);
+            var exposedObj = new ExposedObjectHandle("test-shadow-2", ExposedClass.Get<TestHost>(), target);
             var prop = exposedObj.FindProperty("_value");
 
             Assert.IsNotNull(prop, "Field name should also resolve to the Property via formerNames.");
@@ -206,7 +206,7 @@ namespace Lilium.RemoteControl.Tests
             // Phase 3 goal: SetProperty via RemoteApp routes through the Property setter so
             // its side effects (Apply etc.) run automatically without needing a callback.
             var target = new TestHost();
-            var exposedObj = new ExposedObject("test-shadow-3", ExposedClass.Get<TestHost>(), target);
+            var exposedObj = new ExposedObjectHandle("test-shadow-3", ExposedClass.Get<TestHost>(), target);
             var prop = exposedObj.FindProperty("value");
             Assert.IsNotNull(prop);
 
@@ -228,7 +228,7 @@ namespace Lilium.RemoteControl.Tests
             // Phase 1 round-trip determinism goal: full FromJson writes via the shadow field
             // directly, so the Property setter does NOT fire during deserialize.
             var target = new TestHost();
-            var exposedObj = new ExposedObject("test-shadow-4", ExposedClass.Get<TestHost>(), target);
+            var exposedObj = new ExposedObjectHandle("test-shadow-4", ExposedClass.Get<TestHost>(), target);
 
             ExposedPropertySerializer.FromJson("{\"value\": 99}", exposedObj, _resolver);
 
@@ -244,7 +244,7 @@ namespace Lilium.RemoteControl.Tests
             // Backward compat: scene.json saved during Phase 1〜2 used the Field's member
             // name "_value" as the JSON key. New code must still load those files.
             var target = new TestHost();
-            var exposedObj = new ExposedObject("test-shadow-5", ExposedClass.Get<TestHost>(), target);
+            var exposedObj = new ExposedObjectHandle("test-shadow-5", ExposedClass.Get<TestHost>(), target);
 
             ExposedPropertySerializer.FromJson("{\"_value\": 77}", exposedObj, _resolver);
 
@@ -262,7 +262,7 @@ namespace Lilium.RemoteControl.Tests
             // New JSON output uses the Property name "value", not the legacy field name "_value".
             var target = new TestHost();
             target.SetBackingFieldDirectly(123);
-            var exposedObj = new ExposedObject("test-shadow-6", ExposedClass.Get<TestHost>(), target);
+            var exposedObj = new ExposedObjectHandle("test-shadow-6", ExposedClass.Get<TestHost>(), target);
 
             var json = ExposedPropertySerializer.ToJson(exposedObj, _resolver);
             var parsed = JObject.Parse(json);
@@ -312,11 +312,11 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void InheritedShadow_Serialize_ForPersistence_IncludesValue()
         {
-            // End-to-end: serializing the derived ExposedObject for persistence
+            // End-to-end: serializing the derived ExposedObjectHandle for persistence
             // must include the shadow-backed property value in the JSON output.
             var target = new TestInheritedShadowDerived();
             target.SetBackingFieldDirectly(456);
-            var exposedObj = new ExposedObject("test-inherited-shadow-1",
+            var exposedObj = new ExposedObjectHandle("test-inherited-shadow-1",
                 ExposedClass.Get<TestInheritedShadowDerived>(), target);
 
             var json = ExposedPropertySerializer.ToJson(exposedObj, _resolver, isDirtyOnly: false, forPersistence: true);

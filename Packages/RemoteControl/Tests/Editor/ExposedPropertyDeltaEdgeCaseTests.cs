@@ -154,14 +154,14 @@ namespace Lilium.RemoteControl.Tests
                 items = new List<PlainItem> { new PlainItem("a", 1), new PlainItem("b", 2) }
             };
             var exposedClass = ExposedClass.Find(typeof(TestUntrackedListContainer));
-            var exposedObj = new ExposedObject("untracked-list-1", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("untracked-list-1", exposedClass, testObj);
             ExposedPropertyUtility.SetDefault(exposedObj);
 
             // 要素を変更(未登録要素型のため dirty 追跡外 → 強制 include 経路)
             testObj.items = new List<PlainItem> { new PlainItem("a", 1), new PlainItem("x", 9) };
 
             var json = LiveSceneSerializer.LiveSceneToJson(
-                new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             var jRoot = JObject.Parse(json);
             var jArray = jRoot["objects"] as JArray;
@@ -177,7 +177,7 @@ namespace Lilium.RemoteControl.Tests
                 id = 1,
                 items = new List<PlainItem> { new PlainItem("a", 1), new PlainItem("b", 2) }
             };
-            var exposedObj2 = new ExposedObject("untracked-list-1", exposedClass, testObj2);
+            var exposedObj2 = new ExposedObjectHandle("untracked-list-1", exposedClass, testObj2);
             ExposedPropertyUtility.SetDefault(exposedObj2);
 
             LiveSceneSerializer.LiveSceneFromJson(json, _resolver);
@@ -206,7 +206,7 @@ namespace Lilium.RemoteControl.Tests
                     items = new List<PlainItem> { new PlainItem("p", 3) }
                 };
                 var exposedClass = ExposedClass.Find(typeof(TestUntrackedListContainer));
-                var exposedObj = new ExposedObject("untracked-list-fp", exposedClass, testObj);
+                var exposedObj = new ExposedObjectHandle("untracked-list-fp", exposedClass, testObj);
                 ExposedPropertyUtility.SetDefault(exposedObj);
 
                 testObj.items = new List<PlainItem> { new PlainItem("p", 3), new PlainItem("q", 8) };
@@ -238,7 +238,7 @@ namespace Lilium.RemoteControl.Tests
                 items = new List<PlainItem> { new PlainItem("a", 1) }
             };
             var exposedClass = ExposedClass.Find(typeof(TestUntrackedListContainer));
-            var exposedObj = new ExposedObject("untracked-list-unchanged", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("untracked-list-unchanged", exposedClass, testObj);
             ExposedPropertyUtility.SetDefault(exposedObj);
 
             // 変更しない
@@ -259,13 +259,13 @@ namespace Lilium.RemoteControl.Tests
         {
             var testObj = new Root3 { rootId = 1 };
             var exposedClass = ExposedClass.Find(typeof(Root3));
-            var exposedObj = new ExposedObject("nest3-leaf", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("nest3-leaf", exposedClass, testObj);
             ExposedPropertyUtility.SetDefault(exposedObj);
 
             testObj.mid.leaf.leafValue = 77;
 
             var json = LiveSceneSerializer.LiveSceneToJson(
-                new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             var jRoot = JObject.Parse(json);
             var jArray = jRoot["objects"] as JArray;
@@ -274,7 +274,7 @@ namespace Lilium.RemoteControl.Tests
 
             exposedObj.Unregister();
             var testObj2 = new Root3 { rootId = 1 };
-            var exposedObj2 = new ExposedObject("nest3-leaf", exposedClass, testObj2);
+            var exposedObj2 = new ExposedObjectHandle("nest3-leaf", exposedClass, testObj2);
             ExposedPropertyUtility.SetDefault(exposedObj2);
 
             LiveSceneSerializer.LiveSceneFromJson(json, _resolver);
@@ -290,7 +290,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var testObj = new Root3 { rootId = 5 };
             var exposedClass = ExposedClass.Find(typeof(Root3));
-            var exposedObj = new ExposedObject("nest3-unchanged", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("nest3-unchanged", exposedClass, testObj);
             ExposedPropertyUtility.SetDefault(exposedObj);
 
             var json = ExposedPropertySerializer.ToJson(
@@ -307,17 +307,17 @@ namespace Lilium.RemoteControl.Tests
         {
             var testObj = new Root3 { rootId = 1 };
             var exposedClass = ExposedClass.Find(typeof(Root3));
-            var exposedObj = new ExposedObject("nest3-cb", exposedClass, testObj);
+            var exposedObj = new ExposedObjectHandle("nest3-cb", exposedClass, testObj);
             ExposedPropertyUtility.SetDefault(exposedObj);
 
             testObj.mid.leaf.leafValue = 42;
 
             var json = LiveSceneSerializer.LiveSceneToJson(
-                new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
 
             exposedObj.Unregister();
             var testObj2 = new Root3 { rootId = 1 };
-            var exposedObj2 = new ExposedObject("nest3-cb", exposedClass, testObj2);
+            var exposedObj2 = new ExposedObjectHandle("nest3-cb", exposedClass, testObj2);
             ExposedPropertyUtility.SetDefault(exposedObj2);
 
             LiveSceneSerializer.LiveSceneFromJson(json, _resolver);
@@ -341,16 +341,16 @@ namespace Lilium.RemoteControl.Tests
 
             // hop1: src は要素1個で SetDefault → 要素追加(value=99) → Delta 保存
             var src = new TrackedListHolder { items = new List<TrackedItem> { new TrackedItem { value = 1 } } };
-            var srcExposed = new ExposedObject("tracked-h", ec, src);
+            var srcExposed = new ExposedObjectHandle("tracked-h", ec, src);
             ExposedPropertyUtility.SetDefault(srcExposed);
             src.items.Add(new TrackedItem { value = 99 });
             var s1 = LiveSceneSerializer.LiveSceneToJson(
-                new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
             srcExposed.Unregister();
 
             // dst: 要素1個で SetDefault → LiveSceneFromJson(s1) で2要素へ(captureDefaults=false 経路) → 再 Delta
             var dst = new TrackedListHolder { items = new List<TrackedItem> { new TrackedItem { value = 1 } } };
-            var dstExposed = new ExposedObject("tracked-h", ec, dst);
+            var dstExposed = new ExposedObjectHandle("tracked-h", ec, dst);
             ExposedPropertyUtility.SetDefault(dstExposed);
             LiveSceneSerializer.LiveSceneFromJson(s1, _resolver);
 
@@ -358,13 +358,13 @@ namespace Lilium.RemoteControl.Tests
             Assert.AreEqual(99, dst.items[1].value, "precondition: loaded primitive value");
 
             var s2 = LiveSceneSerializer.LiveSceneToJson(
-                new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
             dstExposed.Unregister();
 
             // hop2: s2 を別オブジェクトへロード。段⑥誤キャプチャがあると items[1].value が
             // s2 から脱落しており、ここで 99 が復元されない(データ消失)。
             var third = new TrackedListHolder { items = new List<TrackedItem> { new TrackedItem { value = 1 } } };
-            var thirdExposed = new ExposedObject("tracked-h", ec, third);
+            var thirdExposed = new ExposedObjectHandle("tracked-h", ec, third);
             ExposedPropertyUtility.SetDefault(thirdExposed);
             LiveSceneSerializer.LiveSceneFromJson(s2, _resolver);
 

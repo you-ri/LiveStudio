@@ -77,13 +77,13 @@ namespace Lilium.RemoteControl.Tests
 
         #endregion
 
-        private ExposedObject _testObject;
+        private ExposedObjectHandle _testObject;
         private TestClass _testInstance;
-        private ExposedObject _arrayObject;
+        private ExposedObjectHandle _arrayObject;
         private TestArrayClass _arrayInstance;
-        private ExposedObject _structObject;
+        private ExposedObjectHandle _structObject;
         private TestStructClass _structInstance;
-        private ExposedObject _enumerableObject;
+        private ExposedObjectHandle _enumerableObject;
         private TestEnumerableClass _enumerableInstance;
 
         [SetUp]
@@ -722,7 +722,7 @@ namespace Lilium.RemoteControl.Tests
 
             // ownerがターゲットのExposedObjectに切り替わっていることを確認
             Assert.AreEqual(targetExposedObject, healthProp.Value.owner,
-                "owner should be the target's ExposedObject, not the selector's");
+                "owner should be the target's ExposedObjectHandle, not the selector's");
             Assert.AreNotEqual(selectorExposedObject, healthProp.Value.owner);
 
             // pathがターゲットのルートからの相対パスであることを確認
@@ -832,7 +832,7 @@ namespace Lilium.RemoteControl.Tests
 
             // ownerがセレクタのまま
             Assert.AreEqual(selectorExposedObject, healthProp.Value.owner,
-                "owner should remain the selector when target is not a registered ExposedObject");
+                "owner should remain the selector when target is not a registered ExposedObjectHandle");
         }
 
         #endregion

@@ -115,7 +115,7 @@ namespace Lilium.RemoteControl
 
             var controllerJObject = propertyType.controlAttribute?.ToJObject() ?? new JObject();
 
-            // ObjectSelector: フィールド型に代入可能な ExposedObject (id 登録済み) を列挙して options に埋め込む。
+            // ObjectSelector: フィールド型に代入可能な ExposedObjectHandle (id 登録済み) を列挙して options に埋め込む。
             // 候補 id は component 単位で "rootId.components[N]" 形式になる (GameObject 上の該当コンポーネントを指す)。
             // 直接登録済みの対象は rootId のみで出力する。
             if (propertyType.controlAttribute is ObjectSelectorAttribute)
@@ -182,7 +182,7 @@ namespace Lilium.RemoteControl
             };
 
             // ExposedPropertyRef: 参照先メタデータ (targetTypeName / propertyPath) を emit する。
-            // RemoteApp 側はこれを見て、表示時に参照先 ExposedObject のストアエントリから値を読み、
+            // RemoteApp 側はこれを見て、表示時に参照先 ExposedObjectHandle のストアエントリから値を読み、
             // SSE による参照先プロパティ更新に自動追従する。
             if (propertyType.isExposedPropertyReference
                 && propertyType.fieldInfo != null

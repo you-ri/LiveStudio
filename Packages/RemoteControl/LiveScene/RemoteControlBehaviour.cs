@@ -11,7 +11,7 @@ namespace Lilium.RemoteControl.LiveScene
 {
     /// <summary>
     /// Single MonoBehaviour that owns the full Remote Control runtime: HTTP server,
-    /// the ExposedObject container, and scene save/load. Apps register their own
+    /// the ExposedObjectHandle container, and scene save/load. Apps register their own
     /// route handlers by subclassing this and overriding the OnRegister*/OnUpdateHandlers hooks.
     /// </summary>
     /// <remarks>
@@ -108,7 +108,7 @@ namespace Lilium.RemoteControl.LiveScene
         protected virtual void Start()
         {
             // Start runs after all OnEnables of all enabled components, so by now any
-            // scene-side targets referenced by ExposedObject items have finished their
+            // scene-side targets referenced by ExposedObjectHandle items have finished their
             // own Awake/OnEnable. Safe to load the scene JSON.
             if (!Application.isPlaying) return;
             _sceneSave.LoadCurrentData();
