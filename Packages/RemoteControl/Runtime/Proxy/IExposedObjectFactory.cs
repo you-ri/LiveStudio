@@ -21,9 +21,9 @@ namespace Lilium.RemoteControl
 
         AccessLevel accessLevel { get; }
 
-        IExposedEntity Create();
+        IExposedObject Create();
 
-        void Destroy(IExposedEntity obj);
+        void Destroy(IExposedObject obj);
 
         void RegisterPrefabs();
 

@@ -24,12 +24,12 @@ namespace Lilium.RemoteControl.Tests
 
         [Serializable]
         [ExposedClass("TestLoadSaveProxy", Icon = "test")]
-        public class TestProxy : ExposedUnityObjectBase, IExposedEntity
+        public class TestProxy : ExposedUnityObjectBase, IExposedObject
         {
             [SerializeField]
             public string _referenceName;
 
-            string IExposedEntity.name
+            string IExposedObject.name
             {
                 get => _referenceName;
                 set => _referenceName = value;
@@ -89,7 +89,7 @@ namespace Lilium.RemoteControl.Tests
         {
             // Arrange
             var go = new GameObject("TestContainer");
-            var container = new ExposedObjectContainer(go.name, new List<IExposedEntity>());
+            var container = new ExposedObjectContainer(go.name, new List<IExposedObject>());
 
             try
             {
@@ -110,7 +110,7 @@ namespace Lilium.RemoteControl.Tests
         {
             // Arrange: referenceがnullのオブジェクトをContainerに追加
             var go = new GameObject("TestContainer");
-            var container = new ExposedObjectContainer(go.name, new List<IExposedEntity>());
+            var container = new ExposedObjectContainer(go.name, new List<IExposedObject>());
 
             var proxy = new TestProxy("test-id-1");
             container.AddExposedObject(proxy);
@@ -139,7 +139,7 @@ namespace Lilium.RemoteControl.Tests
         {
             // Arrange: referenceがnullのオブジェクトを複数Containerに追加
             var go = new GameObject("TestContainer");
-            var container = new ExposedObjectContainer(go.name, new List<IExposedEntity>());
+            var container = new ExposedObjectContainer(go.name, new List<IExposedObject>());
 
             var proxy1 = new TestProxy("id-1");
             var proxy2 = new TestProxy("id-2");
@@ -829,7 +829,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<ExposedObjectContainer>();
 
             var containerGo = new GameObject("Container");
-            var container = new ExposedObjectContainer(containerGo.name, new List<IExposedEntity>());
+            var container = new ExposedObjectContainer(containerGo.name, new List<IExposedObject>());
 
             var avatarGo = new GameObject("Test Avatar");
             var avatarComp = avatarGo.AddComponent<TestAvatarComponent>();

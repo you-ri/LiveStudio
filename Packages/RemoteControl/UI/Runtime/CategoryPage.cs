@@ -190,7 +190,7 @@ namespace Lilium.RemoteControl.UI
             GameObjectUtility.SetCurrentUndoGroup("Create Object");
             GameObjectUtility.RecordObjectUndo(_container.host, "Create Object");
 
-            IExposedEntity created;
+            IExposedObject created;
             try
             {
                 created = factory.Create();

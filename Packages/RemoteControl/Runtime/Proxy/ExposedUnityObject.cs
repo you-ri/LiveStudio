@@ -8,12 +8,8 @@ using UnityEngine.Serialization;
 
 namespace Lilium.RemoteControl
 {
-    /// <summary>
-    /// name / id とライフサイクル (OnEnable/OnDisable/Update/Reset) を持ち、自身を公開する
-    /// 軽量ハンドル <see cref="ExposedObject"/> を返すコンテナ要素。
-    /// (値ハンドルの <see cref="ExposedObject"/> とは責務が異なるため別名にしている。)
-    /// </summary>
-    public interface IExposedEntity
+    //TODO: ExposedObject役割が違うのに名称がかぶるのはややこしいので、リネームするべき。
+    public interface IExposedObject
     {
         string name { get; set; }
         ExposedObject? exposedObject { get; }
@@ -30,7 +26,7 @@ namespace Lilium.RemoteControl
     }
 
     [Serializable]
-    public class ExposedUnityObjectBase : IExposedEntity
+    public class ExposedUnityObjectBase : IExposedObject
     {
         public virtual string name { get; set; }
 

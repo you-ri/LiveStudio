@@ -92,7 +92,7 @@ namespace Lilium.RemoteControl.Tests
         // List<参照型>の要素がそれぞれExposedObjectを持つケース
         [Serializable]
         [ExposedClass("TestDirtyRefItem")]
-        public class TestDirtyRefItem : IExposedEntity
+        public class TestDirtyRefItem : IExposedObject
         {
             public string name { get; set; }
             public ExposedObject? exposedObject => null;

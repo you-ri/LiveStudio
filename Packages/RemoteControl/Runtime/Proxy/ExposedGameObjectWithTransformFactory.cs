@@ -26,7 +26,7 @@ namespace Lilium.RemoteControl
 
         public AccessLevel accessLevel => _accessLevel;
 
-        public IExposedEntity Create()
+        public IExposedObject Create()
         {
             if (prefab == null)
             {
@@ -57,7 +57,7 @@ namespace Lilium.RemoteControl
             PrefabRegistry.Register(_prefabGuid, prefab);
         }
 
-        public void Destroy(IExposedEntity obj)
+        public void Destroy(IExposedObject obj)
         {
             if (obj is ExposedUnityObjectBase u && u.reference != null)
             {

@@ -33,7 +33,7 @@ namespace Lilium.LiveStudio
 
     [Serializable]
     [ExposedClass(Icon = "layers", Category = "Scene")]
-    public class MultiSceneManager : IExposedEntity
+    public class MultiSceneManager : IExposedObject
     {
         const string kId = "f8a3b1c7-4e2d-4a9f-b6d5-8c1e3f7a2b90";
 
