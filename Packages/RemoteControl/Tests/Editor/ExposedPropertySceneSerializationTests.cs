@@ -95,7 +95,7 @@ namespace Lilium.RemoteControl.Tests
 
         [Serializable]
         [ExposedClass("TestSceneRefItem")]
-        public class TestSceneRefItem : IExposedObject
+        public class TestSceneRefItem : IExposedEntity
         {
             public string name { get; set; }
             public ExposedObject? exposedObject => null;
@@ -2185,7 +2185,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<ExposedGameObjectWithTransform>();
 
             var containerGo = new GameObject("TestContainer");
-            var container = new ExposedObjectContainer(containerGo.name, new List<IExposedObject>());
+            var container = new ExposedObjectContainer(containerGo.name, new List<IExposedEntity>());
 
             var prefab = new GameObject("GLTF Model");
             PrefabRegistry.Register("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", prefab);
@@ -2242,7 +2242,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<ExposedGameObjectWithTransform>();
 
             var containerGo = new GameObject("TestContainer");
-            var container = new ExposedObjectContainer(containerGo.name, new List<IExposedObject>());
+            var container = new ExposedObjectContainer(containerGo.name, new List<IExposedEntity>());
 
             var prefab = new GameObject("GLTF Model");
             PrefabRegistry.Register("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", prefab);
@@ -2319,7 +2319,7 @@ namespace Lilium.RemoteControl.Tests
             var expectedGuid = UnityEditor.AssetDatabase.AssetPathToGUID(tmpPath);
 
             var containerGo = new GameObject("DeltaReproContainer");
-            var container = new ExposedObjectContainer(containerGo.name, new List<IExposedObject>());
+            var container = new ExposedObjectContainer(containerGo.name, new List<IExposedEntity>());
             container.Initialize();
 
             GameObject instance = null;

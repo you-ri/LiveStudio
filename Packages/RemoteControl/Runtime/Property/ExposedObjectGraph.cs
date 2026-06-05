@@ -29,7 +29,7 @@ namespace Lilium.RemoteControl
 
                 // IExposedObjectの場合は直接exposedObjectを取得
                 ExposedObject? exposed;
-                if (target is IExposedObject ieo)
+                if (target is IExposedEntity ieo)
                 {
                     exposed = ieo.exposedObject;
                 }

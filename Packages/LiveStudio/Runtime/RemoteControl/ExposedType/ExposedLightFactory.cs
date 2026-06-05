@@ -27,7 +27,7 @@ namespace Lilium.LiveStudio
 
         public AccessLevel accessLevel => _accessLevel;
 
-        public IExposedObject Create()
+        public IExposedEntity Create()
         {
             if (prefab == null)
             {
@@ -66,7 +66,7 @@ namespace Lilium.LiveStudio
             PrefabRegistry.Register(_prefabGuid, prefab);
         }
 
-        public void Destroy(IExposedObject obj)
+        public void Destroy(IExposedEntity obj)
         {
             if (obj is ExposedUnityObjectBase u && u.reference != null)
             {

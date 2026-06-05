@@ -9,7 +9,7 @@ namespace Lilium.LiveStudio
 {
     [Serializable]
     [ExposedClass(Category = "Light", Icon = "light_mode")]
-    public class EnvironmentLight : IExposedObject, IExposedDeserializeCallback
+    public class EnvironmentLight : IExposedEntity, IExposedDeserializeCallback
     {
         const string kId = "d9714ab0-e81b-44c8-9e76-22f177864ebe";
 

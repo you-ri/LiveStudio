@@ -31,7 +31,7 @@ namespace Lilium.RemoteControl.LiveScene
 
         [SerializeReference, Select]
         [ExposedField(persistable = false)]
-        public List<IExposedObject> _objects = new List<IExposedObject>();
+        public List<IExposedEntity> _objects = new List<IExposedEntity>();
 
         // --- Runtime helpers ---
 

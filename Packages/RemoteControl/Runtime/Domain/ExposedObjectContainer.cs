@@ -7,7 +7,7 @@ using UnityEngine;
 namespace Lilium.RemoteControl
 {
     /// <summary>
-    /// Holds a list of <see cref="IExposedObject"/> instances and acts as a resolver that finds
+    /// Holds a list of <see cref="IExposedEntity"/> instances and acts as a resolver that finds
     /// objects by id or by target reference. Used to be a MonoBehaviour; the host
     /// <see cref="Lilium.RemoteControl.LiveScene.RemoteControlBehaviour"/> now owns the serialized
     /// list and forwards Unity lifecycle calls.
@@ -20,11 +20,11 @@ namespace Lilium.RemoteControl
         [ExposedProperty("name")]
         public string exposedName => _name;
 
-        public IReadOnlyList<IExposedObject> objects => _objects;
+        public IReadOnlyList<IExposedEntity> objects => _objects;
 
         // List instance is owned by the host MonoBehaviour (SerializeReference) and shared by reference.
         // Internal so LiveSceneSerializer can append wrapper entries during deserialization.
-        internal readonly List<IExposedObject> _objects;
+        internal readonly List<IExposedEntity> _objects;
         private string _name;
 
         private ExposedObject? _selfExposedObject;
@@ -36,7 +36,7 @@ namespace Lilium.RemoteControl
         /// </summary>
         public UnityEngine.Object host { get; }
 
-        public ExposedObjectContainer(string name, List<IExposedObject> objects, UnityEngine.Object host = null)
+        public ExposedObjectContainer(string name, List<IExposedEntity> objects, UnityEngine.Object host = null)
         {
             _name = name;
             _objects = objects ?? throw new ArgumentNullException(nameof(objects));
@@ -125,9 +125,9 @@ namespace Lilium.RemoteControl
 
         // --- Object management ---
 
-        public void AddExposedObject(IExposedObject exposedObject) => _objects.Add(exposedObject);
+        public void AddExposedObject(IExposedEntity exposedObject) => _objects.Add(exposedObject);
 
-        public void RemoveExposedObject(IExposedObject exposedObject) => _objects.Remove(exposedObject);
+        public void RemoveExposedObject(IExposedEntity exposedObject) => _objects.Remove(exposedObject);
 
         public void RemoveExposedObjectById(string id)
         {

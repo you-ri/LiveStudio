@@ -24,7 +24,7 @@ namespace Lilium.LiveStudio
 
     [Serializable]
     [ExposedClass(Category = "Background", Icon = "landscape")]
-    public class SkyboxBackground : IExposedObject, IExposedDeserializeCallback
+    public class SkyboxBackground : IExposedEntity, IExposedDeserializeCallback
     {
         const string kId = "93258b4a-7f2a-40ac-8d0d-0782f155e364";
 

@@ -7,7 +7,7 @@ namespace Lilium.RemoteControl
 {
     /// <summary>
     /// Asset GUID から Prefab GameObject を検索・インスタンス化するための静的レジストリ。
-    /// インスタンス追跡は IExposedObject.prefabSourceKey が担う。
+    /// インスタンス追跡は IExposedEntity.prefabSourceKey が担う。
     /// </summary>
     public static class PrefabRegistry
     {

@@ -25,7 +25,7 @@ namespace Lilium.RemoteControl
 
         public readonly object target;
 
-        public string name => target as UnityEngine.Object != null ? ((UnityEngine.Object)target).name : target as IExposedObject != null ? ((IExposedObject)target).name : id;
+        public string name => target as UnityEngine.Object != null ? ((UnityEngine.Object)target).name : target as IExposedEntity != null ? ((IExposedEntity)target).name : id;
 
         public string targetTypeName => targetType?.typeName ?? null;
 
