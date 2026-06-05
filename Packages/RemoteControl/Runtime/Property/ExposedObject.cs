@@ -1,6 +1,7 @@
 // Copyright (c) You-Ri, 2026
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 
 using UnityEngine;
 using Lilium.RemoteControl.Reflection;
@@ -9,11 +10,16 @@ using Lilium.RemoteControl.Reflection;
 
 namespace Lilium.RemoteControl
 {
-    public class ExposedObject
+    /// <summary>
+    /// 実オブジェクト1個 (targetType / target / id) を束ねる軽量な値ハンドル。
+    /// 状態 (デフォルト値・dirty) は <see cref="ExposedObjectDefaultRegistry"/> が target 参照キーで保持するため、
+    /// このハンドル自体は不変な readonly struct として使い捨てできる。
+    /// </summary>
+    public readonly struct ExposedObject : IEquatable<ExposedObject>
     {
         public readonly ExposedClass targetType;
 
-        public string id { get; private set; }
+        public readonly string id;
 
         public bool hasId => !string.IsNullOrEmpty(id);
 
@@ -40,25 +46,22 @@ namespace Lilium.RemoteControl
         {
             Debug.Assert(type != null, "ExposedClass type cannot be null");
 
-            if (target == null)
+            if (target == null && type != null && !type.isStatic)
             {
-                if (!(type.isStatic))
-                {
-                    Debug.LogWarning($"[RemoteControl] Creating ExposedObject with null target for non-static type:{type.typeName} id:{id}");
-                }
+                Debug.LogWarning($"[RemoteControl] Creating ExposedObject with null target for non-static type:{type.typeName} id:{id}");
             }
 
             this.targetType = type;
             this.target = target;
             this.id = id;
 
-            // レジストリに登録
+            // レジストリに登録 (struct のコピーを格納する。id/target は不変なので同値判定で解決できる)
             ExposedObjectRegistry.Register(this);
 
             // デフォルト値を自動キャプチャ（dirty検出のベースライン）
             // インスタンス型: ターゲットの型がExposedClassの型と互換性がある場合のみ実行
             // static型: target=nullだがstaticプロパティを直接読み取れるため実行
-            if (type.isStatic || (target != null && type.type != null && type.type.IsInstanceOfType(target)))
+            if (type != null && (type.isStatic || (target != null && type.type != null && type.type.IsInstanceOfType(target))))
             {
                 ExposedPropertyUtility.SetDefault(this);
             }
@@ -80,6 +83,19 @@ namespace Lilium.RemoteControl
             this.target = target;
             this.id = null;
         }
+
+        // 値だけを設定する内部ctor（登録/デフォルトキャプチャを行わない）。引数順を変えて公開ctorとシグネチャを分ける。
+        private ExposedObject(ExposedClass type, object target, string id)
+        {
+            this.targetType = type;
+            this.target = target;
+            this.id = id;
+        }
+
+        /// <summary>
+        /// id だけを差し替えた新しいハンドルを返す（副作用なし）。Registry の再キー専用。
+        /// </summary>
+        internal ExposedObject WithId(string newId) => new ExposedObject(targetType, target, newId);
 
         public bool ResolveReferences(IExposedPropertyTable resolver)
         {
@@ -240,38 +256,39 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// IDなしのExposedObjectにIDを後から割り当てる。
-        /// コンテナ登録前にIDなしで生成されたケースの救済用。
-        /// </summary>
-        internal void AssignId(string newId)
-        {
-            if (hasId) return;
-            if (string.IsNullOrEmpty(newId)) return;
-
-            id = newId;
-            ExposedObjectRegistry.AssignId(this, newId);
-        }
-
-        /// <summary>
         /// 登録解除
         /// </summary>
-        /// <summary>
-        /// IDを変更してレジストリを再登録する。
-        /// Play mode再入時のGUID再生成によるIDミスマッチの復元に使用。
-        /// </summary>
-        public void ReplaceId(string newId)
-        {
-            if (id == newId) return;
-            ExposedObjectRegistry.Unregister(this);
-            id = newId;
-            ExposedObjectRegistry.Register(this);
-        }
-
         public void Unregister()
         {
             ExposedObjectDefaultRegistry.Remove(this);
             ExposedObjectRegistry.Unregister(this);
         }
 
+        // --- 値等価 (struct なので参照同一性ではなく targetType + target(参照) + id で比較) ---
+
+        public bool Equals(ExposedObject other)
+        {
+            return ReferenceEquals(targetType, other.targetType)
+                && ReferenceEquals(target, other.target)
+                && string.Equals(id, other.id, StringComparison.Ordinal);
+        }
+
+        public override bool Equals(object obj) => obj is ExposedObject other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int h = target != null
+                    ? RuntimeHelpers.GetHashCode(target)
+                    : (targetType != null ? targetType.GetHashCode() : 0);
+                h = (h * 397) ^ (id != null ? id.GetHashCode() : 0);
+                return h;
+            }
+        }
+
+        public static bool operator ==(ExposedObject a, ExposedObject b) => a.Equals(b);
+
+        public static bool operator !=(ExposedObject a, ExposedObject b) => !a.Equals(b);
     }
 }

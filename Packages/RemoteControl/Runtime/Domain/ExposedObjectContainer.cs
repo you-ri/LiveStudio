@@ -27,7 +27,7 @@ namespace Lilium.RemoteControl
         internal readonly List<IExposedObject> _objects;
         private string _name;
 
-        private ExposedObject _selfExposedObject;
+        private ExposedObject? _selfExposedObject;
         private readonly HashSet<string> _persistentIds = new HashSet<string>();
 
         /// <summary>
@@ -70,7 +70,8 @@ namespace Lilium.RemoteControl
 
             // Capture defaults of the container itself (needed for diff-based dirty detection
             // on the _objects list).
-            ExposedPropertyUtility.SetDefault(_selfExposedObject);
+            if (_selfExposedObject != null)
+                ExposedPropertyUtility.SetDefault(_selfExposedObject.Value);
 
             // Capture defaults of each contained ExposedObject.
             foreach (var obj in _objects)
@@ -78,15 +79,15 @@ namespace Lilium.RemoteControl
                 if (obj == null) continue;
                 var exposedObj = obj.exposedObject;
                 if (exposedObj != null)
-                    ExposedPropertyUtility.SetDefault(exposedObj);
+                    ExposedPropertyUtility.SetDefault(exposedObj.Value);
             }
 
             // Mark currently held objects as persistent (i.e. originally part of the scene).
             _persistentIds.Clear();
             foreach (var obj in _objects)
             {
-                if (obj?.exposedObject != null && obj.exposedObject.hasId)
-                    _persistentIds.Add(obj.exposedObject.id);
+                if (obj?.exposedObject != null && obj.exposedObject.Value.hasId)
+                    _persistentIds.Add(obj.exposedObject.Value.id);
             }
 
             // Inline UnityEngine.Object references (components etc.) also need defaults captured
@@ -94,7 +95,7 @@ namespace Lilium.RemoteControl
             var reachable = ExposedObjectGraph.ResolveExposedObjects(objects, this);
             foreach (var exposed in reachable)
             {
-                if (exposed == null || exposed.hasId) continue;
+                if (exposed.hasId) continue;
                 ExposedObjectDefaultRegistry.EnsureDefaultsCaptured(
                     exposed, DefaultExposedObjectResolver.Instance);
             }
@@ -170,7 +171,7 @@ namespace Lilium.RemoteControl
 
         // --- IExposedObjectResolver ---
 
-        public ExposedObject FindById(string id)
+        public ExposedObject? FindById(string id)
         {
             for (int i = 0; i < _objects.Count; i++)
             {
@@ -182,7 +183,7 @@ namespace Lilium.RemoteControl
             return ExposedObjectRegistry.FindById(id);
         }
 
-        public ExposedObject FindByTarget(object target)
+        public ExposedObject? FindByTarget(object target)
         {
             if (target == null) return null;
 

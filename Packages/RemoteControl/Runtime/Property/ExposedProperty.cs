@@ -57,7 +57,9 @@ namespace Lilium.RemoteControl
         /// </summary>
         public bool PathContains(string memberName) => path.Value.Contains(memberName);
 
-        public bool isValid => type != null && owner != null;
+        // owner は struct。default(ExposedObject) は targetType==null なので、これで「owner が存在する」を表す
+        // (旧 class 実装の owner != null と等価。target 破棄の有無は問わない)
+        public bool isValid => type != null && owner.targetType != null;
 
         public bool isDirty
         {
@@ -68,7 +70,7 @@ namespace Lilium.RemoteControl
                     var resolved = _ResolveRef();
                     return resolved?.isDirty ?? false;
                 }
-                return owner?.IsPropertyDirty(path) ?? false;
+                return owner.targetType != null && owner.IsPropertyDirty(path);
             }
         }
 
@@ -177,7 +179,7 @@ namespace Lilium.RemoteControl
                     var existingExposed = ExposedObjectRegistry.FindByTarget(value);
                     if (existingExposed != null)
                     {
-                        newOwner = existingExposed;
+                        newOwner = existingExposed.Value;
                         ownerSwitched = true;
                     }
                     // UnityEngine.Object（MonoBehaviour/ScriptableObject等）でレジストリ未登録だが
@@ -254,7 +256,7 @@ namespace Lilium.RemoteControl
                     // 参照先の captureDefault は resolved 側で管理
                     resolved.Value.SetValue(value, captureDefault);
                     // owner (FusionPage) のイベントも発火 → ExposedPropertyBroadcast が FusionPage.smoothness 更新を送る
-                    owner?.targetType?.RaisePropertyChanged(this, refOldValue);
+                    owner.targetType?.RaisePropertyChanged(this, refOldValue);
                 }
                 return;
             }
@@ -384,7 +386,7 @@ namespace Lilium.RemoteControl
                     var oldValue = resolved.Value.GetValue();
                     resolved.Value.RevertValue();
                     // owner (FusionPage) 側の PropertyChanged も発火して SSE で UI 更新を反映
-                    owner?.targetType?.RaisePropertyChanged(this, oldValue);
+                    owner.targetType?.RaisePropertyChanged(this, oldValue);
                 }
                 return;
             }

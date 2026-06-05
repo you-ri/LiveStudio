@@ -16,7 +16,7 @@ namespace Lilium.LiveStudio
         // TODO: [Farm] was a brainstorm placeholder for FormerlyExposedAs. Replace with the actual former name or remove.
         public string name { get; set; } = "Environment Light";
 
-        public ExposedObject exposedObject => ExposedObjectRegistry.FindByTarget(this);
+        public ExposedObject? exposedObject => ExposedObjectRegistry.FindByTarget(this);
 
         public string id => kId;
 

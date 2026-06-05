@@ -4,8 +4,8 @@ namespace Lilium.RemoteControl
 {
     public interface IExposedObjectResolver
     {
-        public ExposedObject FindById(string id);
-        public ExposedObject FindByTarget(object target);
+        public ExposedObject? FindById(string id);
+        public ExposedObject? FindByTarget(object target);
     }
 
     /// <summary>
@@ -15,12 +15,12 @@ namespace Lilium.RemoteControl
     {
         public static readonly DefaultExposedObjectResolver Instance = new DefaultExposedObjectResolver();
 
-        public ExposedObject FindById(string id)
+        public ExposedObject? FindById(string id)
         {
             return ExposedObjectRegistry.FindById(id);
         }
 
-        public ExposedObject FindByTarget(object target)
+        public ExposedObject? FindByTarget(object target)
         {
             return ExposedObjectRegistry.FindByTarget(target);
         }

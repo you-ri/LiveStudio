@@ -356,7 +356,7 @@ namespace Lilium.RemoteControl
             var exposedObject = ExposedObjectRegistry.FindByTarget(target);
             if (exposedObject != null)
             {
-                exposedObject.EnsureDefaultCaptured(propertyPath);
+                exposedObject.Value.EnsureDefaultCaptured(propertyPath);
                 return true;
             }
             return false;

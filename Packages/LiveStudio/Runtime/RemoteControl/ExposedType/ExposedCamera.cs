@@ -232,13 +232,13 @@ namespace Lilium.LiveStudio
             controller?.Setup(_reference);
 
             if (_exposedObject?.targetType != null)
-                _exposedObject.targetType.onPropertyChanged += _OnPropertyChanged;
+                _exposedObject.Value.targetType.onPropertyChanged += _OnPropertyChanged;
         }
 
         public override void OnDisable()
         {
             if (_exposedObject?.targetType != null)
-                _exposedObject.targetType.onPropertyChanged -= _OnPropertyChanged;
+                _exposedObject.Value.targetType.onPropertyChanged -= _OnPropertyChanged;
 
             controller?.Teardown(_reference);
 

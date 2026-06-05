@@ -98,7 +98,7 @@ namespace Lilium.RemoteControl.Tests
         public class TestSceneRefItem : IExposedObject
         {
             public string name { get; set; }
-            public ExposedObject exposedObject => null;
+            public ExposedObject? exposedObject => null;
             public string id => null;
             public void OnEnable() { }
             public void OnDisable() { }
@@ -1963,7 +1963,7 @@ namespace Lilium.RemoteControl.Tests
                 // Assert - 既存のオブジェクトが変更されていないことを確認
                 var found = ExposedObjectRegistry.FindById("existing-comp-1");
                 Assert.IsNotNull(found);
-                Assert.AreEqual(existingComp, found.target);
+                Assert.AreEqual(existingComp, found.Value.target);
             }
             finally
             {
@@ -2094,9 +2094,9 @@ namespace Lilium.RemoteControl.Tests
                 Assert.IsNotNull(obj2, "inst-2 should be registered");
                 Assert.IsNotNull(obj3, "inst-3 should be registered");
 
-                var comp1 = obj1.target as TestAdditionsComponent;
-                var comp2 = obj2.target as TestAdditionsComponent;
-                var comp3 = obj3.target as TestAdditionsComponent;
+                var comp1 = obj1.Value.target as TestAdditionsComponent;
+                var comp2 = obj2.Value.target as TestAdditionsComponent;
+                var comp3 = obj3.Value.target as TestAdditionsComponent;
                 Assert.IsNotNull(comp1);
                 Assert.IsNotNull(comp2);
                 Assert.IsNotNull(comp3);
@@ -2156,8 +2156,8 @@ namespace Lilium.RemoteControl.Tests
                 Assert.IsNotNull(obj1);
                 Assert.IsNotNull(obj2);
 
-                var comp1 = obj1.target as TestAdditionsComponent;
-                var comp2 = obj2.target as TestAdditionsComponent2;
+                var comp1 = obj1.Value.target as TestAdditionsComponent;
+                var comp2 = obj2.Value.target as TestAdditionsComponent2;
                 Assert.IsNotNull(comp1);
                 Assert.IsNotNull(comp2);
                 Assert.AreSame(comp1.gameObject, comp2.gameObject, "Different component types should share the same GameObject");
@@ -2871,7 +2871,7 @@ namespace Lilium.RemoteControl.Tests
                 Assert.AreEqual(JTokenType.String, sourceToken.Type, "@source must be string");
                 var sourceKey = sourceToken.Value<string>();
                 Assert.IsFalse(string.IsNullOrEmpty(sourceKey), "@source must not be empty");
-                StringAssert.StartsWith(exposedGO.exposedObject.id, sourceKey,
+                StringAssert.StartsWith(exposedGO.exposedObject.Value.id, sourceKey,
                     "@source は ExposedGameObject の root id で始まる");
                 // path 部分 (components[0] 相当) が含まれる
                 StringAssert.Contains("components", sourceKey, "@source は path 'components' を含む");
@@ -2963,7 +2963,7 @@ namespace Lilium.RemoteControl.Tests
                 var exposedObj = ExposedObjectRegistry.FindById("-999999");
                 Assert.IsNotNull(exposedObj,
                     "Component型のExposedObjectがシーンから自動復元されるべき");
-                Assert.AreEqual(comp, exposedObj.target,
+                Assert.AreEqual(comp, exposedObj.Value.target,
                     "ExposedObjectのターゲットがシーン上のコンポーネントであるべき");
                 Assert.AreEqual(77, comp.health,
                     "復元されたプロパティ値が適用されるべき");
@@ -5787,7 +5787,10 @@ namespace Lilium.RemoteControl.Tests
                 LiveSceneSerializer.LiveSceneFromJson(loadJson, _resolver);
 
                 // Assert: 型名マッチでIDが復元され、データがロードされること
-                Assert.AreEqual("saved-old-id", exposedObj.id, "ID should be replaced with saved ID");
+                // ExposedObject は値型 (struct) なので、ReplaceId 後もローカルコピー exposedObj は
+                // 古い id のまま。再キーは Registry 側で行われるため Registry を引いて確認する。
+                Assert.IsNotNull(ExposedObjectRegistry.FindById("saved-old-id"), "ID should be replaced with saved ID");
+                Assert.IsNull(ExposedObjectRegistry.FindById("auto-generated-id"), "old ID should no longer resolve");
                 Assert.AreEqual(99, testObj.value, "value should be loaded from JSON");
                 Assert.AreEqual("Restored", testObj.name, "name should be loaded from JSON");
 
@@ -5815,7 +5818,10 @@ namespace Lilium.RemoteControl.Tests
             }
             finally
             {
-                exposedObj.Unregister();
+                // 再キー後の Registry エントリを target 経由で引いて解除する
+                // (exposedObj は古い id のローカルコピーなので直接 Unregister しても _instances から消えない)
+                var current = ExposedObjectRegistry.FindByTarget(testObj);
+                if (current != null) current.Value.Unregister();
             }
         }
 

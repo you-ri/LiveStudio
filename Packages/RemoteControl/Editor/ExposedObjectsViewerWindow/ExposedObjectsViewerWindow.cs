@@ -58,10 +58,10 @@ namespace Lilium.RemoteControl.Editor
                 }
 
                 // 選択中オブジェクトのプロパティ値をリアルタイム更新
-                var selectedObject = _selectedItem as ExposedObject;
+                var selectedObject = _selectedItem as ExposedObject?;
                 if (selectedObject != null && _contentScrollView != null)
                 {
-                    _UpdateObjectPropertyValues(selectedObject);
+                    _UpdateObjectPropertyValues(selectedObject.Value);
                 }
             }
         }
@@ -338,7 +338,6 @@ namespace Lilium.RemoteControl.Editor
             var filtered = new List<ExposedObject>();
             foreach (var obj in ExposedObjectRegistry.instances)
             {
-                if (obj == null) continue;
                 if (_MatchesObjectFilter(obj))
                     filtered.Add(obj);
             }
@@ -380,7 +379,7 @@ namespace Lilium.RemoteControl.Editor
                     button.style.color = new Color(0.4f, 0.7f, 0.4f);
                 }
 
-                if (_selectedItem == (object)obj)
+                if (_selectedItem is ExposedObject selObj && selObj.Equals(obj))
                 {
                     button.style.backgroundColor = new Color(0.2f, 0.4f, 0.6f, 0.5f);
                 }
@@ -390,8 +389,8 @@ namespace Lilium.RemoteControl.Editor
             }
 
             // 選択中オブジェクトが無効になった場合クリア
-            var selectedObject = _selectedItem as ExposedObject;
-            if (selectedObject != null && !selectedObject.isValid)
+            var selectedObject = _selectedItem as ExposedObject?;
+            if (selectedObject != null && !selectedObject.Value.isValid)
             {
                 _selectedItem = null;
                 _ShowObjectDetails(null);
@@ -746,14 +745,14 @@ namespace Lilium.RemoteControl.Editor
 
         // --- ExposedObject 詳細 ---
 
-        private void _ShowObjectDetails(ExposedObject obj)
+        private void _ShowObjectDetails(ExposedObject? objOrNull)
         {
             _contentArea.Clear();
             _contentScrollView = null;
 
-            if (obj == null || !obj.isValid)
+            if (objOrNull == null || !objOrNull.Value.isValid)
             {
-                if (obj != null)
+                if (objOrNull != null)
                 {
                     var invalid = new Label("Invalid object");
                     invalid.style.color = new Color(0.8f, 0.3f, 0.3f);
@@ -763,6 +762,8 @@ namespace Lilium.RemoteControl.Editor
                 }
                 return;
             }
+
+            var obj = objOrNull.Value;
 
             // ヘッダー
             var headerContainer = new VisualElement();

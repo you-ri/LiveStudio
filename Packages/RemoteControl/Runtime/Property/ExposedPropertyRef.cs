@@ -76,7 +76,7 @@ namespace Lilium.RemoteControl
 
             // 1. id 登録済み
             var owner = ExposedObjectRegistry.FindById(targetTypeName);
-            if (owner != null) return owner.FindProperty(propertyPath);
+            if (owner != null) return owner.Value.FindProperty(propertyPath);
 
             // 2/3. ExposedClass から型を引いて解決
             var exposedClass = ExposedClass.Find(targetTypeName);
@@ -85,7 +85,7 @@ namespace Lilium.RemoteControl
             if (exposedClass.isStatic)
             {
                 var staticOwner = ExposedObjectRegistry.GetOrCreate(exposedClass.typeName, exposedClass, null);
-                return staticOwner?.FindProperty(propertyPath);
+                return staticOwner.FindProperty(propertyPath);
             }
 
             if (exposedClass.type != null && typeof(Component).IsAssignableFrom(exposedClass.type))
@@ -98,16 +98,17 @@ namespace Lilium.RemoteControl
                 if (existing != null)
                 {
                     // id 未付与なら typeName を後付けで割り当て、FindById でも引けるようにする
-                    if (!existing.hasId)
+                    var resolvedOwner = existing.Value;
+                    if (!resolvedOwner.hasId)
                     {
-                        existing.AssignId(exposedClass.typeName);
+                        resolvedOwner = ExposedObjectRegistry.AssignId(resolvedOwner, exposedClass.typeName);
                     }
-                    return existing.FindProperty(propertyPath);
+                    return resolvedOwner.FindProperty(propertyPath);
                 }
 
                 // target 付きで登録済み ExposedObject を作成 (コンストラクタで default capture も走る)
                 var instanceOwner = ExposedObjectRegistry.GetOrCreate(exposedClass.typeName, exposedClass, target);
-                return instanceOwner?.FindProperty(propertyPath);
+                return instanceOwner.FindProperty(propertyPath);
             }
 
             return null;

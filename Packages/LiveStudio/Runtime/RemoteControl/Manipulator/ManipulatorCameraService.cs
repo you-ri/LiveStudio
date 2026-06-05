@@ -42,7 +42,7 @@ namespace Lilium.LiveStudio
 
         private static GameObject _ResolveGameObject(ExposedObject exposed)
         {
-            var t = exposed?.target;
+            var t = exposed.target;
             if (t == null) return null;
             if (t is GameObject go) return go;
             if (t is Component c) return c.gameObject;

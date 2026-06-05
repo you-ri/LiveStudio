@@ -155,7 +155,7 @@ namespace Lilium.RemoteControl.Tests
             };
             testInstance.SetFloatField(3.14f);
 
-            var exposedObject = ExposedObjectRegistry.Create(testInstance, "test_object");
+            var exposedObject = ExposedObjectRegistry.Create(testInstance, "test_object").Value;
             Assert.IsNotNull(exposedObject);
 
             // プロパティの値取得テスト
@@ -182,7 +182,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<TestAttributeClass>();
 
             var testInstance = new TestAttributeClass();
-            var exposedObject = ExposedObjectRegistry.Create(testInstance, "test_object");
+            var exposedObject = ExposedObjectRegistry.Create(testInstance, "test_object").Value;
 
             // プロパティの値設定テスト
             var intProperty = exposedObject.GetProperty("intProperty");
@@ -206,7 +206,7 @@ namespace Lilium.RemoteControl.Tests
             var testInstance = new TestMixedAttributeClass();
             testInstance.SetPrivateField("private_value");
 
-            var exposedObject = ExposedObjectRegistry.Create(testInstance, "test_object");
+            var exposedObject = ExposedObjectRegistry.Create(testInstance, "test_object").Value;
 
             // プライベートフィールドのアクセステスト
             var privateProperty = exposedObject.GetProperty("privateField");

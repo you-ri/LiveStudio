@@ -34,7 +34,7 @@ namespace Lilium.LiveStudio
 
         public string name { get; set; } = "Skybox Background";
 
-        public ExposedObject exposedObject => ExposedObjectRegistry.FindByTarget(this);
+        public ExposedObject? exposedObject => ExposedObjectRegistry.FindByTarget(this);
 
         public string id => kId;
 

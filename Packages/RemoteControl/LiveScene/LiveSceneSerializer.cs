@@ -442,7 +442,7 @@ namespace Lilium.RemoteControl.LiveScene
                     // captureDefaults: false — デフォルトはContainer.Initializeで既にキャプチャ済み。
                     // LiveSceneFromJson中にキャプチャすると、DeserializeExposedObject内のSetValueRawで
                     // 変更された値がデフォルトとして記録され、Delta保存で差分が検出されなくなる。
-                    ExposedPropertySerializer.FromJson(propertyJson, exposedObject, resolver, captureDefaults: false);
+                    ExposedPropertySerializer.FromJson(propertyJson, exposedObject.Value, resolver, captureDefaults: false);
                 }
                 else
                 {
@@ -507,14 +507,15 @@ namespace Lilium.RemoteControl.LiveScene
 
             var rootExposed = resolver.FindById(rootId);
             if (rootExposed == null) return null;
+            var rootExposedObj = rootExposed.Value;
 
             // path が空なら root 自身を返す
             if (string.IsNullOrEmpty(path))
             {
-                return rootExposed.target as UnityEngine.Object;
+                return rootExposedObj.target as UnityEngine.Object;
             }
 
-            var property = rootExposed.FindProperty(path);
+            var property = rootExposedObj.FindProperty(path);
             if (!property.HasValue) return null;
 
             return property.Value.GetValue() as UnityEngine.Object;
@@ -582,12 +583,12 @@ namespace Lilium.RemoteControl.LiveScene
         /// </summary>
         private static void _TryResolveByTypeName(string typeName, string savedId, string objectName)
         {
-            ExposedObject match = null;
+            ExposedObject? match = null;
             int matchCount = 0;
 
             foreach (var instance in ExposedObjectRegistry.instances)
             {
-                if (instance == null || !instance.isValid) continue;
+                if (!instance.isValid) continue;
                 if (instance.targetTypeName != typeName) continue;
 
                 // @nameが指定されている場合はname一致も必須
@@ -600,14 +601,14 @@ namespace Lilium.RemoteControl.LiveScene
             // 一意に特定できた場合のみIDを復元（曖昧な場合は安全のためスキップ）
             if (matchCount == 1 && match != null)
             {
-                if (match.target is ExposedUnityObjectBase wrapper)
+                if (match.Value.target is ExposedUnityObjectBase wrapper)
                 {
                     wrapper.ReplaceId(savedId);
                 }
                 else
                 {
-                    // 非UnityObject型: ExposedObjectのIDを直接更新
-                    match.ReplaceId(savedId);
+                    // 非UnityObject型: ExposedObjectのIDを直接更新（struct なので Registry 経由で再キー）
+                    ExposedObjectRegistry.ReplaceId(match.Value, savedId);
                 }
             }
         }

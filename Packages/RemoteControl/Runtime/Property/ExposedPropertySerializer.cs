@@ -208,12 +208,12 @@ namespace Lilium.RemoteControl
 
                 // ID付きExposedObject（コンテナ管理）の場合は参照情報のみをシリアライズ
                 // IDなしまたは未登録の場合はプロパティをインライン展開
-                if (valueExposedObject != null && valueExposedObject.hasId && forceValue == false)
+                if (valueExposedObject != null && valueExposedObject.Value.hasId && forceValue == false)
                 {
-                    jObject["@ref"] = valueExposedObject.id;
+                    jObject["@ref"] = valueExposedObject.Value.id;
                     if (!forPersistence)
                     {
-                        jObject["@name"] = valueExposedObject.name;
+                        jObject["@name"] = valueExposedObject.Value.name;
                         if (value is UnityEngine.Object refUnityObj && refUnityObj != null)
                         {
                             jObject["@instanceID"] = refUnityObj.GetInstanceID().ToString();
@@ -234,7 +234,7 @@ namespace Lilium.RemoteControl
 
                 if (!forPersistence && valueExposedObject != null)
                 {
-                    jObject["@name"] = valueExposedObject.name;
+                    jObject["@name"] = valueExposedObject.Value.name;
                 }
                 var fileResolver = resolver as IFileScopedResolver;
                 foreach (var propType in exposedClass.propertyTypes)
@@ -655,7 +655,7 @@ namespace Lilium.RemoteControl
                     var referencedObject = resolver.FindById(referenceId);
                     if (referencedObject != null)
                     {
-                        return referencedObject.target;
+                        return referencedObject.Value.target;
                     }
 
                     // ExposedObjectがまだ生成されていない場合
@@ -1491,8 +1491,8 @@ namespace Lilium.RemoteControl
             // callback is the only place that can re-apply parent-side state.
             if (result && property.type.shadowField == null)
             {
-                (property.owner?.target as IExposedDeserializeCallback)?.OnAfterExposedDeserialize();
-                if (property.owner != null && property.owner.target == null)
+                (property.owner.target as IExposedDeserializeCallback)?.OnAfterExposedDeserialize();
+                if (property.owner.targetType != null && property.owner.target == null)
                 {
                     property.owner.targetType?.InvokeStaticAfterDeserialize();
                 }

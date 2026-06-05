@@ -158,7 +158,7 @@ namespace Lilium.RemoteControl.Tests
                 // ExposedObjectRegistry.FindByTargetにフォールバックし、proxy2のExposedObjectを返す
                 if (result != null)
                 {
-                    Assert.AreEqual("id-2", result.id, "正しいIDのExposedObjectが返されるべき");
+                    Assert.AreEqual("id-2", result.Value.id, "正しいIDのExposedObjectが返されるべき");
                 }
             }
             finally
@@ -231,7 +231,7 @@ namespace Lilium.RemoteControl.Tests
             var resolved = ExposedObjectRegistry.GetOrCreate("different-id", exposedClass, target);
 
             // Assert: IDは変更されず、既存のExposedObjectがそのまま返される（IDは不変）
-            Assert.AreSame(initial, resolved, "同じtargetに対しては既存のExposedObjectが返されるべき");
+            Assert.AreEqual(initial, resolved, "同じtargetに対しては既存のExposedObjectが返されるべき");
             Assert.AreEqual(firstId, resolved.id, "IDは最初に設定された値のまま変更されない");
         }
 
@@ -248,7 +248,7 @@ namespace Lilium.RemoteControl.Tests
             var result = ExposedObjectRegistry.GetOrCreate("same-id", exposedClass, target);
 
             // Assert: 同じインスタンスが返される
-            Assert.AreSame(initial, result, "同じIDの場合は同じインスタンスが返されるべき");
+            Assert.AreEqual(initial, result, "同じIDの場合は同じインスタンスが返されるべき");
         }
 
         [Test]
@@ -266,7 +266,7 @@ namespace Lilium.RemoteControl.Tests
             var result = ExposedObjectRegistry.GetOrCreate(id, exposedClass, target);
 
             // Assert: 同じインスタンスが返され、instancesは増えない
-            Assert.AreSame(initial, result, "同一ターゲット・同一IDでは同じインスタンスを返すべき");
+            Assert.AreEqual(initial, result, "同一ターゲット・同一IDでは同じインスタンスを返すべき");
             Assert.AreEqual(initialCount, ExposedObjectRegistry.instances.Count, "instancesが増えてはいけない");
         }
 
@@ -289,7 +289,7 @@ namespace Lilium.RemoteControl.Tests
             var result = ExposedObjectRegistry.GetOrCreate(secondId, exposedClass, target);
 
             // Assert: 既存のExposedObjectがそのまま返される（IDは不変、インスタンス数も変わらない）
-            Assert.AreSame(first, result, "同じtargetに対しては既存インスタンスが返されるべき");
+            Assert.AreEqual(first, result, "同じtargetに対しては既存インスタンスが返されるべき");
             Assert.AreEqual(firstId, result.id, "IDは最初に設定された値のまま");
             Assert.AreEqual(initialCount + 1, ExposedObjectRegistry.instances.Count, "インスタンス数は増えない");
             Assert.IsNull(ExposedObjectRegistry.FindById(secondId), "新しいIDでは検索不可（作成されていない）");
@@ -352,7 +352,7 @@ namespace Lilium.RemoteControl.Tests
             }";
 
             // Act
-            ExposedPropertySerializer.FromJson(json, proxy.exposedObject, _resolver);
+            ExposedPropertySerializer.FromJson(json, proxy.exposedObject.Value, _resolver);
 
             // Assert
             Assert.AreEqual("TestCamera", proxy.name, "@nameがnameプロパティに復元されるべき");
@@ -376,7 +376,7 @@ namespace Lilium.RemoteControl.Tests
             }";
 
             // Act
-            ExposedPropertySerializer.FromJson(json, proxy.exposedObject, _resolver);
+            ExposedPropertySerializer.FromJson(json, proxy.exposedObject.Value, _resolver);
 
             // Assert: 既存のnameは上書きされない
             Assert.AreEqual("ExistingName", proxy.name, "既存のnameは@nameで上書きされるべきではない");
@@ -392,7 +392,7 @@ namespace Lilium.RemoteControl.Tests
             var proxy = new TestNameFallbackProxy("name-cycle-id", "InitialName");
             proxy.value = 99;
 
-            ExposedPropertyUtility.SetDefault(proxy.exposedObject);
+            ExposedPropertyUtility.SetDefault(proxy.exposedObject.Value);
             proxy.value = 100;
             proxy.name = "Camera"; // name を default から変えて dirty にする
 
@@ -409,7 +409,7 @@ namespace Lilium.RemoteControl.Tests
             foreach (var obj in toRemove) obj.Unregister();
 
             var newProxy = new TestNameFallbackProxy("name-cycle-id", "InitialName");
-            ExposedPropertyUtility.SetDefault(newProxy.exposedObject);
+            ExposedPropertyUtility.SetDefault(newProxy.exposedObject.Value);
 
             // Load
             LiveSceneSerializer.LiveSceneFromJson(json1, _resolver);
@@ -435,9 +435,9 @@ namespace Lilium.RemoteControl.Tests
             var target3 = new TestProxy(id3) { value = 30 };
 
             // デフォルト値をキャプチャしてdirty検出を有効化
-            ExposedPropertyUtility.SetDefault(target1.exposedObject);
-            ExposedPropertyUtility.SetDefault(target2.exposedObject);
-            ExposedPropertyUtility.SetDefault(target3.exposedObject);
+            ExposedPropertyUtility.SetDefault(target1.exposedObject.Value);
+            ExposedPropertyUtility.SetDefault(target2.exposedObject.Value);
+            ExposedPropertyUtility.SetDefault(target3.exposedObject.Value);
 
             // 値を変更してdirtyにする
             target1.value = 100;
@@ -461,9 +461,9 @@ namespace Lilium.RemoteControl.Tests
             LiveSceneSerializer.LiveSceneFromJson(json1, _resolver);
 
             // デフォルト値を再キャプチャ
-            if (newTarget1.exposedObject != null) ExposedPropertyUtility.SetDefault(newTarget1.exposedObject);
-            if (newTarget2.exposedObject != null) ExposedPropertyUtility.SetDefault(newTarget2.exposedObject);
-            if (newTarget3.exposedObject != null) ExposedPropertyUtility.SetDefault(newTarget3.exposedObject);
+            if (newTarget1.exposedObject != null) ExposedPropertyUtility.SetDefault(newTarget1.exposedObject.Value);
+            if (newTarget2.exposedObject != null) ExposedPropertyUtility.SetDefault(newTarget2.exposedObject.Value);
+            if (newTarget3.exposedObject != null) ExposedPropertyUtility.SetDefault(newTarget3.exposedObject.Value);
 
             // 再シリアライズ（Save相当）
             var json2 = LiveSceneSerializer.LiveSceneToJson(new List<ExposedObject>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
@@ -478,8 +478,8 @@ namespace Lilium.RemoteControl.Tests
             Assert.IsNotNull(obj3, $"ID '{id3}' のExposedObjectが存在するべき");
 
             // 全てのIDが同一にならないことを確認（Bug1の回帰テスト）
-            Assert.AreNotEqual(obj1.id, obj2.id, "異なるオブジェクトのIDが同一になってはいけない");
-            Assert.AreNotEqual(obj2.id, obj3.id, "異なるオブジェクトのIDが同一になってはいけない");
+            Assert.AreNotEqual(obj1.Value.id, obj2.Value.id, "異なるオブジェクトのIDが同一になってはいけない");
+            Assert.AreNotEqual(obj2.Value.id, obj3.Value.id, "異なるオブジェクトのIDが同一になってはいけない");
         }
 
         [Test]
@@ -1050,9 +1050,9 @@ namespace Lilium.RemoteControl.Tests
                     "1回目Save: blendTimeがDelta出力に含まれるべき");
 
                 // 4. Revert: デフォルト値に戻す（FromJson経由、RevertAllToDefault相当）
-                var defaultJson = ExposedObjectDefaultRegistry.GetDefaults(proxy.exposedObject);
+                var defaultJson = ExposedObjectDefaultRegistry.GetDefaults(proxy.exposedObject.Value);
                 Assert.IsNotNull(defaultJson, "デフォルトJSONが存在するべき");
-                ExposedPropertySerializer.FromJson(defaultJson.ToString(), proxy.exposedObject, _resolver, captureDefaults: false);
+                ExposedPropertySerializer.FromJson(defaultJson.ToString(), proxy.exposedObject.Value, _resolver, captureDefaults: false);
                 Assert.AreEqual(0.25f, configSO.blendTime, 0.001f, "Revert後にblendTimeが初期値に戻るべき");
                 Assert.AreEqual(1, avatarComp.level, "Revert後にlevelが初期値に戻るべき");
 
@@ -1104,8 +1104,8 @@ namespace Lilium.RemoteControl.Tests
         {
             // Arrange: プロキシを作成（Initialize時のシミュレーション）
             var proxy = new TestProxy("original-guid-aaa") { value = 50 };
-            var originalExposedObject = proxy.exposedObject;
-            Assert.IsNotNull(originalExposedObject);
+            var originalExposedObject = proxy.exposedObject.Value;
+            Assert.IsNotNull(proxy.exposedObject);
 
             // デフォルト値をキャプチャ（Container.Initialize相当）
             ExposedPropertyUtility.SetDefault(originalExposedObject);
@@ -1124,8 +1124,8 @@ namespace Lilium.RemoteControl.Tests
 
             // 2. 新しいGUIDでプロキシを再作成（Play mode開始時の状態）
             var newProxy = new TestProxy("new-guid-bbb") { value = 50 }; // デフォルト値に戻る
-            var newExposedObject = newProxy.exposedObject;
-            Assert.IsNotNull(newExposedObject);
+            var newExposedObject = newProxy.exposedObject.Value;
+            Assert.IsNotNull(newProxy.exposedObject);
 
             // 3. デフォルトをキャプチャ（Container.Initialize相当）
             ExposedPropertyUtility.SetDefault(newExposedObject);
@@ -1137,7 +1137,7 @@ namespace Lilium.RemoteControl.Tests
             // Assert: ReplaceId後のExposedObjectが見つかる
             var resolved = ExposedObjectRegistry.FindById("original-guid-aaa");
             Assert.IsNotNull(resolved, "ReplaceId後にsaved IDで検索できるべき");
-            Assert.AreEqual(100, ((TestProxy)resolved.target).value, "Load後に保存値が復元されるべき");
+            Assert.AreEqual(100, ((TestProxy)resolved.Value.target).value, "Load後に保存値が復元されるべき");
 
             // Act: SaveCurrentData相当 - Delta保存
             var resavedJson = LiveSceneSerializer.LiveSceneToJson(
@@ -1160,7 +1160,7 @@ namespace Lilium.RemoteControl.Tests
         {
             // Arrange: プロキシをデフォルト値（value=0）で作成
             var proxy = new TestProxy("original-guid-ccc") { value = 0 };
-            ExposedPropertyUtility.SetDefault(proxy.exposedObject);
+            ExposedPropertyUtility.SetDefault(proxy.exposedObject.Value);
 
             // デフォルトと異なる値で保存JSONを作成
             proxy.value = 42;
@@ -1173,7 +1173,7 @@ namespace Lilium.RemoteControl.Tests
             foreach (var obj in toRemove) obj.Unregister();
 
             var newProxy = new TestProxy("new-guid-ddd") { value = 0 };
-            ExposedPropertyUtility.SetDefault(newProxy.exposedObject);
+            ExposedPropertyUtility.SetDefault(newProxy.exposedObject.Value);
 
             // Act: Load
             LiveSceneSerializer.LiveSceneFromJson(savedJson, _resolver);

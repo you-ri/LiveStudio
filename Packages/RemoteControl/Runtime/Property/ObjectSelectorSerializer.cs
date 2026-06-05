@@ -66,12 +66,12 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// GameObject を包む ExposedObject (ExposedGameObject など) を検索する。
         /// </summary>
-        private static ExposedObject _FindGameObjectWrapper(GameObject gameObject)
+        private static ExposedObject? _FindGameObjectWrapper(GameObject gameObject)
         {
             if (gameObject == null) return null;
             foreach (var candidate in ExposedObjectRegistry.instances)
             {
-                if (candidate == null || !candidate.hasId) continue;
+                if (!candidate.hasId) continue;
                 var wrappedGO = ExposedObjectRegistry.ResolveGameObject(candidate.target);
                 if (wrappedGO == gameObject) return candidate;
             }
@@ -91,16 +91,17 @@ namespace Lilium.RemoteControl
 
             // 1) 直接登録済み: value 自身が ExposedObject.target なら、その id を @ref に使う
             var direct = ExposedObjectRegistry.FindByTarget(value);
-            if (direct != null && direct.hasId)
+            if (direct != null && direct.Value.hasId)
             {
+                var directObj = direct.Value;
                 var directResult = new JObject
                 {
-                    ["@type"] = direct.targetTypeName,
-                    ["@ref"] = direct.id,
+                    ["@type"] = directObj.targetTypeName,
+                    ["@ref"] = directObj.id,
                 };
                 if (!forPersistence)
                 {
-                    directResult["@name"] = direct.name;
+                    directResult["@name"] = directObj.name;
                     if (value is UnityEngine.Object unityValue && unityValue != null)
                     {
                         directResult["@instanceID"] = unityValue.GetInstanceID().ToString();
@@ -119,7 +120,7 @@ namespace Lilium.RemoteControl
                 int index = _FindFilteredComponentIndex(gameObject, component);
                 if (index < 0) return JValue.CreateNull();
 
-                var refKey = ComposeObjectSelectorRef(wrapper.id, $"components[{index}]");
+                var refKey = ComposeObjectSelectorRef(wrapper.Value.id, $"components[{index}]");
                 var componentTypeName = ExposedClass.Find(component.GetType())?.typeName ?? component.GetType().Name;
                 var result = new JObject
                 {
@@ -152,11 +153,12 @@ namespace Lilium.RemoteControl
             _ParseObjectSelectorRef(refKey, out var rootId, out var path);
             var rootExposed = resolver.FindById(rootId);
             if (rootExposed == null) return null;
+            var rootExposedObj = rootExposed.Value;
 
             // path 無し: ルート target
             if (string.IsNullOrEmpty(path))
             {
-                var rootTarget = rootExposed.target;
+                var rootTarget = rootExposedObj.target;
                 if (rootTarget != null && fieldType.IsAssignableFrom(rootTarget.GetType())) return rootTarget;
                 if (typeof(Component).IsAssignableFrom(fieldType))
                 {
@@ -167,7 +169,7 @@ namespace Lilium.RemoteControl
             }
 
             // path 付き: FindProperty で辿る (components[N] 等)
-            var property = rootExposed.FindProperty(path);
+            var property = rootExposedObj.FindProperty(path);
             if (!property.HasValue) return null;
             var resolved = property.Value.GetValue();
             if (resolved != null && fieldType.IsAssignableFrom(resolved.GetType())) return resolved;

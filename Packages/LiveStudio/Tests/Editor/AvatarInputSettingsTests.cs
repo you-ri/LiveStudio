@@ -143,9 +143,10 @@ namespace Lilium.LiveStudio.EditorTests
             }
             finally
             {
-                if (ExposedObjectRegistry.FindById("test-input-actions-rt") != null)
+                var rtObj = ExposedObjectRegistry.FindById("test-input-actions-rt");
+                if (rtObj != null)
                 {
-                    ExposedObjectRegistry.FindById("test-input-actions-rt").Unregister();
+                    rtObj.Value.Unregister();
                 }
             }
         }

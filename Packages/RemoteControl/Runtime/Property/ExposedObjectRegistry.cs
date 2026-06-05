@@ -51,7 +51,7 @@ namespace Lilium.RemoteControl
             bool lookingForComponent = typeof(Component).IsAssignableFrom(targetType);
             foreach (var obj in _instances)
             {
-                if (obj == null || !obj.hasId) continue;
+                if (!obj.hasId) continue;
                 var target = obj.target;
                 if (target == null) continue;
                 if (target is UnityEngine.Object unityTarget && unityTarget == null) continue;
@@ -120,7 +120,7 @@ namespace Lilium.RemoteControl
             {
                 foreach (var obj in _instances)
                 {
-                    if (obj == null || !obj.isValid) continue;
+                    if (!obj.isValid) continue;
                     if (!(obj.target is ExposedUnityObjectBase proxy)) continue;
                     if (proxy.reference == null) continue;
                     var tr = ExtractTransform(proxy.reference);
@@ -185,21 +185,36 @@ namespace Lilium.RemoteControl
 
         /// <summary>
         /// IDなしのExposedObjectにIDを後から割り当てる。
+        /// struct は不変なので、古いエントリを除去して新しい id を持つ値で再登録し、新しい値を返す。
         /// </summary>
-        internal static void AssignId(ExposedObject obj, string newId)
+        internal static ExposedObject AssignId(ExposedObject obj, string newId)
         {
-            _byId[newId] = obj;
+            return ReplaceId(obj, newId);
+        }
+
+        /// <summary>
+        /// 登録済み ExposedObject の id を差し替えて再登録し、新しい値を返す。
+        /// </summary>
+        internal static ExposedObject ReplaceId(ExposedObject obj, string newId)
+        {
+            if (string.Equals(obj.id, newId, StringComparison.Ordinal)) return obj;
+            // defaults は target キーで保持されるため、ここでは Registry のみ付け替える (Unregister 静的版を使う)。
+            Unregister(obj);
+            var updated = obj.WithId(newId);
+            Register(updated);
+            return updated;
         }
 
         // --- 検索 ---
 
         public static bool TryFindById(string id, out ExposedObject exposedObject)
         {
-            exposedObject = FindById(id);
-            return exposedObject != null;
+            var found = FindById(id);
+            exposedObject = found ?? default;
+            return found.HasValue;
         }
 
-        public static ExposedObject FindById(string id)
+        public static ExposedObject? FindById(string id)
         {
             if (string.IsNullOrEmpty(id)) return null;
 
@@ -215,14 +230,15 @@ namespace Lilium.RemoteControl
 
         public static bool TryFindByTarget(object target, out ExposedObject exposedObject)
         {
-            exposedObject = FindByTarget(target);
-            return exposedObject != null;
+            var found = FindByTarget(target);
+            exposedObject = found ?? default;
+            return found.HasValue;
         }
 
         /// <summary>
         /// ターゲットオブジェクトからExposedObjectを検索
         /// </summary>
-        public static ExposedObject FindByTarget(object target)
+        public static ExposedObject? FindByTarget(object target)
         {
             if (target == null) return null;
 
@@ -257,7 +273,7 @@ namespace Lilium.RemoteControl
 
         // --- ファクトリ ---
 
-        public static ExposedObject Create(Type type, object target, string id)
+        public static ExposedObject? Create(Type type, object target, string id)
         {
             var exposedClass = ExposedClass.Find(type);
             if (exposedClass == null)
@@ -269,7 +285,7 @@ namespace Lilium.RemoteControl
             return GetOrCreate(id, exposedClass, target);
         }
 
-        public static ExposedObject Create<T>(T target, string id) where T : class
+        public static ExposedObject? Create<T>(T target, string id) where T : class
         {
             var exposedClass = ExposedClass.Find(typeof(T));
             if (exposedClass == null)
@@ -290,7 +306,7 @@ namespace Lilium.RemoteControl
             if (target != null)
             {
                 var existing = FindByTarget(target);
-                if (existing != null) return existing;
+                if (existing != null) return existing.Value;
             }
             return new ExposedObject(null, type, target);
         }
@@ -308,18 +324,18 @@ namespace Lilium.RemoteControl
                 {
                     // 既存がIDなしで、新しいリクエストがID付きの場合、IDを割り当てる
                     // （コンテナ登録前にIDなしで生成されたケースの救済）
-                    if (!existing.hasId && !string.IsNullOrEmpty(id))
+                    if (!existing.Value.hasId && !string.IsNullOrEmpty(id))
                     {
-                        existing.AssignId(id);
+                        return AssignId(existing.Value, id);
                     }
-                    return existing;
+                    return existing.Value;
                 }
             }
             else
             {
                 // static class (target==null) の場合、IDで既存を検索
                 var existing = FindById(id);
-                if (existing != null) return existing;
+                if (existing != null) return existing.Value;
             }
 
             // なければ新規作成
@@ -330,7 +346,7 @@ namespace Lilium.RemoteControl
         /// IDで既存のExposedObjectを検索、なければ型情報を使って新規作成
         /// FromJsonで@ref解決時に使用
         /// </summary>
-        public static ExposedObject GetOrCreate(string id, ExposedClass exposedClass)
+        public static ExposedObject? GetOrCreate(string id, ExposedClass exposedClass)
         {
             if (string.IsNullOrEmpty(id)) return null;
             if (exposedClass == null) return null;
@@ -371,7 +387,7 @@ namespace Lilium.RemoteControl
             if (string.IsNullOrEmpty(parentId)) yield break;
             foreach (var obj in _instances)
             {
-                if (obj == null || !obj.isValid) continue;
+                if (!obj.isValid) continue;
                 if (!(obj.target is ExposedUnityObjectBase proxy)) continue;
                 if (proxy.reference == null) continue;
                 var tr = ExtractTransform(proxy.reference);
@@ -388,7 +404,7 @@ namespace Lilium.RemoteControl
         {
             foreach (var obj in _instances)
             {
-                if (obj == null || !obj.isValid) continue;
+                if (!obj.isValid) continue;
                 if (!(obj.target is ExposedUnityObjectBase proxy)) continue;
                 if (proxy.reference == null) continue;
                 var tr = ExtractTransform(proxy.reference);
@@ -413,7 +429,7 @@ namespace Lilium.RemoteControl
                 error = $"Child ExposedObject not found: id='{childId}'";
                 return false;
             }
-            if (!(child.target is ExposedUnityObjectBase childProxy))
+            if (!(child.Value.target is ExposedUnityObjectBase childProxy))
             {
                 error = $"Child is not parentable (target is not ExposedUnityObjectBase): id='{childId}'";
                 return false;
@@ -453,7 +469,7 @@ namespace Lilium.RemoteControl
                 error = $"Parent ExposedObject not found: id='{normalizedParentId}'";
                 return false;
             }
-            if (!(parent.target is ExposedUnityObjectBase parentProxy))
+            if (!(parent.Value.target is ExposedUnityObjectBase parentProxy))
             {
                 error = $"Parent is not parentable (target is not ExposedUnityObjectBase): id='{normalizedParentId}'";
                 return false;
@@ -501,7 +517,7 @@ namespace Lilium.RemoteControl
                 Debug.LogError($"[RemoteControl] ExposedObject not found for id '{id}'");
                 return null;
             }
-            return obj.InvokeFunction(functionName, args);
+            return obj.Value.InvokeFunction(functionName, args);
         }
 
         /// <summary>
@@ -511,7 +527,7 @@ namespace Lilium.RemoteControl
         {
             var obj = FindById(id);
             if (obj == null) return false;
-            return ExposedObjectDefaultRegistry.IsDirty(obj, DefaultExposedObjectResolver.Instance);
+            return ExposedObjectDefaultRegistry.IsDirty(obj.Value, DefaultExposedObjectResolver.Instance);
         }
 
         /// <summary>
@@ -521,7 +537,7 @@ namespace Lilium.RemoteControl
         {
             var obj = FindById(id);
             if (obj == null) return false;
-            return ExposedObjectDefaultRegistry.IsPropertyDirty(obj, propertyPath, DefaultExposedObjectResolver.Instance);
+            return ExposedObjectDefaultRegistry.IsPropertyDirty(obj.Value, propertyPath, DefaultExposedObjectResolver.Instance);
         }
 
         /// <summary>
@@ -530,7 +546,7 @@ namespace Lilium.RemoteControl
         public static void SetDefault(string id)
         {
             var obj = FindById(id);
-            if (obj != null) ExposedPropertyUtility.SetDefault(obj);
+            if (obj != null) ExposedPropertyUtility.SetDefault(obj.Value);
         }
 
         /// <summary>
@@ -539,7 +555,7 @@ namespace Lilium.RemoteControl
         public static void ClearDirty(string id)
         {
             var obj = FindById(id);
-            if (obj != null) ExposedObjectDefaultRegistry.ClearDirty(obj, DefaultExposedObjectResolver.Instance);
+            if (obj != null) ExposedObjectDefaultRegistry.ClearDirty(obj.Value, DefaultExposedObjectResolver.Instance);
         }
 
         /// <summary>
@@ -549,7 +565,7 @@ namespace Lilium.RemoteControl
         {
             var obj = FindById(id);
             if (obj == null) return false;
-            return ExposedObjectDefaultRegistry.Revert(obj, propertyPath, DefaultExposedObjectResolver.Instance);
+            return ExposedObjectDefaultRegistry.Revert(obj.Value, propertyPath, DefaultExposedObjectResolver.Instance);
         }
 
         /// <summary>
@@ -568,10 +584,10 @@ namespace Lilium.RemoteControl
                 {
                     if (item == null) continue;
                     var obj = item.exposedObject;
-                    if (obj == null || obj.targetType == null) continue;
-                    if (obj.targetType.category == category && added.Add(obj))
+                    if (obj == null || obj.Value.targetType == null) continue;
+                    if (obj.Value.targetType.category == category && added.Add(obj.Value))
                     {
-                        result.Add(obj);
+                        result.Add(obj.Value);
                     }
                 }
             }
@@ -579,7 +595,7 @@ namespace Lilium.RemoteControl
             // 既存のinstancesから検索
             foreach (var obj in _instances)
             {
-                if (obj == null || !obj.isValid) continue;
+                if (!obj.isValid) continue;
                 if (obj.targetType == null) continue;
                 if (obj.targetType.category == category && added.Add(obj))
                 {
@@ -596,7 +612,7 @@ namespace Lilium.RemoteControl
                 if (exposedClass.isStatic)
                 {
                     var obj = GetOrCreate(exposedClass.typeName, exposedClass, null);
-                    if (obj != null && added.Add(obj))
+                    if (added.Add(obj))
                     {
                         result.Add(obj);
                     }
@@ -612,11 +628,11 @@ namespace Lilium.RemoteControl
                     {
                         // 既に登録済みのtargetはそちらを使用
                         var existing = FindByTarget(found);
-                        if (existing != null && added.Contains(existing))
+                        if (existing != null && added.Contains(existing.Value))
                             continue;
 
                         var obj = existing ?? ExposedObject.CreateUnregistered(exposedClass, found);
-                        if (obj != null && added.Add(obj))
+                        if (added.Add(obj))
                         {
                             result.Add(obj);
                         }

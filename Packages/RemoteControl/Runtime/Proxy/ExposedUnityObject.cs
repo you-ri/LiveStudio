@@ -12,7 +12,7 @@ namespace Lilium.RemoteControl
     public interface IExposedObject
     {
         string name { get; set; }
-        ExposedObject exposedObject { get; }
+        ExposedObject? exposedObject { get; }
         string id { get; }
         void OnEnable();
         void OnDisable();
@@ -36,10 +36,10 @@ namespace Lilium.RemoteControl
 
         public virtual string id { get; }
 
-        public ExposedObject exposedObject => _exposedObject;
+        public ExposedObject? exposedObject => _exposedObject;
 
         [NonSerialized]
-        protected ExposedObject _exposedObject;
+        protected ExposedObject? _exposedObject;
 
         /// <summary>
         /// このオブジェクトの生成元 Prefab の Asset GUID。

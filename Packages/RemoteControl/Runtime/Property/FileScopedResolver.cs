@@ -30,7 +30,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// 現在処理中の root ExposedObject を設定する。null で解除。
         /// </summary>
-        void SetCurrentRoot(ExposedObject root);
+        void SetCurrentRoot(ExposedObject? root);
 
         /// <summary>
         /// UnityEngine.Object 参照を fileid 付きの @ref トークンとしてエンコードし、
@@ -63,7 +63,7 @@ namespace Lilium.RemoteControl
         private readonly Dictionary<UnityEngine.Object, string> _objectFileIds = new Dictionary<UnityEngine.Object, string>();
         private readonly List<PendingReference> _pending = new List<PendingReference>();
 
-        private ExposedObject _currentRoot;
+        private ExposedObject? _currentRoot;
 
         public FileScopedResolver(IExposedObjectResolver inner)
         {
@@ -72,8 +72,8 @@ namespace Lilium.RemoteControl
 
         public IReadOnlyList<PendingReference> pending => _pending;
 
-        public ExposedObject FindById(string id) => _inner.FindById(id);
-        public ExposedObject FindByTarget(object target) => _inner.FindByTarget(target);
+        public ExposedObject? FindById(string id) => _inner.FindById(id);
+        public ExposedObject? FindByTarget(object target) => _inner.FindByTarget(target);
 
         public void PushPath(string segment)
         {
@@ -87,7 +87,7 @@ namespace Lilium.RemoteControl
             _pathStack.RemoveAt(_pathStack.Count - 1);
         }
 
-        public void SetCurrentRoot(ExposedObject root)
+        public void SetCurrentRoot(ExposedObject? root)
         {
             _currentRoot = root;
             _pathStack.Clear();
@@ -142,9 +142,9 @@ namespace Lilium.RemoteControl
             // 登録済み ExposedObject がある場合はその id を source-key として再利用する
             string sourceKey;
             var registered = _inner.FindByTarget(obj);
-            if (registered != null && registered.hasId)
+            if (registered != null && registered.Value.hasId)
             {
-                sourceKey = registered.id;
+                sourceKey = registered.Value.id;
             }
             else
             {
@@ -177,7 +177,7 @@ namespace Lilium.RemoteControl
             // 登録済み ExposedObject を持つ場合: source-key 採番のみ、pending には積まない
             // （root 側が別エントリとして出力済みになる）
             var registered = _inner.FindByTarget(obj);
-            bool isRegisteredRoot = registered != null && registered.hasId;
+            bool isRegisteredRoot = registered != null && registered.Value.hasId;
 
             var sourceKey = AssignFileId(obj, registerPending: !isRegisteredRoot);
             return new JObject { ["@ref"] = sourceKey };

@@ -579,7 +579,7 @@ namespace Lilium.RemoteControl.Tests
                     var selectorObj = ExposedObjectRegistry.FindById("ui.selector.settings");
                     Assert.IsNotNull(selectorObj, "selector ExposedObject must be registered");
 
-                    var json = ExposedPropertySerializer.ToJson(selectorObj, DefaultExposedObjectResolver.Instance);
+                    var json = ExposedPropertySerializer.ToJson(selectorObj.Value, DefaultExposedObjectResolver.Instance);
                     var parsed = JObject.Parse(json);
                     var objectsArray = parsed["objects"] as JArray;
 
@@ -636,7 +636,7 @@ namespace Lilium.RemoteControl.Tests
                     var selectorObj = ExposedObjectRegistry.FindById("ui.selector.settings");
                     Assert.IsNotNull(selectorObj);
 
-                    var json = ExposedPropertySerializer.ToJson(selectorObj, DefaultExposedObjectResolver.Instance);
+                    var json = ExposedPropertySerializer.ToJson(selectorObj.Value, DefaultExposedObjectResolver.Instance);
                     var parsed = JObject.Parse(json);
                     var objectsArray = parsed["objects"] as JArray;
 

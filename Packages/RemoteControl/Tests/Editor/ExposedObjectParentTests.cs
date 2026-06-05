@@ -223,7 +223,7 @@ namespace Lilium.RemoteControl.Tests
             ExposedObjectRegistry.SetParent(child.id, parent.id, out _);
 
             var json = ExposedPropertySerializer.ToJson(
-                child.exposedObject, DefaultExposedObjectResolver.Instance);
+                child.exposedObject.Value, DefaultExposedObjectResolver.Instance);
             var root = JObject.Parse(json);
 
             Assert.AreEqual(parent.id, root["@parent"]?.Value<string>());
@@ -236,7 +236,7 @@ namespace Lilium.RemoteControl.Tests
             child.OnEnable();
 
             var json = ExposedPropertySerializer.ToJson(
-                child.exposedObject, DefaultExposedObjectResolver.Instance);
+                child.exposedObject.Value, DefaultExposedObjectResolver.Instance);
             var root = JObject.Parse(json);
 
             Assert.IsNull(root["@parent"]);
@@ -253,12 +253,12 @@ namespace Lilium.RemoteControl.Tests
 
             var json = new JObject
             {
-                ["@type"] = child.exposedObject.targetTypeName,
+                ["@type"] = child.exposedObject.Value.targetTypeName,
                 ["@id"] = child.id,
                 ["@parent"] = parent.id,
             }.ToString();
 
-            ExposedPropertySerializer.FromJson(json, child.exposedObject);
+            ExposedPropertySerializer.FromJson(json, child.exposedObject.Value);
 
             Assert.AreSame(parentGO.transform, childGO.transform.parent,
                 "@parent デシリアライズは SetParent 経由で Unity hierarchy に反映される");

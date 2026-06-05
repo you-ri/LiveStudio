@@ -311,7 +311,7 @@ namespace Lilium.RemoteControl
             if (string.IsNullOrEmpty(_ownerName)) return null;
             var parentExposed = _FindExposedByName(_ownerName);
             if (parentExposed == null) return null;
-            return _ExtractGameObject(parentExposed.target);
+            return _ExtractGameObject(parentExposed.Value.target);
         }
 
         /// <summary>
@@ -428,7 +428,7 @@ namespace Lilium.RemoteControl
         /// GameObject に対応する ExposedObject を Registry から検索する。
         /// Proxy 系 (target=Proxy) と直 UnityObject 系 (target=UnityObject) の両方を拾う。
         /// </summary>
-        static ExposedObject _FindExposedByGameObject(GameObject go)
+        static ExposedObject? _FindExposedByGameObject(GameObject go)
         {
             if (go == null) return null;
 
@@ -437,7 +437,7 @@ namespace Lilium.RemoteControl
 
             foreach (var obj in ExposedObjectRegistry.instances)
             {
-                if (obj == null || !obj.isValid) continue;
+                if (!obj.isValid) continue;
                 if (obj.target is ExposedUnityObjectBase proxy)
                 {
                     var reference = proxy.reference;
@@ -454,12 +454,12 @@ namespace Lilium.RemoteControl
         /// ExposedObject (例: <c>[ExposedClass]</c> を持つ MonoBehaviour) の両方を対象にする。
         /// 比較は <see cref="ExposedObject.name"/> ベースなので Unity の GameObject 名と一致する。
         /// </summary>
-        static ExposedObject _FindExposedByName(string name)
+        static ExposedObject? _FindExposedByName(string name)
         {
             if (string.IsNullOrEmpty(name)) return null;
             foreach (var obj in ExposedObjectRegistry.instances)
             {
-                if (obj == null || !obj.isValid) continue;
+                if (!obj.isValid) continue;
                 if (obj.name != name) continue;
                 if (_ExtractGameObject(obj.target) == null) continue;
                 return obj;

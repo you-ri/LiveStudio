@@ -28,7 +28,7 @@ namespace Lilium.RemoteControl
                 if (target == null) continue;
 
                 // IExposedObjectの場合は直接exposedObjectを取得
-                ExposedObject exposed;
+                ExposedObject? exposed;
                 if (target is IExposedObject ieo)
                 {
                     exposed = ieo.exposedObject;
@@ -39,10 +39,11 @@ namespace Lilium.RemoteControl
                 }
 
                 if (exposed == null) continue;
-                if (!visited.Add(exposed)) continue;
+                var ex = exposed.Value;
+                if (!visited.Add(ex)) continue;
 
-                result.Add(exposed);
-                queue.Enqueue(exposed);
+                result.Add(ex);
+                queue.Enqueue(ex);
             }
 
             // 幅優先探索で依存ExposedObjectを収集
@@ -93,7 +94,6 @@ namespace Lilium.RemoteControl
             // BFS完了後、static classのExposedObjectを追加
             foreach (var instance in ExposedObjectRegistry.instances)
             {
-                if (instance == null) continue;
                 if (instance.targetType == null || !instance.targetType.isStatic) continue;
                 if (!visited.Add(instance)) continue;
                 result.Add(instance);
@@ -123,15 +123,16 @@ namespace Lilium.RemoteControl
             }
 
             if (exposed == null) return;
-            visited.Add(exposed);
+            var ex = exposed.Value;
+            visited.Add(ex);
 
             // ID付き/ID無しの両方を result に含める。
             // - hasId: LiveSceneToJson のトップレベル出力対象。
             // - hasId無し: 呼び出し側が SetDefault/EnsureDefaultsCaptured で
             //   inline 子オブジェクトの defaults を登録できるように含める（pending delta 判定に必要）。
             //   LiveSceneToJson 側では hasId チェックで出力はスキップされる。
-            result.Add(exposed);
-            queue.Enqueue(exposed);
+            result.Add(ex);
+            queue.Enqueue(ex);
         }
     }
 }

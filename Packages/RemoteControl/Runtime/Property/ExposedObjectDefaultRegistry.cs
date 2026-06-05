@@ -44,7 +44,8 @@ namespace Lilium.RemoteControl
         {
             if (obj.target != null) return obj.target;
             if (obj.targetType?.type != null) return obj.targetType.type;
-            return obj; // フォールバック: ExposedObjectインスタンス自体
+            // フォールバック: targetType / id を非boxなキーとして使う（struct を boxing しない）
+            return (object)obj.targetType ?? obj.id;
         }
 
         // -------------------------------------------------------
@@ -57,7 +58,6 @@ namespace Lilium.RemoteControl
         /// </summary>
         public static void CaptureDefaults(ExposedObject obj, IExposedObjectResolver resolver)
         {
-            if (obj == null) return;
             var key = _GetKey(obj);
             // forPersistence: true でシリアライズし、Delta比較時のcurrent（同じくforPersistence: true）と
             // 同一条件で比較できるようにする。read-onlyプロパティは永続化不要なので除外する。
@@ -71,7 +71,6 @@ namespace Lilium.RemoteControl
         /// </summary>
         public static void Remove(ExposedObject obj)
         {
-            if (obj == null) return;
             var key = _GetKey(obj);
             _serializationBaseline.Remove(key);
             _userChangeBaseline.Remove(key);
@@ -92,7 +91,6 @@ namespace Lilium.RemoteControl
         /// </summary>
         public static JObject GetDefaults(ExposedObject obj)
         {
-            if (obj == null) return null;
             var key = _GetKey(obj);
             _serializationBaseline.TryGetValue(key, out var result);
             return result;
@@ -117,7 +115,6 @@ namespace Lilium.RemoteControl
         /// </summary>
         public static bool IsDirty(ExposedObject obj, IExposedObjectResolver resolver)
         {
-            if (obj == null) return false;
             var key = _GetKey(obj);
             var defaultJson = _GetUserChangeBaseline(key);
             if (defaultJson == null) return false;
@@ -147,7 +144,7 @@ namespace Lilium.RemoteControl
         /// </summary>
         public static bool IsPropertyDirty(ExposedObject obj, string propertyPath, IExposedObjectResolver resolver)
         {
-            if (string.IsNullOrEmpty(propertyPath) || obj == null) return false;
+            if (string.IsNullOrEmpty(propertyPath)) return false;
             var key = _GetKey(obj);
             var defaultJson = _GetUserChangeBaseline(key);
             if (defaultJson == null) return false;
@@ -170,7 +167,6 @@ namespace Lilium.RemoteControl
         /// </summary>
         public static bool HasDirtyChildProperty(ExposedObject obj, string propertyPath, IExposedObjectResolver resolver)
         {
-            if (obj == null) return false;
             if (string.IsNullOrEmpty(propertyPath)) return IsDirty(obj, resolver);
             var key = _GetKey(obj);
             var defaultJson = _GetUserChangeBaseline(key);
@@ -207,7 +203,6 @@ namespace Lilium.RemoteControl
         /// </summary>
         public static IReadOnlyCollection<string> GetDirtyProperties(ExposedObject obj, IExposedObjectResolver resolver)
         {
-            if (obj == null) return Array.Empty<string>();
             var key = _GetKey(obj);
             var defaultJson = _GetUserChangeBaseline(key);
             if (defaultJson == null) return Array.Empty<string>();
@@ -271,7 +266,7 @@ namespace Lilium.RemoteControl
         /// </summary>
         public static void ClearPropertyDirty(ExposedObject obj, string propertyPath, IExposedObjectResolver resolver)
         {
-            if (string.IsNullOrEmpty(propertyPath) || obj == null) return;
+            if (string.IsNullOrEmpty(propertyPath)) return;
             var key = _GetKey(obj);
             if (!_serializationBaseline.TryGetValue(key, out var serialBaseline))
             {
@@ -303,7 +298,7 @@ namespace Lilium.RemoteControl
         /// </summary>
         public static bool Revert(ExposedObject obj, string propertyPath, IExposedObjectResolver resolver)
         {
-            if (string.IsNullOrEmpty(propertyPath) || obj == null) return false;
+            if (string.IsNullOrEmpty(propertyPath)) return false;
             var key = _GetKey(obj);
 
             // _serializationBaselineを優先して使用する。
@@ -364,7 +359,6 @@ namespace Lilium.RemoteControl
         /// </summary>
         public static void EnsureDefaultsCaptured(ExposedObject obj, IExposedObjectResolver resolver)
         {
-            if (obj == null) return;
             var key = _GetKey(obj);
             if (!_serializationBaseline.ContainsKey(key))
             {
@@ -379,7 +373,7 @@ namespace Lilium.RemoteControl
         /// </summary>
         public static void EnsurePropertyDefaultCaptured(ExposedObject obj, string propertyPath, IExposedObjectResolver resolver)
         {
-            if (string.IsNullOrEmpty(propertyPath) || obj == null) return;
+            if (string.IsNullOrEmpty(propertyPath)) return;
 
             var key = _GetKey(obj);
             if (!_serializationBaseline.ContainsKey(key))
@@ -406,7 +400,7 @@ namespace Lilium.RemoteControl
         /// </summary>
         public static JToken GetDefaultToken(ExposedObject obj, string propertyPath)
         {
-            if (string.IsNullOrEmpty(propertyPath) || obj == null) return null;
+            if (string.IsNullOrEmpty(propertyPath)) return null;
             var key = _GetKey(obj);
             if (!_serializationBaseline.TryGetValue(key, out var defaultJson)) return null;
             return _ResolveJsonPath(defaultJson, propertyPath);

@@ -163,7 +163,7 @@ namespace Lilium.RemoteControl
                 // Containerに登録されているオブジェクト
                 instanceObjects = container.objects
                     .Where(obj => obj?.exposedObject != null)
-                    .Select(obj => obj.exposedObject);
+                    .Select(obj => obj.exposedObject.Value);
 
                 // Staticクラス
                 var staticClasses = ExposedClass.all.Values
@@ -177,8 +177,8 @@ namespace Lilium.RemoteControl
                 // TypeNameでフィルタリング
                 instanceObjects = container.objects
                     .Where(obj => obj?.exposedObject != null)
-                    .Select(obj => obj.exposedObject)
-                    .Where(obj => obj != null && (typeName == null || obj.targetTypeName == typeName));
+                    .Select(obj => obj.exposedObject.Value)
+                    .Where(obj => typeName == null || obj.targetTypeName == typeName);
 
                 // Staticクラス名指定
                 var staticClasses = ExposedClass.all.Values
@@ -221,7 +221,7 @@ namespace Lilium.RemoteControl
 
             if (exposedObject != null)
             {
-                var json = await ExecuteOnMainThread(() => ExposedPropertySerializer.ToJson(exposedObject, GetResolver()));
+                var json = await ExecuteOnMainThread(() => ExposedPropertySerializer.ToJson(exposedObject.Value, GetResolver()));
 
                 await WriteResponse(200, context.Response, json);
                 return;
@@ -323,7 +323,7 @@ namespace Lilium.RemoteControl
             var body = readBody ? await ReadRequestBody(context.Request) : null;
 
             var pipelineContext = new PropertyPipelineContext(
-                exposedObject, id, slashPath, propertyPath.Value, body);
+                exposedObject.Value, id, slashPath, propertyPath.Value, body);
 
             var result = await ExecuteOnMainThread(() => onProperty(pipelineContext));
 
@@ -530,7 +530,7 @@ namespace Lilium.RemoteControl
             var result = await ExecuteOnMainThread(() =>
             {
                 var function = _ResolveInvokeFunction(
-                    exposedObject, propertyPath, functionName, id, out var functionTarget);
+                    exposedObject.Value, propertyPath, functionName, id, out var functionTarget);
                 if (function == null)
                 {
                     return (success: false, invokeResult: (object)null);
@@ -652,7 +652,7 @@ namespace Lilium.RemoteControl
             return args;
         }
 
-        private ExposedObject FindExposedObjectById(string id)
+        private ExposedObject? FindExposedObjectById(string id)
         {
             var container = GetObjectContainer();
 
@@ -772,7 +772,7 @@ namespace Lilium.RemoteControl
                 if (child != null)
                 {
                     value = ExposedPropertySerializer.SerializeFullToJObject(
-                        child, GetResolver());
+                        child.Value, GetResolver());
                     _BroadcastParentChanged(id, value);
                 }
                 return (ok: true, error: (string)null, value: value);

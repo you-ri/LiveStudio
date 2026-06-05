@@ -149,7 +149,7 @@ namespace Lilium.RemoteControl.Tests
                 intField = 100,
                 stringField = "field_test"
             };
-            _testObject = ExposedObjectRegistry.Create(_testInstance, "test_object");
+            _testObject = ExposedObjectRegistry.Create(_testInstance, "test_object").Value;
 
             _arrayInstance = new TestArrayClass
             {
@@ -158,10 +158,10 @@ namespace Lilium.RemoteControl.Tests
                 stringList = new List<string> { "x", "y", "z" },
                 vectorList = new List<Vector3> { Vector3.zero, Vector3.one, Vector3.up }
             };
-            _arrayObject = ExposedObjectRegistry.Create(_arrayInstance, "array_object");
+            _arrayObject = ExposedObjectRegistry.Create(_arrayInstance, "array_object").Value;
 
             _enumerableInstance = new TestEnumerableClass(new[] { "alpha", "beta", "gamma" });
-            _enumerableObject = ExposedObjectRegistry.Create(_enumerableInstance, "enumerable_object");
+            _enumerableObject = ExposedObjectRegistry.Create(_enumerableInstance, "enumerable_object").Value;
 
             // TestStruct の登録
             var structDefines = new ExposedPropertyDefine[]
@@ -185,7 +185,7 @@ namespace Lilium.RemoteControl.Tests
                 structProperty = new TestStruct { intValue = 10, floatValue = 1.5f, boolValue = true },
                 structField = new TestStruct { intValue = 20, floatValue = 2.5f, boolValue = false }
             };
-            _structObject = ExposedObjectRegistry.Create(_structInstance, "struct_object");
+            _structObject = ExposedObjectRegistry.Create(_structInstance, "struct_object").Value;
         }
 
         #region Basic Tests
@@ -240,7 +240,7 @@ namespace Lilium.RemoteControl.Tests
             var validProperty = _testObject.GetProperty("intValue");
             Assert.IsTrue(validProperty.Value.isValid);
 
-            var invalidProperty = new ExposedProperty(null, null, null);
+            var invalidProperty = new ExposedProperty(null, default, null);
             Assert.IsFalse(invalidProperty.isValid);
         }
 
@@ -554,7 +554,7 @@ namespace Lilium.RemoteControl.Tests
                 }
             };
 
-            var nestedObject = ExposedObjectRegistry.Create(nestedInstance, "nested_object");
+            var nestedObject = ExposedObjectRegistry.Create(nestedInstance, "nested_object").Value;
 
             var valueProperty = nestedObject.FindProperty("value");
             Assert.IsNotNull(valueProperty);
@@ -713,7 +713,7 @@ namespace Lilium.RemoteControl.Tests
             {
                 objects = new object[] { targetInstance },
             };
-            var selectorExposedObject = ExposedObjectRegistry.Create<SelectorClass>(selectorInstance, "selector_001");
+            var selectorExposedObject = ExposedObjectRegistry.Create<SelectorClass>(selectorInstance, "selector_001").Value;
 
             // セレクタパス経由でプロパティを取得: objects[0].health
             var healthProp = selectorExposedObject.FindProperty("objects[0].health");
@@ -758,7 +758,7 @@ namespace Lilium.RemoteControl.Tests
             var targetExposedObject = ExposedObjectRegistry.Create<TargetClass>(targetInstance, "target_002");
 
             var selectorInstance = new SelectorClass { objects = new object[] { targetInstance } };
-            var selectorExposedObject = ExposedObjectRegistry.Create<SelectorClass>(selectorInstance, "selector_002");
+            var selectorExposedObject = ExposedObjectRegistry.Create<SelectorClass>(selectorInstance, "selector_002").Value;
 
             // イベント監視用の変数
             ExposedProperty? changingProperty = null;
@@ -823,7 +823,7 @@ namespace Lilium.RemoteControl.Tests
             var targetInstance = new TargetClass { health = 50, label = "NPC", scores = new List<int>() };
 
             var selectorInstance = new SelectorClass { objects = new object[] { targetInstance } };
-            var selectorExposedObject = ExposedObjectRegistry.Create<SelectorClass>(selectorInstance, "selector_003");
+            var selectorExposedObject = ExposedObjectRegistry.Create<SelectorClass>(selectorInstance, "selector_003").Value;
 
             // セレクタパス経由でプロパティを取得
             var healthProp = selectorExposedObject.FindProperty("objects[0].health");

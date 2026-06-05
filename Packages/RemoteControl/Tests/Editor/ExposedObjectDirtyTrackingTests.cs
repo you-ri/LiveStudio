@@ -95,7 +95,7 @@ namespace Lilium.RemoteControl.Tests
         public class TestDirtyRefItem : IExposedObject
         {
             public string name { get; set; }
-            public ExposedObject exposedObject => null;
+            public ExposedObject? exposedObject => null;
             public string id => null;
             public void OnEnable() { }
             public void OnDisable() { }

@@ -25,7 +25,7 @@ namespace Lilium.RemoteControl.UI.Editor
         private ObjectField _providerField;
         private ObjectField _definitionField;
 
-        private ExposedObject _selectedObject;
+        private ExposedObject? _selectedObject;
         private ScrollView _propertyScrollView;
         private MenuItem _selectedMenuItem;
 
@@ -559,7 +559,7 @@ namespace Lilium.RemoteControl.UI.Editor
             }
 
             // オブジェクトリスト表示
-            ExposedObject firstExposed = null;
+            ExposedObject? firstExposed = null;
             foreach (var obj in objects)
             {
                 var exposed = ExposedObjectRegistry.FindByTarget(obj);
@@ -576,8 +576,8 @@ namespace Lilium.RemoteControl.UI.Editor
                 row.style.marginBottom = 1;
 
                 var capturedExposed = exposed;
-                var objButton = new Button(() => _SelectObject(capturedExposed));
-                objButton.text = exposed.name;
+                var objButton = new Button(() => _SelectObject(capturedExposed.Value));
+                objButton.text = exposed.Value.name;
                 objButton.style.height = 28;
                 objButton.style.flexGrow = 1;
                 objButton.style.flexShrink = 1;
@@ -600,7 +600,7 @@ namespace Lilium.RemoteControl.UI.Editor
                     {
                         if (capturedFactory != null && capturedExposed != null)
                         {
-                            capturedFactory.DestroyObject(capturedExposed.id);
+                            capturedFactory.DestroyObject(capturedExposed.Value.id);
                         }
                         if (_selectedObject == capturedExposed)
                         {
@@ -623,7 +623,7 @@ namespace Lilium.RemoteControl.UI.Editor
             // 最初のオブジェクトを自動選択
             if (firstExposed != null)
             {
-                _SelectObject(firstExposed);
+                _SelectObject(firstExposed.Value);
             }
         }
 
@@ -643,7 +643,7 @@ namespace Lilium.RemoteControl.UI.Editor
                 var button = child.Q<Button>("obj-button");
                 if (button == null) continue;
 
-                var isSelected = button.userData as ExposedObject == _selectedObject;
+                var isSelected = button.userData as ExposedObject? == _selectedObject;
                 button.style.backgroundColor = isSelected
                     ? new Color(0.2f, 0.4f, 0.6f, 0.5f)
                     : StyleKeyword.Null;
@@ -710,7 +710,7 @@ namespace Lilium.RemoteControl.UI.Editor
                         foreach (var child in _objectList.Children())
                         {
                             var button = child.Q<Button>("obj-button");
-                            if (button != null && button.userData as ExposedObject == capturedObj)
+                            if (button != null && button.userData as ExposedObject? == capturedObj)
                             {
                                 button.text = evt.newValue;
                                 break;
@@ -912,7 +912,8 @@ namespace Lilium.RemoteControl.UI.Editor
 
         private void _UpdateObjectPropertyValues()
         {
-            if (_selectedObject == null || !_selectedObject.isValid || _propertyScrollView == null) return;
+            if (_selectedObject == null || !_selectedObject.Value.isValid || _propertyScrollView == null) return;
+            var selected = _selectedObject.Value;
 
             _isUpdatingUI = true;
             try
@@ -921,7 +922,7 @@ namespace Lilium.RemoteControl.UI.Editor
                 var headerNameField = _propertyArea.Q<TextField>("header-name-field");
                 if (headerNameField != null)
                 {
-                    var nameProp = _selectedObject.FindProperty("name");
+                    var nameProp = selected.FindProperty("name");
                     if (nameProp.HasValue)
                     {
                         var nameValue = nameProp.Value.GetValue() as string;
@@ -934,7 +935,7 @@ namespace Lilium.RemoteControl.UI.Editor
                                 foreach (var child in _objectList.Children())
                                 {
                                     var button = child.Q<Button>("obj-button");
-                                    if (button != null && button.userData as ExposedObject == _selectedObject)
+                                    if (button != null && button.userData as ExposedObject? == _selectedObject)
                                     {
                                         button.text = nameValue;
                                         break;
@@ -950,10 +951,10 @@ namespace Lilium.RemoteControl.UI.Editor
                     var propName = child.userData as string;
                     if (propName == null) continue;
 
-                    var propType = _selectedObject.targetType?.FindProperty(propName);
+                    var propType = selected.targetType?.FindProperty(propName);
                     if (propType == null) continue;
 
-                    var prop = _selectedObject.FindProperty(propName);
+                    var prop = selected.FindProperty(propName);
                     object value = null;
                     try { if (prop.HasValue) value = prop.Value.GetValue(); } catch { }
 
@@ -973,7 +974,7 @@ namespace Lilium.RemoteControl.UI.Editor
                     var nameLabel = child.Q<Label>("prop-name");
                     if (nameLabel != null)
                     {
-                        nameLabel.style.unityFontStyleAndWeight = _selectedObject.IsPropertyDirty(propName)
+                        nameLabel.style.unityFontStyleAndWeight = selected.IsPropertyDirty(propName)
                             ? FontStyle.Bold
                             : FontStyle.Normal;
                     }
