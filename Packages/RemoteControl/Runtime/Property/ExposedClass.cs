@@ -412,17 +412,32 @@ namespace Lilium.RemoteControl
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
         private static void _RegisterStaticExposedObjects()
         {
+            // 静的 cctor の _RegisterAllTypesFromAttributes() は ExposedClass への最初の
+            // アクセスで走るが、それがゲームアセンブリ (LiveStudio 等) の読み込み前に
+            // 起きると走査が一部のアセンブリしか見られず、static [ExposedClass] 型が
+            // _all から欠落する。static 型は lazy 登録経路を持たない (Find(string) は
+            // 属性から登録しない) ため、一度欠落するとドメイン生存中ずっと出てこない。
+            // ここで走査をやり直す。本メソッドの呼び出し元 (再生時の AfterAssembliesLoaded /
+            // エディタの InitializeOnLoadMethod) はどちらも全アセンブリ読み込み後に走るため、
+            // static 型を確実に拾える。
+            _RegisterAllTypesFromAttributes();
+
+            // 静的クラスを先にスナップショットしておく。static ExposedObjectHandle の生成は
+            // 既定値キャプチャ (SetDefault) を伴い、その過程で別の型が lazy 登録されて
+            // _all が列挙中に変化しうるため、直接 _all を foreach しない。
+            var staticClasses = new List<ExposedClass>();
             foreach (var kvp in _all)
             {
-                var exposedClass = kvp.Value;
-                if (exposedClass.isStatic)
-                {
-                    // 既に登録済みならスキップ
-                    if (ExposedObjectRegistry.FindById(exposedClass.typeName) != null)
-                        continue;
+                if (kvp.Value.isStatic) staticClasses.Add(kvp.Value);
+            }
 
-                    new ExposedObjectHandle(exposedClass.typeName, exposedClass, null);
-                }
+            foreach (var exposedClass in staticClasses)
+            {
+                // 既に登録済みならスキップ
+                if (ExposedObjectRegistry.FindById(exposedClass.typeName) != null)
+                    continue;
+
+                new ExposedObjectHandle(exposedClass.typeName, exposedClass, null);
             }
         }
 
@@ -465,7 +480,8 @@ namespace Lilium.RemoteControl
         public static void Reset()
         {
             Clear();
-            _RegisterAllTypesFromAttributes();
+            // _RegisterStaticExposedObjects() が先頭で _RegisterAllTypesFromAttributes()
+            // を呼ぶため、ここで重ねて走査しない。
             _RegisterStaticExposedObjects();
         }
         /// <summary>
