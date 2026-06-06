@@ -21,16 +21,40 @@ namespace Lilium.RemoteControl.SourceGenerator
         {
             // Roslyn 4.3 で導入された ForAttributeWithMetadataName は使わない
             // (Unity 2022.3 の古いパッチが Roslyn 4.0 系の場合に動作させるため)
+            // [ExposedClass] は Inherited=true なので、属性を直接持たない派生型も
+            // ランタイムでは ExposedClass として登録される。型自身に属性が無いケースも
+            // 拾うため、ここでは全 TypeDeclaration を対象にし、判定は _Transform 側で行う。
             var classes = context.SyntaxProvider.CreateSyntaxProvider(
-                predicate: static (node, _) => node is TypeDeclarationSyntax tds && tds.AttributeLists.Count > 0,
+                predicate: static (node, _) => node is TypeDeclarationSyntax,
                 transform: static (ctx, _) => _Transform(ctx))
                 .Where(static c => c != null)
                 .Collect();
 
-            context.RegisterSourceOutput(classes, static (spc, list) =>
+            // ModuleInitializerAttribute は .NET 5 以降にしか無いため netstandard 互換の polyfill を
+            // emit するが、アクセス可能な定義が既に存在するアセンブリ (RemoteControl の internal polyfill が
+            // InternalsVisibleTo で見えるアセンブリ等) では二重定義となり CS0436 が出る。
+            // コンパイルに対しアクセス可能な定義があるかを調べ、無い場合のみ polyfill を emit する。
+            var emitPolyfill = context.CompilationProvider.Select(static (compilation, _) =>
             {
+                // 同名型が複数の参照アセンブリに存在すると単数版 GetTypeByMetadataName は
+                // 曖昧として null を返す。参照アセンブリを個別に走査し、現在のアセンブリから
+                // アクセス可能な ModuleInitializerAttribute が 1 つでもあれば polyfill を出力しない。
+                foreach (var reference in compilation.References)
+                {
+                    if (compilation.GetAssemblyOrModuleSymbol(reference) is not IAssemblySymbol asm)
+                        continue;
+                    var type = _FindModuleInitializerType(asm);
+                    if (type != null && compilation.IsSymbolAccessibleWithin(type, compilation.Assembly))
+                        return false;
+                }
+                return true;
+            });
+
+            context.RegisterSourceOutput(classes.Combine(emitPolyfill), static (spc, pair) =>
+            {
+                var (list, polyfill) = pair;
                 if (list.IsDefaultOrEmpty) return;
-                var source = _Emit(list);
+                var source = _Emit(list, polyfill);
                 spc.AddSource("ExposedClassDeclarationOrder.g.cs", source);
             });
         }
@@ -41,31 +65,56 @@ namespace Lilium.RemoteControl.SourceGenerator
             if (ctx.SemanticModel.GetDeclaredSymbol(typeNode) is not INamedTypeSymbol typeSymbol) return null;
             if (typeSymbol.IsGenericType) return null;
 
-            // [ExposedClass] が付いていなければスキップ
-            if (!_HasAttributeOnSymbol(typeSymbol, kExposedClassAttributeName)) return null;
+            // 継承チェーンを最も基底 → 派生の順に並べる。
+            // ランタイム (ExposedClass) はリフレクションで継承メンバーも公開対象に含むため
+            // (GetProperties/GetMethods は継承メンバーを返し、フィールドは BaseType を辿る)、
+            // 宣言順テーブルにも基底クラスのメンバーを含めないと未登録扱いになり警告が出る。
+            // 基底を先に並べることで、基底メンバーが派生メンバーより小さい宣言順 index になる。
+            var chain = new List<INamedTypeSymbol>();
+            for (var t = typeSymbol; t != null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+                chain.Add(t);
+            chain.Reverse();
+
+            // [ExposedClass] は Inherited=true (デフォルト) なので、チェーン上のいずれかの型に
+            // 直接付いていれば、この型はランタイムで ExposedClass として登録される。
+            bool isExposedClass = false;
+            foreach (var level in chain)
+            {
+                if (_HasAttributeOnSymbol(level, kExposedClassAttributeName))
+                {
+                    isExposedClass = true;
+                    break;
+                }
+            }
+            if (!isExposedClass) return null;
 
             var members = ImmutableArray.CreateBuilder<string>();
+            var seen = new HashSet<string>();
 
-            foreach (var member in typeNode.Members)
+            foreach (var level in chain)
             {
-                switch (member)
+                // 構築済みジェネリック基底 (Base<Foo>) でも、メンバー名はソース定義と同一なので
+                // OriginalDefinition のソース宣言順で列挙する。
+                foreach (var member in level.OriginalDefinition.GetMembers())
                 {
-                    case PropertyDeclarationSyntax prop:
-                        if (_HasMemberAttribute(ctx.SemanticModel, prop, kExposedPropertyAttributeName))
-                            members.Add(prop.Identifier.ValueText);
-                        break;
-                    case FieldDeclarationSyntax field:
-                        if (_HasMemberAttribute(ctx.SemanticModel, field, kExposedFieldAttributeName))
-                        {
-                            // フィールドは複数変数宣言可能 (`int a, b;`) なので全部拾う
-                            foreach (var v in field.Declaration.Variables)
-                                members.Add(v.Identifier.ValueText);
-                        }
-                        break;
-                    case MethodDeclarationSyntax method:
-                        if (_HasMemberAttribute(ctx.SemanticModel, method, kExposedFunctionAttributeName))
-                            members.Add(method.Identifier.ValueText);
-                        break;
+                    string name = null;
+                    switch (member)
+                    {
+                        case IPropertySymbol prop when _HasAttributeOnSymbol(prop, kExposedPropertyAttributeName):
+                            name = prop.Name;
+                            break;
+                        case IFieldSymbol field when _HasAttributeOnSymbol(field, kExposedFieldAttributeName):
+                            name = field.Name;
+                            break;
+                        case IMethodSymbol method when method.MethodKind == MethodKind.Ordinary
+                            && _HasAttributeOnSymbol(method, kExposedFunctionAttributeName):
+                            name = method.Name;
+                            break;
+                    }
+
+                    // 同名メンバー (派生での override / new シャドウ) は基底側を先勝ちで採用する。
+                    if (name != null && seen.Add(name))
+                        members.Add(name);
                 }
             }
 
@@ -76,18 +125,17 @@ namespace Lilium.RemoteControl.SourceGenerator
                 members.ToImmutable());
         }
 
-        static bool _HasMemberAttribute(SemanticModel model, MemberDeclarationSyntax member, string fullName)
+        // 指定アセンブリ内の System.Runtime.CompilerServices.ModuleInitializerAttribute を返す (無ければ null)。
+        // GetTypeByMetadataName は曖昧時に null を返すため、名前空間を手動で辿る。
+        static INamedTypeSymbol _FindModuleInitializerType(IAssemblySymbol assembly)
         {
-            foreach (var attrList in member.AttributeLists)
+            var ns = assembly.GlobalNamespace;
+            foreach (var part in new[] { "System", "Runtime", "CompilerServices" })
             {
-                foreach (var attr in attrList.Attributes)
-                {
-                    var symbol = model.GetSymbolInfo(attr).Symbol;
-                    if (symbol is not IMethodSymbol ctor) continue;
-                    if (ctor.ContainingType.ToDisplayString() == fullName) return true;
-                }
+                ns = ns.GetNamespaceMembers().FirstOrDefault(n => n.Name == part);
+                if (ns == null) return null;
             }
-            return false;
+            return ns.GetTypeMembers("ModuleInitializerAttribute").FirstOrDefault();
         }
 
         static bool _HasAttributeOnSymbol(ISymbol symbol, string fullName)
@@ -99,7 +147,7 @@ namespace Lilium.RemoteControl.SourceGenerator
             return false;
         }
 
-        static string _Emit(ImmutableArray<ClassInfo> classes)
+        static string _Emit(ImmutableArray<ClassInfo> classes, bool emitPolyfill)
         {
             var sb = new StringBuilder();
             sb.AppendLine("// <auto-generated/>");
@@ -136,14 +184,19 @@ namespace Lilium.RemoteControl.SourceGenerator
             sb.AppendLine("    }");
             sb.AppendLine("}");
             sb.AppendLine();
-            // ModuleInitializerAttribute polyfill (netstandard2.0 互換)
-            sb.AppendLine("#if !NET5_0_OR_GREATER");
-            sb.AppendLine("namespace System.Runtime.CompilerServices");
-            sb.AppendLine("{");
-            sb.AppendLine("    [global::System.AttributeUsage(global::System.AttributeTargets.Method, Inherited = false)]");
-            sb.AppendLine("    internal sealed class ModuleInitializerAttribute : global::System.Attribute { }");
-            sb.AppendLine("}");
-            sb.AppendLine("#endif");
+            // ModuleInitializerAttribute polyfill (netstandard2.0 互換)。
+            // アクセス可能な定義が既に存在するアセンブリでは emitPolyfill=false となり、
+            // 二重定義による CS0436 を避けるため出力しない。
+            if (emitPolyfill)
+            {
+                sb.AppendLine("#if !NET5_0_OR_GREATER");
+                sb.AppendLine("namespace System.Runtime.CompilerServices");
+                sb.AppendLine("{");
+                sb.AppendLine("    [global::System.AttributeUsage(global::System.AttributeTargets.Method, Inherited = false)]");
+                sb.AppendLine("    internal sealed class ModuleInitializerAttribute : global::System.Attribute { }");
+                sb.AppendLine("}");
+                sb.AppendLine("#endif");
+            }
 
             return sb.ToString();
         }
