@@ -4,8 +4,7 @@ using System.Text;
 namespace Lilium.RemoteControl.Reflection
 {
     /// <summary>
-    /// プロパティパスを抽象化（内部形式: DotBracket）
-    /// Unity.Properties との互換性を確保するため、内部では DotBracket 形式を使用する。
+    /// プロパティパスを抽象化（内部形式: DotBracket、例: "components[0].value"）。
     /// REST API 層でのみ Slash 形式との変換を行う。
     /// </summary>
     public readonly struct PropertyPath : IEquatable<PropertyPath>
@@ -40,28 +39,12 @@ namespace Lilium.RemoteControl.Reflection
         public string ToSlash() => ConvertToSlash(_dotBracket);
 
         /// <summary>
-        /// Unity.Properties.PropertyPath に変換
-        /// </summary>
-        public Unity.Properties.PropertyPath ToUnityPropertyPath()
-        {
-            return new Unity.Properties.PropertyPath(_dotBracket ?? string.Empty);
-        }
-
-        /// <summary>
         /// Slash形式から作成（REST API入力用）
         /// </summary>
         /// <param name="slashPath">Slash形式のパス（例: "components/0/value"）</param>
         public static PropertyPath FromSlash(string slashPath)
         {
             return new PropertyPath(ConvertFromSlash(slashPath));
-        }
-
-        /// <summary>
-        /// Unity.Properties.PropertyPath から作成
-        /// </summary>
-        public static PropertyPath FromUnityPropertyPath(Unity.Properties.PropertyPath unityPath)
-        {
-            return new PropertyPath(unityPath.ToString());
         }
 
         /// <summary>

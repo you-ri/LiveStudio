@@ -228,8 +228,11 @@ namespace Lilium.RemoteControl
                     Debug.LogWarning($"[RemoteControl] Type mismatch: cannot assign {value.GetType().Name} to {propertyType.properyInfo.PropertyType.Name}");
                     return false;
                 }
-                // staticの場合はobjにnullを渡す
-                propertyType.properyInfo.SetValue(propertyType.isStatic ? null : obj, value);
+                // staticの場合はobjにnullを渡す。Source Generator の高速 setter があれば reflection を回避する。
+                if (propertyType.setter != null)
+                    propertyType.setter(propertyType.isStatic ? null : obj, value);
+                else
+                    propertyType.properyInfo.SetValue(propertyType.isStatic ? null : obj, value);
             }
             else if (propertyType.fieldInfo != null)
             {
@@ -238,8 +241,11 @@ namespace Lilium.RemoteControl
                     Debug.LogWarning($"[RemoteControl] Type mismatch: cannot assign {value.GetType().Name} to {propertyType.fieldInfo.FieldType.Name}");
                     return false;
                 }
-                // staticの場合はobjにnullを渡す
-                propertyType.fieldInfo.SetValue(propertyType.isStatic ? null : obj, value);
+                // staticの場合はobjにnullを渡す。Source Generator の高速 setter があれば reflection を回避する。
+                if (propertyType.setter != null)
+                    propertyType.setter(propertyType.isStatic ? null : obj, value);
+                else
+                    propertyType.fieldInfo.SetValue(propertyType.isStatic ? null : obj, value);
             }
             else
             {
@@ -257,6 +263,12 @@ namespace Lilium.RemoteControl
             if (propertyType.isArrayElement)
             {
                 return GetCollectionElement(obj, propertyType.arrayIndex);
+            }
+
+            // Source Generator の高速 getter があれば reflection を回避する。
+            if (propertyType.getter != null)
+            {
+                return propertyType.getter(propertyType.isStatic ? null : obj);
             }
 
             if (propertyType.properyInfo != null)

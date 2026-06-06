@@ -89,7 +89,9 @@ namespace Lilium.RemoteControl.SourceGenerator
             if (!isExposedClass) return null;
 
             var members = ImmutableArray.CreateBuilder<string>();
+            var accessors = ImmutableArray.CreateBuilder<AccessorInfo>();
             var seen = new HashSet<string>();
+            var compilation = ctx.SemanticModel.Compilation;
 
             foreach (var level in chain)
             {
@@ -114,7 +116,13 @@ namespace Lilium.RemoteControl.SourceGenerator
 
                     // 同名メンバー (派生での override / new シャドウ) は基底側を先勝ちで採用する。
                     if (name != null && seen.Add(name))
+                    {
                         members.Add(name);
+
+                        // メソッド (ExposedFunction) はアクセサ対象外。プロパティ/フィールドのみ高速化する。
+                        var accessor = _MakeAccessor(member, compilation);
+                        if (accessor != null) accessors.Add(accessor);
+                    }
                 }
             }
 
@@ -122,7 +130,62 @@ namespace Lilium.RemoteControl.SourceGenerator
 
             return new ClassInfo(
                 typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                members.ToImmutable());
+                members.ToImmutable(),
+                accessors.ToImmutable());
+        }
+
+        // メンバーから高速アクセサ情報を生成する。生成コードがコンパイルできる
+        // (= 自由関数からアクセス可能な) メンバーのみ対象。不適格なら null を返し、
+        // ランタイムは reflection にフォールバックする。
+        static AccessorInfo _MakeAccessor(ISymbol member, Compilation compilation)
+        {
+            // メンバーが property/field でなければ対象外。
+            var property = member as IPropertySymbol;
+            var field = member as IFieldSymbol;
+            if (property == null && field == null) return null;
+            if (property != null && property.IsIndexer) return null;
+
+            // 宣言型が非ジェネリックの参照型で、かつ現在のアセンブリからアクセス可能であること。
+            // (struct はボックス化されたコピーへの set になるため対象外。ジェネリック基底は
+            //  ランタイムの DeclaringType が構築済み型になりキーが一致しないため対象外。)
+            var declaringType = member.ContainingType?.OriginalDefinition;
+            if (declaringType == null) return null;
+            if (declaringType.IsGenericType || declaringType.IsValueType) return null;
+            if (declaringType.TypeKind != TypeKind.Class) return null;
+            if (!compilation.IsSymbolAccessibleWithin(declaringType, compilation.Assembly)) return null;
+
+            var memberType = property != null ? property.Type : field.Type;
+
+            // getter: property は getter アクセサ、field はフィールド自体がアクセス可能なこと。
+            bool hasGetter;
+            if (property != null)
+                hasGetter = property.GetMethod != null
+                    && compilation.IsSymbolAccessibleWithin(property.GetMethod, compilation.Assembly);
+            else
+                hasGetter = compilation.IsSymbolAccessibleWithin(field, compilation.Assembly);
+
+            // setter: 書き込み可能 (init-only/readonly/const でない) かつ
+            //         setter アクセサ・メンバー型ともにアクセス可能なこと。
+            bool hasSetter;
+            if (property != null)
+                hasSetter = property.SetMethod != null
+                    && !property.SetMethod.IsInitOnly
+                    && compilation.IsSymbolAccessibleWithin(property.SetMethod, compilation.Assembly)
+                    && compilation.IsSymbolAccessibleWithin(memberType, compilation.Assembly);
+            else
+                hasSetter = !field.IsReadOnly && !field.IsConst
+                    && compilation.IsSymbolAccessibleWithin(field, compilation.Assembly)
+                    && compilation.IsSymbolAccessibleWithin(memberType, compilation.Assembly);
+
+            if (!hasGetter && !hasSetter) return null;
+
+            return new AccessorInfo(
+                declaringType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                member.Name,
+                memberType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                member.IsStatic,
+                hasGetter,
+                hasSetter);
         }
 
         // 指定アセンブリ内の System.Runtime.CompilerServices.ModuleInitializerAttribute を返す (無ければ null)。
@@ -182,6 +245,9 @@ namespace Lilium.RemoteControl.SourceGenerator
 
             sb.AppendLine("        }");
             sb.AppendLine("    }");
+
+            _EmitAccessors(sb, classes);
+
             sb.AppendLine("}");
             sb.AppendLine();
             // ModuleInitializerAttribute polyfill (netstandard2.0 互換)。
@@ -201,28 +267,124 @@ namespace Lilium.RemoteControl.SourceGenerator
             return sb.ToString();
         }
 
+        // 高速アクセサ登録クラスを emit する。(DeclaringType, MemberName) で重複排除する
+        // (同一の継承メンバーが複数の派生型経由で集まるため)。
+        static void _EmitAccessors(StringBuilder sb, ImmutableArray<ClassInfo> classes)
+        {
+            var emitted = new HashSet<string>();
+
+            sb.AppendLine();
+            sb.AppendLine("    [global::System.CodeDom.Compiler.GeneratedCode(\"Lilium.RemoteControl.SourceGenerator\", \"1.0\")]");
+            sb.AppendLine("    internal static class ExposedMemberAccessors");
+            sb.AppendLine("    {");
+            sb.AppendLine("        [global::System.Runtime.CompilerServices.ModuleInitializer]");
+            sb.AppendLine("        internal static void Register()");
+            sb.AppendLine("        {");
+
+            foreach (var info in classes)
+            {
+                if (info == null) continue;
+                foreach (var a in info.Accessors)
+                {
+                    if (a == null) continue;
+                    if (!emitted.Add(a.DeclaringTypeFqn + "\0" + a.MemberName)) continue;
+
+                    // static は型名直接、instance は宣言型にキャストしてアクセスする。
+                    var target = a.IsStatic ? a.DeclaringTypeFqn : "((" + a.DeclaringTypeFqn + ")o)";
+                    var getterExpr = a.HasGetter
+                        ? "(object o) => " + target + "." + a.MemberName
+                        : "null";
+                    var setterExpr = a.HasSetter
+                        ? "(object o, object v) => " + target + "." + a.MemberName + " = (" + a.MemberTypeFqn + ")v"
+                        : "null";
+
+                    sb.Append("            global::Lilium.RemoteControl.ExposedMemberAccessorTable.Register(typeof(");
+                    sb.Append(a.DeclaringTypeFqn);
+                    sb.Append("), \"");
+                    sb.Append(a.MemberName);
+                    sb.Append("\", ");
+                    sb.Append(getterExpr);
+                    sb.Append(", ");
+                    sb.Append(setterExpr);
+                    sb.AppendLine(");");
+                }
+            }
+
+            sb.AppendLine("        }");
+            sb.AppendLine("    }");
+        }
+
         sealed class ClassInfo
         {
             public string FullyQualifiedName { get; }
             public ImmutableArray<string> MemberNames { get; }
+            public ImmutableArray<AccessorInfo> Accessors { get; }
 
-            public ClassInfo(string fullyQualifiedName, ImmutableArray<string> memberNames)
+            public ClassInfo(string fullyQualifiedName, ImmutableArray<string> memberNames,
+                ImmutableArray<AccessorInfo> accessors)
             {
                 FullyQualifiedName = fullyQualifiedName;
                 MemberNames = memberNames;
+                Accessors = accessors;
             }
 
             public override bool Equals(object obj)
             {
                 return obj is ClassInfo other
                     && FullyQualifiedName == other.FullyQualifiedName
-                    && MemberNames.SequenceEqual(other.MemberNames);
+                    && MemberNames.SequenceEqual(other.MemberNames)
+                    && Accessors.SequenceEqual(other.Accessors);
             }
 
             public override int GetHashCode()
             {
                 var hash = FullyQualifiedName?.GetHashCode() ?? 0;
                 foreach (var n in MemberNames) hash = hash * 31 + (n?.GetHashCode() ?? 0);
+                foreach (var a in Accessors) hash = hash * 31 + (a?.GetHashCode() ?? 0);
+                return hash;
+            }
+        }
+
+        // 高速アクセサ 1 件分の情報。キーは DeclaringTypeFqn + MemberName。
+        sealed class AccessorInfo
+        {
+            public string DeclaringTypeFqn { get; }
+            public string MemberName { get; }
+            public string MemberTypeFqn { get; }
+            public bool IsStatic { get; }
+            public bool HasGetter { get; }
+            public bool HasSetter { get; }
+
+            public AccessorInfo(string declaringTypeFqn, string memberName, string memberTypeFqn,
+                bool isStatic, bool hasGetter, bool hasSetter)
+            {
+                DeclaringTypeFqn = declaringTypeFqn;
+                MemberName = memberName;
+                MemberTypeFqn = memberTypeFqn;
+                IsStatic = isStatic;
+                HasGetter = hasGetter;
+                HasSetter = hasSetter;
+            }
+
+            public override bool Equals(object obj)
+            {
+                return obj is AccessorInfo o
+                    && DeclaringTypeFqn == o.DeclaringTypeFqn
+                    && MemberName == o.MemberName
+                    && MemberTypeFqn == o.MemberTypeFqn
+                    && IsStatic == o.IsStatic
+                    && HasGetter == o.HasGetter
+                    && HasSetter == o.HasSetter;
+            }
+
+            public override int GetHashCode()
+            {
+                int hash = DeclaringTypeFqn?.GetHashCode() ?? 0;
+                hash = hash * 31 + (MemberName?.GetHashCode() ?? 0);
+                hash = hash * 31 + (MemberTypeFqn?.GetHashCode() ?? 0);
+                hash = hash * 31 + (IsStatic ? 1 : 0);
+                hash = hash * 31 + (HasGetter ? 1 : 0);
+                hash = hash * 31 + (HasSetter ? 1 : 0);
                 return hash;
             }
         }

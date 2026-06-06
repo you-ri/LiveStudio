@@ -720,6 +720,15 @@ namespace Lilium.RemoteControl
         /// </summary>
         public readonly FieldInfo shadowField;
 
+        /// <summary>
+        /// Source Generator が生成した高速 get/set アクセサ。non-null の場合、
+        /// <see cref="ExposedPropertyUtility.GetValueRaw"/> / <see cref="ExposedPropertyUtility.SetValueRaw"/>
+        /// は reflection の代わりにこれを呼ぶ。未登録 (struct 型 / 非アクセスメンバー等) では null で、
+        /// reflection にフォールバックする。read-only メンバーでは <see cref="setter"/> が null。
+        /// </summary>
+        public readonly Func<object, object> getter;
+        public readonly Action<object, object> setter;
+
         public readonly ControlAttribute controlAttribute;
 
         public readonly ExposedClass exposedValueClass;
@@ -927,6 +936,13 @@ namespace Lilium.RemoteControl
             this.arrayElementType = null;
             this.arrayIndex = -1;
             this.controlType = "default";
+
+            // Source Generator が登録した高速アクセサを引く (キー = メンバー宣言型 + メンバー名)。
+            // 未登録なら getter/setter は null のままで、Get/SetValueRaw は reflection にフォールバックする。
+            if (info != null)
+            {
+                ExposedMemberAccessorTable.TryGet(info.DeclaringType, info.Name, out this.getter, out this.setter);
+            }
 
             // 読み取り専用判定
             if (this.properyInfo != null)

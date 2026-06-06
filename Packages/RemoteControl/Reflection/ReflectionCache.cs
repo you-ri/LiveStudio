@@ -3,7 +3,6 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
-using Unity.Properties;
 
 namespace Lilium.RemoteControl.Reflection
 {
@@ -27,13 +26,6 @@ namespace Lilium.RemoteControl.Reflection
         // Type Attribute キャッシュ (Type) -> (attrType -> Attribute)
         private static readonly Dictionary<Type, Dictionary<Type, Attribute>> _typeAttributeCache
             = new Dictionary<Type, Dictionary<Type, Attribute>>();
-
-        // Unity.Properties.PropertyPath キャッシュ
-        private static readonly Dictionary<string, Unity.Properties.PropertyPath> _unityPathCache
-            = new Dictionary<string, Unity.Properties.PropertyPath>();
-
-        // 無効なパス（Unity.Properties で解析できない）を記録
-        private static readonly HashSet<string> _invalidUnityPaths = new HashSet<string>();
 
         #region Member Cache
 
@@ -246,53 +238,6 @@ namespace Lilium.RemoteControl.Reflection
 
         #endregion
 
-        #region Unity PropertyPath Cache
-
-        /// <summary>
-        /// Unity.Properties.PropertyPathをキャッシュから取得
-        /// </summary>
-        /// <param name="path">パス文字列</param>
-        /// <param name="unityPath">取得したPropertyPath</param>
-        /// <returns>有効なパスの場合はtrue</returns>
-        public static bool TryGetUnityPath(string path, out Unity.Properties.PropertyPath unityPath)
-        {
-            unityPath = default;
-
-            if (string.IsNullOrEmpty(path))
-                return false;
-
-            // 既に無効と判明しているパスはスキップ
-            if (_invalidUnityPaths.Contains(path))
-                return false;
-
-            if (_unityPathCache.TryGetValue(path, out unityPath))
-                return true;
-
-            // 新しいパスを作成（例外が発生する可能性あり）
-            try
-            {
-                unityPath = new Unity.Properties.PropertyPath(path);
-                _unityPathCache[path] = unityPath;
-                return true;
-            }
-            catch (ArgumentException)
-            {
-                // 負のインデックスなど、Unity.Properties でサポートされていないパス形式
-                _invalidUnityPaths.Add(path);
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// パスが無効かどうかを確認
-        /// </summary>
-        public static bool IsInvalidUnityPath(string path)
-        {
-            return !string.IsNullOrEmpty(path) && _invalidUnityPaths.Contains(path);
-        }
-
-        #endregion
-
         /// <summary>
         /// すべてのキャッシュをクリア
         /// </summary>
@@ -302,8 +247,6 @@ namespace Lilium.RemoteControl.Reflection
             _methodCache.Clear();
             _attributeCache.Clear();
             _typeAttributeCache.Clear();
-            _unityPathCache.Clear();
-            _invalidUnityPaths.Clear();
         }
     }
 }

@@ -3,15 +3,14 @@
 using System;
 using System.Collections;
 using System.Reflection;
-using Unity.Properties;
 using UnityEngine;
 
 namespace Lilium.RemoteControl.Reflection
 {
     /// <summary>
-    /// メンバーへのアクセス（get/set）を提供するシステム
-    /// static member: System.Reflection を使用
-    /// instance member: Unity.Properties 優先、フォールバックで Reflection
+    /// メンバーへのアクセス（get/set）と、型＋パスからの MemberInfo 解決を提供するユーティリティ。
+    /// 値アクセスは System.Reflection ベース。ExposedProperty の高速な値アクセスは
+    /// <see cref="ExposedPropertyUtility"/> 側 (Source Generator 生成アクセサ) が担う。
     /// </summary>
     public static class MemberAccessSystem
     {
@@ -52,8 +51,7 @@ namespace Lilium.RemoteControl.Reflection
         }
 
         /// <summary>
-        /// プロパティパスを使用して値を取得
-        /// Unity.Properties を優先し、失敗時は Reflection にフォールバック
+        /// プロパティパスを使用して値を取得（Reflection ベース、ネストパス対応）
         /// </summary>
         /// <param name="target">対象オブジェクト</param>
         /// <param name="propertyPath">プロパティパス（例: "components[0].value"）</param>
@@ -63,12 +61,6 @@ namespace Lilium.RemoteControl.Reflection
             if (target == null || string.IsNullOrEmpty(propertyPath))
                 return null;
 
-            // Unity.Properties を試みる
-            var result = _GetValueWithUnityProperties(target, propertyPath);
-            if (result != null)
-                return result;
-
-            // Reflection にフォールバック
             return _GetValueWithReflection(target, propertyPath);
         }
 
@@ -110,8 +102,7 @@ namespace Lilium.RemoteControl.Reflection
         }
 
         /// <summary>
-        /// プロパティパスを使用して値を設定
-        /// Unity.Properties を優先し、失敗時は Reflection にフォールバック
+        /// プロパティパスを使用して値を設定（Reflection ベース、ネストパス対応）
         /// </summary>
         /// <param name="target">対象オブジェクト</param>
         /// <param name="propertyPath">プロパティパス（例: "components[0].value"）</param>
@@ -122,11 +113,6 @@ namespace Lilium.RemoteControl.Reflection
             if (target == null || string.IsNullOrEmpty(propertyPath))
                 return false;
 
-            // Unity.Properties を試みる
-            if (_SetValueWithUnityProperties(target, propertyPath, value))
-                return true;
-
-            // Reflection にフォールバック
             return _SetValueWithReflection(target, propertyPath, value);
         }
 
@@ -169,43 +155,6 @@ namespace Lilium.RemoteControl.Reflection
                 return null;
 
             return GetMemberInfo(target.GetType(), propertyPath, flags);
-        }
-
-        #endregion
-
-        #region Internal - Unity.Properties
-
-        /// <summary>
-        /// Unity.Properties を使用して値を取得
-        /// </summary>
-        internal static object _GetValueWithUnityProperties(object target, string path)
-        {
-            if (!ReflectionCache.TryGetUnityPath(path, out var unityPath))
-            {
-                // 無効なパス（負のインデックスなど）
-                return null;
-            }
-
-            if (PropertyContainer.TryGetValue(ref target, unityPath, out object value))
-            {
-                return value;
-            }
-
-            return null;
-        }
-
-        /// <summary>
-        /// Unity.Properties を使用して値を設定
-        /// </summary>
-        internal static bool _SetValueWithUnityProperties(object target, string path, object value)
-        {
-            if (!ReflectionCache.TryGetUnityPath(path, out var unityPath))
-            {
-                // 無効なパス
-                return false;
-            }
-
-            return PropertyContainer.TrySetValue(ref target, unityPath, value);
         }
 
         #endregion

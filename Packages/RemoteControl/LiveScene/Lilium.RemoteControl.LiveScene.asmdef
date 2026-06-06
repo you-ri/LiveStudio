@@ -2,7 +2,6 @@
     "name": "Lilium.RemoteControl.LiveScene",
     "rootNamespace": "Lilium.RemoteControl.LiveScene",
     "references": [
-        "Unity.Properties",
         "Lilium.RemoteControl",
         "Lilium.RemoteControl.Reflection",
         "Lilium.RemoteControl.Core"
