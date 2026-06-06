@@ -2,9 +2,11 @@
 
 using System;
 using NUnit.Framework;
+using UnityEngine.TestTools.Constraints;   // AllocatingGCMemory 拡張メソッドのため必須
 using Lilium.RemoteControl;
 using Debug = UnityEngine.Debug;
 using Stopwatch = System.Diagnostics.Stopwatch;
+using ConstraintIs = UnityEngine.TestTools.Constraints.Is;
 
 namespace Lilium.RemoteControl.Tests
 {
@@ -18,6 +20,10 @@ namespace Lilium.RemoteControl.Tests
 
         [ExposedField]
         public int count;
+
+        // 参照型メンバー: getter/setter ともボックス化が無いので GC alloc ゼロを検証できる。
+        [ExposedProperty]
+        public string label { get; set; }
     }
 
     /// <summary>
@@ -50,6 +56,47 @@ namespace Lilium.RemoteControl.Tests
             Assert.AreEqual(3.5f, (float)pg(obj));
             fs(obj, 42);
             Assert.AreEqual(42, (int)fg(obj));
+        }
+
+        [Test]
+        public void GeneratedSetter_DoesNotAllocate()
+        {
+            var obj = new BenchTarget();
+            ExposedMemberAccessorTable.TryGet(typeof(BenchTarget), "speed", out _, out var setSpeed);
+            ExposedMemberAccessorTable.TryGet(typeof(BenchTarget), "count", out _, out var setCount);
+            ExposedMemberAccessorTable.TryGet(typeof(BenchTarget), "label", out _, out var setLabel);
+
+            // 値型の set はボックス済みの値を渡すため、setter 自体は unbox のみで alloc しない。
+            object boxedFloat = 2.5f;
+            object boxedInt = 7;
+            object str = "hello";
+
+            // JIT ウォームアップ (初回呼び出しのコードパス確定)。
+            setSpeed(obj, boxedFloat);
+            setCount(obj, boxedInt);
+            setLabel(obj, str);
+
+            Assert.That(() => setSpeed(obj, boxedFloat), ConstraintIs.Not.AllocatingGCMemory(),
+                "value-type property setter (boxed value) should not allocate");
+            Assert.That(() => setCount(obj, boxedInt), ConstraintIs.Not.AllocatingGCMemory(),
+                "value-type field setter (boxed value) should not allocate");
+            Assert.That(() => setLabel(obj, str), ConstraintIs.Not.AllocatingGCMemory(),
+                "reference-type property setter should not allocate");
+        }
+
+        [Test]
+        public void GeneratedGetter_ReferenceType_DoesNotAllocate()
+        {
+            var obj = new BenchTarget { label = "hello" };
+            ExposedMemberAccessorTable.TryGet(typeof(BenchTarget), "label", out var getLabel, out _);
+
+            object sink = getLabel(obj); // warmup
+            Assert.That(() => { sink = getLabel(obj); }, ConstraintIs.Not.AllocatingGCMemory(),
+                "reference-type getter returns the reference without boxing -> no allocation");
+            Assert.AreEqual("hello", sink);
+
+            // 注: 値型 getter (speed/count) は戻り値を object にボックス化するため alloc する。
+            // これは reflection と同じ本質的コストで、ゼロ alloc には raw/typed API が必要 (将来対応)。
         }
 
         [Test]
