@@ -53,17 +53,10 @@ namespace Lilium.LiveStudio.Virgo
         {
             const string kDialogTitle = "Allow Capture Ports";
 
-            var s = LiveStudioVirgoProjectSettings.Instance;
-            if (s == null)
-            {
-                Debug.LogError("[Studio] LiveStudioVirgoProjectSettings is not available.");
-                UnityEditor.EditorUtility.DisplayDialog(
-                    kDialogTitle, "LiveStudioVirgoProjectSettings is not available.", "OK");
-                return;
-            }
-
-            var ruleName = LiveStudioVirgoProjectSettings.kCaptureFirewallRuleName;
-            var ports = s.fusionCapturePorts;
+            // The rule name / ports are owned by FusionApp now. This maintenance menu must work even
+            // when no FusionApp instance exists in the open scene, so use the component's defaults.
+            var ruleName = FusionApp.kCaptureFirewallRuleName;
+            var ports = FusionApp.kDefaultCapturePorts;
 
             // The rule is idempotent and added automatically when Fusion launches, so it
             // often already exists. Report that explicitly instead of silently doing nothing.

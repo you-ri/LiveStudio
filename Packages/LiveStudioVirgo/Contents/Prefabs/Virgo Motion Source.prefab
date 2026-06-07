@@ -10,6 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 5355728489411836397}
   - component: {fileID: 6707006161498683296}
+  - component: {fileID: 6707006161498683300}
   m_Layer: 0
   m_Name: Virgo Motion Source
   m_TagString: Receiver
@@ -48,3 +49,22 @@ MonoBehaviour:
   _offsetPosition: {x: 0, y: 0, z: 0}
   _offsetRotation: {x: 0, y: 0, z: 0}
   resetCameraAtReceived: 1
+--- !u!114 &6707006161498683300
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7028464739016198538}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c29c37b6b383d8b4bbfaddaaa9cf1ab6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _fusionPathType: 1
+  _fusionApplicationPath: VirgoMotionFusion/VirgoMotionFusion.exe
+  _fusionPackageName: jp.lilium.livestudio.virgo
+  _fusionArguments: 
+  _fusionHideWindow: 1
+  _registerFusionFirewallRule: 1
+  _fusionCapturePorts: 9005-9010

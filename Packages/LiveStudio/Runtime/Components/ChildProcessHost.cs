@@ -9,7 +9,7 @@ namespace Lilium.LiveStudio
 {
     /// <summary>
     /// Shared helper to start and gracefully stop external child processes
-    /// launched from LiveStudio (e.g. ToolAppLauncher, FusionAppHost).
+    /// launched from LiveStudio (e.g. ToolAppLauncher, FusionApp).
     /// </summary>
     public static class ChildProcessHost
     {
@@ -104,6 +104,52 @@ namespace Lilium.LiveStudio
             catch (Exception ex)
             {
                 UnityEngine.Debug.LogError($"[Studio] Error requesting child stop: {ex.Message}");
+            }
+            finally
+            {
+                try { process.Dispose(); } catch { /* ignore */ }
+                process = null;
+            }
+        }
+
+        /// <summary>
+        /// Stop a child that may run EITHER windowed OR as a windowless self-quitting app, without
+        /// knowing which at call time. Both graceful paths are attempted (each is a no-op in the other
+        /// mode): <paramref name="requestGracefulShutdown"/> for a windowless app with its own quit
+        /// listener (e.g. a PID-keyed quit signal), and <see cref="Process.CloseMainWindow"/> for a
+        /// windowed app. It then waits up to <paramref name="timeoutMs"/> for a clean exit and finally
+        /// Kills as a last resort, so the child never outlives the caller. The reference is disposed and
+        /// set to null. Unlike <see cref="RequestStopAndRelease"/> this blocks until exit or timeout.
+        /// </summary>
+        public static void StopGraceful(ref Process process, Action requestGracefulShutdown, int timeoutMs = 5000)
+        {
+            if (process == null) return;
+
+            try
+            {
+                if (!process.HasExited)
+                {
+                    requestGracefulShutdown?.Invoke();
+
+                    // CloseMainWindow throws when the child has no GUI (e.g. -batchmode -nographics),
+                    // so guard on the window handle instead of catching. Refresh first because
+                    // MainWindowHandle is cached on first access and may be stale (0) otherwise.
+                    process.Refresh();
+                    if (process.MainWindowHandle != IntPtr.Zero)
+                    {
+                        process.CloseMainWindow();
+                    }
+
+                    if (!process.WaitForExit(timeoutMs))
+                    {
+                        process.Kill();
+                        UnityEngine.Debug.LogWarning("[Studio] Child application did not exit gracefully and was terminated.");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogError($"[Studio] Error stopping child application: {ex.Message}");
             }
             finally
             {

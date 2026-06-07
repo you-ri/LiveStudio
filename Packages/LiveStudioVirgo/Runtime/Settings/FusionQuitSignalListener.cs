@@ -8,7 +8,7 @@ namespace Lilium.LiveStudio.Virgo
     /// Runs inside the Fusion child process and listens for a PID-keyed graceful-quit signal from
     /// Studio (see <see cref="ChildProcessQuitSignal"/>), invoking <c>Application.Quit()</c> so
     /// Fusion's normal save-on-quit path runs instead of being hard-killed. Fusion launches with
-    /// -batchmode (FusionAppHost), so the batch-mode check is used as the "I am the Fusion child"
+    /// -batchmode (FusionApp), so the batch-mode check is used as the "I am the Fusion child"
     /// gate; an interactive Studio process is not batch mode and skips this. The alternative would
     /// be a dedicated launch-arg marker, but batch mode is sufficient and needs no extra plumbing.
     /// When this does not run, shutdown simply falls back to the existing Kill path (no data loss
