@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.21.0] - 2026-06-08
+
+### Fixed
+
+- Windows builds could leave a lingering background process after quitting, caused by a native shutdown hang related to Windows.Gaming.Input. A watchdog (`QuitTerminationGuard`) now force-terminates the process if graceful shutdown stalls.
+
 ## [0.20.12] - 2026-06-04
 
 ### Added

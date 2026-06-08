@@ -19,6 +19,7 @@ namespace Lilium.LiveStudio.Virgo
     {
         private const string kStudioBuildProfilePath = "Assets/Settings/Build Profiles/App(Windows).asset";
         private const string kStudioBuildProfileDevPath = "Assets/Settings/Build Profiles/App(Windows,Development).asset";
+        private const string kStudioBuildProfileVrcPath = "Assets/Settings/Build Profiles/App VRC(Windows).asset";
         private const string kStudioOutputFolder = "Builds/VirgoMotionStudio";
         private const string kStudioExeName = "VirgoMotionStudio.exe";
         private const string kStudioPackageName = "jp.lilium.livestudio.virgo";
@@ -43,6 +44,16 @@ namespace Lilium.LiveStudio.Virgo
         public static void BuildDevelopment()
         {
             BuildInternal(kStudioBuildProfileDevPath, "Development", "_Dev", exitOnComplete: true);
+        }
+
+        /// <summary>
+        /// コマンドラインからVRChat向けStudio Appをビルドするメソッド（Release Build）
+        /// Build Profile "App VRC(Windows)" を使用する。
+        /// Usage: Unity.exe -executeMethod Lilium.LiveStudio.Virgo.BuildStudioApp.BuildVRC
+        /// </summary>
+        public static void BuildVRC()
+        {
+            BuildInternal(kStudioBuildProfileVrcPath, "Release", "VRC", exitOnComplete: true);
         }
 
         /// <summary>

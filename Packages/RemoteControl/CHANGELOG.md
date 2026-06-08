@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.21.0] - 2026-06-08
+
+### Changed
+
+- Member access is now backed by source-generated accessors, removing the runtime dependency on `Unity.Properties` and reducing reflection overhead.
+- `ExposedObject` is now a readonly struct and was renamed to `ExposedObjectHandle`, eliminating transient view allocations during property access.
+
+### Fixed
+
+- Static `[ExposedClass]` types no longer disappear from the exposed set when their static constructor runs before all game assemblies are loaded; attributes are re-scanned after assembly load.
+- Inherited `[ExposedClass]` members are now registered in declaration order.
+
 ## [0.20.12] - 2026-06-04
 
 ### Added

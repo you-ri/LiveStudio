@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.21.0] - 2026-06-08
+
+### Changed
+
+- The Fusion process is now hosted by a `FusionApp` component instead of the static `FusionAppHost`, making Fusion hosting configurable per scene.
+
 ## [0.20.11] - 2026-06-03
 
 ### Added
