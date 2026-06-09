@@ -52,7 +52,10 @@ namespace Lilium.LiveStudio
 
         static void _Stop()
         {
-            ChildProcessHost.Stop(ref _process);
+            // The graceful "please quit" request is sent separately by RemoteControlApplicationCloser
+            // over HTTP (/api/commands/quit). Here we only post WM_CLOSE and release immediately without
+            // waiting for exit, so quitting Studio is never delayed by the Remote app.
+            ChildProcessHost.RequestCloseAndRelease(ref _process);
         }
     }
 }

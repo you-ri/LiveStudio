@@ -48,6 +48,13 @@ namespace Lilium.LiveStudio
 
         void _LoadIfFileExists()
         {
+            // パスが空（リセット要求）の場合は AvatarController の既定アバターに戻す。
+            if (string.IsNullOrEmpty(_modelFilePath))
+            {
+                GetComponent<AvatarController>()?.ResetAvatar();
+                return;
+            }
+
             if (!File.Exists(_modelFilePath))
             {
                 return;

@@ -113,6 +113,76 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
+        /// Stop a windowed child that has no PID-keyed quit signal (e.g. the Remote app) by posting
+        /// <see cref="Process.CloseMainWindow"/> (WM_CLOSE) and returning immediately WITHOUT waiting
+        /// for or forcing exit, so the parent's own shutdown is never delayed; the child is responsible
+        /// for closing on its own. The reference is disposed and set to null.
+        ///
+        /// Note this gives NO termination guarantee: WM_CLOSE is a request, so a child that closes to a
+        /// tray icon, runs windowless (<see cref="Process.MainWindowHandle"/> == 0), or ignores the
+        /// message keeps running. Use <see cref="RequestStopAndRelease"/> for a windowless child that
+        /// has its own quit listener, or <see cref="StopGraceful"/> when a guaranteed (but blocking) stop
+        /// is required.
+        /// </summary>
+        public static void RequestCloseAndRelease(ref Process process)
+        {
+            if (process == null) return;
+
+            try
+            {
+                if (!process.HasExited)
+                {
+                    // MainWindowHandle is cached on first access and may be stale (0); Refresh first.
+                    // CloseMainWindow is a no-op (and can throw) without a window, so guard on the handle.
+                    process.Refresh();
+                    if (process.MainWindowHandle != IntPtr.Zero)
+                    {
+                        process.CloseMainWindow();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogError($"[Studio] Error requesting child close: {ex.Message}");
+            }
+            finally
+            {
+                try { process.Dispose(); } catch { /* ignore */ }
+                process = null;
+            }
+        }
+
+        /// <summary>
+        /// Immediately force-kill a child and release the handle, with no graceful step and no wait.
+        /// Use as a fallback when no graceful quit path is available — e.g. a windowless child whose
+        /// PID-keyed quit signal could not be delivered because it is not yet listening (startup
+        /// race) or is an orphan from a previous run. Non-blocking apart from the OS kill itself; the
+        /// reference is disposed and set to null.
+        /// </summary>
+        public static void Kill(ref Process process)
+        {
+            if (process == null) return;
+
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill();
+                    UnityEngine.Debug.LogWarning("[Studio] Child application was force-terminated (no graceful quit path available).");
+                }
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogError($"[Studio] Error killing child application: {ex.Message}");
+            }
+            finally
+            {
+                try { process.Dispose(); } catch { /* ignore */ }
+                process = null;
+            }
+        }
+
+        /// <summary>
         /// Stop a child that may run EITHER windowed OR as a windowless self-quitting app, without
         /// knowing which at call time. Both graceful paths are attempted (each is a no-op in the other
         /// mode): <paramref name="requestGracefulShutdown"/> for a windowless app with its own quit

@@ -463,7 +463,8 @@ namespace Lilium.LiveStudio
             }
             if (_defaultAvatarPrefab != null)
             {
-                var newTarget = GameObjectUtility.CreateInstanceFromPrefab(_defaultAvatarPrefab);
+                // 外部アバター（ExternalAvatarSource）と同様に AvatarController GO 直下へ配置する。
+                var newTarget = GameObjectUtility.CreateInstanceFromPrefab(_defaultAvatarPrefab, this.transform);
                 _ReplaceAvatar(newTarget);
             }
         }

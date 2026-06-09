@@ -37,14 +37,16 @@ namespace Lilium.LiveStudio
         private static extern bool CloseHandle(IntPtr hObject);
 
         /// <summary>
-        /// Parent side: signal the child with the given PID to quit. No-op if no child is listening
-        /// on that PID (not running / not ready). Never blocks.
+        /// Parent side: signal the child with the given PID to quit. Returns true if a listening
+        /// child was found and signaled, false if none is listening on that PID (not running /
+        /// not yet ready). A false return tells the caller no graceful self-quit will happen, so a
+        /// hard kill is required to avoid an orphan. Never blocks.
         /// </summary>
-        public static void Signal(int pid)
+        public static bool Signal(int pid)
         {
             var handle = OpenEventW(kEventModifyState, false, _EventName(pid));
-            if (handle == IntPtr.Zero) return; // child not listening (not running / not ready)
-            try { SetEvent(handle); }
+            if (handle == IntPtr.Zero) return false; // child not listening (not running / not ready)
+            try { return SetEvent(handle); }
             finally { CloseHandle(handle); }
         }
 
@@ -87,7 +89,7 @@ namespace Lilium.LiveStudio
             thread.Start();
         }
 #else
-        public static void Signal(int pid) { }
+        public static bool Signal(int pid) => false;
         public static void StartListening(Action onQuitRequested) { }
 #endif
     }

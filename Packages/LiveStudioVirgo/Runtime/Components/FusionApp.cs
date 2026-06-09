@@ -86,12 +86,23 @@ namespace Lilium.LiveStudio.Virgo
         {
             if (_process == null) return;
 
-            // Fusion may run windowless with -batchmode (its quit listener handles the PID-keyed quit
-            // signal and save-on-quit) OR windowed without it (closed via WM_CLOSE). StopGraceful tries
-            // both, waits for a clean exit, then kills as a last resort, so the process is always
-            // terminated in lockstep with this component regardless of how it was launched.
-            int pid = _process.Id;
-            ChildProcessHost.StopGraceful(ref _process, () => ChildProcessQuitSignal.Signal(pid));
+            // Fusion runs windowless with -batchmode -nographics: with no main window it cannot
+            // receive WM_CLOSE, so termination goes through a PID-keyed named-event signal. When the
+            // signal reaches a listening Fusion, its quit listener (FusionQuitSignalListener) runs
+            // save-on-quit + Application.Quit() and exits on its own (QuitTerminationGuard inside
+            // Fusion bounds this to ~5s even if native teardown wedges), so we release the handle
+            // WITHOUT waiting and application quit / Play Mode exit is never delayed.
+            if (ChildProcessQuitSignal.Signal(_process.Id))
+            {
+                ChildProcessHost.RequestStopAndRelease(ref _process, null);
+            }
+            else
+            {
+                // No listener was reachable: Fusion is still booting (its event isn't created yet) or
+                // is an orphan from a previous run. The graceful signal was dropped and nothing will
+                // quit it, so hard-kill now to avoid a lingering process. Kill does not block.
+                ChildProcessHost.Kill(ref _process);
+            }
         }
     }
 }
