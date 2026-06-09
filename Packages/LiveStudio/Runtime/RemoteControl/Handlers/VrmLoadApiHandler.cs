@@ -210,7 +210,7 @@ namespace Lilium.LiveStudio
             // AvatarServiceを通じてVRM読み込みを実行
             // 開始通知はVRMLoader→OnVRMLoadStartedコールバック経由でSSE送信される
             // 結果はIVRMLoadObserverのコールバック経由で通知される
-            AvatarService.LoadVRM("current", filePath);
+            AvatarService.Load("current", filePath);
 
             // 注意: この時点でメソッドは終了するが、読み込みは継続中
             // OnVRMLoaded/OnVRMLoadErrorコールバックで状態がクリアされる

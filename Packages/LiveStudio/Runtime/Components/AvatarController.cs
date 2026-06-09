@@ -436,15 +436,15 @@ namespace Lilium.LiveStudio
         }
 
 
-        public void RequestLoadVRM(string filepath)
+        public void RequestLoad(string filepath)
         {
-            var vrmSource = GetComponent<VRMAvatarSource>();
-            if (vrmSource == null)
+            var avatarSource = GetComponent<ExternalAvatarSource>();
+            if (avatarSource == null)
             {
-                Debug.LogError("[Studio] VRMAvatarSource component is required to load VRM.");
+                Debug.LogError("[Studio] ExternalAvatarSource component is required to load an avatar.");
                 return;
             }
-            vrmSource.RequestLoadVRM(filepath);
+            avatarSource.RequestLoad(filepath);
         }
 
         [ContextMenu("Reset Camera")]

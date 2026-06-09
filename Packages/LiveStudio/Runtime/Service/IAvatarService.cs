@@ -22,9 +22,9 @@ namespace Lilium.LiveStudio
         event Action onAvatarChanged;
 
         /// <summary>
-        /// VRM モデルのロードを要求する。
+        /// 外部アバターファイル（.vrm / .lsavatar）のロードを要求する。
         /// </summary>
-        void RequestLoadVRM(string filepath);
+        void RequestLoad(string filepath);
 
         void ResetAvatar();
     }

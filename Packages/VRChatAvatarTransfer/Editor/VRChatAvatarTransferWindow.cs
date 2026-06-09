@@ -107,9 +107,14 @@ namespace Lilium.VRChatAvatarTransfer.Editor
 
             using (new EditorGUI.DisabledScope(convertedPrefab == null))
             {
-                if (GUILayout.Button("Export", GUILayout.Height(28)))
+                if (GUILayout.Button("Export as *.unitypackage", GUILayout.Height(28)))
                 {
                     DoExportPackage();
+                }
+
+                if (GUILayout.Button("Export as *.lsavatar", GUILayout.Height(28)))
+                {
+                    DoExportLsAvatar();
                 }
             }
 
@@ -317,6 +322,27 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             AssetDatabase.ExportPackage(filtered.ToArray(), savePath, ExportPackageOptions.Default);
             VRChatAvatarTransferLog.Info(
                 $"Exported {filtered.Count} asset(s) to '{savePath}' (excluded {skipped} dependency outside 'Assets/').");
+        }
+
+        private void DoExportLsAvatar()
+        {
+            if (convertedPrefab == null) return;
+            var assetPath = AssetDatabase.GetAssetPath(convertedPrefab);
+            if (string.IsNullOrEmpty(assetPath))
+            {
+                VRChatAvatarTransferLog.Error("Converted prefab has no asset path.");
+                return;
+            }
+
+            var defaultName = $"{Path.GetFileNameWithoutExtension(assetPath)}.lsavatar";
+            var savePath = EditorUtility.SaveFilePanel(
+                "Export .lsavatar",
+                "",
+                defaultName,
+                "lsavatar");
+            if (string.IsNullOrEmpty(savePath)) return;
+
+            LsAvatarExporter.Export(assetPath, savePath);
         }
     }
 }

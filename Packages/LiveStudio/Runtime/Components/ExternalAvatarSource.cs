@@ -1,0 +1,110 @@
+// Copyright (c) You-Ri, 2026
+
+using System;
+using System.IO;
+using System.Threading.Tasks;
+
+using UnityEngine;
+
+using Lilium.RemoteControl;
+
+namespace Lilium.LiveStudio
+{
+    /// <summary>
+    /// 外部アバターファイルを読み込むアバターソース。拡張子で .vrm / .lsavatar を判別し、
+    /// フォーマット固有処理は <see cref="IExternalAvatarLoader"/> 実装へ委譲する。
+    /// </summary>
+    [DefaultExecutionOrder(250)]
+    [ExposedClass("ExternalAvatarSource", Category = "Avatar", Icon = "deployed_code")]
+    [FormerlyExposedAs("VRMAvatarSource")]
+    public class ExternalAvatarSource : MonoBehaviour, IAvatarSource, IVRMLoadObserver
+    {
+        public event Action<GameObject> onAvatarReady;
+
+        [SerializeField]
+        [ExposedField(label = "AVATAR_MODELFILEPATH"), GLTFFileSelector("vrm", "lsavatar")]
+        [ExposedHelp("AVATAR_VRMMODELFILEPATH_HELP")]
+        string _modelFilePath;
+
+        public string modelFilePath => _modelFilePath;
+
+        public void RequestLoad(string filepath)
+        {
+            _modelFilePath = filepath;
+            _LoadIfFileExists();
+        }
+
+        void OnEnable()
+        {
+            Service<IVRMLoadObserver>.Register(this);
+            ExposedClass.Get<ExternalAvatarSource>().onPropertyChanged += OnPropertyChanged;
+        }
+
+        void OnDisable()
+        {
+            ExposedClass.Get<ExternalAvatarSource>().onPropertyChanged -= OnPropertyChanged;
+            Service<IVRMLoadObserver>.Unregister(this);
+        }
+
+        void _LoadIfFileExists()
+        {
+            if (!File.Exists(_modelFilePath))
+            {
+                return;
+            }
+
+            var ext = Path.GetExtension(_modelFilePath).ToLowerInvariant();
+            switch (ext)
+            {
+                case ".vrm":
+                    // VRM の完了通知は IVRMLoadObserver ブロードキャスト経由で OnVRMLoaded に届く。
+                    _ = new VrmExternalAvatarLoader().LoadAsync(_modelFilePath, this.transform);
+                    break;
+                case ".lsavatar":
+                    _ = _LoadLsAvatarAsync(_modelFilePath);
+                    break;
+                default:
+                    Debug.LogError($"[LiveStudio] Unsupported avatar file extension: {ext}");
+                    break;
+            }
+        }
+
+        async Task _LoadLsAvatarAsync(string path)
+        {
+            var loader = new LsAvatarLoader();
+            var instance = await loader.LoadAsync(path, this.transform);
+            loader.Dispose();
+            if (instance != null)
+            {
+                onAvatarReady?.Invoke(instance);
+            }
+        }
+
+        void OnPropertyChanged(ExposedProperty property, object oldValue)
+        {
+            if (property.PathContains(nameof(_modelFilePath)))
+            {
+                _LoadIfFileExists();
+            }
+        }
+
+        void IVRMLoadObserver.OnVRMLoadStarted(string filePath)
+        {
+        }
+
+        void IVRMLoadObserver.OnVRMLoaded(GameObject newTarget)
+        {
+            Debug.Assert(newTarget != null);
+            onAvatarReady?.Invoke(newTarget);
+        }
+
+        void IVRMLoadObserver.OnVRMLoadError(string error)
+        {
+            Debug.LogError($"[LiveStudio] VRM Load Error: {error}");
+        }
+
+        void IVRMLoadObserver.OnVRMLoadProgress(float progress)
+        {
+        }
+    }
+}

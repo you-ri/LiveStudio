@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.21.1] - 2026-06-09
+
+### Added
+
+- `ExternalAvatarSource` can now import avatars from AssetBundle files (`.lsavatar`) in addition to VRM, chosen automatically by file extension.
+
+### Changed
+
+- Renamed `VRMAvatarSource` to `ExternalAvatarSource` (the former exposed name is preserved for existing scenes). The avatar load API `RequestLoadVRM` was renamed to `RequestLoad` across `IAvatarService`, `AvatarController`, and `AvatarService`.
+- Generalized the model file field label and scoped its help text to VRM-only guidance.
+
 ## [0.21.0] - 2026-06-08
 
 ### Fixed

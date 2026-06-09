@@ -6,9 +6,9 @@ namespace Lilium.LiveStudio
 {
     public static class AvatarService
     {
-        public static void LoadVRM(string id, string filepath)
+        public static void Load(string id, string filepath)
         {
-            SelectableService<IAvatarService>.Select(id).RequestLoadVRM(filepath);
+            SelectableService<IAvatarService>.Select(id).RequestLoad(filepath);
         }
 
         public static void ResetAvatar(string id)

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.21.1] - 2026-06-09
+
+### Added
+
+- "Export as *.lsavatar" — exports a converted avatar as an AssetBundle that the Studio app can import at runtime.
+
+### Fixed
+
+- Shader variants (e.g. lilToon) are no longer stripped from the exported AssetBundle during build, preventing magenta materials when the avatar is loaded.
+
 ## [0.20.12] - 2026-06-04
 
 ### Added

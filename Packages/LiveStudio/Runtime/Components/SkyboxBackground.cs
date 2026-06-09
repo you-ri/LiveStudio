@@ -166,6 +166,10 @@ namespace Lilium.LiveStudio
 
         void _ApplyAll()
         {
+            // Ensure materials exist: OnAfterExposedDeserialize can run before OnEnable,
+            // so we cannot rely on _InitializeMaterials() having been called yet.
+            _InitializeMaterials();
+
             // Reload persisted background texture (previously done in property setter)
             _backgroundTexture?.Reload();
 
