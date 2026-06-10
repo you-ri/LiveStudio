@@ -19,9 +19,8 @@ namespace Lilium.LiveStudio.Virgo
     {
         private const string kStudioBuildProfilePath = "Assets/Settings/Build Profiles/App(Windows).asset";
         private const string kStudioBuildProfileDevPath = "Assets/Settings/Build Profiles/App(Windows,Development).asset";
-        private const string kStudioBuildProfileVrcPath = "Assets/Settings/Build Profiles/App VRC(Windows).asset";
-        private const string kStudioOutputFolder = "Builds/VirgoMotionStudio";
-        private const string kStudioExeName = "VirgoMotionStudio.exe";
+        // 出力先ルート（"Builds/<プロジェクトフォルダ名>" を導出する）。exe 名もプロジェクト名から決まる。
+        private const string kBuildsRootFolder = "Builds";
         private const string kStudioPackageName = "jp.lilium.livestudio.virgo";
         // Tools~ を持つパッケージ群。すべての Tools~ を build/Tools/ にマージコピーする。
         private static readonly string[] kToolsSourcePackages = { "jp.lilium.remotecontrol", "jp.lilium.livestudio.virgo" };
@@ -44,16 +43,6 @@ namespace Lilium.LiveStudio.Virgo
         public static void BuildDevelopment()
         {
             BuildInternal(kStudioBuildProfileDevPath, "Development", "_Dev", exitOnComplete: true);
-        }
-
-        /// <summary>
-        /// コマンドラインからVRChat向けStudio Appをビルドするメソッド（Release Build）
-        /// Build Profile "App VRC(Windows)" を使用する。
-        /// Usage: Unity.exe -executeMethod Lilium.LiveStudio.Virgo.BuildStudioApp.BuildVRC
-        /// </summary>
-        public static void BuildVRC()
-        {
-            BuildInternal(kStudioBuildProfileVrcPath, "Release", "VRC", exitOnComplete: true);
         }
 
         /// <summary>
@@ -95,17 +84,20 @@ namespace Lilium.LiveStudio.Virgo
             Debug.Log($"[Studio] Loaded Build Profile: {studioProfile.name}");
             Debug.Log($"[Studio] Build Type: {buildType}");
 
-            // パス設定
-            string projectPath = Path.GetDirectoryName(Application.dataPath); // VirgoMotionStudio
+            // パス設定。出力先はプロジェクトフォルダ名から導出する
+            // （例: VirgoMotionStudio → Builds/VirgoMotionStudio、VirgoMotionStudioVRC → Builds/VirgoMotionStudioVRC）。
+            string projectPath = Path.GetDirectoryName(Application.dataPath);
             string virgoRoot = Path.GetDirectoryName(projectPath); // Virgo
+            string projectName = Path.GetFileName(projectPath);
+            string exeName = projectName + ".exe";
 
             // 最終出力先（Developmentの場合は "_Dev" サフィックス付き）
-            string finalOutputDir = Path.Combine(virgoRoot, kStudioOutputFolder + outputSuffix);
-            string finalOutputPath = Path.Combine(finalOutputDir, kStudioExeName);
+            string finalOutputDir = Path.Combine(virgoRoot, kBuildsRootFolder, projectName + outputSuffix);
+            string finalOutputPath = Path.Combine(finalOutputDir, exeName);
 
             // 一時ビルド先（プロジェクト内のTempフォルダ）
             string tempBuildDir = Path.Combine(projectPath, kTempBuildFolder);
-            string tempOutputPath = Path.Combine(tempBuildDir, kStudioExeName);
+            string tempOutputPath = Path.Combine(tempBuildDir, exeName);
 
             Debug.Log($"[Studio] Temp build path: {tempOutputPath}");
             Debug.Log($"[Studio] Final output path: {finalOutputPath}");
@@ -134,6 +126,17 @@ namespace Lilium.LiveStudio.Virgo
                 Debug.LogError("[Studio] No scenes found in build profile!");
                 if (exitOnComplete) EditorApplication.Exit(1);
                 return;
+            }
+
+            // batchmode では起動時のアクティブシーンが未保存(path="")になる。lilToon の OnPreprocessBuild は
+            // ビルドシーンを走査後に元シーンを EditorSceneManager.OpenScene(startScenePath) で復元するが、
+            // path="" だと ArgumentException を投げる。すると lilToon のシェーダバリアント最適化が中断し、
+            // 全バリアントがコンパイルされてビルドが極端に遅くなる。実シーンを開いて回避する
+            // （エディタ実行時は既にシーンが開いているので何もしない）。
+            if (string.IsNullOrEmpty(UnityEngine.SceneManagement.SceneManager.GetActiveScene().path))
+            {
+                UnityEditor.SceneManagement.EditorSceneManager.OpenScene(scenes[0], UnityEditor.SceneManagement.OpenSceneMode.Single);
+                Debug.Log($"[Studio] Opened scene '{scenes[0]}' (batchmode) to avoid lilToon empty-active-scene build error.");
             }
 
             // ビルドオプションを設定（一時フォルダに出力）

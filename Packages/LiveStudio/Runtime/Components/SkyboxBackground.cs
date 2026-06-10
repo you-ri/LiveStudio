@@ -213,7 +213,21 @@ namespace Lilium.LiveStudio
         void _InitializeMaterials()
         {
             if (_cubemapMaterial == null)
-                _cubemapMaterial = new Material(Shader.Find("Skybox/Cubemap"));
+            {
+                // Skybox/Cubemap is a built-in shader; in player builds it is stripped unless it is
+                // referenced by a scene material or listed in Graphics > Always Included Shaders.
+                // Guard against a null shader so a missing skybox shader does not abort the caller
+                // (this runs from ExposedObjectContainer.Initialize and must not throw).
+                var cubemapShader = Shader.Find("Skybox/Cubemap");
+                if (cubemapShader == null)
+                {
+                    Debug.LogError("[Studio] Skybox/Cubemap shader not found. Add it to Graphics > Always Included Shaders for player builds.");
+                }
+                else
+                {
+                    _cubemapMaterial = new Material(cubemapShader);
+                }
+            }
 
             if (_imageMaterial == null)
             {
