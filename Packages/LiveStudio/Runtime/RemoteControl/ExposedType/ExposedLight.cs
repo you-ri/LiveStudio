@@ -65,7 +65,7 @@ namespace Lilium.LiveStudio
             set
             {
                 _shadow = value;
-                if (_reference != null) _reference.shadows = value ? LightShadows.Hard : LightShadows.None;
+                if (_reference != null) _reference.shadows = value ? LightShadows.Soft : LightShadows.None;
             }
         }
 
@@ -136,7 +136,7 @@ namespace Lilium.LiveStudio
             _reference.enabled = _enabled;
             _reference.color = _color;
             _reference.intensity = _intensity;
-            _reference.shadows = _shadow ? LightShadows.Hard : LightShadows.None;
+            _reference.shadows = _shadow ? LightShadows.Soft : LightShadows.None;
             // _transform.ApplyTo は OnEnable 経由で呼ぶと、シーン配置時に Inspector で
             // 設定された rotation を identity で上書きしてしまう。
             // JSON ロード時のみ OnAfterExposedDeserialize で適用する。

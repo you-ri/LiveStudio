@@ -1,4 +1,4 @@
-Library: C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
+Library: C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
 --platform=Windows
 --minimum-os-version=
 --backend=burst-llvm-19
@@ -10,10 +10,10 @@ Library: C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x8
 --target-framework=NetFramework
 --linker-options=PdbAltPath="VirgoMotionFusion_Data/Plugins/x86_64/lib_burst_generated.pdb"
 --generate-link-xml=Temp\burst.link.xml
---temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\Burst
+--temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\Burst
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.76f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport
---decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Library\Burst
---output=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
+--decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Library\Burst
+--output=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
 --pdb-search-paths=Temp/ManagedSymbols/
 
 --method=Unity.InferenceEngine.IParallelForBatchExtensions+ParallelForBatchJobStruct`1[[Unity.InferenceEngine.CPUBackend+PowIntIntJob, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null]], Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null::Execute(Unity.InferenceEngine.CPUBackend+PowIntIntJob&, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|Unity.Jobs.LowLevel.Unsafe.JobRanges&, UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089)--cad9b066c2a26702953c79fbfa9d4f38
@@ -127,10 +127,10 @@ Library: C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x8
 --target-framework=NetFramework
 --linker-options=PdbAltPath="VirgoMotionFusion_Data/Plugins/x86_64/lib_burst_generated.pdb"
 --generate-link-xml=Temp\burst.link.xml
---temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\Burst
+--temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\Burst
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.76f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport
---decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Library\Burst
---output=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
+--decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Library\Burst
+--output=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
 --pdb-search-paths=Temp/ManagedSymbols/
 
 --method=Unity.InferenceEngine.IParallelForBatchExtensions+ParallelForBatchJobStruct`1[[Unity.InferenceEngine.CPUBackend+PowIntIntJob, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null]], Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null::Execute(Unity.InferenceEngine.CPUBackend+PowIntIntJob&, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|Unity.Jobs.LowLevel.Unsafe.JobRanges&, UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089)--cad9b066c2a26702953c79fbfa9d4f38
@@ -245,10 +245,10 @@ Library: C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x8
 --float-mode=Fast
 --linker-options=PdbAltPath="VirgoMotionFusion_Data/Plugins/x86_64/lib_burst_generated.pdb"
 --generate-link-xml=Temp\burst.link.xml
---temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\Burst
+--temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\Burst
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.76f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport
---decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Library\Burst
---output=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
+--decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Library\Burst
+--output=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
 --pdb-search-paths=Temp/ManagedSymbols/
 
 --method=Unity.InferenceEngine.IParallelForBatchExtensions+ParallelForBatchJobStruct`1[[Unity.InferenceEngine.CPUBackend+RoiAlignJob, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null]], Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null::Execute(Unity.InferenceEngine.CPUBackend+RoiAlignJob&, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|Unity.Jobs.LowLevel.Unsafe.JobRanges&, UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089)--d42ee2bc95898300bd4529a7ed8351c6
@@ -323,10 +323,10 @@ Library: C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x8
 --float-mode=Fast
 --linker-options=PdbAltPath="VirgoMotionFusion_Data/Plugins/x86_64/lib_burst_generated.pdb"
 --generate-link-xml=Temp\burst.link.xml
---temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\Burst
+--temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\Burst
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.76f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport
---decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Library\Burst
---output=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
+--decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Library\Burst
+--output=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
 --pdb-search-paths=Temp/ManagedSymbols/
 
 --method=Unity.InferenceEngine.IParallelForBatchExtensions+ParallelForBatchJobStruct`1[[Unity.InferenceEngine.CPUBackend+RoiAlignJob, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null]], Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null::Execute(Unity.InferenceEngine.CPUBackend+RoiAlignJob&, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|Unity.Jobs.LowLevel.Unsafe.JobRanges&, UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089)--d42ee2bc95898300bd4529a7ed8351c6
@@ -400,10 +400,10 @@ Library: C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x8
 --target-framework=NetFramework
 --linker-options=PdbAltPath="VirgoMotionFusion_Data/Plugins/x86_64/lib_burst_generated.pdb"
 --generate-link-xml=Temp\burst.link.xml
---temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\Burst
+--temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\Burst
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.76f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport
---decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Library\Burst
---output=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
+--decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Library\Burst
+--output=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
 --pdb-search-paths=Temp/ManagedSymbols/
 
 --method=Unity.InferenceEngine.IParallelForBatchExtensions+ParallelForBatchJobStruct`1[[Unity.InferenceEngine.CPUBackend+WindowedDFTMatrixOutRealImaJob, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null]], Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null::Execute(Unity.InferenceEngine.CPUBackend+WindowedDFTMatrixOutRealImaJob&, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|Unity.Jobs.LowLevel.Unsafe.JobRanges&, UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089)--6409befb2e71e804502b1c7d322d2007
@@ -517,10 +517,10 @@ Library: C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x8
 --target-framework=NetFramework
 --linker-options=PdbAltPath="VirgoMotionFusion_Data/Plugins/x86_64/lib_burst_generated.pdb"
 --generate-link-xml=Temp\burst.link.xml
---temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\Burst
+--temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\Burst
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.76f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport
---decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Library\Burst
---output=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
+--decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Library\Burst
+--output=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
 --pdb-search-paths=Temp/ManagedSymbols/
 
 --method=Unity.InferenceEngine.IParallelForBatchExtensions+ParallelForBatchJobStruct`1[[Unity.InferenceEngine.CPUBackend+WindowedDFTMatrixOutRealImaJob, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null]], Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null::Execute(Unity.InferenceEngine.CPUBackend+WindowedDFTMatrixOutRealImaJob&, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|Unity.Jobs.LowLevel.Unsafe.JobRanges&, UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089)--6409befb2e71e804502b1c7d322d2007
@@ -635,10 +635,10 @@ Library: C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x8
 --float-mode=Fast
 --linker-options=PdbAltPath="VirgoMotionFusion_Data/Plugins/x86_64/lib_burst_generated.pdb"
 --generate-link-xml=Temp\burst.link.xml
---temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\Burst
+--temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\Burst
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.76f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport
---decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Library\Burst
---output=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
+--decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Library\Burst
+--output=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
 --pdb-search-paths=Temp/ManagedSymbols/
 
 --method=Unity.Jobs.IJobParallelForExtensions+ParallelForJobStruct`1[[Unity.InferenceEngine.CPUBackend+GlobalAverageVariancePoolJob, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null]], UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null::Execute(Unity.InferenceEngine.CPUBackend+GlobalAverageVariancePoolJob&, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|Unity.Jobs.LowLevel.Unsafe.JobRanges&, UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089)--910c73bd53072ad0ad2d61c12396dc96
@@ -654,10 +654,10 @@ Library: C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x8
 --float-mode=Fast
 --linker-options=PdbAltPath="VirgoMotionFusion_Data/Plugins/x86_64/lib_burst_generated.pdb"
 --generate-link-xml=Temp\burst.link.xml
---temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\Burst
+--temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\Burst
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.76f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport
---decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Library\Burst
---output=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
+--decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Library\Burst
+--output=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
 --pdb-search-paths=Temp/ManagedSymbols/
 
 --method=Unity.Jobs.IJobParallelForExtensions+ParallelForJobStruct`1[[Unity.InferenceEngine.CPUBackend+GlobalAverageVariancePoolJob, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null]], UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null::Execute(Unity.InferenceEngine.CPUBackend+GlobalAverageVariancePoolJob&, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|Unity.Jobs.LowLevel.Unsafe.JobRanges&, UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089)--910c73bd53072ad0ad2d61c12396dc96
@@ -672,10 +672,10 @@ Library: C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x8
 --target-framework=NetFramework
 --linker-options=PdbAltPath="VirgoMotionFusion_Data/Plugins/x86_64/lib_burst_generated.pdb"
 --generate-link-xml=Temp\burst.link.xml
---temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\Burst
+--temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\Burst
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.76f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport
---decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Library\Burst
---output=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
+--decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Library\Burst
+--output=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
 --pdb-search-paths=Temp/ManagedSymbols/
 
 --method=UnityEngine.Rendering.GPUResidentDrawerBurst, Unity.RenderPipelines.GPUDriven.Runtime, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null::ClassifyMaterials(Unity.Collections.NativeArray`1[[System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089]]&, UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|Unity.Collections.NativeParallelHashMap`2+ReadOnly[[System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089],[UnityEngine.Rendering.BatchMaterialID, UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null]]&, Unity.Collections, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|Unity.Collections.NativeList`1[[System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089]]&, Unity.Collections, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|Unity.Collections.NativeList`1[[System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089]]&, Unity.Collections, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|Unity.Collections.NativeList`1[[UnityEngine.Rendering.GPUDrivenPackedMaterialData, UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null]]&, Unity.Collections, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null)--f259e9421b556600f769263137cdc7bc
@@ -789,10 +789,10 @@ Library: C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x8
 --target-framework=NetFramework
 --linker-options=PdbAltPath="VirgoMotionFusion_Data/Plugins/x86_64/lib_burst_generated.pdb"
 --generate-link-xml=Temp\burst.link.xml
---temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\Burst
+--temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\Burst
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.76f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport
---decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Library\Burst
---output=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
+--decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Library\Burst
+--output=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
 --pdb-search-paths=Temp/ManagedSymbols/
 
 --method=UnityEngine.Rendering.GPUResidentDrawerBurst, Unity.RenderPipelines.GPUDriven.Runtime, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null::ClassifyMaterials(Unity.Collections.NativeArray`1[[System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089]]&, UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|Unity.Collections.NativeParallelHashMap`2+ReadOnly[[System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089],[UnityEngine.Rendering.BatchMaterialID, UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null]]&, Unity.Collections, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|Unity.Collections.NativeList`1[[System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089]]&, Unity.Collections, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|Unity.Collections.NativeList`1[[System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089]]&, Unity.Collections, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|Unity.Collections.NativeList`1[[UnityEngine.Rendering.GPUDrivenPackedMaterialData, UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null]]&, Unity.Collections, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null)--f259e9421b556600f769263137cdc7bc
@@ -906,10 +906,10 @@ Library: C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x8
 --target-framework=NetFramework
 --linker-options=PdbAltPath="VirgoMotionFusion_Data/Plugins/x86_64/lib_burst_generated.pdb"
 --generate-link-xml=Temp\burst.link.xml
---temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\Burst
+--temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\Burst
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.76f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport
---decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Library\Burst
---output=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
+--decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Library\Burst
+--output=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
 --pdb-search-paths=Temp/ManagedSymbols/
 
 --method=Minis.AnyNoteTracker, Minis, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null::GetMsbPosition128(System.UInt64, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|System.UInt64, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089)--5e49fd334e007b028b63a22747bd88fc
@@ -1023,10 +1023,10 @@ Library: C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x8
 --target-framework=NetFramework
 --linker-options=PdbAltPath="VirgoMotionFusion_Data/Plugins/x86_64/lib_burst_generated.pdb"
 --generate-link-xml=Temp\burst.link.xml
---temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\Burst
+--temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\Burst
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.76f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport
---decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Library\Burst
---output=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
+--decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Library\Burst
+--output=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
 --pdb-search-paths=Temp/ManagedSymbols/
 
 --method=Minis.AnyNoteTracker, Minis, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null::GetMsbPosition128(System.UInt64, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|System.UInt64, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089)--5e49fd334e007b028b63a22747bd88fc
@@ -1140,10 +1140,10 @@ Library: C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x8
 --target-framework=NetFramework
 --linker-options=PdbAltPath="VirgoMotionFusion_Data/Plugins/x86_64/lib_burst_generated.pdb"
 --generate-link-xml=Temp\burst.link.xml
---temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\Burst
+--temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\Burst
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.76f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport
---decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Library\Burst
---output=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
+--decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Library\Burst
+--output=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
 --pdb-search-paths=Temp/ManagedSymbols/
 
 --method=Unity.Jobs.IJobParallelForExtensions+ParallelForJobStruct`1[[Unity.Collections.SortJob`2+SegmentSort[[System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089],[Unity.Collections.NativeSortExtension+DefaultComparer`1[[System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089]], Unity.Collections, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null]], Unity.Collections, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null]], UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null::Execute(Unity.Collections.SortJob`2+SegmentSort[[System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089],[Unity.Collections.NativeSortExtension+DefaultComparer`1[[System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089]], Unity.Collections, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null]]&, Unity.Collections, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|Unity.Jobs.LowLevel.Unsafe.JobRanges&, UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089)--82ff8baa2abd920945d7abccccedb808
@@ -1196,10 +1196,10 @@ Library: C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x8
 --target-framework=NetFramework
 --linker-options=PdbAltPath="VirgoMotionFusion_Data/Plugins/x86_64/lib_burst_generated.pdb"
 --generate-link-xml=Temp\burst.link.xml
---temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\Burst
+--temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\Burst
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.76f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport
---decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Library\Burst
---output=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
+--decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Library\Burst
+--output=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
 --pdb-search-paths=Temp/ManagedSymbols/
 
 --method=Unity.Jobs.IJobParallelForExtensions+ParallelForJobStruct`1[[Unity.Collections.SortJob`2+SegmentSort[[System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089],[Unity.Collections.NativeSortExtension+DefaultComparer`1[[System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089]], Unity.Collections, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null]], Unity.Collections, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null]], UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null::Execute(Unity.Collections.SortJob`2+SegmentSort[[System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089],[Unity.Collections.NativeSortExtension+DefaultComparer`1[[System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089]], Unity.Collections, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null]]&, Unity.Collections, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|System.IntPtr, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089|Unity.Jobs.LowLevel.Unsafe.JobRanges&, UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null|System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089)--82ff8baa2abd920945d7abccccedb808
@@ -1252,10 +1252,10 @@ Library: C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x8
 --target-framework=NetFramework
 --linker-options=PdbAltPath="VirgoMotionFusion_Data/Plugins/x86_64/lib_burst_generated.pdb"
 --generate-link-xml=Temp\burst.link.xml
---temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\Burst
+--temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\Burst
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.76f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport
---decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Library\Burst
---output=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
+--decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Library\Burst
+--output=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
 --pdb-search-paths=Temp/ManagedSymbols/
 
 --method=Unity.InferenceEngine.CPUBackend+ConvJob, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null::CanUseDepthwiseConvKernel(Unity.InferenceEngine.CPUBackend+ConvJob*, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null)--39658a002cb60b47c1eee2ef5f799014
@@ -1270,10 +1270,10 @@ Library: C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x8
 --target-framework=NetFramework
 --linker-options=PdbAltPath="VirgoMotionFusion_Data/Plugins/x86_64/lib_burst_generated.pdb"
 --generate-link-xml=Temp\burst.link.xml
---temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\Burst
+--temp-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\Burst
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.76f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport
---decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudio\Library\Burst
---output=C:\Work\Lilium\Virgo\VirgoMotionStudio\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
+--decode-folder=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Library\Burst
+--output=C:\Work\Lilium\Virgo\VirgoMotionStudioURP\Temp\BurstOutput\Data\Plugins\x86_64\lib_burst_generated
 --pdb-search-paths=Temp/ManagedSymbols/
 
 --method=Unity.InferenceEngine.CPUBackend+ConvJob, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null::CanUseDepthwiseConvKernel(Unity.InferenceEngine.CPUBackend+ConvJob*, Unity.InferenceEngine, Version=2.6.1.0, Culture=neutral, PublicKeyToken=null)--39658a002cb60b47c1eee2ef5f799014
