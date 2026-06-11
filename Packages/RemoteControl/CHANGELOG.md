@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.21.2] - 2026-06-11
+
+### Fixed
+
+- `ExposedObjectUtility.InstanceIDToObject` now calls the public `Resources.InstanceIDToObject` instead of reflecting the internal `UnityEngine.Object.FindObjectFromInstanceID`, which broke on Unity 6.1 (6000.3) where its argument changed from `int` to an `EntityId` struct. The public API keeps an `int` argument across Unity 2021.3–6000.3.
+
 ## [0.21.0] - 2026-06-08
 
 ### Changed

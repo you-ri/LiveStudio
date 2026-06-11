@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.21.2] - 2026-06-11
+
+### Changed
+
+- Renamed the export buttons to "Export as UnityPackage" and "Export as LSAvatar" for clearer labels.
+
 ## [0.21.1] - 2026-06-09
 
 ### Added
