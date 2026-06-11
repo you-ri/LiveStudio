@@ -137,6 +137,16 @@ namespace Lilium.LiveStudio.Virgo
             {
                 UnityEditor.SceneManagement.EditorSceneManager.OpenScene(scenes[0], UnityEditor.SceneManagement.OpenSceneMode.Single);
                 Debug.Log($"[Studio] Opened scene '{scenes[0]}' (batchmode) to avoid lilToon empty-active-scene build error.");
+
+                // OpenScene unloads unused assets, which can destroy the BuildProfile object loaded above
+                // and make BuildPlayerWithProfileOptions throw MissingReferenceException. Re-acquire a live reference.
+                studioProfile = AssetDatabase.LoadAssetAtPath<BuildProfile>(profilePath);
+                if (studioProfile == null)
+                {
+                    Debug.LogError($"[Studio] Build Profile became null after opening scene: {profilePath}");
+                    if (exitOnComplete) EditorApplication.Exit(1);
+                    return;
+                }
             }
 
             // ビルドオプションを設定（一時フォルダに出力）

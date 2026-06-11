@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.2] - 2026-06-11
+
+### Changed
+
+- `FusionApp` now guarantees the Fusion process is terminated on shutdown: when the PID-keyed quit signal cannot be delivered (startup race or an orphan from a previous run), it hard-kills the process instead of leaving it lingering. Studio no longer blocks waiting for Fusion to exit.
+- `BuildStudioApp` derives the build output folder and exe name from the project folder (VirgoMotionStudio / VirgoMotionStudioVRC), dropping the dedicated VRC build entry point and profile path. In batchmode it opens the first build scene to avoid lilToon recompiling all shader variants.
+
 ## [0.21.0] - 2026-06-08
 
 ### Changed

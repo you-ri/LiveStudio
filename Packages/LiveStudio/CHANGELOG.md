@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.21.2] - 2026-06-11
 
 ### Added
 
@@ -9,6 +9,11 @@
 ### Changed
 
 - Quitting Studio no longer blocks waiting for child processes to exit. The Fusion process is signaled to quit and released immediately (`RequestStopAndRelease`), and the Remote app is asked to close (WM_CLOSE) and released immediately (`RequestCloseAndRelease`), instead of each blocking up to 5 seconds on `WaitForExit`.
+- The Studio build output folder and exe name are now derived from the project folder name, dropping the dedicated VRC build entry point and the App VRC build profile path.
+
+### Fixed
+
+- `SkyboxBackground` now logs an error instead of propagating a null shader when the Skybox/Cubemap shader is stripped from a player build (it runs during `ExposedObjectContainer.Initialize` and must not throw).
 
 ## [0.21.1] - 2026-06-09
 
