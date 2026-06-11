@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.21.3] - 2026-06-12
+
+### Changed
+
+- The exposed `Light`'s shadow toggle now enables soft shadows (`LightShadows.Soft`) instead of hard shadows, both in the property setter and on deserialize, for smoother shadow edges.
+
 ## [0.21.2] - 2026-06-11
 
 ### Added
