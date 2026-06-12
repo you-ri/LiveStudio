@@ -34,6 +34,9 @@ namespace Lilium.LiveStudio.Virgo
                 var bone = animator.GetBoneTransform((HumanBodyBones)i);
                 if (bone == null) continue;
                 dst.AsRotation(i) = bone.localRotation;
+                // 既定では全身を完全にトラッキング扱い。部位ごとのトラッキング判定は
+                // 上流 (合成側) が必要に応じて 0..1 で上書きする。
+                dst.AsPresence(i) = 1f;
             }
         }
 

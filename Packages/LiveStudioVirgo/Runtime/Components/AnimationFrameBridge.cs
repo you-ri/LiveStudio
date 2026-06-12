@@ -31,6 +31,13 @@ namespace Lilium.LiveStudio.Virgo
                     (int)HumanBodyBones.LastBone * CompilerUtility.QuaternionSize);
             }
 
+            fixed (float* dstPresences = dst.pose.bonePresences)
+            fixed (float* srcPresences = src.bonePresences)
+            {
+                UnsafeUtility.MemCpy(dstPresences, srcPresences,
+                    sizeof(float) * (int)HumanBodyBones.LastBone);
+            }
+
             fixed (float* dstWeights = dst.expression.weights)
             fixed (float* srcWeights = src.blendShapes)
             {

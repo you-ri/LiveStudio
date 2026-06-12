@@ -16,11 +16,10 @@ namespace Lilium.LiveStudio
     [RequireComponent(typeof(Vrm10Instance))]
     public class VRM1Avatar : MonoBehaviour, IAvatar
     {
-        private bool _isTracking = false;
-
         private Animator _animator;
 
-        private MotionSourceBase _motionSource;
+        // 体アニメ (PlayableGraph + トラッキング状態 + メッシュ表示) は driver に委譲。
+        private readonly AvatarBodyDriver _bodyDriver = new AvatarBodyDriver();
 
         [SerializeReference, Select]
         public IExpressionResolver expressionResolver = new DefaultExpressionResolver();
@@ -95,8 +94,6 @@ namespace Lilium.LiveStudio
 
             _InitializeExpressionKeys();
             _InitializeCache();
-
-            _isTracking = false;
         }
 
         void OnValidate()
@@ -117,42 +114,24 @@ namespace Lilium.LiveStudio
 
             //ResetPhysics();
 
+            // Runtime プロパティ取得 (Transform 再構成) の後に PlayableGraph を構築する。
+            _bodyDriver.Initialize(_animator);
+
             ((IAvatar)this).BuildAvatar();
         }
 
         void OnDestroy()
         {
+            _bodyDriver.Dispose();
             expressionResolver.Dispose();
         }
 
         void Update()
         {
-            if (_motionSource == null || !_motionSource.frameData.isValid)
-            {
-                if (_isTracking)
-                {
-                    // トラッキングロスト
-                    SetShowMeshes(false);
-                }
-                _isTracking = false;
-                return;
-            }
-            else
-            {
-                if (!_isTracking)
-                {
-                    // トラッキング復帰
-                    SetShowMeshes(true);
-                }
-                _isTracking = true;
-            }
+            // 体アニメ (トラッキング遷移 / メッシュ表示 / root 直書き / 姿勢の Job 受け渡し) は driver が担当。
+            if (!_bodyDriver.Tick()) return;
 
-            ref AvatarAnimationData frameData = ref _motionSource.frameData;
-
-            if (_animator != null)
-            {
-                AvatarAnimationSystem.UpdateBodyAnimation(_animator, in frameData);
-            }
+            ref AvatarAnimationData frameData = ref _bodyDriver.motionSource.frameData;
 
             expressionResolver.Resolve(in frameData.expression);
 
@@ -163,15 +142,6 @@ namespace Lilium.LiveStudio
             ApplyLookAtBones();
             ApplyLookAtExpressions();
             ApplyFacialExpressions();
-        }
-
-        void SetShowMeshes(bool visible)
-        {
-            var renderers = GetComponentsInChildren<Renderer>();
-            foreach (var renderer in renderers)
-            {
-                renderer.enabled = visible;
-            }
         }
 
 
@@ -376,21 +346,7 @@ namespace Lilium.LiveStudio
         // IAvatar implementation
         void IAvatar.BuildAvatar()
         {
-            if (_animator == null || _animator.avatar == null)
-            {
-                Debug.LogError("[Studio] VRM1Avatar: Animator or Avatar is null.");
-                return;
-            }
-
-            var humanDescription = _animator.avatar.humanDescription;
-            var avatarBuildData = AvatarBuildSystem.CreateAvatarBuildData(transform, humanDescription);
-            if (avatarBuildData.humanBones == null || avatarBuildData.humanBones.Length == 0)
-            {
-                Debug.LogError("[Studio] VRM1Avatar: Failed to extract Avatar data.");
-                return;
-            }
-
-            AvatarBuildNotifier.NotifyAvatarBuilt(in avatarBuildData);
+            AvatarBuildNotifier.BuildAndNotify(_animator, nameof(VRM1Avatar));
         }
 
         void IAvatar.SetExpressionConfig(AvatarExpressionConfig config)
@@ -400,7 +356,7 @@ namespace Lilium.LiveStudio
 
         void IAvatar.SetMotionSource(MotionSourceBase motionSource)
         {
-            _motionSource = motionSource;
+            _bodyDriver.motionSource = motionSource;
         }
 
         bool IExpressionAvatar.SetWeight(FacialKey key, float weight)

@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `HumanoidPoseData` now carries a per-bone tracking presence (`bonePresences`, 0..1). `AvatarBodyDriver`'s pose job blends the mocap pose over the avatar's animation per bone by this weight: a bone with presence 1 takes the mocap rotation fully, presence 0 leaves the animation flowing through, and values in between slerp between the two. This lets untracked body parts keep playing their `AnimatorController` animation while tracked parts follow the mocap.
+
+### Changed
+
+- `VRM1Avatar` and `VRCFTAvatar` now drive body animation through a `PlayableGraph` (new shared `AvatarBodyDriver`) instead of writing the humanoid bone transforms directly every frame. An optional `AnimatorController` on the avatar is wrapped into the graph: its animation (e.g. an idle or range-of-motion clip) plays through while tracking is lost and is overwritten by the mocap pose while tracking. Shared tracking-state handling, mesh visibility, and the avatar-build boilerplate were extracted into `AvatarBodyDriver` and `AvatarBuildNotifier.BuildAndNotify`.
+
 ## [0.21.3] - 2026-06-12
 
 ### Changed

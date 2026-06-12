@@ -13,7 +13,7 @@ namespace Lilium.LiveStudio
     /// <summary>
     /// VRC Face Tracking v2 対応アバターコンポーネント
     /// ARKit 52値を FT/v2/... Animatorパラメータに変換して書き込む
-    /// 身体アニメーションは AvatarAnimationSystem.UpdateBodyAnimation で処理
+    /// 身体アニメーションは AvatarBodyDriver (PlayableGraph) で処理
     /// </summary>
     [DefaultExecutionOrder(10)]
     [RequireComponent(typeof(Animator))]
@@ -259,8 +259,11 @@ namespace Lilium.LiveStudio
         Vector2 _eyeRotationMax = new Vector2(90f, 90f);
 
         Animator _animator;
-        MotionSourceBase _motionSource;
-        bool _isTracking;
+
+        // 体アニメ (PlayableGraph + トラッキング状態 + メッシュ表示) は driver に委譲。
+        // AnimatorController も graph 内にラップされるため、FT パラメータは
+        // driver.controllerPlayable 経由で読み書きする。
+        readonly AvatarBodyDriver _bodyDriver = new AvatarBodyDriver();
 
         float[] _targetValues;
         int[] _paramHashes;
@@ -289,26 +292,35 @@ namespace Lilium.LiveStudio
         {
             _animator = GetComponent<Animator>();
 
-            // Animatorに実際に存在するパラメータのみをフィルタ
-            var existingParams = new HashSet<int>();
-            foreach (var p in _animator.parameters)
-                existingParams.Add(p.nameHash);
-
-            // 存在するパラメータのみ初期値を設定
-            if (existingParams.Contains(Animator.StringToHash("EyeTrackingActive")))
-                _animator.SetFloat("EyeTrackingActive", 1f);
-            if (existingParams.Contains(Animator.StringToHash("LipTrackingActive")))
-                _animator.SetFloat("LipTrackingActive", 1f);
-            if (existingParams.Contains(Animator.StringToHash("ExpressionTrackingActive")))
-                _animator.SetFloat("ExpressionTrackingActive", 1f);
-            if (existingParams.Contains(Animator.StringToHash("IsLocal")))
-                _animator.SetFloat("IsLocal", 1f);
+            // 体アニメ用 PlayableGraph を構築。これ以降 AnimatorController は graph 内に
+            // ラップされるため、パラメータの読み書きは driver.controllerPlayable 経由で行う。
+            _bodyDriver.Initialize(_animator);
 
             _targetValues = new float[FT_ParamCount];
             _paramHashes = new int[FT_ParamCount];
             for (int i = 0; i < FT_ParamCount; i++)
             {
                 _paramHashes[i] = Animator.StringToHash(s_ftParamNames[i]);
+            }
+
+            // AnimatorController に実在するパラメータのみをフィルタ
+            var existingParams = new HashSet<int>();
+            if (_bodyDriver.hasControllerPlayable)
+            {
+                var ctrl = _bodyDriver.controllerPlayable;
+                int paramCount = ctrl.GetParameterCount();
+                for (int i = 0; i < paramCount; i++)
+                    existingParams.Add(ctrl.GetParameter(i).nameHash);
+
+                // 存在するパラメータのみ初期値を設定
+                if (existingParams.Contains(Animator.StringToHash("EyeTrackingActive")))
+                    ctrl.SetFloat("EyeTrackingActive", 1f);
+                if (existingParams.Contains(Animator.StringToHash("LipTrackingActive")))
+                    ctrl.SetFloat("LipTrackingActive", 1f);
+                if (existingParams.Contains(Animator.StringToHash("ExpressionTrackingActive")))
+                    ctrl.SetFloat("ExpressionTrackingActive", 1f);
+                if (existingParams.Contains(Animator.StringToHash("IsLocal")))
+                    ctrl.SetFloat("IsLocal", 1f);
             }
 
             var validIndices = new List<int>(FT_ParamCount);
@@ -328,7 +340,6 @@ namespace Lilium.LiveStudio
             }
 
             _SetupEyeBones();
-            _isTracking = false;
 
 #if VRMC_VRM10
             // Vrm10Instance が同居していれば VRM の LookAt 経由で眼球を適用する。
@@ -341,6 +352,11 @@ namespace Lilium.LiveStudio
 #endif
 
             ((IAvatar)this).BuildAvatar();
+        }
+
+        void OnDestroy()
+        {
+            _bodyDriver.Dispose();
         }
 
         void _SetupEyeBones()
@@ -363,35 +379,21 @@ namespace Lilium.LiveStudio
 
         void Update()
         {
-            if (_motionSource == null || !_motionSource.frameData.isValid)
-            {
-                if (_isTracking)
-                {
-                    _SetShowMeshes(false);
-                }
-                _isTracking = false;
-                return;
-            }
-
-            if (!_isTracking)
-            {
-                _SetShowMeshes(true);
-            }
-            _isTracking = true;
+            // 体アニメ (トラッキング遷移 / メッシュ表示 / root 直書き / 姿勢の Job 受け渡し) は driver が担当。
+            if (!_bodyDriver.Tick()) return;
 
             _ComputeTargetValues();
             _ComputeCombinedValues();
-            _WriteToAnimator();
+            _WriteToController();
             _ApplyEyeLookAt();
-
-            AvatarAnimationSystem.UpdateBodyAnimation(_animator, in _motionSource.frameData);
         }
 
         void LateUpdate()
         {
-            if (!_isTracking || _motionSource == null) return;
+            if (!_bodyDriver.isTracking) return;
 
-            AvatarAnimationSystem.UpdateBodyAnimation(_animator, in _motionSource.frameData);
+            // 体は PlayableGraph の Job が AnimatorController の下流で姿勢を上書きするため、
+            // ここでの体の再書き込みは不要 (旧実装の Controller 上書き対策)。
 
 #if VRMC_VRM10
             // VRM 委譲時は Vrm10Instance の Process(order 11000) が眼球を適用するため
@@ -419,7 +421,7 @@ namespace Lilium.LiveStudio
 
         unsafe void _ComputeTargetValues()
         {
-            ref var frame = ref _motionSource.frameData;
+            ref var frame = ref _bodyDriver.motionSource.frameData;
             fixed (float* bs = frame.expression.weights)
             {
                 // EyeLid (special)
@@ -586,12 +588,17 @@ namespace Lilium.LiveStudio
         }
 
 
-        void _WriteToAnimator()
+        void _WriteToController()
         {
+            // AnimatorController は PlayableGraph 内にラップされているため、
+            // Animator.SetFloat ではなく controllerPlayable.SetFloat に書き込む。
+            if (!_bodyDriver.hasControllerPlayable) return;
+
+            var ctrl = _bodyDriver.controllerPlayable;
             for (int i = 0; i < _validParamIndices.Length; i++)
             {
                 int idx = _validParamIndices[i];
-                _animator.SetFloat(_paramHashes[idx], _targetValues[idx]);
+                ctrl.SetFloat(_paramHashes[idx], _targetValues[idx]);
             }
         }
 
@@ -615,33 +622,11 @@ namespace Lilium.LiveStudio
             }
         }
 
-        void _SetShowMeshes(bool visible)
-        {
-            var renderers = GetComponentsInChildren<Renderer>();
-            foreach (var renderer in renderers)
-            {
-                renderer.enabled = visible;
-            }
-        }
-
         #region IAvatar
 
         void IAvatar.BuildAvatar()
         {
-            if (_animator == null || _animator.avatar == null)
-            {
-                return;
-            }
-
-            var humanDescription = _animator.avatar.humanDescription;
-            var avatarBuildData = AvatarBuildSystem.CreateAvatarBuildData(transform, humanDescription);
-            if (avatarBuildData.humanBones == null || avatarBuildData.humanBones.Length == 0)
-            {
-                Debug.LogError("[Studio] VRCFTAvatar: Failed to extract Avatar data.");
-                return;
-            }
-
-            AvatarBuildNotifier.NotifyAvatarBuilt(in avatarBuildData);
+            AvatarBuildNotifier.BuildAndNotify(_animator, nameof(VRCFTAvatar));
         }
 
         void IAvatar.SetExpressionConfig(AvatarExpressionConfig config)
@@ -651,7 +636,7 @@ namespace Lilium.LiveStudio
 
         void IAvatar.SetMotionSource(MotionSourceBase motionSource)
         {
-            _motionSource = motionSource;
+            _bodyDriver.motionSource = motionSource;
         }
 
         bool IExpressionAvatar.SetWeight(FacialKey key, float weight)

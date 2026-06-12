@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- The `AnimationFrameData` wire frame now carries a per-bone tracking presence array (`bonePresences`, 0..1), bridged into `HumanoidPoseData.bonePresences` so the Studio avatar can blend the mocap pose with its own animation per bone. `AnimationSystem.MakeAnimationFrameData` currently fills every tracked bone with presence 1 (full-body tracking); the synthesis side can lower individual bones to let their animation flow through.
+
+### Changed
+
+- **Wire format change**: `AnimationFrameData` grew by the per-bone presence array, so its serialized size changed. The Fusion app and Studio validate frames by exact struct size, so the Fusion executable must be rebuilt for Studio to accept frames again (an older Fusion build is rejected as an invalid size).
+
 ## [0.21.2] - 2026-06-11
 
 ### Changed

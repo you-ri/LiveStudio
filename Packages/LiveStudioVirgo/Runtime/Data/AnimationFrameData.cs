@@ -41,6 +41,10 @@ namespace Lilium.LiveStudio.Virgo
 
         public Vector2 eyeDirection;
 
+        // ボーンごとのトラッキング状態 (0..1)。1 = 完全にトラッキング (モーキャプ姿勢を採用)、
+        // 0 = 未トラッキング (受信側でアニメーションを流す)。HumanBodyBones インデックスに対応。
+        public fixed float bonePresences[(int)HumanBodyBones.LastBone];
+
         public ref Quaternion AsRotation(int index)
         {
             Debug.Assert(index >= 0 && index < (int)HumanBodyBones.LastBone);
@@ -51,6 +55,12 @@ namespace Lilium.LiveStudio.Virgo
         {
             Debug.Assert(index >= 0 && index < kBlendShapeCount);
             return ref UnsafeUtility.AsRef<float>(UnsafeUtility.AddressOf(ref blendShapes[index * sizeof(float)]));
+        }
+
+        public ref float AsPresence(int index)
+        {
+            Debug.Assert(index >= 0 && index < (int)HumanBodyBones.LastBone);
+            return ref UnsafeUtility.AsRef<float>(UnsafeUtility.AddressOf(ref bonePresences[index]));
         }
     }
 }
