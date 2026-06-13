@@ -6,7 +6,8 @@
         "SpringBoneJobs",
         "VRC.SDKBase",
         "VRC.SDK3A",
-        "Lilium.LiveStudio"
+        "Lilium.LiveStudio",
+        "Lilium.LiveStudio.Editor"
     ],
     "includePlatforms": [
         "Editor"

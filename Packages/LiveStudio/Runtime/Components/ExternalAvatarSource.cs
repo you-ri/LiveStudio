@@ -11,7 +11,7 @@ using Lilium.RemoteControl;
 namespace Lilium.LiveStudio
 {
     /// <summary>
-    /// 外部アバターファイルを読み込むアバターソース。拡張子で .vrm / .lsavatar を判別し、
+    /// 外部アバターファイルを読み込むアバターソース。拡張子で .vrm / .avatar.lsb (旧 .lsavatar) を判別し、
     /// フォーマット固有処理は <see cref="IExternalAvatarLoader"/> 実装へ委譲する。
     /// </summary>
     [DefaultExecutionOrder(250)]
@@ -21,8 +21,10 @@ namespace Lilium.LiveStudio
     {
         public event Action<GameObject> onAvatarReady;
 
+        // ファイルダイアログは最終拡張子で絞るため "lsb" を渡し、選択後に複合サフィックスを検証する。
+        // 旧 ".lsavatar" も後方互換のため受理する。
         [SerializeField]
-        [ExposedField(label = "AVATAR_MODELFILEPATH"), GLTFFileSelector("vrm", "lsavatar")]
+        [ExposedField(label = "AVATAR_MODELFILEPATH"), GLTFFileSelector("vrm", "lsb", "lsavatar")]
         [ExposedHelp("AVATAR_VRMMODELFILEPATH_HELP")]
         string _modelFilePath;
 
@@ -60,19 +62,20 @@ namespace Lilium.LiveStudio
                 return;
             }
 
-            var ext = Path.GetExtension(_modelFilePath).ToLowerInvariant();
-            switch (ext)
+            // .scene.lsb と .avatar.lsb はどちらも Path.GetExtension では ".lsb" になるため、
+            // 複合サフィックスで判別する。
+            if (_modelFilePath.EndsWith(".vrm", StringComparison.OrdinalIgnoreCase))
             {
-                case ".vrm":
-                    // VRM の完了通知は IVRMLoadObserver ブロードキャスト経由で OnVRMLoaded に届く。
-                    _ = new VrmExternalAvatarLoader().LoadAsync(_modelFilePath, this.transform);
-                    break;
-                case ".lsavatar":
-                    _ = _LoadLsAvatarAsync(_modelFilePath);
-                    break;
-                default:
-                    Debug.LogError($"[LiveStudio] Unsupported avatar file extension: {ext}");
-                    break;
+                // VRM の完了通知は IVRMLoadObserver ブロードキャスト経由で OnVRMLoaded に届く。
+                _ = new VrmExternalAvatarLoader().LoadAsync(_modelFilePath, this.transform);
+            }
+            else if (LiveStudioBundle.IsAvatarBundle(_modelFilePath))
+            {
+                _ = _LoadLsAvatarAsync(_modelFilePath);
+            }
+            else
+            {
+                Debug.LogError($"[LiveStudio] Unsupported avatar file: {_modelFilePath}");
             }
         }
 

@@ -1,18 +1,21 @@
 // Copyright (c) You-Ri, 2026
+
 using System;
 using System.Reflection;
+
 using UnityEditor;
 using UnityEngine;
 
-namespace Lilium.VRChatAvatarTransfer.Editor
+namespace Lilium.LiveStudio.Editor
 {
     /// <summary>
-    /// AssetBundle ビルド中だけ URP の StripUnusedVariants を一時的に無効化するスコープ。
-    /// 有効のままだと lilToon 等の shader_feature_local バリアントが「未使用」と判定されて削られ、
-    /// .lsavatar ロード時に紫(マゼンタ)になる。<see cref="Dispose"/> で元の値へ必ず戻す。
+    /// Temporarily disables URP's "Strip Unused Variants" for the duration of an AssetBundle build.
+    /// Left enabled, it drops <c>shader_feature_local</c> variants (e.g. lilToon) as "unused",
+    /// which makes bundled materials render magenta when the bundle is loaded later.
+    /// <see cref="Dispose"/> always restores the original value.
     ///
-    /// パッケージとして任意プロジェクトに導入しても機能するよう、URP をハード参照せず reflection で扱う。
-    /// 非 URP プロジェクトや解決不可時は no-op。
+    /// URP is reached through reflection so this works in any project without a hard dependency;
+    /// in non-URP projects or when the setting cannot be resolved it is a no-op.
     /// </summary>
     internal readonly struct UrpShaderStrippingOverride : IDisposable
     {
@@ -30,25 +33,25 @@ namespace Lilium.VRChatAvatarTransfer.Editor
         }
 
         /// <summary>
-        /// URP の StripUnusedVariants を 0 に設定したスコープを返す。
-        /// URP 未使用・解決不可・既に 0 の場合は何もしない no-op スコープ。
+        /// Returns a scope that has set URP's StripUnusedVariants to 0. When URP is absent, the
+        /// setting cannot be resolved, or it is already 0, returns a no-op scope.
         /// </summary>
         public static UrpShaderStrippingOverride DisableUnusedVariantStripping()
         {
             var instance = _GetUrpGlobalSettings();
-            if (instance == null) return default; // 非 URP プロジェクト等
+            if (instance == null) return default; // Non-URP project, etc.
 
             var serializedObject = new SerializedObject(instance);
             var property = serializedObject.FindProperty(kPropertyPath);
             if (property == null)
             {
-                VRChatAvatarTransferLog.Error(
-                    $"URP global settings found but '{kPropertyPath}' was not resolved (URP version mismatch?); shader variant stripping not overridden.");
+                Debug.LogError(
+                    $"[LiveStudio] URP global settings found but '{kPropertyPath}' was not resolved (URP version mismatch?); shader variant stripping not overridden.");
                 return default;
             }
 
             var original = property.intValue;
-            if (original == 0) return default; // 既に無効。触らない。
+            if (original == 0) return default; // Already disabled; leave it alone.
 
             property.intValue = 0;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();

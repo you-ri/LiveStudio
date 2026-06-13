@@ -112,7 +112,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     DoExportPackage();
                 }
 
-                if (GUILayout.Button("Export as LSAvatar", GUILayout.Height(28)))
+                if (GUILayout.Button("Export as Avatar Bundle (.avatar.lsb)", GUILayout.Height(28)))
                 {
                     DoExportLsAvatar();
                 }
@@ -334,13 +334,25 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 return;
             }
 
-            var defaultName = $"{Path.GetFileNameWithoutExtension(assetPath)}.lsavatar";
+            const string kExtension = ".avatar.lsb";
+            var defaultName = $"{Path.GetFileNameWithoutExtension(assetPath)}{kExtension}";
             var savePath = EditorUtility.SaveFilePanel(
-                "Export .lsavatar",
+                "Export Avatar Bundle",
                 "",
                 defaultName,
-                "lsavatar");
+                "lsb");
             if (string.IsNullOrEmpty(savePath)) return;
+
+            // SaveFilePanel は最終拡張子しか扱えないため、複合サフィックスを保証する。
+            if (!savePath.EndsWith(kExtension, System.StringComparison.OrdinalIgnoreCase))
+            {
+                savePath = Path.ChangeExtension(savePath, null);
+                if (savePath.EndsWith(".avatar", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    savePath = savePath.Substring(0, savePath.Length - ".avatar".Length);
+                }
+                savePath += kExtension;
+            }
 
             LsAvatarExporter.Export(assetPath, savePath);
         }
