@@ -11,6 +11,7 @@
     "BACKGROUND_TEXTURE": "Cubemap模式请指定360度图像，Image模式请指定2D图像。",
     "SCREEN_USESPOUT": "启用后可通过Spout向OBS输出视频。启用期间应用画面将停止更新。",
     "CAMERA_LOCKROLL": "锁定横滚",
+    "CAMERA_CHANNELINDEX": "通道",
     "CAMERA_SWITCH": "切换",
     "SECTION_QUALITY_TITLE": "渲染质量",
     "SECTION_QUALITY_SUBTITLE": "设置渲染质量级别",

@@ -11,6 +11,7 @@
     "BACKGROUND_TEXTURE": "Specify a 360-degree image for Cubemap mode, or a 2D image for Image mode.",
     "SCREEN_USESPOUT": "Enables video output to OBS via Spout. While active, the app screen will stop updating.",
     "CAMERA_LOCKROLL": "Lock Roll",
+    "CAMERA_CHANNELINDEX": "Channel",
     "CAMERA_SWITCH": "Switch",
     "SECTION_QUALITY_TITLE": "Rendering Quality",
     "SECTION_QUALITY_SUBTITLE": "Set the rendering quality level",

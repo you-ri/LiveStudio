@@ -22,12 +22,24 @@ namespace Lilium.LiveStudio
         [Tooltip("Capture channel index to follow (0 = channel0, 1 = channel1).")]
         private int _channelIndex = 0;
 
+        /// <summary>
+        /// 追従するキャプチャーチャンネル (0 = channel0, 1 = channel1)。
+        /// このトラッカーは CaptureCameraController が transient に生成・破棄するため、
+        /// 値はコントローラー側から Setup 時に焼き込まれる。
+        /// </summary>
+        public int channelIndex
+        {
+            get => _channelIndex;
+            set => _channelIndex = value;
+        }
+
         private CinemachineCamera _virtualCamera;
 
         void Awake()
         {
             _virtualCamera = GetComponent<CinemachineCamera>();
         }
+
 
         void Update()
         {

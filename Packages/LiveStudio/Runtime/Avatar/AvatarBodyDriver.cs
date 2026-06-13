@@ -132,6 +132,11 @@ namespace Lilium.LiveStudio
             _animator = animator;
             _renderers = animator.GetComponentsInChildren<Renderer>(true);
 
+            // controller は未トラッキング部位のアニメ流し込み専用。root はあくまで mocap が
+            // 権威 (UpdateRoot で毎フレーム書く) なので、graph 内で再生される controller の
+            // root motion がアバター全体を動かして沈めないよう無効化する。
+            animator.applyRootMotion = false;
+
             _graph = PlayableGraph.Create($"{animator.name}.AvatarBody");
             _graph.SetTimeUpdateMode(DirectorUpdateMode.GameTime);
 

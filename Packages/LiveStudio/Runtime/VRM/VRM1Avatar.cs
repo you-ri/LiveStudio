@@ -346,6 +346,10 @@ namespace Lilium.LiveStudio
         // IAvatar implementation
         void IAvatar.BuildAvatar()
         {
+            // BuildAvatar は Instantiate 直後 (Start 実行前) に同期呼びされることがあり、
+            // その場合 _Initialize で代入される _animator がまだ null になる。
+            // SetupAvatar 側で有効な Animator の存在は保証済みなので、ここで遅延解決する。
+            if (_animator == null) _animator = GetComponent<Animator>();
             AvatarBuildNotifier.BuildAndNotify(_animator, nameof(VRM1Avatar));
         }
 
