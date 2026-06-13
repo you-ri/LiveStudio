@@ -10,6 +10,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using System.Runtime.InteropServices;
+using Unity.Collections.LowLevel.Unsafe;
 using Lilium.RemoteControl;
 
 namespace Lilium.LiveStudio.Virgo
@@ -18,7 +19,16 @@ namespace Lilium.LiveStudio.Virgo
     [StructLayout(LayoutKind.Sequential)]
     public struct CameraData
     {
-        static CameraData() => CompilerUtility.CheckUnmanaged<CameraData>();
+        static CameraData()
+        {
+            CompilerUtility.CheckUnmanaged<CameraData>();
+            // fixed バッファの要素サイズ計算に Size 定数を使うため、実サイズと一致することを保証する。
+            Debug.Assert(UnsafeUtility.SizeOf<CameraData>() == Size, "[Virgo] CameraData.Size mismatch.");
+        }
+
+        // この struct のバイトサイズ (Vector3 + Quaternion + float×4 = 11 floats)。
+        // fixed バッファのサイズ指定はコンパイル時定数が必須なため明示的に保持する。
+        public const int Size = 11 * sizeof(float);
 
         public Vector3 position;
 

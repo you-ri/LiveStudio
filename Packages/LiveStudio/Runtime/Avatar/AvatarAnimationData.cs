@@ -1,6 +1,7 @@
 // Copyright (c) You-Ri, 2026
 
 using UnityEngine;
+using Unity.Collections.LowLevel.Unsafe;
 using Lilium.RemoteControl;
 
 namespace Lilium.LiveStudio
@@ -13,17 +14,27 @@ namespace Lilium.LiveStudio
     {
         static AvatarAnimationData() => CompilerUtility.CheckBlittable<AvatarAnimationData>();
 
+        // Number of capture-camera channels carried per frame.
+        // Must match the wire frame (Lilium.LiveStudio.Virgo.AnimationFrameData.kCameraChannelCount).
+        public const int kCameraChannelCount = 2;
+
         public AvatarRootData root;
 
         public HumanoidPoseData pose;
 
         public ARKitWeightData expression;
 
-        public CameraData camera;
+        public fixed byte cameras[kCameraChannelCount * CameraData.Size];
 
         public long frames;
 
+        public ref CameraData AsCamera(int index)
+        {
+            Debug.Assert(index >= 0 && index < kCameraChannelCount);
+            return ref UnsafeUtility.AsRef<CameraData>(UnsafeUtility.AddressOf(ref cameras[index * CameraData.Size]));
+        }
+
         public bool isValid => root.valid != 0
-                            && Mathf.Approximately(camera.fieldOfView, 0f) == false;
+                            && Mathf.Approximately(AsCamera(0).fieldOfView, 0f) == false;
     }
 }

@@ -45,22 +45,17 @@ namespace Lilium.LiveStudio.Virgo
                     sizeof(float) * (int)Lilium.LiveStudio.ARKitBlendShapeLocation.Max);
             }
 
-            ToLiveStudio(in src.camera, out dst.camera);
+            // CameraData (Lilium.LiveStudio.Virgo) and Lilium.LiveStudio.CameraData share an
+            // identical sequential layout, so the whole camera array is copied verbatim, the
+            // same way the bone/blendshape buffers above are bridged across the type boundary.
+            fixed (byte* dstCameras = dst.cameras)
+            fixed (byte* srcCameras = src.cameras)
+            {
+                UnsafeUtility.MemCpy(dstCameras, srcCameras,
+                    AnimationFrameData.kCameraChannelCount * CameraData.Size);
+            }
 
             dst.frames = src.frames;
-        }
-
-        public static void ToLiveStudio(in CameraData src, out Lilium.LiveStudio.CameraData dst)
-        {
-            dst = new Lilium.LiveStudio.CameraData
-            {
-                position = src.position,
-                rotation = src.rotation,
-                fieldOfView = src.fieldOfView,
-                nearClipPlane = src.nearClipPlane,
-                farClipPlane = src.farClipPlane,
-                aspect = src.aspect,
-            };
         }
     }
 }

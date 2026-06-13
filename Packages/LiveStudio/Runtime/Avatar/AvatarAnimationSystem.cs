@@ -42,8 +42,16 @@ namespace Lilium.LiveStudio
             dst.root.rotation = matrix.rotation * src.root.rotation;
             dst.root.scale = Vector3.Scale(matrix.lossyScale, src.root.scale);
 
-            dst.camera.position = matrix.MultiplyPoint(src.camera.position);
-            dst.camera.rotation = matrix.rotation * src.camera.rotation;
+            // dst already holds a copy of src, so read camera values from dst to avoid
+            // defensive copies when invoking AsCamera on the readonly `in` parameter.
+            for (int i = 0; i < AvatarAnimationData.kCameraChannelCount; i++)
+            {
+                ref CameraData cam = ref dst.AsCamera(i);
+                Vector3 position = cam.position;
+                Quaternion rotation = cam.rotation;
+                cam.position = matrix.MultiplyPoint(position);
+                cam.rotation = matrix.rotation * rotation;
+            }
         }
 
         public static void MakeRoot(Transform transform, out AvatarRootData dst)

@@ -16,7 +16,7 @@ namespace Lilium.LiveStudio.Editor
     {
         private const string kBundleName = "scene";
         private const string kExtension = ".scene.lsb";
-        private const string kMenuPath = "LiveStudio/Export Scene Bundle (.scene.lsb)";
+        private const string kMenuPath = "Assets/Lilium Live Studio/Export Scene Bundle (.scene.lsb)";
 
         /// <summary>Builds a scene bundle from the given <c>.unity</c> scene asset and copies it to destPath.</summary>
         public static bool Export(string sceneAssetPath, string destPath)
@@ -31,7 +31,7 @@ namespace Lilium.LiveStudio.Editor
             return BundleBuildUtility.Build(kBundleName, new[] { sceneAssetPath }, destPath);
         }
 
-        [MenuItem(kMenuPath, priority = 2000)]
+        [MenuItem(kMenuPath)]
         private static void _ExportSelectedScene()
         {
             var sceneAsset = Selection.activeObject as SceneAsset;

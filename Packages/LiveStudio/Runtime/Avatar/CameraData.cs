@@ -3,6 +3,7 @@
 using System;
 using System.Runtime.InteropServices;
 using UnityEngine;
+using Unity.Collections.LowLevel.Unsafe;
 using Lilium.RemoteControl;
 
 namespace Lilium.LiveStudio
@@ -15,7 +16,16 @@ namespace Lilium.LiveStudio
     [StructLayout(LayoutKind.Sequential)]
     public struct CameraData
     {
-        static CameraData() => CompilerUtility.CheckUnmanaged<CameraData>();
+        static CameraData()
+        {
+            CompilerUtility.CheckUnmanaged<CameraData>();
+            // Size is used to stride fixed byte buffers, so it must match the real struct size.
+            Debug.Assert(UnsafeUtility.SizeOf<CameraData>() == Size, "[LiveStudio] CameraData.Size mismatch.");
+        }
+
+        // Byte size of this struct (Vector3 + Quaternion + float×4 = 11 floats).
+        // fixed buffer sizes require a compile-time constant, so keep it explicit.
+        public const int Size = 11 * sizeof(float);
 
         public Vector3 position;
 

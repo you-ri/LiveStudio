@@ -18,6 +18,10 @@ namespace Lilium.LiveStudio
         [Tooltip("参照するモーションソース。未指定時はシーン内の MotionSourceBase を自動検出する。")]
         private MotionSourceBase _motionSource;
 
+        [SerializeField]
+        [Tooltip("Capture channel index to follow (0 = channel0, 1 = channel1).")]
+        private int _channelIndex = 0;
+
         private CinemachineCamera _virtualCamera;
 
         void Awake()
@@ -35,7 +39,9 @@ namespace Lilium.LiveStudio
 
             if (!_motionSource.frameData.isValid) return;
 
-            ref CameraData data = ref _motionSource.frameData.camera;
+            if (_channelIndex < 0 || _channelIndex >= AvatarAnimationData.kCameraChannelCount) return;
+
+            ref CameraData data = ref _motionSource.frameData.AsCamera(_channelIndex);
 
             _virtualCamera.transform.localPosition = offsetPosition + data.position;
             var eulerAngles = data.rotation.eulerAngles;

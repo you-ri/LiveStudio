@@ -19,11 +19,15 @@ namespace Lilium.LiveStudio.Virgo
         // Must match Lilium.LiveStudio.ARKitBlendShapeLocation.Max
         public const int kBlendShapeCount = 52;
 
-        public bool isValid => valid!= 0 && Mathf.Approximately(camera.fieldOfView, 0f) == false;
+        // 送信するカメラの本数。capture の CaptureDataHolder.maxChannels と一致させること
+        // (channel0 / channel1 = clients[0] / clients[1])。
+        public const int kCameraChannelCount = 2;
+
+        public bool isValid => valid!= 0 && Mathf.Approximately(AsCamera(0).fieldOfView, 0f) == false;
 
         public byte valid;
 
-        public CameraData camera;
+        public fixed byte cameras[kCameraChannelCount * CameraData.Size];
 
         public Vector3 position;
 
@@ -44,6 +48,12 @@ namespace Lilium.LiveStudio.Virgo
         // ボーンごとのトラッキング状態 (0..1)。1 = 完全にトラッキング (モーキャプ姿勢を採用)、
         // 0 = 未トラッキング (受信側でアニメーションを流す)。HumanBodyBones インデックスに対応。
         public fixed float bonePresences[(int)HumanBodyBones.LastBone];
+
+        public ref CameraData AsCamera(int index)
+        {
+            Debug.Assert(index >= 0 && index < kCameraChannelCount);
+            return ref UnsafeUtility.AsRef<CameraData>(UnsafeUtility.AddressOf(ref cameras[index * CameraData.Size]));
+        }
 
         public ref Quaternion AsRotation(int index)
         {
