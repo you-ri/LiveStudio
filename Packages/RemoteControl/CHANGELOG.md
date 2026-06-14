@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.22.1] - 2026-06-14
+
+### Fixed
+
+- Live scene saves now record only a build-settings scene as `baseSceneName`. Saving while an additive `.scene.lsb` world (buildIndex -1) was the active scene previously wrote the world's name, so loading that file in a build without the world dirtied the active scene and blocked graceful quit with an unsaved-changes dialog. The name is now resolved to the active scene only when it is a build scene, otherwise the first loaded build scene (worlds are calibrated on top of it), applied to both the save and the `HasUnsavedChanges` baseline.
+
 ## [0.21.2] - 2026-06-11
 
 ### Fixed
