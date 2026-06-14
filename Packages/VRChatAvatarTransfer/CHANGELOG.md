@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.22.0] - 2026-06-14
+
+### Changed
+
+- Avatar bundle export now produces a `.avatar.lsb` file (was `.lsavatar`), built through the shared `BundleBuildUtility`, unifying the extension with LiveStudio's scene bundles. A new "Export Avatar Bundle (.avatar.lsb)" Assets context menu exports the selected prefab directly and guarantees the compound suffix.
+- The export buttons were relabeled to spell out their extensions ("Export as Unity Package (.unitypackage)").
+
+### Fixed
+
+- The FX `AnimatorController` is now always deep-cloned through the standard AnimatorController API during conversion, avoiding "Broken text PPtr" warnings from dangling references in the source and the transition loss that `CopyAsset` could cause for sub-asset controllers.
+
 ## [0.21.2] - 2026-06-11
 
 ### Changed

@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.22.0] - 2026-06-14
 
 ### Added
 
@@ -8,7 +8,8 @@
 
 ### Changed
 
-- **Wire format change**: `AnimationFrameData` grew by the per-bone presence array, so its serialized size changed. The Fusion app and Studio validate frames by exact struct size, so the Fusion executable must be rebuilt for Studio to accept frames again (an older Fusion build is rejected as an invalid size).
+- The `AnimationFrameData` wire frame now carries two capture-camera channels (`cameras[2]`, one `CameraData` each) instead of a single camera, so the worldA / worldB cameras are bridged independently into the avatar pipeline.
+- **Wire format change**: `AnimationFrameData` grew by the per-bone presence array and the second capture-camera channel, so its serialized size changed. The Fusion app and Studio validate frames by exact struct size, so the Fusion executable must be rebuilt for Studio to accept frames again (an older Fusion build is rejected as an invalid size).
 
 ## [0.21.2] - 2026-06-11
 

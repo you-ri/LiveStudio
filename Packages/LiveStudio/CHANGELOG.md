@@ -1,14 +1,23 @@
 # Changelog
 
-## [Unreleased]
+## [0.22.0] - 2026-06-14
 
 ### Added
 
+- Scene bundle import: a `.scene.lsb` AssetBundle can now be loaded additively at runtime. New `RuntimeSceneManager` and `SceneBundleLoader` components plus a shared `BundleBuildUtility`, with `LiveStudioBundle` detecting the compound extension so `.scene.lsb` (scene) and `.avatar.lsb` (avatar) bundles share one pipeline.
+- `CaptureCameraController` exposes a `channelIndex` property (with `CAMERA_CHANNELINDEX` localization), so a `CaptureCameraTracker` can choose which capture-camera channel (0 or 1) it follows.
 - `HumanoidPoseData` now carries a per-bone tracking presence (`bonePresences`, 0..1). `AvatarBodyDriver`'s pose job blends the mocap pose over the avatar's animation per bone by this weight: a bone with presence 1 takes the mocap rotation fully, presence 0 leaves the animation flowing through, and values in between slerp between the two. This lets untracked body parts keep playing their `AnimatorController` animation while tracked parts follow the mocap.
 
 ### Changed
 
+- `ExternalAvatarSource`'s file selector now filters the compound `.avatar.lsb` extension (was `.lsb`) to distinguish avatar bundles from `.scene.lsb`; the legacy `.lsavatar` extension is still accepted.
+- Avatar frames now carry multiple capture-camera channels per frame (one `CameraData` per channel), so the worldA / worldB cameras are conveyed independently.
 - `VRM1Avatar` and `VRCFTAvatar` now drive body animation through a `PlayableGraph` (new shared `AvatarBodyDriver`) instead of writing the humanoid bone transforms directly every frame. An optional `AnimatorController` on the avatar is wrapped into the graph: its animation (e.g. an idle or range-of-motion clip) plays through while tracking is lost and is overwritten by the mocap pose while tracking. Shared tracking-state handling, mesh visibility, and the avatar-build boilerplate were extracted into `AvatarBodyDriver` and `AvatarBuildNotifier.BuildAndNotify`.
+
+### Fixed
+
+- `VRM1Avatar` / `VRCFTAvatar` now resolve their `Animator` lazily in `BuildAvatar`, which can run before `Start` during a synchronous `.lsavatar` load and previously left the animator null and logged an error.
+- `AvatarBodyDriver` now disables `applyRootMotion` on the wrapped `Animator`, so a controller's root motion no longer sinks the whole avatar to the floor (VRCFT avatars).
 
 ## [0.21.3] - 2026-06-12
 
