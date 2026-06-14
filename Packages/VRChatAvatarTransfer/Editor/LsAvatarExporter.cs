@@ -1,4 +1,7 @@
 // Copyright (c) You-Ri, 2026
+using System;
+using System.IO;
+
 using UnityEditor;
 
 using Lilium.LiveStudio.Editor;
@@ -13,6 +16,8 @@ namespace Lilium.VRChatAvatarTransfer.Editor
     internal static class LsAvatarExporter
     {
         private const string kBundleName = "avatar";
+        private const string kExtension = ".avatar.lsb";
+        private const string kMenuPath = "Assets/Lilium Live Studio/Export Avatar Bundle (.avatar.lsb)";
 
         /// <summary>
         /// prefabAssetPath の AssetBundle を生成し destPath にコピーする。成功時 true。
@@ -27,6 +32,41 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             }
 
             return BundleBuildUtility.Build(kBundleName, new[] { prefabAssetPath }, destPath);
+        }
+
+        [MenuItem(kMenuPath)]
+        private static void _ExportSelectedPrefab()
+        {
+            var assetPath = AssetDatabase.GetAssetPath(Selection.activeObject);
+            if (string.IsNullOrEmpty(assetPath))
+            {
+                VRChatAvatarTransferLog.Error("Select a prefab asset in the Project window first.");
+                return;
+            }
+
+            var defaultName = $"{Path.GetFileNameWithoutExtension(assetPath)}{kExtension}";
+            var savePath = EditorUtility.SaveFilePanel("Export Avatar Bundle", "", defaultName, "lsb");
+            if (string.IsNullOrEmpty(savePath)) return;
+
+            // SaveFilePanel は最終拡張子しか扱えないため、複合サフィックスを保証する。
+            if (!savePath.EndsWith(kExtension, StringComparison.OrdinalIgnoreCase))
+            {
+                savePath = Path.ChangeExtension(savePath, null);
+                if (savePath.EndsWith(".avatar", StringComparison.OrdinalIgnoreCase))
+                {
+                    savePath = savePath.Substring(0, savePath.Length - ".avatar".Length);
+                }
+                savePath += kExtension;
+            }
+
+            Export(assetPath, savePath);
+        }
+
+        [MenuItem(kMenuPath, validate = true)]
+        private static bool _ValidateExportSelectedPrefab()
+        {
+            var prefabType = PrefabUtility.GetPrefabAssetType(Selection.activeObject);
+            return prefabType != PrefabAssetType.NotAPrefab && prefabType != PrefabAssetType.MissingAsset;
         }
     }
 }

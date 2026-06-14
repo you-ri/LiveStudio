@@ -21,10 +21,10 @@ namespace Lilium.LiveStudio
     {
         public event Action<GameObject> onAvatarReady;
 
-        // ファイルダイアログは最終拡張子で絞るため "lsb" を渡し、選択後に複合サフィックスを検証する。
+        // アバターバンドルは複合拡張子 ".avatar.lsb" で絞る（".scene.lsb" と区別するため）。
         // 旧 ".lsavatar" も後方互換のため受理する。
         [SerializeField]
-        [ExposedField(label = "AVATAR_MODELFILEPATH"), GLTFFileSelector("vrm", "lsb", "lsavatar")]
+        [ExposedField(label = "AVATAR_MODELFILEPATH"), GLTFFileSelector("vrm", "avatar.lsb", "lsavatar")]
         [ExposedHelp("AVATAR_VRMMODELFILEPATH_HELP")]
         string _modelFilePath;
 

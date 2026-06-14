@@ -207,27 +207,22 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             }
 
             // ソース非破壊のため必ずコピーして変換する (behaviour 置換は破壊的なため)。
-            // 通常の単独 .controller は AssetDatabase.CopyAsset で非破壊コピー、
-            // 別アセットのサブアセット (複数 AnimatorController を抱えるコンテナの一部) は
-            // CopyAsset で transition が一部欠落する事例があるため、AnimatorControllerCloner で
-            // 標準 AnimatorController API のみで deep-clone する。
+            // AnimatorController は常に AnimatorControllerCloner で標準 AnimatorController API
+            // のみで deep-clone する。これにより、元アセットに残るダングリング PPtr
+            // (削除済み StateMachineBehaviour 等への壊れた参照) を複製先に持ち込まず
+            // (CopyAsset の "Broken text PPtr" 大量出力を回避)、サブアセット由来コントローラで
+            // CopyAsset が transition を一部欠落させる事例も同時に避けられる。
+            // AnimatorController 以外のソース (稀: AnimatorOverrideController 等) のみ
+            // AssetDatabase.CopyAsset でフォールバックする。
             var dstPath = $"{Vrm10ObjectBuilder.OutputFolder}/{safeName}.FX.controller";
             if (AssetDatabase.LoadAssetAtPath<Object>(dstPath) != null)
             {
                 AssetDatabase.DeleteAsset(dstPath);
             }
 
-            var srcMain = AssetDatabase.LoadMainAssetAtPath(srcPath);
-            bool sourceIsSubAsset = !ReferenceEquals(srcMain, source);
             AnimatorController copy;
-            if (sourceIsSubAsset)
+            if (source is AnimatorController srcCtrl)
             {
-                if (!(source is AnimatorController srcCtrl))
-                {
-                    VRChatAvatarTransferLog.Warn(
-                        $"FX source '{source.name}' is a sub-asset but not an AnimatorController; parameter drivers not converted.");
-                    return null;
-                }
                 copy = AnimatorControllerCloner.CloneToPath(srcCtrl, dstPath);
             }
             else
