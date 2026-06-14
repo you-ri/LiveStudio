@@ -263,7 +263,7 @@ namespace Lilium.RemoteControl.LiveScene
             if (!string.IsNullOrEmpty(dir) && !System.IO.Directory.Exists(dir))
                 System.IO.Directory.CreateDirectory(dir);
 
-            var baseSceneName = SceneManager.GetActiveScene().name;
+            var baseSceneName = _ResolveBaseSceneName();
             var json = LiveSceneSerializer.BuildLiveSceneJson(_objectContainer, baseSceneName);
             System.IO.File.WriteAllText(fullPath, json);
             _baselineJson = json;
@@ -442,7 +442,29 @@ namespace Lilium.RemoteControl.LiveScene
             // Cache the post-load state as the baseline for HasUnsavedChanges. The baseline
             // must use the same baseSceneName the next save will write so an unchanged scene
             // does not appear dirty on round-trip.
-            _baselineJson = LiveSceneSerializer.BuildLiveSceneJson(_objectContainer, SceneManager.GetActiveScene().name);
+            _baselineJson = LiveSceneSerializer.BuildLiveSceneJson(_objectContainer, _ResolveBaseSceneName());
+        }
+
+        // A Unity scene counts as a "base scene" only when it is registered in build settings.
+        // Scenes loaded from AssetBundles (.scene.lsb worlds) have buildIndex == -1 and must
+        // never be recorded as baseSceneName — worlds are calibrated on top of a bundled base.
+        private static bool _IsBuildScene(Scene scene)
+            => scene.buildIndex >= 0 && scene.buildIndex < SceneManager.sceneCountInBuildSettings;
+
+        // Resolve the baseSceneName to persist. Prefer the active scene when it is a build scene;
+        // otherwise fall back to the first loaded build scene (the active scene is an additive
+        // world bundle on top of it). Returns null when no build scene is loaded, in which case
+        // the serializer omits the field.
+        private static string _ResolveBaseSceneName()
+        {
+            var active = SceneManager.GetActiveScene();
+            if (_IsBuildScene(active)) return active.name;
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var s = SceneManager.GetSceneAt(i);
+                if (s.isLoaded && _IsBuildScene(s)) return s.name;
+            }
+            return null;
         }
     }
 }
