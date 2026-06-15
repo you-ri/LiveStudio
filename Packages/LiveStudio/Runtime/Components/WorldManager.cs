@@ -46,6 +46,13 @@ namespace Lilium.LiveStudio
         /// <summary>True when this scene is the active scene. Synced by the manager.</summary>
         [ExposedField]
         public bool isActive;
+
+        /// <summary>
+        /// True for the bootstrap (initial) scene the app loads at startup. This entry is always
+        /// present and loaded, and cannot be unloaded or removed; only activation is allowed.
+        /// </summary>
+        [ExposedField]
+        public bool isPersistent;
     }
 
     /// <summary>
@@ -62,6 +69,10 @@ namespace Lilium.LiveStudio
     public class WorldManager : IExposedObject, IExposedDeserializeCallback
     {
         const string kId = "b2f7c9a1-3d4e-4f8a-9c1b-7e2d5a6f8c30";
+
+        // Stable id for the synthetic entry representing the bootstrap / persistent scene. A short
+        // literal is safe because real bundle entries use 32-char GUIDs and never collide with it.
+        const string kPersistentSceneId = "persistent";
 
 #if UNITY_EDITOR
         private static bool _isExitingPlayMode;
@@ -122,10 +133,12 @@ namespace Lilium.LiveStudio
             ExposedObjectRegistry.Create<WorldManager>(this, kId);
             ExposedClass.Get<WorldManager>().onPropertyChanged += _OnPropertyChanged;
 
-            // The active scene at startup is the bootstrap / persistent scene.
+            // The active scene at startup is the bootstrap / persistent scene. Surface it as the
+            // first, non-removable entry so the remote app can see and re-activate it.
             if (Application.isPlaying)
             {
                 _persistentScene = SceneManager.GetActiveScene();
+                _EnsurePersistentEntry();
             }
 
             // Note: a restored live scene's `scenes` array is not available here. `scenes` is
@@ -172,8 +185,14 @@ namespace Lilium.LiveStudio
         {
             if (!Application.isPlaying) return;
 
+            // A restored array carries its own (stale) persistent entry; replace it with a fresh one
+            // built from the current bootstrap scene.
+            _EnsurePersistentEntry();
+
             for (int i = 0; i < scenes.Length; i++)
             {
+                // The persistent scene is activated automatically; it is never reconciled here.
+                if (scenes[i].isPersistent) continue;
                 if (!scenes[i].isActive) continue;
 
                 var id = scenes[i].id;
@@ -258,6 +277,9 @@ namespace Lilium.LiveStudio
         {
             if (string.IsNullOrEmpty(sceneId)) return;
 
+            // The bootstrap scene is always present and cannot be removed.
+            if (sceneId == kPersistentSceneId) return;
+
             if (_loaded.TryGetValue(sceneId, out var loaded))
             {
                 _loaded.Remove(sceneId);
@@ -279,6 +301,18 @@ namespace Lilium.LiveStudio
         public void SetActiveScene(string sceneId)
         {
             if (string.IsNullOrEmpty(sceneId)) return;
+
+            // Activating the bootstrap scene: it is not tracked in _loaded, so handle it directly.
+            if (sceneId == kPersistentSceneId)
+            {
+                if (_persistentScene.IsValid() && _persistentScene.isLoaded)
+                {
+                    SceneManager.SetActiveScene(_persistentScene);
+                }
+                _SyncActiveStates();
+                _Broadcast();
+                return;
+            }
 
             if (!_loaded.TryGetValue(sceneId, out var loaded))
             {
@@ -320,6 +354,9 @@ namespace Lilium.LiveStudio
                 var entry = scenes[i];
                 if (string.IsNullOrEmpty(entry.id)) continue;
                 desiredIds.Add(entry.id);
+
+                // The persistent scene is owned by the app, not by this manager: never load/unload it.
+                if (entry.isPersistent) continue;
 
                 if (_busy.Contains(entry.id)) continue;
 
@@ -434,7 +471,9 @@ namespace Lilium.LiveStudio
             var active = SceneManager.GetActiveScene();
             for (int i = 0; i < scenes.Length; i++)
             {
-                bool isActive = _loaded.TryGetValue(scenes[i].id, out var loaded) && loaded.scene == active;
+                bool isActive = scenes[i].isPersistent
+                    ? _persistentScene.IsValid() && _persistentScene == active
+                    : _loaded.TryGetValue(scenes[i].id, out var loaded) && loaded.scene == active;
                 if (scenes[i].isActive == isActive) continue;
                 var entry = scenes[i];
                 entry.isActive = isActive;
@@ -472,6 +511,40 @@ namespace Lilium.LiveStudio
             // handle via the registry. Passing an ExposedObjectHandle? would box to object and fail
             // the registry lookup.
             ExposedPropertyBroadcast.BroadcastProperty(this, "scenes");
+        }
+
+        /// <summary>
+        /// Rebuilds the <c>scenes</c> array so the bootstrap (persistent) scene is the first entry.
+        /// Any existing persistent entries (e.g. restored from saved JSON) are dropped and replaced
+        /// with a fresh one reflecting the current bootstrap scene.
+        /// </summary>
+        private void _EnsurePersistentEntry()
+        {
+            if (!Application.isPlaying) return;
+
+            var list = new List<SceneBundleEntry>(scenes.Length + 1) { _CreatePersistentEntry() };
+            for (int i = 0; i < scenes.Length; i++)
+            {
+                if (scenes[i].isPersistent) continue;
+                list.Add(scenes[i]);
+            }
+            scenes = list.ToArray();
+            _Broadcast();
+        }
+
+        private SceneBundleEntry _CreatePersistentEntry()
+        {
+            var sceneName = _persistentScene.IsValid() ? _persistentScene.name : null;
+            return new SceneBundleEntry
+            {
+                id = kPersistentSceneId,
+                name = string.IsNullOrEmpty(sceneName) ? "Studio" : sceneName,
+                filePath = string.Empty,
+                enabled = true,
+                isLoaded = true,
+                isActive = _persistentScene.IsValid() && _persistentScene == SceneManager.GetActiveScene(),
+                isPersistent = true,
+            };
         }
 
         private static string _DeriveName(string filePath)
