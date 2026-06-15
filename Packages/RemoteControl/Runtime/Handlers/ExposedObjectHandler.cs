@@ -160,8 +160,8 @@ namespace Lilium.RemoteControl
             // TypeName指定なし
             if (string.IsNullOrEmpty(typeName))
             {
-                // Containerに登録されているオブジェクト
-                instanceObjects = container.objects
+                // Containerに登録されているオブジェクト（メイン + 他シーンのソースを合成）
+                instanceObjects = container.EnumerateAllObjects()
                     .Where(obj => obj?.exposedObject != null)
                     .Select(obj => obj.exposedObject.Value);
 
@@ -174,8 +174,8 @@ namespace Lilium.RemoteControl
             // TypeName指定あり
             else
             {
-                // TypeNameでフィルタリング
-                instanceObjects = container.objects
+                // TypeNameでフィルタリング（メイン + 他シーンのソースを合成）
+                instanceObjects = container.EnumerateAllObjects()
                     .Where(obj => obj?.exposedObject != null)
                     .Select(obj => obj.exposedObject.Value)
                     .Where(obj => typeName == null || obj.targetTypeName == typeName);

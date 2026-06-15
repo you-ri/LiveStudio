@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.Scripting.APIUpdating;
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -17,7 +18,7 @@ using Lilium.RemoteControl;
 namespace Lilium.LiveStudio
 {
     /// <summary>
-    /// One entry in <see cref="RuntimeSceneManager.scenes"/>: a scene bundle (<c>*.scene.lsb</c>)
+    /// One entry in <see cref="WorldManager.scenes"/>: a scene bundle (<c>*.scene.lsb</c>)
     /// that the user has added. <see cref="enabled"/> is the desired state controlled from the
     /// remote app; <see cref="isLoaded"/> reflects whether the scene is actually loaded.
     /// </summary>
@@ -57,7 +58,8 @@ namespace Lilium.LiveStudio
     /// </summary>
     [Serializable]
     [ExposedClass(Icon = "public", Category = "Scene")]
-    public class RuntimeSceneManager : IExposedObject
+    [MovedFrom(false, null, null, "RuntimeSceneManager")]
+    public class WorldManager : IExposedObject, IExposedDeserializeCallback
     {
         const string kId = "b2f7c9a1-3d4e-4f8a-9c1b-7e2d5a6f8c30";
 
@@ -104,6 +106,11 @@ namespace Lilium.LiveStudio
         [NonSerialized]
         private Scene _persistentScene;
 
+        // The entry id that should become the active scene once it has finished loading. Captured
+        // from a restored live scene's persisted `isActive` flag at startup, cleared after applied.
+        [NonSerialized]
+        private string _pendingActiveId;
+
         [NonSerialized]
         private bool _dirty;
 
@@ -112,8 +119,8 @@ namespace Lilium.LiveStudio
 
         public void OnEnable()
         {
-            ExposedObjectRegistry.Create<RuntimeSceneManager>(this, kId);
-            ExposedClass.Get<RuntimeSceneManager>().onPropertyChanged += _OnPropertyChanged;
+            ExposedObjectRegistry.Create<WorldManager>(this, kId);
+            ExposedClass.Get<WorldManager>().onPropertyChanged += _OnPropertyChanged;
 
             // The active scene at startup is the bootstrap / persistent scene.
             if (Application.isPlaying)
@@ -121,17 +128,11 @@ namespace Lilium.LiveStudio
                 _persistentScene = SceneManager.GetActiveScene();
             }
 
-            // Restored entries (from a saved live scene) start unloaded; apply their desired state.
-            if (Application.isPlaying && scenes.Length > 0)
-            {
-                for (int i = 0; i < scenes.Length; i++)
-                {
-                    var entry = scenes[i];
-                    entry.isLoaded = false;
-                    scenes[i] = entry;
-                }
-                _dirty = true;
-            }
+            // Note: a restored live scene's `scenes` array is not available here. `scenes` is
+            // [NonSerialized], so it is empty at OnEnable and only populated later when the live
+            // scene JSON is deserialized (RemoteControlBehaviour.Start). The restore — loading the
+            // enabled entries and reactivating the saved active scene — is handled in
+            // OnAfterExposedDeserialize, which fires right after that array is restored.
 
             _initialized = true;
         }
@@ -141,7 +142,7 @@ namespace Lilium.LiveStudio
             _dirty = false;
             _initialized = false;
 
-            ExposedClass.Get<RuntimeSceneManager>().onPropertyChanged -= _OnPropertyChanged;
+            ExposedClass.Get<WorldManager>().onPropertyChanged -= _OnPropertyChanged;
 
             // Unload everything we own so leaving the scene does not leak bundles.
             foreach (var loaded in _loaded.Values)
@@ -150,6 +151,7 @@ namespace Lilium.LiveStudio
             }
             _loaded.Clear();
             _busy.Clear();
+            _pendingActiveId = null;
 
             ExposedObjectRegistry.FindByTarget(this)?.Unregister();
         }
@@ -157,6 +159,41 @@ namespace Lilium.LiveStudio
         public void OnDispose()
         {
             OnDisable();
+        }
+
+        /// <summary>
+        /// Fires right after the <c>scenes</c> array is restored from a saved live scene. The
+        /// restored entries carry their saved <see cref="SceneBundleEntry.isLoaded"/> /
+        /// <see cref="SceneBundleEntry.isActive"/> flags, but nothing is actually loaded yet, so we
+        /// reconcile: schedule the enabled entries to load and remember which one should become the
+        /// active scene once it has loaded (applied in <see cref="_LoadEntryAsync"/>).
+        /// </summary>
+        public void OnAfterExposedDeserialize()
+        {
+            if (!Application.isPlaying) return;
+
+            for (int i = 0; i < scenes.Length; i++)
+            {
+                if (!scenes[i].isActive) continue;
+
+                var id = scenes[i].id;
+                if (_loaded.TryGetValue(id, out var loaded) &&
+                    loaded.scene.IsValid() && loaded.scene.isLoaded)
+                {
+                    // Already loaded (e.g. a runtime re-sync): activate immediately.
+                    SceneManager.SetActiveScene(loaded.scene);
+                    _pendingActiveId = null;
+                }
+                else
+                {
+                    // Not loaded yet (startup restore): activate once it finishes loading.
+                    _pendingActiveId = id;
+                }
+                break;
+            }
+
+            // Load (or unload) entries to match the restored desired state on the next Update.
+            _dirty = true;
         }
 
         public void Update()
@@ -323,6 +360,14 @@ namespace Lilium.LiveStudio
                 {
                     _loaded[sceneId] = loaded;
                     _SetEntryLoaded(sceneId, true);
+
+                    // Restore the persisted active scene once it has finished loading.
+                    if (_pendingActiveId == sceneId &&
+                        loaded.scene.IsValid() && loaded.scene.isLoaded)
+                    {
+                        SceneManager.SetActiveScene(loaded.scene);
+                        _pendingActiveId = null;
+                    }
                 }
                 else
                 {

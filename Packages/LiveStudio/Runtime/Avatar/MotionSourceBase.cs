@@ -14,6 +14,12 @@ namespace Lilium.LiveStudio
         public AvatarAnimationData frameData;
 
         /// <summary>
+        /// World anchor that placed output is positioned/rotated relative to.
+        /// When null, concrete sources fall back to their own transform.
+        /// </summary>
+        public Transform anchor { get; set; }
+
+        /// <summary>
         /// Reset camera offset relative to the current avatar pose. Default no-op;
         /// concrete sources that track a real camera (e.g. mocap) should override.
         /// </summary>

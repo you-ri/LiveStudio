@@ -79,11 +79,9 @@ namespace Lilium.RemoteControl.Server
 
         public override void StopServer()
         {
-            if (IsRunning && _eventQueue != null)
-            {
-                _ = BroadcastSystemNotification("Remote Control Server stopping", "warning");
-            }
-
+            // Do not broadcast a "stopping" notification here: the server is shutting
+            // down, so the message would only race the disconnect and surface a
+            // misleading warning on the RemoteApp side.
             base.StopServer();
         }
 

@@ -35,6 +35,52 @@ namespace Lilium.LiveStudio
             UpdatePose(animator, in src.pose);
         }
 
+        // Time-based interpolation between two received frames so the avatar pose
+        // advances smoothly every render frame even when the render rate exceeds the
+        // capture rate (60fps). Without this, the pose freezes between received frames
+        // and secondary physics (spring bones) jitters on the stalled pose.
+        //
+        // a/b are passed by value: AsRotation/AsCamera are not readonly, so accessing
+        // them on an `in` parameter would force a defensive copy per element. Copying
+        // once up front and reading from the locals avoids that.
+        public static void Lerp(AvatarAnimationData a, AvatarAnimationData b, float t, out AvatarAnimationData dst)
+        {
+            dst = b;
+
+            dst.root.valid = (byte)((a.root.valid != 0 && b.root.valid != 0) ? 1 : 0);
+            dst.root.position = Vector3.Lerp(a.root.position, b.root.position, t);
+            dst.root.rotation = Quaternion.Slerp(a.root.rotation, b.root.rotation, t);
+            dst.root.scale = Vector3.Lerp(a.root.scale, b.root.scale, t);
+
+            dst.pose.hipPosition = Vector3.Lerp(a.pose.hipPosition, b.pose.hipPosition, t);
+            for (int i = 0; i < (int)HumanBodyBones.LastBone; i++)
+            {
+                dst.pose.AsRotation(i) = Quaternion.Slerp(a.pose.AsRotation(i), b.pose.AsRotation(i), t);
+                dst.pose.AsPresence(i) = Mathf.Lerp(a.pose.AsPresence(i), b.pose.AsPresence(i), t);
+            }
+
+            for (int i = 0; i < (int)ARKitBlendShapeLocation.Max; i++)
+            {
+                var location = (ARKitBlendShapeLocation)i;
+                dst.expression.AtWeight(location) = Mathf.Lerp(a.expression.AtWeight(location), b.expression.AtWeight(location), t);
+            }
+
+            for (int i = 0; i < AvatarAnimationData.kCameraChannelCount; i++)
+            {
+                ref CameraData ca = ref a.AsCamera(i);
+                ref CameraData cb = ref b.AsCamera(i);
+                ref CameraData cd = ref dst.AsCamera(i);
+                cd.position = Vector3.Lerp(ca.position, cb.position, t);
+                cd.rotation = Quaternion.Slerp(ca.rotation, cb.rotation, t);
+                cd.fieldOfView = Mathf.Lerp(ca.fieldOfView, cb.fieldOfView, t);
+                cd.nearClipPlane = Mathf.Lerp(ca.nearClipPlane, cb.nearClipPlane, t);
+                cd.farClipPlane = Mathf.Lerp(ca.farClipPlane, cb.farClipPlane, t);
+                cd.aspect = Mathf.Lerp(ca.aspect, cb.aspect, t);
+            }
+
+            dst.frames = b.frames;
+        }
+
         public static void Transform(in AvatarAnimationData src, in Matrix4x4 matrix, out AvatarAnimationData dst)
         {
             dst = src;

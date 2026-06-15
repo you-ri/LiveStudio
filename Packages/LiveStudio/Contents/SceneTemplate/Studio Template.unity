@@ -456,6 +456,7 @@ GameObject:
   m_Component:
   - component: {fileID: 573488947}
   - component: {fileID: 573488948}
+  - component: {fileID: 573488949}
   m_Layer: 0
   m_Name: Remote Control
   m_TagString: Untagged
@@ -491,23 +492,88 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _serverConfig: {fileID: 11400000, guid: fe5d91a57c882da4791babe82a0d8d75, type: 2}
-  _objects:
-  - rid: 7884749757681762304
-  - rid: 7884749757681762306
+  _objects: []
   _uiDefinition: {fileID: 11400000, guid: 0d7378062cf94704d8b17ee9440d3b21, type: 2}
   references:
     version: 2
+    RefIds: []
+--- !u!114 &573488949
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 573488946}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 899482a4ce117c048bd64df5107d337f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _objects:
+  - rid: 4217817107038994604
+  - rid: 4217817107038994605
+  - rid: 4217817107038994606
+  - rid: 4217817107038994607
+  - rid: 4217817107038994611
+  - rid: 4217817107038994612
+  - rid: 4217817107038994613
+  - rid: 4217817107038994614
+  - rid: 4217817107038994682
+  references:
+    version: 2
     RefIds:
-    - rid: 7884749757681762304
-      type: {class: ExposedGameObject, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl}
+    - rid: 4217817107038994604
+      type: {class: EnvironmentLight, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      data: 
+    - rid: 4217817107038994605
+      type: {class: SkyboxBackground, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      data: 
+    - rid: 4217817107038994606
+      type: {class: ExposedLight, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
       data:
-        _id: 34b9dd4b-a16b-4c8f-90cf-e84b61fb6ee9
+        _id: 2c3043aa-ce67-4e7b-bd99-6c51f51ae8c2
+        _reference: {fileID: 180512847}
+        _parent:
+          _ownerName: 
+          _transformPath: 
+          _searchType: 0
+    - rid: 4217817107038994607
+      type: {class: ExposedCamera, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      data:
+        _id: 0e133176-8816-4cb3-8557-9652e7f13c90
+        _reference: {fileID: 943512077}
+        controller:
+          rid: 4217817107038994608
+    - rid: 4217817107038994608
+      type: {class: CaptureCameraController, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      data:
+        _lockRoll: 1
+        _channelIndex: 0
+    - rid: 4217817107038994611
+      type: {class: ExposedGameObjectWithTransform, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl}
+      data:
+        _id: 1bd72042-8b83-4a6d-b39c-c662487db3f0
         _reference: {fileID: 528939529}
-    - rid: 7884749757681762306
+        _parent:
+          _ownerName: 
+          _transformPath: 
+          _searchType: 0
+    - rid: 4217817107038994612
       type: {class: ExposedGameObject, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl}
       data:
-        _id: b2771fb5-9865-4983-bd87-6108e4fae158
+        _id: 450dd368-3ad8-4b61-9f08-f986adeb7908
         _reference: {fileID: 7574280904576350659}
+    - rid: 4217817107038994613
+      type: {class: ExposedGameObject, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl}
+      data:
+        _id: 48ffab25-85be-47b8-879c-9cd5f8c9fe6d
+        _reference: {fileID: 692179778}
+    - rid: 4217817107038994614
+      type: {class: RuntimeSceneManager, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      data: 
+    - rid: 4217817107038994682
+      type: {class: AvatarStageController, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      data: 
 --- !u!1001 &692179776
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -558,7 +624,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7028464739016198538, guid: d6733bf103f69fa4a8cc0e25d2d4e5a3, type: 3}
       propertyPath: m_Name
-      value: Virgo Motion Receiver
+      value: Virgo Motion Source
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -570,12 +636,17 @@ MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 6707006161498683296, guid: d6733bf103f69fa4a8cc0e25d2d4e5a3, type: 3}
   m_PrefabInstance: {fileID: 692179776}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
+  m_GameObject: {fileID: 692179778}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 3937a498504f0a2438b350521c1a5d6c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!1 &692179778 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 7028464739016198538, guid: d6733bf103f69fa4a8cc0e25d2d4e5a3, type: 3}
+  m_PrefabInstance: {fileID: 692179776}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &943512075
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -649,6 +720,17 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 8328178207827300682, guid: 2907bfc9e9731a644b71686de80b9d52, type: 3}
   m_PrefabInstance: {fileID: 943512075}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &943512077 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 321327106885243259, guid: 2907bfc9e9731a644b71686de80b9d52, type: 3}
+  m_PrefabInstance: {fileID: 943512075}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 943512076}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f9dfa5b682dcd46bda6128250e975f58, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!114 &943512094
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -665,6 +747,7 @@ MonoBehaviour:
   offsetRotation: {x: 0, y: 0, z: 0, w: 1}
   lockRoll: 1
   _motionSource: {fileID: 0}
+  _channelIndex: 0
 --- !u!1 &1066485569
 GameObject:
   m_ObjectHideFlags: 1

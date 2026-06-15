@@ -30,6 +30,19 @@ namespace Lilium.RemoteControl
         private ExposedObjectHandle? _selfExposedObject;
         private readonly HashSet<string> _persistentIds = new HashSet<string>();
 
+        // Additional object lists merged in from other scenes (e.g. RemoteControlContainer
+        // components living in additively-loaded .scene.lsb worlds). Each source is keyed by its
+        // owner reference. The owning RemoteControlBehaviour adds/removes sources as the
+        // containers enable/disable, and this container drives their lifecycle alongside _objects.
+        private readonly List<SourceEntry> _sources = new List<SourceEntry>();
+        private readonly HashSet<object> _initializedSources = new HashSet<object>();
+
+        private struct SourceEntry
+        {
+            public List<IExposedObject> list;
+            public object owner;
+        }
+
         /// <summary>
         /// Optional host UnityEngine.Object reference. Used for editor undo recording when the
         /// container's _objects list mutates (set by <see cref="Lilium.RemoteControl.LiveScene.RemoteControlBehaviour"/>).
@@ -62,19 +75,140 @@ namespace Lilium.RemoteControl
 
             _selfExposedObject = ExposedObjectRegistry.Create<ExposedObjectContainer>(this, kObjectContainerId);
 
-            foreach (var obj in _objects)
-            {
-                if (obj == null) continue;
-                obj.OnEnable();
-            }
+            _persistentIds.Clear();
 
             // Capture defaults of the container itself (needed for diff-based dirty detection
             // on the _objects list).
             if (_selfExposedObject != null)
                 ExposedPropertyUtility.SetDefault(_selfExposedObject.Value);
 
+            _InitializeObjectList(_objects);
+
+            // Initialize any sources already registered before Initialize() ran (containers
+            // present in the scene at server startup). Late-arriving sources go through
+            // InitializeSource().
+            for (int i = 0; i < _sources.Count; i++)
+            {
+                if (_initializedSources.Add(_sources[i].owner))
+                    _InitializeObjectList(_sources[i].list);
+            }
+        }
+
+        public void Shutdown()
+        {
+            _ShutdownObjectList(_objects);
+            for (int i = 0; i < _sources.Count; i++)
+                _ShutdownObjectList(_sources[i].list);
+
+            _initializedSources.Clear();
+            // Drop sources so a re-enabled host re-gathers them from the live registry rather than
+            // retaining owners that may have unregistered while the host was disabled.
+            _sources.Clear();
+            _selfExposedObject?.Unregister();
+            _selfExposedObject = null;
+            _persistentIds.Clear();
+        }
+
+        public void UpdateObjects()
+        {
+            // Hot path (every LateUpdate): iterate by index without allocating an enumerator.
+            _UpdateObjectList(_objects);
+            for (int i = 0; i < _sources.Count; i++)
+                _UpdateObjectList(_sources[i].list);
+        }
+
+        // --- Source management (objects merged in from other scenes) ---
+
+        /// <summary>
+        /// Registers an additional object list as a source. The list is owned by the caller
+        /// (e.g. a RemoteControlContainer MonoBehaviour) and merged into enumeration, resolution
+        /// and lifecycle. Idempotent per owner. Does not initialize the list; call
+        /// <see cref="InitializeSource"/> after the container is already running.
+        /// </summary>
+        public void AddSource(List<IExposedObject> list, object owner)
+        {
+            if (list == null || owner == null) return;
+            if (_IndexOfSource(owner) >= 0) return;
+            _sources.Add(new SourceEntry { list = list, owner = owner });
+        }
+
+        public void RemoveSource(object owner)
+        {
+            int idx = _IndexOfSource(owner);
+            if (idx < 0) return;
+            _sources.RemoveAt(idx);
+        }
+
+        /// <summary>
+        /// Initializes a single late-arriving source (OnEnable + defaults capture + persistentIds).
+        /// No-op until the container itself has been initialized, in which case Initialize() picks
+        /// the source up instead.
+        /// </summary>
+        public void InitializeSource(object owner)
+        {
+            if (_selfExposedObject == null) return;
+            int idx = _IndexOfSource(owner);
+            if (idx < 0) return;
+            if (!_initializedSources.Add(owner)) return;
+            _InitializeObjectList(_sources[idx].list);
+        }
+
+        /// <summary>
+        /// Shuts down a single source (OnDisable + persistentIds removal) before it is removed.
+        /// </summary>
+        public void ShutdownSource(object owner)
+        {
+            int idx = _IndexOfSource(owner);
+            if (idx < 0) return;
+            if (!_initializedSources.Remove(owner)) return;
+
+            var list = _sources[idx].list;
+            // Drop persistent ids before OnDisable, which clears each object's exposedObject handle.
+            for (int i = 0; i < list.Count; i++)
+            {
+                var obj = list[i];
+                if (obj?.exposedObject != null && obj.exposedObject.Value.hasId)
+                    _persistentIds.Remove(obj.exposedObject.Value.id);
+            }
+            _ShutdownObjectList(list);
+        }
+
+        /// <summary>
+        /// Enumerates every object across the main list and all registered sources. Used by the
+        /// listing endpoint and serialization (not the per-frame update path). May yield nulls,
+        /// matching <see cref="objects"/>; callers null-check.
+        /// </summary>
+        public IEnumerable<IExposedObject> EnumerateAllObjects()
+        {
+            for (int i = 0; i < _objects.Count; i++)
+                yield return _objects[i];
+            for (int s = 0; s < _sources.Count; s++)
+            {
+                var list = _sources[s].list;
+                for (int i = 0; i < list.Count; i++)
+                    yield return list[i];
+            }
+        }
+
+        private int _IndexOfSource(object owner)
+        {
+            for (int i = 0; i < _sources.Count; i++)
+            {
+                if (ReferenceEquals(_sources[i].owner, owner)) return i;
+            }
+            return -1;
+        }
+
+        private void _InitializeObjectList(List<IExposedObject> list)
+        {
+            foreach (var obj in list)
+            {
+                if (obj == null) continue;
+                obj.OnEnable();
+            }
+
             // Capture defaults of each contained ExposedObjectHandle.
-            foreach (var obj in _objects)
+            foreach (var obj in list)
             {
                 if (obj == null) continue;
                 var exposedObj = obj.exposedObject;
@@ -83,8 +217,7 @@ namespace Lilium.RemoteControl
             }
 
             // Mark currently held objects as persistent (i.e. originally part of the scene).
-            _persistentIds.Clear();
-            foreach (var obj in _objects)
+            foreach (var obj in list)
             {
                 if (obj?.exposedObject != null && obj.exposedObject.Value.hasId)
                     _persistentIds.Add(obj.exposedObject.Value.id);
@@ -92,7 +225,7 @@ namespace Lilium.RemoteControl
 
             // Inline UnityEngine.Object references (components etc.) also need defaults captured
             // so that subsequent delta saves can compute diffs correctly.
-            var reachable = ExposedObjectGraph.ResolveExposedObjects(objects, this);
+            var reachable = ExposedObjectGraph.ResolveExposedObjects(list, this);
             foreach (var exposed in reachable)
             {
                 if (exposed.hasId) continue;
@@ -101,23 +234,20 @@ namespace Lilium.RemoteControl
             }
         }
 
-        public void Shutdown()
+        private static void _ShutdownObjectList(List<IExposedObject> list)
         {
-            foreach (var obj in _objects)
+            foreach (var obj in list)
             {
                 if (obj == null) continue;
                 obj.OnDisable();
             }
-
-            _selfExposedObject?.Unregister();
-            _selfExposedObject = null;
-            _persistentIds.Clear();
         }
 
-        public void UpdateObjects()
+        private static void _UpdateObjectList(List<IExposedObject> list)
         {
-            foreach (var obj in _objects)
+            for (int i = 0; i < list.Count; i++)
             {
+                var obj = list[i];
                 if (obj == null) continue;
                 obj.Update();
             }
@@ -151,17 +281,31 @@ namespace Lilium.RemoteControl
 
         public void ResetAll()
         {
-            foreach (var obj in _objects)
-            {
-                if (obj == null) continue;
-                obj.Reset();
-            }
+            _ResetObjectList(_objects);
+            for (int i = 0; i < _sources.Count; i++)
+                _ResetObjectList(_sources[i].list);
             Debug.Log($"[RemoteControl] Reset all {_name} container to default values.");
         }
 
         public void ResolveAllReferences(IExposedPropertyTable resolver)
         {
-            foreach (var obj in _objects)
+            _ResolveReferencesInList(_objects, resolver);
+            for (int i = 0; i < _sources.Count; i++)
+                _ResolveReferencesInList(_sources[i].list, resolver);
+        }
+
+        private static void _ResetObjectList(List<IExposedObject> list)
+        {
+            foreach (var obj in list)
+            {
+                if (obj == null) continue;
+                obj.Reset();
+            }
+        }
+
+        private static void _ResolveReferencesInList(List<IExposedObject> list, IExposedPropertyTable resolver)
+        {
+            foreach (var obj in list)
             {
                 if (obj == null) continue;
                 if (obj is ExposedUnityObjectBase unityObj)
@@ -173,11 +317,13 @@ namespace Lilium.RemoteControl
 
         public ExposedObjectHandle? FindById(string id)
         {
-            for (int i = 0; i < _objects.Count; i++)
+            var hit = _FindByIdInList(_objects, id);
+            if (hit != null) return hit;
+
+            for (int s = 0; s < _sources.Count; s++)
             {
-                if (_objects[i] == null) continue;
-                if (_objects[i].id == id)
-                    return _objects[i].exposedObject;
+                hit = _FindByIdInList(_sources[s].list, id);
+                if (hit != null) return hit;
             }
 
             return ExposedObjectRegistry.FindById(id);
@@ -188,15 +334,39 @@ namespace Lilium.RemoteControl
             if (target == null) return null;
 
             var targetUnityObj = target as UnityEngine.Object;
-            for (int i = 0; i < _objects.Count; i++)
-            {
-                if (_objects[i] == null) continue;
+            var hit = _FindByTargetInList(_objects, targetUnityObj);
+            if (hit != null) return hit;
 
-                if (targetUnityObj != null && _objects[i] is ExposedUnityObjectBase u && u.reference == targetUnityObj)
-                    return _objects[i].exposedObject;
+            for (int s = 0; s < _sources.Count; s++)
+            {
+                hit = _FindByTargetInList(_sources[s].list, targetUnityObj);
+                if (hit != null) return hit;
             }
 
             return ExposedObjectRegistry.FindByTarget(target);
+        }
+
+        private static ExposedObjectHandle? _FindByIdInList(List<IExposedObject> list, string id)
+        {
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i] == null) continue;
+                if (list[i].id == id)
+                    return list[i].exposedObject;
+            }
+            return null;
+        }
+
+        private static ExposedObjectHandle? _FindByTargetInList(List<IExposedObject> list, UnityEngine.Object targetUnityObj)
+        {
+            if (targetUnityObj == null) return null;
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i] == null) continue;
+                if (list[i] is ExposedUnityObjectBase u && u.reference == targetUnityObj)
+                    return list[i].exposedObject;
+            }
+            return null;
         }
     }
 }

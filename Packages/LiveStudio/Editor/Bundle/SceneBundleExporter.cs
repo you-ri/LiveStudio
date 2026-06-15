@@ -10,7 +10,7 @@ namespace Lilium.LiveStudio.Editor
 {
     /// <summary>
     /// Exports a Unity scene as a scene bundle (<c>*.scene.lsb</c>) that the Studio app can load
-    /// additively at runtime via <see cref="RuntimeSceneManager"/>.
+    /// additively at runtime via <see cref="WorldManager"/>.
     /// </summary>
     internal static class SceneBundleExporter
     {

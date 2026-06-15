@@ -178,8 +178,11 @@ namespace Lilium.RemoteControl.LiveScene
         public static string BuildLiveSceneJson(ExposedObjectContainer container, string baseSceneName = null)
         {
             if (container == null) return null;
+            // Snapshot main + all merged sources so objects carried in from other scenes
+            // (RemoteControlContainer worlds) are serialized into the single live scene file.
+            var allObjects = new List<IExposedObject>(container.EnumerateAllObjects());
             return LiveSceneToJson(
-                ExposedObjectGraph.ResolveExposedObjects(container.objects, container),
+                ExposedObjectGraph.ResolveExposedObjects(allObjects, container),
                 container,
                 SerializeMode.Delta,
                 ExcludeFilter.None,

@@ -58,15 +58,15 @@ namespace Lilium.LiveStudio.Virgo
 
         FrameBuffer<AvatarAnimationData> _animationFrameBuffer = new FrameBuffer<AvatarAnimationData>(30);
 
-        private System.DateTime _startupTime;
-
-        private Timecode _timecode;
-
         private FrameRate _frameRate = FrameRate.FPS60;
 
-        private long frameNumber => _timecode.ToFrameNumber(_frameRate);
-
         private int _frameOffset;
+
+        // 受信フレームより何秒遅延させて再生するか。補間先 (i0+1) を在庫させるための余裕。
+        // 大きいほど最新フレームを追い越して hold する頻度が減るが、表示レイテンシは増える。
+        [SerializeField]
+        [ExposedField]
+        private float _delaySeconds = 0.0167f; // 約1フレーム (60fps)
 
         [SerializeField]
         private Vector3 _offsetPosition = Vector3.zero;
@@ -134,14 +134,40 @@ namespace Lilium.LiveStudio.Virgo
 
         void Update()
         {
-            _position = this.transform.position;
-            _rotation = this.transform.rotation;
-        }
+            // anchor 未設定時は従来通り自身の transform を配置基準にする。
+            var anchorTransform = anchor != null ? anchor : this.transform;
+            _position = anchorTransform.position;
+            _rotation = anchorTransform.rotation;
 
-        void LateUpdate()
-        {
-            double time = Time.realtimeSinceStartupAsDouble;
-            _timecode = new Timecode(time, _frameRate);            
+            // 受信は 60fps 固定だが render は可変 fps。受信フレームをそのまま hold すると
+            // フレーム間で姿勢が据え置きになり、揺れ物 (SpringBone) がその上で震える。
+            // 連続 2 フレームを実時間から求めた係数で補間し、毎フレーム滑らかに進める。
+            double localFrame = Time.realtimeSinceStartupAsDouble * _frameRate.AsDecimal();
+            // _delaySeconds 分だけ遅延させ、補間先 (i0+1) が受信済みになるようにする。
+            // 遅延が大きいほど先端を追い越しにくい。負値 (未来予測) は無効なので 0 でクランプ。
+            double delayFrames = Mathf.Max(0f, _delaySeconds) * _frameRate.AsDecimal();
+            double playbackPos = localFrame + _frameOffset - delayFrames;
+            long i0 = (long)System.Math.Floor(playbackPos);
+            float t = (float)(playbackPos - i0);
+
+            if (_animationFrameBuffer.TryGet(i0, out AvatarAnimationData prev)
+                && _animationFrameBuffer.TryGet(i0 + 1, out AvatarAnimationData next))
+            {
+                AvatarAnimationSystem.Lerp(prev, next, t, out AvatarAnimationData sampled);
+                frameData = sampled;
+            }
+            else if (_animationFrameBuffer.TryGet(i0, out prev))
+            {
+                // 最新端まで追いついた等で次フレーム未着なら hold する。
+                frameData = prev;
+            }
+            else
+            {
+                // バッファ範囲外 (起動直後 / 大きなギャップ / クロックドリフト) はオフセットを
+                // 最新受信フレームに再同期する。frameCount は lock 保護されメインスレッドから安全。
+                long latest = _animationFrameBuffer.frameCount - 1;
+                if (latest >= 0) _frameOffset = (int)(latest - (long)localFrame);
+            }
         }
 
         unsafe void OnDataReceived(byte[] receivedData)
@@ -172,16 +198,8 @@ namespace Lilium.LiveStudio.Virgo
                 _receivedFrameCount ++;
             }
 
-            // 1フレーム遅延したデータを使うことで安定して同期するように
-            if (_animationFrameBuffer.TryGet(frameNumber + _frameOffset - 1, out AvatarAnimationData gettingFrameData))
-            {
-                frameData = gettingFrameData;
-            }
-            else
-            {
-                _frameOffset = (int)(receivedFrameData.frames - frameNumber);
-                //Debug.Log("[Studio] Frame data not found:  Adjust timing frames set to " + _adjustTimingFrames);
-            }
+            // frameData の生成 (補間サンプリング) は Update (メインスレッド) で毎フレーム行う。
+            // ここ (ワーカースレッド) ではバッファ書き込みのみに留める。
         }
 
         [ContextMenu("Reset Camera")]

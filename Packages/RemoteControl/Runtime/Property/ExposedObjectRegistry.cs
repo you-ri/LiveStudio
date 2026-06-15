@@ -577,10 +577,10 @@ namespace Lilium.RemoteControl
             var result = new List<ExposedObjectHandle>();
             var added = new HashSet<ExposedObjectHandle>();
 
-            // Containerに登録されているオブジェクト
+            // Containerに登録されているオブジェクト（メイン + 他シーンのソースを合成）
             if (container != null)
             {
-                foreach (var item in container.objects)
+                foreach (var item in container.EnumerateAllObjects())
                 {
                     if (item == null) continue;
                     var obj = item.exposedObject;

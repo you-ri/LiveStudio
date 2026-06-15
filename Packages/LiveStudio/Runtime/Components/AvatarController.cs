@@ -164,6 +164,12 @@ namespace Lilium.LiveStudio
             SelectableService<IAvatarService>.Register("current", this);
             SingletonService<IAvatarService>.Register(this);
 
+            // アバターをこの AvatarController の位置・回転で配置し、移動にリアルタイム追従させる。
+            if (_motionSource != null)
+            {
+                _motionSource.anchor = transform;
+            }
+
             ExposedClass.Get<AvatarController>().onPropertyChanging += OnPropertyChanging;
             ExposedClass.Get<AvatarController>().onPropertyChanged += OnPropertyChanged;
 
@@ -177,6 +183,12 @@ namespace Lilium.LiveStudio
 
         void OnDisable()
         {
+            // 自分が設定した anchor のみ解除し、dangling 参照を残さない。
+            if (_motionSource != null && _motionSource.anchor == transform)
+            {
+                _motionSource.anchor = null;
+            }
+
             foreach (var source in _avatarSources)
             {
                 source.onAvatarReady -= _OnAvatarSourceReady;

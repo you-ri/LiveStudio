@@ -90,6 +90,18 @@ namespace Lilium.RemoteControl.LiveScene
         {
             _BuildHelpers();
             _container.SetName(gameObject.name);
+
+            // Merge RemoteControlContainers already present (e.g. additively-loaded worlds), then
+            // subscribe so containers that enable/disable later stay in sync.
+            var containers = RemoteControlContainer.all;
+            for (int i = 0; i < containers.Count; i++)
+            {
+                var c = containers[i];
+                if (c != null) _container.AddSource(c._objects, c);
+            }
+            RemoteControlContainer.onRegistered += _OnContainerRegistered;
+            RemoteControlContainer.onUnregistered += _OnContainerUnregistered;
+
             _container.Initialize();
 
             if (!Application.isPlaying) return;
@@ -116,6 +128,9 @@ namespace Lilium.RemoteControl.LiveScene
 
         protected virtual void OnDisable()
         {
+            RemoteControlContainer.onRegistered -= _OnContainerRegistered;
+            RemoteControlContainer.onUnregistered -= _OnContainerUnregistered;
+
             if (Application.isPlaying)
             {
 #if UNITY_EDITOR
@@ -163,6 +178,22 @@ namespace Lilium.RemoteControl.LiveScene
         protected virtual void OnPreUnregisterHandlers(RemoteControlServerCore server) { }
 
         // --- Internals ---
+
+        // --- RemoteControlContainer discovery (objects from other scenes) ---
+
+        private void _OnContainerRegistered(RemoteControlContainer container)
+        {
+            if (container == null) return;
+            _container.AddSource(container._objects, container);
+            _container.InitializeSource(container);
+        }
+
+        private void _OnContainerUnregistered(RemoteControlContainer container)
+        {
+            if (container == null) return;
+            _container.ShutdownSource(container);
+            _container.RemoveSource(container);
+        }
 
         private void _BuildHelpers()
         {

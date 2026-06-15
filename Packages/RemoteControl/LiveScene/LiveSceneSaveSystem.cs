@@ -1,5 +1,6 @@
 // Copyright (c) You-Ri, 2026
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -294,7 +295,7 @@ namespace Lilium.RemoteControl.LiveScene
             if (_objectContainer == null) return;
 
             var objects = ExposedObjectGraph.ResolveExposedObjects(
-                _objectContainer.objects, _objectContainer);
+                new List<IExposedObject>(_objectContainer.EnumerateAllObjects()), _objectContainer);
 
             foreach (var obj in objects)
             {
