@@ -5,5 +5,6 @@
     "DIALOG_OK": "OK",
     "DIALOG_CANCEL": "Cancel",
     "DIALOG_SAVE": "Save",
-    "DIALOG_DONT_SAVE": "Don't Save"
+    "DIALOG_DONT_SAVE": "Don't Save",
+    "NOTIFY_LIVESCENE_SAVED": "Live scene saved"
 }

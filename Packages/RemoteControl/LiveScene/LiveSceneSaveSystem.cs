@@ -6,6 +6,7 @@ using UnityEngine.SceneManagement;
 
 using Lilium.RemoteControl;
 using Lilium.RemoteControl.Dialogs;
+using Lilium.RemoteControl.Notification;
 
 namespace Lilium.RemoteControl.LiveScene
 {
@@ -270,6 +271,12 @@ namespace Lilium.RemoteControl.LiveScene
             _baselineJson = json;
 
             Debug.Log($"[RemoteControl] Live scene saved to '{fullPath}'");
+
+            // Let connected remote apps know the save completed (shown as a toast there).
+            RemoteNotificationSystem.Show(
+                LocalizationSystem.Translate("NOTIFY_LIVESCENE_SAVED"),
+                RemoteNotificationSystem.Type.Success,
+                icon: "save");
         }
 
         public bool HasUnsavedChanges()

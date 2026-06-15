@@ -5,5 +5,6 @@
     "DIALOG_OK": "确定",
     "DIALOG_CANCEL": "取消",
     "DIALOG_SAVE": "保存",
-    "DIALOG_DONT_SAVE": "不保存"
+    "DIALOG_DONT_SAVE": "不保存",
+    "NOTIFY_LIVESCENE_SAVED": "已保存实时场景"
 }
