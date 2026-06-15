@@ -1153,10 +1153,12 @@ namespace Lilium.RemoteControl
         /// </summary>
         private static JToken _GetDefaultTemplate(JArray defaultArr, JToken currentElement)
         {
-            // defaultに既存要素があればそれをテンプレートとして使用
-            if (defaultArr.Count > 0) return defaultArr[0];
-
-            // @typeからデフォルトインスタンスを生成
+            // 新規要素（baseline 長を超える要素）は読み込み側で型デフォルト
+            // (CreateDefaultElement, _FromJsonPropertyArrayDelta 参照) から再生成され、その上に
+            // JSON デルタが適用される。したがって書き込み側の差分基準も同じ型デフォルトでなければ
+            // ならない。defaultArr[0]（既存要素）を基準にすると、既存要素と同値だが型デフォルトと
+            // 異なるフィールドが省略され、再読み込み時に失われる（例: WorldManager で enabled=true が
+            // 常時 ON の先頭ブートストラップ要素と一致して省略されるケース）。
             if (currentElement is JObject currentObj)
             {
                 var typeName = currentObj["@type"]?.Value<string>();
@@ -1173,6 +1175,9 @@ namespace Lilium.RemoteControl
                     }
                 }
             }
+
+            // @type が取得できない場合のフォールバック: 既存 baseline 要素をベストエフォートで使用。
+            if (defaultArr.Count > 0) return defaultArr[0];
 
             return null;
         }

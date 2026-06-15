@@ -35,23 +35,33 @@ namespace Lilium.LiveStudio
         [ExposedField]
         public string filePath;
 
-        /// <summary>Desired state. Toggling this loads (true) or unloads (false) the scene.</summary>
+        /// <summary>
+        /// Desired state. Toggling this loads (true) or unloads (false) the scene. Persisted, so a
+        /// saved live scene restores which bundles were visible at startup.
+        /// </summary>
         [ExposedField]
         public bool enabled;
 
-        /// <summary>Actual state, synced by the manager after a load/unload completes.</summary>
-        [ExposedField]
+        /// <summary>
+        /// Actual state, synced by the manager after a load/unload completes. Not persisted: it is
+        /// derived from the real load and re-established when the restored entries finish loading.
+        /// </summary>
+        [ExposedField(persistable = false)]
         public bool isLoaded;
 
-        /// <summary>True when this scene is the active scene. Synced by the manager.</summary>
+        /// <summary>
+        /// True when this scene is the active scene. Persisted, so the saved active scene is
+        /// reactivated on restore once it has loaded.
+        /// </summary>
         [ExposedField]
         public bool isActive;
 
         /// <summary>
         /// True for the bootstrap (initial) scene the app loads at startup. This entry is always
         /// present and loaded, and cannot be unloaded or removed; only activation is allowed.
+        /// Rebuilt at runtime, so it is not persisted.
         /// </summary>
-        [ExposedField]
+        [ExposedField(persistable = false)]
         public bool isPersistent;
     }
 
@@ -128,6 +138,12 @@ namespace Lilium.LiveStudio
         [NonSerialized]
         private bool _initialized;
 
+        // True from OnEnable until the first Update tick. The live scene restore (host Start) runs in
+        // this window, so OnAfterExposedDeserialize can tell the startup restore apart from the later
+        // per-property edits that also fire it.
+        [NonSerialized]
+        private bool _restorePending;
+
         public void OnEnable()
         {
             ExposedObjectRegistry.Create<WorldManager>(this, kId);
@@ -137,15 +153,16 @@ namespace Lilium.LiveStudio
             // first, non-removable entry so the remote app can see and re-activate it.
             if (Application.isPlaying)
             {
+                _restorePending = true;
                 _persistentScene = SceneManager.GetActiveScene();
                 _EnsurePersistentEntry();
             }
 
             // Note: a restored live scene's `scenes` array is not available here. `scenes` is
             // [NonSerialized], so it is empty at OnEnable and only populated later when the live
-            // scene JSON is deserialized (RemoteControlBehaviour.Start). The restore — loading the
-            // enabled entries and reactivating the saved active scene — is handled in
-            // OnAfterExposedDeserialize, which fires right after that array is restored.
+            // scene JSON is deserialized (RemoteControlBehaviour.Start). Restoring the saved
+            // visible/active state (loading enabled entries, reactivating the saved active scene)
+            // is handled in OnAfterExposedDeserialize, which fires right after that array is restored.
 
             _initialized = true;
         }
@@ -175,48 +192,41 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
-        /// Fires right after the <c>scenes</c> array is restored from a saved live scene. The
-        /// restored entries carry their saved <see cref="SceneBundleEntry.isLoaded"/> /
-        /// <see cref="SceneBundleEntry.isActive"/> flags, but nothing is actually loaded yet, so we
-        /// reconcile: schedule the enabled entries to load and remember which one should become the
-        /// active scene once it has loaded (applied in <see cref="_LoadEntryAsync"/>).
+        /// Fires after the <c>scenes</c> array is restored from a saved live scene — and also after
+        /// every per-property edit from the remote app (the SetProperty path triggers it too). Only
+        /// the startup restore is handled here, gated by <see cref="_restorePending"/>.
+        ///
+        /// Restores the saved state: re-establishes the bootstrap entry (the restore overwrote the
+        /// one added in <see cref="OnEnable"/>), remembers which scene was active so it can be
+        /// reactivated once loaded, and schedules a diff so the saved-enabled bundles load.
         /// </summary>
         public void OnAfterExposedDeserialize()
         {
             if (!Application.isPlaying) return;
+            if (!_restorePending) return;
 
-            // A restored array carries its own (stale) persistent entry; replace it with a fresh one
-            // built from the current bootstrap scene.
             _EnsurePersistentEntry();
 
+            // Remember the scene that was active when saved; reactivated in _LoadEntryAsync once loaded.
+            _pendingActiveId = null;
             for (int i = 0; i < scenes.Length; i++)
             {
-                // The persistent scene is activated automatically; it is never reconciled here.
                 if (scenes[i].isPersistent) continue;
                 if (!scenes[i].isActive) continue;
-
-                var id = scenes[i].id;
-                if (_loaded.TryGetValue(id, out var loaded) &&
-                    loaded.scene.IsValid() && loaded.scene.isLoaded)
-                {
-                    // Already loaded (e.g. a runtime re-sync): activate immediately.
-                    SceneManager.SetActiveScene(loaded.scene);
-                    _pendingActiveId = null;
-                }
-                else
-                {
-                    // Not loaded yet (startup restore): activate once it finishes loading.
-                    _pendingActiveId = id;
-                }
+                _pendingActiveId = scenes[i].id;
                 break;
             }
 
-            // Load (or unload) entries to match the restored desired state on the next Update.
+            // Load the entries that were enabled when saved on the next Update.
             _dirty = true;
         }
 
         public void Update()
         {
+            // The startup restore (host Start) has completed by the first tick; later
+            // OnAfterExposedDeserialize calls are per-property edits, not a restore.
+            _restorePending = false;
+
             if (!_dirty) return;
             if (!_initialized) { _dirty = false; return; }
 #if UNITY_EDITOR
@@ -515,8 +525,9 @@ namespace Lilium.LiveStudio
 
         /// <summary>
         /// Rebuilds the <c>scenes</c> array so the bootstrap (persistent) scene is the first entry.
-        /// Any existing persistent entries (e.g. restored from saved JSON) are dropped and replaced
-        /// with a fresh one reflecting the current bootstrap scene.
+        /// Any existing persistent entry (e.g. a stale one restored from saved JSON) is dropped — by
+        /// id, since <see cref="SceneBundleEntry.isPersistent"/> is not persisted — and replaced with
+        /// a fresh one reflecting the current bootstrap scene.
         /// </summary>
         private void _EnsurePersistentEntry()
         {
@@ -525,7 +536,7 @@ namespace Lilium.LiveStudio
             var list = new List<SceneBundleEntry>(scenes.Length + 1) { _CreatePersistentEntry() };
             for (int i = 0; i < scenes.Length; i++)
             {
-                if (scenes[i].isPersistent) continue;
+                if (scenes[i].id == kPersistentSceneId) continue;
                 list.Add(scenes[i]);
             }
             scenes = list.ToArray();
