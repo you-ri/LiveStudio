@@ -139,8 +139,10 @@ namespace Lilium.LiveStudio
 #endif
 
 
+            // 腕の Twist Relaxer は VRM1Avatar コンポーネントがある場合のみ追加する。
             // 腕のコンストレイントが設定済みか？
-            if (avatar.GetComponentsInChildren<Vrm10RollConstraint>(true).Length == 0)
+            if (avatar.GetComponent<VRM1Avatar>() != null
+                && avatar.GetComponentsInChildren<Vrm10RollConstraint>(true).Length == 0)
             {
                 // 両腕のTwistRelaxerを設定
                 SetupArmsTwistRelaxer(
