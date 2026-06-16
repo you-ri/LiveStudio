@@ -2,9 +2,9 @@
 // Reproduces vowel-centric VRChat visemes from ARKit blendshapes by driving the
 // avatar's AnimatorController "Viseme" (Int) / "Voice" (Float) parameters.
 //
-// TODO: VRCFTAvatar shares the eye-bone rig and BuildAvatar boilerplate with this
-// component. Extract a common base / helper in a later refactor (kept duplicated
-// here to respect the minimal-change rule).
+// The VRChat Expressions mechanism (VRCExpression / parameter apply-restore) is shared
+// with VRCFTAvatar via VRCExpressionDriver; only the eye-bone rig and BuildAvatar
+// boilerplate remain duplicated.
 
 using System;
 using System.Collections.Generic;
@@ -17,24 +17,6 @@ using Lilium.RemoteControl;
 
 namespace Lilium.LiveStudio
 {
-    /// <summary>
-    /// VRChat 表情マッピング。表情名と、その表情がアクティブな間に Animator に書き込む
-    /// パラメータ群 (AnimationParameterOverride) のペア。VRChat の FX レイヤーが
-    /// Animator パラメータ値で表情を切り替える仕組みに合わせる。
-    /// </summary>
-    [ExposedClass]
-    [Serializable]
-    public class VRCExpression
-    {
-        [ExposedField]
-        [Tooltip("表情名 (FacialKey.name)。AvatarExpression の \"Expression.<name>\" InputAction と紐付く")]
-        public string name;
-
-        [ExposedField(label = "VRCAVATAR_EXPRESSION_PARAMETERS")]
-        [Tooltip("この表情がアクティブな間に Animator に書き込むパラメータ")]
-        public AnimationParameterOverride[] parameters = Array.Empty<AnimationParameterOverride>();
-    }
-
     /// <summary>
     /// VRChat 由来アバター用コンポーネント。ARKit 52 値から母音中心の VRChat viseme
     /// (sil/aa/E/ih/oh/ou) を推定し、AnimatorController の Viseme (Int) / Voice (Float)
@@ -180,8 +162,8 @@ namespace Lilium.LiveStudio
 
         FacialKey[] _expressionKeys;
 
-        int _activeExpressionIndex = -1;   // 現在 Animator に適用中のエントリ (-1 = なし)
-        bool _expressionsResolved;         // 初回の default 値採取が走ったか
+        // VRChat 表情マッピングの選択・パラメータ適用は共通ドライバに委譲する。
+        VRCExpressionDriver _expressionDriver;
 
         Transform _leftEyeBone;
         Transform _rightEyeBone;
@@ -230,24 +212,14 @@ namespace Lilium.LiveStudio
                 Debug.LogWarning($"[Studio] VRCAvatar: '{_voiceParam}' parameter not found on Animator.");
             }
 
-            // viseme (口形状) + ユーザー定義表情を統合した FacialKey 一覧を構築。
-            // 名前未設定のエントリは custom key を作れないためスキップする。
+            // 外部公開する表情キー (GetExpressions) は VRChat 表情のみ。
+            // viseme (口形状) は ARKit から内部 lipsync 駆動するため公開不要 (名前ルーティングは
+            // SetWeight/GetWeight 内の _LocalVisemeIndex が s_localVisemeNames で別途解決する)。
             var keys = new List<FacialKey>();
-            for (int i = 0; i < kVisemeCount; i++)
-            {
-                keys.Add(FacialKey.CreateCustom(s_localVisemeNames[i]));
-            }
-            if (_expressions != null)
-            {
-                foreach (var exp in _expressions)
-                {
-                    if (exp != null && !string.IsNullOrEmpty(exp.name))
-                    {
-                        keys.Add(FacialKey.CreateCustom(exp.name));
-                    }
-                }
-            }
+            VRCExpressionDriver.AppendExpressionKeys(_expressions, keys);
             _expressionKeys = keys.ToArray();
+
+            _expressionDriver = new VRCExpressionDriver(new AnimatorParameterPort(_animator));
 
             expressionResolver.Setup();
 
@@ -353,7 +325,7 @@ namespace Lilium.LiveStudio
 #endif
 
             // VRChat 表情: 最大ウェイトの表情の AnimationParameterOverride を Animator へ反映
-            _UpdateExpressionAnimationParameters();
+            _expressionDriver.Update(_expressions, expressionResolver);
 
             AvatarAnimationSystem.UpdateBodyAnimation(_animator, in _motionSource.frameData);
         }
@@ -632,7 +604,7 @@ namespace Lilium.LiveStudio
             }
 
             // VRChat 表情マッピング: resolver に流す。次の Resolve で smoothedOutputs に反映され、
-            // _UpdateExpressionAnimationParameters が最大ウェイト表情を選んで AnimationParameter に書き込む。
+            // VRCExpressionDriver が最大ウェイト表情を選んで AnimationParameter に書き込む。
             expressionResolver.SetWeight(key.name, weight);
             return true;
         }
@@ -664,122 +636,6 @@ namespace Lilium.LiveStudio
                 if (s_localVisemeNames[i] == name) return i;
             }
             return -1;
-        }
-
-        /// <summary>
-        /// expressionResolver.smoothedOutputs から _expressions[*].name と一致するエントリを探し、
-        /// 最大ウェイトの表情の AnimationParameterOverride を Animator に書き込む。
-        /// 切り替わったタイミングのみ実 Animator 操作が走る。全表情ウェイトが 0 のときは
-        /// 直前の parameters をデフォルト値に戻して終了。
-        /// </summary>
-        void _UpdateExpressionAnimationParameters()
-        {
-            if (_expressions == null || _expressions.Length == 0) return;
-            if (_animator == null || _animator.runtimeAnimatorController == null) return;
-            if (!expressionResolver.isSetup) return;
-
-            var outputs = expressionResolver.smoothedOutputs;
-            if (!outputs.IsCreated) return;
-
-            // 最大ウェイト (0 < weight) の表情を選択。同値時は配列の先頭優先。
-            int bestIndex = -1;
-            float bestWeight = 0f;
-            for (int i = 0; i < _expressions.Length; i++)
-            {
-                var exp = _expressions[i];
-                if (exp == null || string.IsNullOrEmpty(exp.name)) continue;
-                if (outputs.TryGet(exp.name, out float w) && w > bestWeight)
-                {
-                    bestWeight = w;
-                    bestIndex = i;
-                }
-            }
-
-            // 切り替わりなしかつ resolve 済なら何もしない。Animator 値は前回設定のまま保持される。
-            if (bestIndex == _activeExpressionIndex && _expressionsResolved) return;
-
-            // 前のアクティブ表情の parameters を default 値に戻す
-            if (_activeExpressionIndex >= 0
-                && _activeExpressionIndex < _expressions.Length
-                && _expressions[_activeExpressionIndex] != null)
-            {
-                _RestoreExpressionParameters(_expressions[_activeExpressionIndex].parameters);
-            }
-
-            // 新しいアクティブ表情の parameters を適用
-            if (bestIndex >= 0)
-            {
-                _ApplyExpressionParameters(_expressions[bestIndex].parameters);
-            }
-
-            _activeExpressionIndex = bestIndex;
-            _expressionsResolved = true;
-        }
-
-        void _ApplyExpressionParameters(AnimationParameterOverride[] overrides)
-        {
-            if (overrides == null) return;
-            for (int i = 0; i < overrides.Length; i++)
-            {
-                var o = overrides[i];
-                if (o == null || string.IsNullOrEmpty(o.name)) continue;
-                if (!_TryGetAnimatorParameter(o.name, out var param)) continue;
-                if (param.type == AnimatorControllerParameterType.Trigger) continue;
-
-                o.type = param.type;
-
-                // AvatarController._ApplyAnimationParameterOverrides と同じく、最初に出現した時点の
-                // Animator 値を default として保存しておき、表情解除時に書き戻す。
-                if (!o.resolved)
-                {
-                    switch (param.type)
-                    {
-                        case AnimatorControllerParameterType.Float: o.defaultFloat = _animator.GetFloat(param.nameHash); break;
-                        case AnimatorControllerParameterType.Int: o.defaultInt = _animator.GetInteger(param.nameHash); break;
-                        case AnimatorControllerParameterType.Bool: o.defaultBool = _animator.GetBool(param.nameHash); break;
-                    }
-                    o.resolved = true;
-                }
-
-                switch (param.type)
-                {
-                    case AnimatorControllerParameterType.Float: _animator.SetFloat(param.nameHash, o.floatValue); break;
-                    case AnimatorControllerParameterType.Int: _animator.SetInteger(param.nameHash, o.intValue); break;
-                    case AnimatorControllerParameterType.Bool: _animator.SetBool(param.nameHash, o.boolValue); break;
-                }
-            }
-        }
-
-        void _RestoreExpressionParameters(AnimationParameterOverride[] overrides)
-        {
-            if (overrides == null) return;
-            for (int i = 0; i < overrides.Length; i++)
-            {
-                var o = overrides[i];
-                if (o == null || !o.resolved || string.IsNullOrEmpty(o.name)) continue;
-                if (!_TryGetAnimatorParameter(o.name, out var param)) continue;
-                switch (param.type)
-                {
-                    case AnimatorControllerParameterType.Float: _animator.SetFloat(param.nameHash, o.defaultFloat); break;
-                    case AnimatorControllerParameterType.Int: _animator.SetInteger(param.nameHash, o.defaultInt); break;
-                    case AnimatorControllerParameterType.Bool: _animator.SetBool(param.nameHash, o.defaultBool); break;
-                }
-            }
-        }
-
-        bool _TryGetAnimatorParameter(string name, out AnimatorControllerParameter result)
-        {
-            var parameters = _animator.parameters;
-            for (int i = 0; i < parameters.Length; i++)
-            {
-                if (parameters[i].name == name)
-                {
-                    result = parameters[i];
-                    return true;
-                }
-            }
-            result = default;
-            return false;
         }
 
         #endregion

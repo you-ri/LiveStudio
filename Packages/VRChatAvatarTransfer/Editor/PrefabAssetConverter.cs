@@ -63,6 +63,12 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 result.vrcConstraintsConverted = VRCConstraintToUnityConstraintConverter.Convert(root);
                 ApplyFxAnimatorController(root, safeName, ref result);
 
+                // 適用済み FX controller に配線されたハンドジェスチャー (GestureLeft/Right 1..7) を
+                // VRChat ジェスチャー表情として両アバター種別に仕込む。FX の遷移条件に存在する値のみ。
+                var fxController = root.GetComponent<Animator>()?.runtimeAnimatorController
+                    as UnityEditor.Animations.AnimatorController;
+                var gestureExpressions = GestureExpressionBuilder.Build(fxController);
+
                 // VRCFT v2 互換 (FX controller に "FT/v2/" 系パラメータが存在) の場合は
                 // VRCFTAvatar を IAvatar として採用し、ARKit を直接 FT/v2/ パラメータへ書き込む。
                 // この経路では VRCAvatar 向けの viseme/blink/expressions 移植は適用しない
@@ -76,6 +82,12 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     }
                     VRChatAvatarTransferLog.Info(
                         $"'{root.name}': VRCFT-compatible avatar detected; VRCFTAvatar added instead of VRCAvatar.");
+
+                    var vrcftAvatar = root.GetComponent<Lilium.LiveStudio.VRCFTAvatar>();
+                    vrcftAvatar.ConfigureExpressions(gestureExpressions);
+                    EditorUtility.SetDirty(vrcftAvatar);
+                    VRChatAvatarTransferLog.Info(
+                        $"'{root.name}': added {gestureExpressions.Length} gesture expression(s).");
                 }
                 else
                 {
@@ -93,6 +105,11 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                     VRCEyeBlinkConverter.Convert(root, vrcAvatar);
                     // 一旦無効化: expressions (VRCExpressionsMenu) の移植を一時的にオフ
                     // VRCExpressionsConverter.Convert(root, vrcAvatar);
+
+                    vrcAvatar.ConfigureExpressions(gestureExpressions);
+                    EditorUtility.SetDirty(vrcAvatar);
+                    VRChatAvatarTransferLog.Info(
+                        $"'{root.name}': added {gestureExpressions.Length} gesture expression(s).");
                 }
 
                 StripVRChatComponents(root, ref result);

@@ -289,6 +289,12 @@ namespace Lilium.LiveStudio
         [Tooltip("目の回転最大角度 (x: yaw, y: pitch)")]
         Vector2 _eyeRotationMax = new Vector2(90f, 90f);
 
+        [Header("Expression")]
+
+        [SerializeField]
+        [Tooltip("VRChat 表情マッピング。表情のウェイトのうち最大値のものをアクティブとし、その parameters を Animator に書き込む")]
+        VRCExpression[] _expressions = Array.Empty<VRCExpression>();
+
         Animator _animator;
 
         // 体アニメ (PlayableGraph + トラッキング状態 + メッシュ表示) は driver に委譲。
@@ -302,6 +308,10 @@ namespace Lilium.LiveStudio
 
         FacialKey[] _expressionKeys;
         Dictionary<string, int> _ftNameToIndex;
+
+        // VRChat 表情マッピングの選択・パラメータ適用は共通ドライバに委譲する。
+        // 書き込み先は PlayableGraph 内の AnimatorController (driver.controllerPlayable)。
+        VRCExpressionDriver _expressionDriver;
 
         Transform _leftEyeBone;
         Transform _rightEyeBone;
@@ -361,13 +371,21 @@ namespace Lilium.LiveStudio
             }
             _validParamIndices = validIndices.ToArray();
 
-            _expressionKeys = new FacialKey[FT_ParamCount];
+            // FT 名→index は SetWeight/GetWeight のルーティング用に全件保持する。
             _ftNameToIndex = new Dictionary<string, int>(FT_ParamCount);
             for (int i = 0; i < FT_ParamCount; i++)
             {
-                _expressionKeys[i] = FacialKey.CreateCustom(s_ftParamNames[i]);
                 _ftNameToIndex[s_ftParamNames[i]] = i;
             }
+
+            // 外部公開する表情キー (GetExpressions) は VRChat 表情のみ。
+            // FT/v2/* は Update 内で ARKit から直接 controllerPlayable へ駆動するため公開不要。
+            var keys = new List<FacialKey>();
+            VRCExpressionDriver.AppendExpressionKeys(_expressions, keys);
+            _expressionKeys = keys.ToArray();
+
+            // AnimatorController は PlayableGraph 内にラップされるため controllerPlayable へ書き込む。
+            _expressionDriver = new VRCExpressionDriver(new ControllerPlayableParameterPort(_bodyDriver));
 
             expressionResolver.Setup();
 
@@ -422,6 +440,10 @@ namespace Lilium.LiveStudio
             _ComputeTargetValues();
             _ComputeCombinedValues();
             _WriteToController();
+
+            // VRChat 表情: 最大ウェイトの表情の AnimationParameterOverride を controllerPlayable へ反映
+            _expressionDriver.Update(_expressions, expressionResolver);
+
             _ApplyEyeLookAt();
         }
 
@@ -662,6 +684,17 @@ namespace Lilium.LiveStudio
             }
         }
 
+        /// <summary>
+        /// VRChat ExpressionsMenu から移植した表情マッピングを注入する (変換ツールから呼ばれる)。
+        /// 各 VRCExpression.name は実行時に expressionResolver.smoothedOutputs から重みを引くキー
+        /// として参照される (FacialKey 名を前提とする)。menu の Control 名そのままだとリゾルバが
+        /// 重みを返さないため、移植直後は雛形扱いとなる。
+        /// </summary>
+        public void ConfigureExpressions(VRCExpression[] expressions)
+        {
+            _expressions = expressions ?? Array.Empty<VRCExpression>();
+        }
+
         #region IAvatar
 
         void IAvatar.BuildAvatar()
@@ -686,18 +719,28 @@ namespace Lilium.LiveStudio
         bool IExpressionAvatar.SetWeight(FacialKey key, float weight)
         {
             if (string.IsNullOrEmpty(key.name)) return false;
-            if (!_ftNameToIndex.TryGetValue(key.name, out int index)) return false;
 
-            _targetValues[index] = Mathf.Clamp(weight, -1f, 1f);
+            // FT パラメータ - 既存経路
+            if (_ftNameToIndex.TryGetValue(key.name, out int index))
+            {
+                _targetValues[index] = Mathf.Clamp(weight, -1f, 1f);
+                return true;
+            }
+
+            // VRChat 表情マッピング: resolver に流す。次の Resolve で smoothedOutputs に反映され、
+            // VRCExpressionDriver が最大ウェイト表情を選んで AnimationParameter に書き込む。
+            expressionResolver.SetWeight(key.name, weight);
             return true;
         }
 
         float IExpressionAvatar.GetWeight(FacialKey key)
         {
             if (string.IsNullOrEmpty(key.name)) return 0f;
-            if (!_ftNameToIndex.TryGetValue(key.name, out int index)) return 0f;
+            if (_ftNameToIndex.TryGetValue(key.name, out int index)) return _targetValues[index];
 
-            return _targetValues[index];
+            if (!expressionResolver.isSetup) return 0f;
+            if (expressionResolver.smoothedOutputs.TryGet(key.name, out float weight)) return weight;
+            return 0f;
         }
 
         ReadOnlySpan<FacialKey> IExpressionAvatar.GetExpressions()
