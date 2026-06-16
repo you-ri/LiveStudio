@@ -8,6 +8,8 @@ using UnityEngine;
 using UniVRM10;
 #endif
 
+using Lilium.RemoteControl;
+
 namespace Lilium.LiveStudio
 {
     /// <summary>
@@ -19,6 +21,35 @@ namespace Lilium.LiveStudio
     [RequireComponent(typeof(Animator))]
     public class VRCFTAvatar : MonoBehaviour, IAvatar
     {
+        [SerializeReference, Select]
+        public IExpressionResolver expressionResolver = new DefaultExpressionResolver();
+
+#if UNITY_EDITOR
+        // GUID of the shipped default ExpressionConfig asset (LiveStudio package:
+        // Contents/SceneTemplate/Current Avatar Expression Config.asset).
+        // Using GUID instead of a path keeps the default working after renames/moves.
+        const string _kDefaultExpressionConfigGuid = "c7b12b2866458f44fb076018b48d8fb4";
+
+        // Editor-only: populate the resolver's ExpressionConfig with the shipped default
+        // when the component is first added (or reset). A C# field initializer cannot
+        // reference a ScriptableObject asset, so this is the standard Unity entry point
+        // for that kind of default.
+        void Reset()
+        {
+            if (expressionResolver == null) return;
+            if (expressionResolver.expressionConfig != null) return;
+
+            var path = UnityEditor.AssetDatabase.GUIDToAssetPath(_kDefaultExpressionConfigGuid);
+            if (string.IsNullOrEmpty(path)) return;
+
+            var defaultConfig = UnityEditor.AssetDatabase.LoadAssetAtPath<AvatarExpressionConfig>(path);
+            if (defaultConfig != null)
+            {
+                expressionResolver.expressionConfig = defaultConfig;
+            }
+        }
+#endif
+
         //----------------------------------------------------------------------
         // Individual パラメータインデックス
         //----------------------------------------------------------------------
@@ -269,7 +300,6 @@ namespace Lilium.LiveStudio
         int[] _paramHashes;
         int[] _validParamIndices;
 
-        AvatarExpressionConfig _expressionConfig;
         FacialKey[] _expressionKeys;
         Dictionary<string, int> _ftNameToIndex;
 
@@ -339,6 +369,8 @@ namespace Lilium.LiveStudio
                 _ftNameToIndex[s_ftParamNames[i]] = i;
             }
 
+            expressionResolver.Setup();
+
             _SetupEyeBones();
 
 #if VRMC_VRM10
@@ -357,6 +389,7 @@ namespace Lilium.LiveStudio
         void OnDestroy()
         {
             _bodyDriver.Dispose();
+            expressionResolver?.Dispose();
         }
 
         void _SetupEyeBones()
@@ -381,6 +414,10 @@ namespace Lilium.LiveStudio
         {
             // 体アニメ (トラッキング遷移 / メッシュ表示 / root 直書き / 姿勢の Job 受け渡し) は driver が担当。
             if (!_bodyDriver.Tick()) return;
+
+            // ARKit 52 weight を resolver で reshape (source 調整 + neutral 差分 + 表情合成 + スムージング)。
+            // 以降の FT パラメータ計算は resolver の arkitWeightData を入力にする。
+            expressionResolver.Resolve(in _bodyDriver.motionSource.frameData.expression);
 
             _ComputeTargetValues();
             _ComputeCombinedValues();
@@ -421,8 +458,11 @@ namespace Lilium.LiveStudio
 
         unsafe void _ComputeTargetValues()
         {
-            ref var frame = ref _bodyDriver.motionSource.frameData;
-            fixed (float* bs = frame.expression.weights)
+            // 入力は expressionResolver.Resolve 通過後の ARKit weight (source 調整 + neutral 差分 +
+            // 表情合成済み)。VRCAvatar と同様に config の調整がここに反映される。ローカルコピーした
+            // struct の fixed buffer はスタック上で既に固定アドレスのため、追加の fixed 文は不要かつ不可。
+            var arkitWeight = expressionResolver.arkitWeightData;
+            float* bs = arkitWeight.weights;
             {
                 // EyeLid (special)
                 _targetValues[FT_EyeLidRight] = Mathf.Clamp01(1f - bs[(int)ARKitBlendShapeLocation.EyeBlinkRight]) * 0.75f
@@ -635,7 +675,7 @@ namespace Lilium.LiveStudio
 
         void IAvatar.SetExpressionConfig(AvatarExpressionConfig config)
         {
-            _expressionConfig = config;
+            expressionResolver.expressionConfig = config;
         }
 
         void IAvatar.SetMotionSource(MotionSourceBase motionSource)

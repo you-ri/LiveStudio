@@ -73,7 +73,7 @@ namespace Lilium.LiveStudio.Virgo
         // it to eye level so the avatar lands on the floor for a typical hand-held capture height.
         [SerializeField]
         [ExposedField]
-        private float _cameraHeight = 1.5f;
+        private float _cameraHeight = 1.6f;
 
         [SerializeField]
         private Vector3 _offsetPosition = Vector3.zero;
