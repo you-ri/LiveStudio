@@ -30,6 +30,8 @@ namespace Lilium.VRChatAvatarTransfer.Editor
 
         [SerializeField] private GameObject avatarPrefab;
         [SerializeField] private GameObject convertedPrefab;
+        [SerializeField] private float gravityCoefficient = 1f;
+        [SerializeField] private float stiffnessCoefficient = 1f;
         private readonly List<Item> items = new List<Item>();
         private readonly List<Item> resultItems = new List<Item>();
         private bool hasResult;
@@ -87,6 +89,18 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                         DrawItem(item);
                     }
                 }
+            }
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Conversion Options", EditorStyles.boldLabel);
+            using (new EditorGUI.IndentLevelScope())
+            {
+                gravityCoefficient = Mathf.Max(0f, EditorGUILayout.FloatField(
+                    new GUIContent("Gravity Coefficient", "Multiplier for the converted SpringBone gravity power. 1 = default mapping."),
+                    gravityCoefficient));
+                stiffnessCoefficient = Mathf.Max(0f, EditorGUILayout.FloatField(
+                    new GUIContent("Stiffness Coefficient", "Multiplier for the converted SpringBone stiffness force. 1 = default mapping."),
+                    stiffnessCoefficient));
             }
 
             EditorGUILayout.Space();
@@ -230,7 +244,9 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             if (string.IsNullOrEmpty(assetPath)) return;
 
             Vrm10ObjectBuilder.EnsureFolder(Vrm10ObjectBuilder.OutputFolder);
-            var result = PrefabAssetConverter.Convert(assetPath);
+            var options = new PhysBoneToSpringBoneConverter.ConversionOptions(
+                Mathf.Max(0f, gravityCoefficient), Mathf.Max(0f, stiffnessCoefficient));
+            var result = PrefabAssetConverter.Convert(assetPath, options);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 

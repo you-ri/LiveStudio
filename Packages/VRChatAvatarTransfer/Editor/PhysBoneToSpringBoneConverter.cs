@@ -11,6 +11,24 @@ namespace Lilium.VRChatAvatarTransfer.Editor
 {
     internal static class PhysBoneToSpringBoneConverter
     {
+        /// <summary>
+        /// User-adjustable multipliers applied to the converted SpringBone gravity / stiffness.
+        /// 1.0 reproduces the default mapping exactly; larger values strengthen the effect.
+        /// </summary>
+        public readonly struct ConversionOptions
+        {
+            public readonly float GravityCoefficient;
+            public readonly float StiffnessCoefficient;
+
+            public ConversionOptions(float gravity, float stiffness)
+            {
+                GravityCoefficient = gravity;
+                StiffnessCoefficient = stiffness;
+            }
+
+            public static ConversionOptions Default => new ConversionOptions(1f, 1f);
+        }
+
         public readonly struct Result
         {
             public readonly int PhysBoneCount;
@@ -27,7 +45,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             }
         }
 
-        public static bool TryConvert(GameObject avatarRoot, out Result result)
+        public static bool TryConvert(GameObject avatarRoot, out Result result, ConversionOptions options)
         {
             result = default;
             if (avatarRoot == null)
@@ -66,7 +84,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             {
                 foreach (var pb in physBones)
                 {
-                    var built = TryBuildSprings(pb, colliderMap, vrm10, usedTransforms);
+                    var built = TryBuildSprings(pb, colliderMap, vrm10, usedTransforms, options);
                     springCount += built.springs;
                     jointCount += built.joints;
                 }
@@ -201,7 +219,8 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             VRCPhysBone pb,
             Dictionary<VRCPhysBoneColliderBase, VRM10SpringBoneCollider> colliderMap,
             Vrm10Instance vrm10,
-            HashSet<Transform> usedTransforms)
+            HashSet<Transform> usedTransforms,
+            ConversionOptions options)
         {
             var root = pb.GetRootTransform();
             if (root == null)
@@ -282,7 +301,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 var chain = chains[ci];
                 var name = chains.Count == 1 ? BuildSpringName(pb) : $"{BuildSpringName(pb)}_{ci}";
                 var spring = new Vrm10InstanceSpringBone.Spring(name);
-                int added = PopulateSpringJoints(pb, chain, maxBoneChainIndex, spring);
+                int added = PopulateSpringJoints(pb, chain, maxBoneChainIndex, spring, options);
                 if (added == 0) continue;
 
                 if (sharedGroup != null) spring.ColliderGroups.Add(sharedGroup);
@@ -299,7 +318,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             return (springCount, jointCount);
         }
 
-        private static int PopulateSpringJoints(VRCPhysBone pb, List<Transform> chain, int maxBoneChainIndex, Vrm10InstanceSpringBone.Spring spring)
+        private static int PopulateSpringJoints(VRCPhysBone pb, List<Transform> chain, int maxBoneChainIndex, Vrm10InstanceSpringBone.Spring spring, ConversionOptions options)
         {
             // ファイル先頭の校正マップを式にフィットさせた近似:
             //   stiffnessForce = pull * (1 - spring) * 4
@@ -364,7 +383,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 float pullAmt   = Mathf.Max(0f,   pb.pull   * EvaluateCurveOrOne(pb.pullCurve,   tForce));
                 float springAmt = Mathf.Clamp01(pb.spring * EvaluateCurveOrOne(pb.springCurve, tForce));
 
-                joint.m_stiffnessForce = pullAmt *  StiffnessForceScale;
+                joint.m_stiffnessForce = pullAmt *  StiffnessForceScale * options.StiffnessCoefficient;
                 joint.m_dragForce = Mathf.Clamp01(1f - pullAmt * springAmt);
 
                 // gravity: 他パラメータ同様 gravityCurve を骨深さ tForce でサンプルする。
@@ -377,7 +396,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 // TODO: 角度依存の falloff 近似は要再検討。
                 float gEff = Mathf.Abs(gSampled);
 
-                joint.m_gravityPower = Mathf.Clamp(gEff * GravityPowerScale, 0, 5f);
+                joint.m_gravityPower = Mathf.Clamp(gEff * GravityPowerScale, 0, 5f) * options.GravityCoefficient;
                 joint.m_gravityDir = gravityDir;
                 joint.m_jointRadius = radius * EvaluateCurveOrOne(pb.radiusCurve, tRadius);
                 joint.m_anglelimitType = anglelimitType;

@@ -40,7 +40,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             public int TotalRemoved => vrchatComponentsRemoved + editorOnlyRemoved + missingScriptsRemoved;
         }
 
-        public static ConvertResult Convert(string assetPath)
+        public static ConvertResult Convert(string assetPath, PhysBoneToSpringBoneConverter.ConversionOptions options)
         {
             var result = new ConvertResult();
             GameObject root = null;
@@ -55,7 +55,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
 
                 var safeName = Vrm10ObjectBuilder.MakeFileSafe(Path.GetFileNameWithoutExtension(assetPath));
 
-                if (PhysBoneToSpringBoneConverter.TryConvert(root, out var pbResult))
+                if (PhysBoneToSpringBoneConverter.TryConvert(root, out var pbResult, options))
                 {
                     result.physBonesConverted = pbResult.PhysBoneCount;
                     result.physCollidersConverted = pbResult.ColliderCount;
