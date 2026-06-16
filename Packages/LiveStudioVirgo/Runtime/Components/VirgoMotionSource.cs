@@ -68,6 +68,13 @@ namespace Lilium.LiveStudio.Virgo
         [ExposedField]
         private float _delaySeconds = 0.0167f; // 約1フレーム (60fps)
 
+        // Height (meters) above the anchor for the placed output. Reset zeroes the capture camera
+        // position to the anchor, which would otherwise drop the virtual camera to the ground; lift
+        // it to eye level so the avatar lands on the floor for a typical hand-held capture height.
+        [SerializeField]
+        [ExposedField]
+        private float _cameraHeight = 1.5f;
+
         [SerializeField]
         private Vector3 _offsetPosition = Vector3.zero;
 
@@ -192,7 +199,7 @@ namespace Lilium.LiveStudio.Virgo
                     ResetCamera();
                 }
 
-                AvatarAnimationSystem.Transform(in receivedFrameData, Matrix4x4.TRS(_rotation * _offsetPosition + _position, _rotation * Quaternion.Euler(_offsetRotation), Vector3.one), out var transformedFrameData);
+                AvatarAnimationSystem.Transform(in receivedFrameData, Matrix4x4.TRS(_rotation * _offsetPosition + _position + Vector3.up * _cameraHeight, _rotation * Quaternion.Euler(_offsetRotation), Vector3.one), out var transformedFrameData);
                 _animationFrameBuffer.Set(receivedFrameData.frames, in transformedFrameData);
 
                 _receivedFrameCount ++;
@@ -206,12 +213,20 @@ namespace Lilium.LiveStudio.Virgo
         [ExposedFunction]
         public override void ResetCamera()
         {
-            // Cancel the captured root Y so that the target's world Y rotation stays at the source transform's Y rotation (= start-time target world Y).
-            _offsetRotation = new Vector3(0, -_lastReceivedFrameData.root.rotation.eulerAngles.y, 0);
+            // The Fusion side drives the avatar root transform from the body pose (IK), so reading
+            // root.* latches onto a jittery pose snapshot and every reset lands slightly differently.
+            // The capture camera channel carries the device/ARKit camera orientation instead, which is
+            // independent of the avatar pose and is the yaw that actually drifts over time — cancel that.
+            // (ref var avoids naming CameraData: in this Lilium.LiveStudio.Virgo namespace the wire-side
+            //  Lilium.LiveStudio.Virgo.CameraData would shadow the Lilium.LiveStudio.CameraData returned here.)
+            ref var camera = ref _lastReceivedFrameData.AsCamera(0);
+
+            // Cancel the captured camera Y so that the target's world Y rotation stays at the anchor's Y rotation.
+            _offsetRotation = new Vector3(0, -camera.rotation.eulerAngles.y, 0);
 
             // オフセット適用後のカメラワールド位置を原点に合わせる。キャラクターも同じ行列で変換されるため、撮影時のカメラ-キャラクター相対位置は保たれる。
             var rotation = Quaternion.Euler(_offsetRotation);
-            _offsetPosition = -(rotation * _lastReceivedFrameData.root.position) / _lastReceivedFrameData.root.scale.x; // スケールの影響を受けないようにする
+            _offsetPosition = -(rotation * camera.position) / _lastReceivedFrameData.root.scale.x; // スケールの影響を受けないようにする
         }
     }
 }

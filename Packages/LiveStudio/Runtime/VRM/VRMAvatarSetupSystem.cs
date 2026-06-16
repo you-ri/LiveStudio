@@ -100,15 +100,23 @@ namespace Lilium.LiveStudio
             Debug.Assert(avatar != null, "Avatar GameObject is null.");
             Debug.Assert(settings != null, "VRMAvatarSetupSettings is null.");
 
+            // VRM1Avatar / VRM0Avatar はどちらも IAvatar 実装。アバターが既に IAvatar コンポーネントを
+            // 持っている (= prefab に独自の表情コントローラが組み込まれている等) 場合は、その設定を尊重して
+            // 二重に追加しない。
+            bool hasAvatarComponent = avatar.GetComponent<IAvatar>() != null;
+
             bool hasVrm1Model = avatar.GetComponent<Vrm10Instance>() != null;
 
             if (hasVrm1Model)
             {
-                var vrm10Instance = avatar.GetComponent<Vrm10Instance>();
-                var facialController = GameObjectUtility.GetOrAddComponent<VRM1Avatar>(avatar);
+                if (!hasAvatarComponent)
+                {
+                    var vrm10Instance = avatar.GetComponent<Vrm10Instance>();
+                    var facialController = GameObjectUtility.GetOrAddComponent<VRM1Avatar>(avatar);
 
-                // PerfectSync 対応モデルかをチェック
-                facialController.expressionMode = HasPerfectSyncSupport(vrm10Instance) ? ExpressionMode.PerfectSync : ExpressionMode.Preset;
+                    // PerfectSync 対応モデルかをチェック
+                    facialController.expressionMode = HasPerfectSyncSupport(vrm10Instance) ? ExpressionMode.PerfectSync : ExpressionMode.Preset;
+                }
                 SetUpdateWhenOffscreen(avatar, true);
             }
 #if VRMC_UNIVRM
@@ -118,10 +126,13 @@ namespace Lilium.LiveStudio
                 var blendShapeProxy = avatar.GetComponent<VRMBlendShapeProxy>();
                 if (blendShapeProxy != null)
                 {
-                    var facialController = GameObjectUtility.GetOrAddComponent<VRM0Avatar>(avatar);
+                    if (!hasAvatarComponent)
+                    {
+                        var facialController = GameObjectUtility.GetOrAddComponent<VRM0Avatar>(avatar);
 
-                    // PerfectSync 対応モデルかをチェック
-                    facialController.expressionMode = HasPerfectSyncSupport(blendShapeProxy) ? ExpressionMode.PerfectSync : ExpressionMode.Preset;
+                        // PerfectSync 対応モデルかをチェック
+                        facialController.expressionMode = HasPerfectSyncSupport(blendShapeProxy) ? ExpressionMode.PerfectSync : ExpressionMode.Preset;
+                    }
                     SetUpdateWhenOffscreen(avatar, true);
                 }
             }

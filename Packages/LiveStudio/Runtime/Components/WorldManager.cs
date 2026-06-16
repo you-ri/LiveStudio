@@ -217,6 +217,21 @@ namespace Lilium.LiveStudio
                 break;
             }
 
+            // _CreatePersistentEntry recomputes isActive from the *current* active scene, which at
+            // restore is still the bootstrap scene (true) because the saved active bundle loads
+            // asynchronously on a later Update. Settle it to its final value now so the save baseline
+            // captured right after this matches the post-restore steady state; otherwise
+            // persistent.isActive flips true->false once the bundle activates and the live scene
+            // looks unsaved at quit with no user edit.
+            for (int i = 0; i < scenes.Length; i++)
+            {
+                if (!scenes[i].isPersistent) continue;
+                var persistent = scenes[i];
+                persistent.isActive = string.IsNullOrEmpty(_pendingActiveId);
+                scenes[i] = persistent;
+                break;
+            }
+
             // Load the entries that were enabled when saved on the next Update.
             _dirty = true;
         }

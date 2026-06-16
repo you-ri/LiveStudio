@@ -1,6 +1,7 @@
 // Copyright (c) You-Ri, 2026
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -506,7 +507,31 @@ namespace Lilium.LiveStudio
             // に自動で再アタッチされる。
             SetupAvatar(newTarget);
 
+            // A runtime-loaded avatar applies its parameter overrides here (via the synchronous
+            // _PostSetupAvatar above), but the avatar's own Start() runs one frame later and calls
+            // AvatarBodyDriver.Initialize(), which creates the AnimatorControllerPlayable and resets
+            // every parameter to the controller defaults — wiping what we just applied. Re-apply once
+            // the playable exists. Avatars present from scene start are unaffected because execution
+            // order (IAvatar=10 < AvatarController=200) already builds the playable before we apply.
+            if (newTarget != null)
+            {
+                StartCoroutine(_ReapplyAnimationParameterOverridesNextFrame());
+            }
+
             onAvatarChanged?.Invoke();
+        }
+
+        // Re-apply parameter overrides after the loaded avatar's PlayableGraph is built. Waiting one
+        // frame guarantees the avatar's Start() (and thus AvatarBodyDriver.Initialize) has run.
+        // resolved is intentionally left untouched so the defaults captured before any override (during
+        // the earlier _PostSetupAvatar pass) are preserved; we only need to re-write the override values.
+        IEnumerator _ReapplyAnimationParameterOverridesNextFrame()
+        {
+            yield return null;
+            if (_target != null)
+            {
+                _ApplyAnimationParameterOverrides(_target);
+            }
         }
 
         private void OnPropertyChanging(ExposedProperty property, object newValue)
