@@ -45,7 +45,7 @@ namespace Lilium.RemoteControl
         }
 #endif
 
-        private static void RegisterEnumInternal(Type type, string typeName, string help = null)
+        private static void RegisterEnumInternal(Type type, string typeName, string help = null, string[] excludeNames = null)
         {
             if (!type.IsEnum)
             {
@@ -53,7 +53,7 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            var exposedEnum = ExposedEnum.Create(type, typeName, help);
+            var exposedEnum = ExposedEnum.Create(type, typeName, help, excludeNames);
             all[exposedEnum.type] = exposedEnum;
 
         }
@@ -102,6 +102,14 @@ namespace Lilium.RemoteControl
                 {
                     // アセンブリの読み込みエラーは無視
                     Debug.LogWarning($"[RemoteControl] Failed to load types from assembly: {assembly.FullName}");
+                }
+
+                // 外部 enum (UnityEngine 組み込み等、属性を付けられない型) の宣言的登録。
+                // assembly 属性なので GetTypes() を呼ばず ReflectionTypeLoadException の心配がない。
+                foreach (var attr in assembly.GetCustomAttributes<ExposedExternalEnumAttribute>())
+                {
+                    if (attr.type == null) continue;
+                    RegisterEnumInternal(attr.type, attr.typeName ?? attr.type.Name, null, attr.excludeNames);
                 }
             }
         }
@@ -154,7 +162,7 @@ namespace Lilium.RemoteControl
             return null;
         }
 
-        private static ExposedEnum Create(Type type, string typeName, string help = null)
+        private static ExposedEnum Create(Type type, string typeName, string help = null, string[] excludeNames = null)
         {
             if (!type.IsEnum)
             {
@@ -169,6 +177,8 @@ namespace Lilium.RemoteControl
             for (int i = 0; i < names.Length; i++)
             {
                 var name = names[i];
+                // 除外指定されたメンバー (件数番兵値など) は公開しない。
+                if (excludeNames != null && Array.IndexOf(excludeNames, name) >= 0) continue;
                 var value = Convert.ToInt32(values.GetValue(i));
                 enumValues.Add(new ExposedEnumValue(name, value));
             }

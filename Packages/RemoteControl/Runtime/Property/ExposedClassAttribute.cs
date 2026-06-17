@@ -99,6 +99,29 @@ namespace Lilium.RemoteControl
         }
     }
 
+    /// <summary>
+    /// Declares an external enum (one you cannot decorate with <see cref="ExposedEnumAttribute"/>,
+    /// e.g. a UnityEngine built-in like <c>HumanBodyBones</c>) so it is registered as an
+    /// <see cref="ExposedEnum"/> and shows as a dropdown in the remote app. Applied at assembly level;
+    /// picked up by <c>ExposedEnum.RegisterAllFromAttributes</c>, so it survives <c>ExposedEnum.Reset()</c>.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+    public class ExposedExternalEnumAttribute : Attribute
+    {
+        public Type type { get; }
+        public string typeName { get; }
+
+        /// <summary>Enum member names to omit from the exposed values (e.g. count sentinels like
+        /// <c>HumanBodyBones.LastBone</c>). Set via named argument.</summary>
+        public string[] excludeNames { get; set; }
+
+        public ExposedExternalEnumAttribute(Type type, string typeName = null)
+        {
+            this.type = type;
+            this.typeName = typeName;
+        }
+    }
+
     // TODO: 実験中
     [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
     public class KeyAttribute : Attribute

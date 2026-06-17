@@ -67,8 +67,12 @@ namespace Lilium.LiveStudio
     /// <see cref="WorldManager"/>. Each entry can be loaded or unloaded independently from the remote
     /// app. A loaded prop is instantiated as a child of the current avatar (so its <see cref="AvatarProp"/>
     /// bridges the avatar's parameters and follows a bone), and is wrapped in an
-    /// <see cref="ExposedGameObjectWithTransform"/> added to a <see cref="RemoteControlContainer"/> so
-    /// it (and its prop component) are operable from the remote app.
+    /// <see cref="ExposedGameObject"/> added to a <see cref="RemoteControlContainer"/> so
+    /// it (and its prop component) are operable from the remote app. The wrapper deliberately does
+    /// NOT expose a transform: a prop's pose is driven every frame by <see cref="AvatarProp"/>'s
+    /// bone <c>ParentConstraint</c>, so the live transform is computed output, not authored state.
+    /// Persisting it would make the live scene perpetually dirty (the value changes as the avatar
+    /// animates); the authored pose lives in <see cref="AvatarProp"/> (targetBone / offsets).
     ///
     /// Props live under the avatar, so swapping the avatar destroys them; this manager listens for
     /// <see cref="IAvatarService.onAvatarChanged"/> and reloads the enabled props onto the new avatar.
@@ -95,7 +99,7 @@ namespace Lilium.LiveStudio
         private sealed class LoadedProp
         {
             public GameObject instance;
-            public ExposedGameObjectWithTransform exposed;
+            public ExposedGameObject exposed;
             public RemoteControlContainer container;
         }
 
@@ -338,12 +342,14 @@ namespace Lilium.LiveStudio
                 else if (instance != null)
                 {
                     var container = _ResolveContainer();
-                    ExposedGameObjectWithTransform exposed = null;
+                    ExposedGameObject exposed = null;
                     if (container != null)
                     {
-                        // Wrap the prop so the remote app can control its transform and prop component.
+                        // Wrap the prop so the remote app can control its prop component. No transform is
+                        // exposed: the pose is bone-driven (see LoadedProp/class docs), so the authored
+                        // state is on the AvatarProp component, not the GameObject transform.
                         // The source list is already initialized by the host, so call OnEnable manually.
-                        exposed = new ExposedGameObjectWithTransform(instance);
+                        exposed = new ExposedGameObject(instance);
                         // Re-key the wrapper to the entry's persisted exposed-object id (assigned at
                         // AddProp) so the remote app's reference stays stable across unload/reload cycles,
                         // rather than getting a fresh GUID on every load.
@@ -513,7 +519,7 @@ namespace Lilium.LiveStudio
         }
 
         // Reapplies the saved `state` onto a freshly loaded prop instance.
-        private void _RestoreState(string propId, ExposedGameObjectWithTransform exposed, GameObject instance)
+        private void _RestoreState(string propId, ExposedGameObject exposed, GameObject instance)
         {
             if (instance == null) return;
             var json = _GetEntryState(propId);
@@ -545,7 +551,7 @@ namespace Lilium.LiveStudio
         {
             const int kVersion = 1;
 
-            public static string Capture(ExposedGameObjectWithTransform exposed, GameObject instance)
+            public static string Capture(ExposedGameObject exposed, GameObject instance)
             {
                 var root = new JObject { ["version"] = kVersion };
 
@@ -589,7 +595,7 @@ namespace Lilium.LiveStudio
                 return root.ToString(Formatting.None);
             }
 
-            public static void Restore(string json, ExposedGameObjectWithTransform exposed, GameObject instance)
+            public static void Restore(string json, ExposedGameObject exposed, GameObject instance)
             {
                 JObject root;
                 try { root = JObject.Parse(json); }
