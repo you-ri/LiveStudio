@@ -7,6 +7,9 @@ using System.Threading.Tasks;
 
 using UnityEngine;
 
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+
 using Lilium.RemoteControl;
 using Lilium.RemoteControl.LiveScene;
 
@@ -44,6 +47,16 @@ namespace Lilium.LiveStudio
         /// </summary>
         [ExposedField(persistable = false)]
         public string objectId;
+
+        /// <summary>
+        /// Serialized snapshot of this prop's exposed parameter values (the transform wrapper plus
+        /// each <c>[ExposedClass]</c> component on the root, e.g. <see cref="AvatarProp"/>). Captured
+        /// before the prop is unloaded (destroyed) and reapplied after it is reloaded, so edits made
+        /// from the remote app survive an unload/reload cycle and persist to the live scene JSON.
+        /// Hidden from the remote app's property editor.
+        /// </summary>
+        [ExposedField, Hide]
+        public string state;
     }
 
     /// <summary>
@@ -59,7 +72,7 @@ namespace Lilium.LiveStudio
     /// </summary>
     [Serializable]
     [ExposedClass(Icon = "deployed_code", Category = "Avatar")]
-    public class PropManager : IExposedObject, IExposedDeserializeCallback
+    public class PropManager : IExposedObject, IExposedDeserializeCallback, IExposedSerializeCallback
     {
         const string kId = "c3e8a1d2-5b6f-4a90-8c2d-1f7e9a4b6d50";
 
@@ -142,6 +155,16 @@ namespace Lilium.LiveStudio
             if (!Application.isPlaying) return;
             if (!_restorePending) return;
             _dirty = true;
+        }
+
+        /// <summary>
+        /// Fires before the <c>props</c> array is serialized (e.g. when the live scene is saved).
+        /// Refreshes each loaded prop's <see cref="PropEntry.state"/> from its live values so the save
+        /// captures the latest edits, mirroring the capture done just before unload.
+        /// </summary>
+        public void OnBeforeExposedSerialize()
+        {
+            foreach (var kv in _loaded) _CaptureState(kv.Key, kv.Value);
         }
 
         public void Update()
@@ -299,7 +322,13 @@ namespace Lilium.LiveStudio
             {
                 var loader = new PropBundleLoader();
                 var instance = await loader.LoadAsync(filePath, avatarRoot);
-                if (instance != null)
+                if (instance != null && _loaded.ContainsKey(propId))
+                {
+                    // A concurrent load (e.g. an avatar swap cleared _busy mid-load) already
+                    // registered this prop; discard the duplicate instead of leaking it.
+                    UnityEngine.Object.Destroy(instance);
+                }
+                else if (instance != null)
                 {
                     var container = _ResolveContainer();
                     ExposedGameObjectWithTransform exposed = null;
@@ -320,6 +349,9 @@ namespace Lilium.LiveStudio
                     _SetEntryLoaded(propId, true);
                     // 詳細ペーン (remote app) がプロパティ編集できるよう、exposed ラッパの id を entry に持たせる。
                     _SetEntryObjectId(propId, exposed != null ? exposed.id : string.Empty);
+                    // Reapply the values saved before the previous unload (or restored from the live scene)
+                    // onto the freshly instantiated prop, so edits persist across the unload/reload cycle.
+                    _RestoreState(propId, exposed, instance);
                 }
                 else
                 {
@@ -338,6 +370,9 @@ namespace Lilium.LiveStudio
         {
             if (_loaded.TryGetValue(propId, out var loaded))
             {
+                // Snapshot the current parameter values before destroying so they can be reapplied
+                // when the prop is loaded again.
+                _CaptureState(propId, loaded);
                 _loaded.Remove(propId);
                 _DestroyLoaded(loaded);
             }
@@ -348,6 +383,7 @@ namespace Lilium.LiveStudio
 
         private void _UnloadAll()
         {
+            foreach (var kv in _loaded) _CaptureState(kv.Key, kv.Value);
             foreach (var loaded in _loaded.Values) _DestroyLoaded(loaded);
             _loaded.Clear();
             _busy.Clear();
@@ -362,7 +398,17 @@ namespace Lilium.LiveStudio
                 loaded.exposed.OnDisable();
                 if (loaded.container != null) loaded.container._objects.Remove(loaded.exposed);
             }
-            if (loaded.instance != null) UnityEngine.Object.Destroy(loaded.instance);
+            if (loaded.instance != null)
+            {
+                // Drop any exposed-object handles created for the root's prop components so the
+                // registry does not retain dangling targets after the GameObject is destroyed.
+                foreach (var comp in loaded.instance.GetComponents<Component>())
+                {
+                    if (comp == null || !ExposedClass.Has(comp.GetType())) continue;
+                    ExposedObjectRegistry.FindByTarget(comp)?.Unregister();
+                }
+                UnityEngine.Object.Destroy(loaded.instance);
+            }
         }
 
         // Current avatar root transform, or null if no avatar is loaded.
@@ -421,6 +467,44 @@ namespace Lilium.LiveStudio
             }
         }
 
+        private void _SetEntryState(string propId, string value)
+        {
+            for (int i = 0; i < props.Length; i++)
+            {
+                if (props[i].id != propId) continue;
+                var entry = props[i];
+                entry.state = value;
+                props[i] = entry;
+                return;
+            }
+        }
+
+        private string _GetEntryState(string propId)
+        {
+            for (int i = 0; i < props.Length; i++)
+            {
+                if (props[i].id == propId) return props[i].state;
+            }
+            return null;
+        }
+
+        // Snapshots a loaded prop's exposed parameter values into its entry's `state`.
+        private void _CaptureState(string propId, LoadedProp loaded)
+        {
+            if (loaded == null || loaded.instance == null) return;
+            var json = PropStateSnapshot.Capture(loaded.exposed, loaded.instance);
+            if (!string.IsNullOrEmpty(json)) _SetEntryState(propId, json);
+        }
+
+        // Reapplies the saved `state` onto a freshly loaded prop instance.
+        private void _RestoreState(string propId, ExposedGameObjectWithTransform exposed, GameObject instance)
+        {
+            if (instance == null) return;
+            var json = _GetEntryState(propId);
+            if (string.IsNullOrEmpty(json)) return;
+            PropStateSnapshot.Restore(json, exposed, instance);
+        }
+
         private void _Broadcast()
         {
             ExposedPropertyBroadcast.BroadcastProperty(this, "props");
@@ -434,6 +518,92 @@ namespace Lilium.LiveStudio
                 return fileName.Substring(0, fileName.Length - LiveStudioBundle.PropExtension.Length);
             }
             return Path.GetFileNameWithoutExtension(fileName);
+        }
+
+        /// <summary>
+        /// Builds and applies the aggregate JSON snapshot of a prop's exposed objects: the transform
+        /// wrapper plus each <c>[ExposedClass]</c> component on the root GameObject. Components are keyed
+        /// by their exposed type name (stable across reloads, unlike the per-load object id).
+        /// </summary>
+        private static class PropStateSnapshot
+        {
+            const int kVersion = 1;
+
+            public static string Capture(ExposedGameObjectWithTransform exposed, GameObject instance)
+            {
+                var root = new JObject { ["version"] = kVersion };
+
+                var wrapperHandle = exposed != null ? ExposedObjectRegistry.FindByTarget(exposed) : null;
+                if (wrapperHandle.HasValue)
+                {
+                    var wrapperJson = ExposedObjectSnapshot.Capture(wrapperHandle.Value);
+                    if (!string.IsNullOrEmpty(wrapperJson))
+                    {
+                        var wrapper = JObject.Parse(wrapperJson);
+                        // Parenting is owned by PropManager (the prop is instantiated under the avatar
+                        // root), and the component values are stored separately below, so drop both to
+                        // avoid clobbering the hierarchy on restore and to keep the snapshot lean.
+                        wrapper.Remove("@parent");
+                        wrapper.Remove("components");
+                        // The object id is per-instance and changes on every reload; drop it so restore
+                        // onto the new handle does not log a spurious id-mismatch warning.
+                        wrapper.Remove("@id");
+                        root["wrapper"] = wrapper;
+                    }
+                }
+
+                var components = new JObject();
+                foreach (var comp in instance.GetComponents<Component>())
+                {
+                    if (comp == null) continue;
+                    var type = comp.GetType();
+                    if (!ExposedClass.Has(type)) continue;
+                    var exposedClass = ExposedClass.Find(type);
+                    if (exposedClass == null) continue;
+                    var handle = ExposedObjectRegistry.GetOrCreate(Guid.NewGuid().ToString("N"), exposedClass, comp);
+                    var json = ExposedObjectSnapshot.Capture(handle);
+                    if (string.IsNullOrEmpty(json)) continue;
+                    var componentObj = JObject.Parse(json);
+                    // Drop the per-instance id so restore onto the reloaded component does not warn.
+                    componentObj.Remove("@id");
+                    components[exposedClass.typeName] = componentObj;
+                }
+                root["components"] = components;
+
+                return root.ToString(Formatting.None);
+            }
+
+            public static void Restore(string json, ExposedGameObjectWithTransform exposed, GameObject instance)
+            {
+                JObject root;
+                try { root = JObject.Parse(json); }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[LiveStudio] Failed to parse prop state snapshot: {e.Message}");
+                    return;
+                }
+
+                var wrapperHandle = exposed != null ? ExposedObjectRegistry.FindByTarget(exposed) : null;
+                if (wrapperHandle.HasValue && root["wrapper"] is JObject wrapper)
+                {
+                    ExposedObjectSnapshot.Restore(wrapper.ToString(Formatting.None), wrapperHandle.Value);
+                }
+
+                if (root["components"] is JObject components && components.Count > 0)
+                {
+                    foreach (var comp in instance.GetComponents<Component>())
+                    {
+                        if (comp == null) continue;
+                        var type = comp.GetType();
+                        if (!ExposedClass.Has(type)) continue;
+                        var exposedClass = ExposedClass.Find(type);
+                        if (exposedClass == null) continue;
+                        if (!(components[exposedClass.typeName] is JObject componentJson)) continue;
+                        var handle = ExposedObjectRegistry.GetOrCreate(Guid.NewGuid().ToString("N"), exposedClass, comp);
+                        ExposedObjectSnapshot.Restore(componentJson.ToString(Formatting.None), handle);
+                    }
+                }
+            }
         }
     }
 }

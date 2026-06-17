@@ -262,6 +262,10 @@ namespace Lilium.VRChatAvatarTransfer.Editor
 
             result.parameterDriversConverted = AvatarParameterDriverConverter.Convert(copy);
             result.trackingControlsConverted = AvatarAnimatorTrackingControlConverter.Convert(copy);
+            // Drop remaining VRChat StateMachineBehaviours (VRCAnimatorLayerControl /
+            // VRCPlayableLayerControl, etc.) that have no non-VRChat equivalent; otherwise they
+            // load as "missing script" in the Studio runtime, which has no VRChat SDK.
+            VrcStateMachineBehaviourStripper.Strip(copy);
             return copy;
         }
 
@@ -304,6 +308,29 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             if (editorOnlyRemoved > 0)
             {
                 VRChatAvatarTransferLog.Info($"'{root.name}': stripped {editorOnlyRemoved} editor-only component(s) (NDMF / Modular Avatar, etc.).");
+            }
+
+            // 上記のコンバータ/strip で扱われなかった VRChat コンポーネント (VRCContactReceiver /
+            // VRCContactSender などの VRC.Dynamics 系) が残ることがある。Studio ランタイムには
+            // VRChat SDK が無いため、これらは実行時にスクリプト型を解決できず "missing script" 警告に
+            // なる。VRChat 名前空間/アセンブリで判定して一括除去する (Studio では機能しないため安全)。
+            int vrcRemaining = 0;
+            foreach (var comp in root.GetComponentsInChildren<MonoBehaviour>(true))
+            {
+                if (comp == null) continue;
+                var type = comp.GetType();
+                var ns = type.Namespace ?? string.Empty;
+                var asm = type.Assembly.GetName().Name ?? string.Empty;
+                if (ns == "VRC" || ns.StartsWith("VRC.") || asm.StartsWith("VRC"))
+                {
+                    Object.DestroyImmediate(comp);
+                    vrcRemaining++;
+                }
+            }
+            result.vrchatComponentsRemoved += vrcRemaining;
+            if (vrcRemaining > 0)
+            {
+                VRChatAvatarTransferLog.Info($"'{root.name}': stripped {vrcRemaining} remaining VRChat component(s) (contacts / dynamics).");
             }
 
             // 元 VRChat アバターには、この非 VRChat プロジェクトに存在しない

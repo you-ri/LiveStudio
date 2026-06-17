@@ -47,7 +47,9 @@ namespace Lilium.LiveStudio
         public string displayName => this.name;
 
         // 拘束先の humanoid bone。値変更は Update が検知して source を作り直す。
-        [SerializeField]
+        // Shadow field (Hide + FormerlyExposedAs) so the [ExposedProperty] below is persistable:
+        // its value is serialized to the live scene and restored across a prop unload/reload.
+        [SerializeField, ExposedField, Hide, FormerlyExposedAs("targetBone")]
         HumanBodyBones _targetBone = HumanBodyBones.Hips;
 
         [ExposedProperty]
@@ -58,7 +60,7 @@ namespace Lilium.LiveStudio
         }
 
         // bone ローカルの位置オフセット。
-        [SerializeField]
+        [SerializeField, ExposedField, Hide, FormerlyExposedAs("positionOffset")]
         Vector3 _positionOffset = Vector3.zero;
 
         [ExposedProperty]
@@ -69,7 +71,7 @@ namespace Lilium.LiveStudio
         }
 
         // bone ローカルの回転オフセット (euler 度)。
-        [SerializeField]
+        [SerializeField, ExposedField, Hide, FormerlyExposedAs("rotationOffset")]
         Vector3 _rotationOffset = Vector3.zero;
 
         [ExposedProperty]

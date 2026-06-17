@@ -236,9 +236,15 @@ namespace Lilium.RemoteControl
 
         private static void _ShutdownObjectList(List<IExposedObject> list)
         {
-            foreach (var obj in list)
+            // Iterate a snapshot: an object's OnDisable may modify this list. For example a manager
+            // (e.g. PropManager) unloads child objects it previously appended here, removing them
+            // mid-iteration. The snapshot avoids "Collection was modified", and the membership check
+            // skips objects such a manager already shut down so they are not disabled twice.
+            var snapshot = list.ToArray();
+            foreach (var obj in snapshot)
             {
                 if (obj == null) continue;
+                if (!list.Contains(obj)) continue;
                 obj.OnDisable();
             }
         }
