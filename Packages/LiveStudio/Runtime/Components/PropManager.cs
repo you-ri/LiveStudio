@@ -42,10 +42,13 @@ namespace Lilium.LiveStudio
         public bool isLoaded;
 
         /// <summary>
-        /// id of the loaded prop's exposed object (the <c>GameObjectWithTransform</c> wrapper),
-        /// so the remote app can open its property editor. Empty while unloaded. Not persisted.
+        /// Stable id of this prop's exposed object (the <c>GameObjectWithTransform</c> wrapper), so the
+        /// remote app can open its property editor. Assigned once when the prop is added and persisted,
+        /// then reused (via <c>ReplaceId</c>) every time the prop is loaded, so the remote app's reference
+        /// survives unload/reload cycles instead of changing on every toggle. Stays populated while
+        /// unloaded; the remote app gates the property editor on <see cref="isLoaded"/>.
         /// </summary>
-        [ExposedField(persistable = false)]
+        [ExposedField]
         public string objectId;
 
         /// <summary>
@@ -223,6 +226,9 @@ namespace Lilium.LiveStudio
                 filePath = filePath,
                 enabled = true,
                 isLoaded = false,
+                // Assign the stable exposed-object id up front so it persists and is reused on every
+                // load; the remote app can keep a durable reference to this prop.
+                objectId = Guid.NewGuid().ToString(),
             };
 
             var list = new List<PropEntry>(props) { entry };
@@ -265,9 +271,10 @@ namespace Lilium.LiveStudio
             _UnloadAll();
             for (int i = 0; i < props.Length; i++)
             {
-                if (!props[i].isLoaded && string.IsNullOrEmpty(props[i].objectId)) continue;
+                if (!props[i].isLoaded) continue;
+                // objectId is stable/persisted; only the actual-loaded flag is cleared. The prop is
+                // reloaded onto the new avatar under the same exposed-object id.
                 _SetEntryLoaded(props[i].id, false);
-                _SetEntryObjectId(props[i].id, string.Empty);
             }
             _dirty = true;
         }
@@ -337,6 +344,11 @@ namespace Lilium.LiveStudio
                         // Wrap the prop so the remote app can control its transform and prop component.
                         // The source list is already initialized by the host, so call OnEnable manually.
                         exposed = new ExposedGameObjectWithTransform(instance);
+                        // Re-key the wrapper to the entry's persisted exposed-object id (assigned at
+                        // AddProp) so the remote app's reference stays stable across unload/reload cycles,
+                        // rather than getting a fresh GUID on every load.
+                        var objectId = _ResolveEntryObjectId(propId);
+                        if (!string.IsNullOrEmpty(objectId)) exposed.ReplaceId(objectId);
                         container._objects.Add(exposed);
                         exposed.OnEnable();
                     }
@@ -347,8 +359,6 @@ namespace Lilium.LiveStudio
 
                     _loaded[propId] = new LoadedProp { instance = instance, exposed = exposed, container = container };
                     _SetEntryLoaded(propId, true);
-                    // 詳細ペーン (remote app) がプロパティ編集できるよう、exposed ラッパの id を entry に持たせる。
-                    _SetEntryObjectId(propId, exposed != null ? exposed.id : string.Empty);
                     // Reapply the values saved before the previous unload (or restored from the live scene)
                     // onto the freshly instantiated prop, so edits persist across the unload/reload cycle.
                     _RestoreState(propId, exposed, instance);
@@ -376,8 +386,8 @@ namespace Lilium.LiveStudio
                 _loaded.Remove(propId);
                 _DestroyLoaded(loaded);
             }
+            // objectId is stable/persisted across unload/reload, so it is intentionally left intact.
             _SetEntryLoaded(propId, false);
-            _SetEntryObjectId(propId, string.Empty);
             _Broadcast();
         }
 
@@ -443,16 +453,22 @@ namespace Lilium.LiveStudio
             }
         }
 
-        private void _SetEntryObjectId(string propId, string value)
+        // Returns the entry's persisted exposed-object id, generating and persisting one if missing
+        // (migrates entries saved before objectId was persisted).
+        private string _ResolveEntryObjectId(string propId)
         {
             for (int i = 0; i < props.Length; i++)
             {
                 if (props[i].id != propId) continue;
-                var entry = props[i];
-                entry.objectId = value;
-                props[i] = entry;
-                return;
+                if (string.IsNullOrEmpty(props[i].objectId))
+                {
+                    var entry = props[i];
+                    entry.objectId = Guid.NewGuid().ToString();
+                    props[i] = entry;
+                }
+                return props[i].objectId;
             }
+            return null;
         }
 
         private void _SetEntryEnabled(string propId, bool value)
