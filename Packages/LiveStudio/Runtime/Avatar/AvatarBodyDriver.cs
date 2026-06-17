@@ -83,11 +83,16 @@ namespace Lilium.LiveStudio
     /// <summary>
     /// Shared body-animation driver for avatar components (VRM1Avatar / VRCFTAvatar).
     /// Owns the motion source reference, tracking state with mesh visibility, and a
-    /// PlayableGraph that pipes an optional <see cref="AnimatorControllerPlayable"/>
+    /// PlayableGraph that pipes the avatar's <see cref="AnimatorControllerPlayable"/>
     /// into a <see cref="HumanoidPoseJob"/>. The mocap pose overwrites the controller
     /// pose while tracking; on tracking loss the controller animation plays through.
     /// The root transform is written directly (not through the stream) via
     /// <see cref="AvatarAnimationSystem.UpdateRoot"/>.
+    ///
+    /// Animator parameters must be read/written through this driver's accessors
+    /// (<see cref="SetFloat"/> / <see cref="GetFloat"/> etc.); Animator.SetFloat/GetFloat
+    /// do not reach a controller wrapped inside a PlayableGraph. The read accessors also
+    /// let an external object bridge mirror the avatar's parameter values onto its own Animator.
     /// </summary>
     public sealed class AvatarBodyDriver : IDisposable
     {
@@ -96,14 +101,17 @@ namespace Lilium.LiveStudio
 
         PlayableGraph _graph;
         AnimationScriptPlayable _posePlayable;
-        AnimatorControllerPlayable _controllerPlayable;
         AnimationPlayableOutput _output;
+
+        // ラップした AnimatorController と、それが宣言するパラメータ nameHash 集合。
+        // 単一コントローラだが、リスト構造はパラメータアクセサ実装をそのまま使えるよう残す。
+        readonly List<AnimatorControllerPlayable> _controllerPlayables = new List<AnimatorControllerPlayable>();
+        readonly List<HashSet<int>> _controllerParamHashes = new List<HashSet<int>>();
 
         NativeArray<TransformStreamHandle> _handles;
         NativeArray<int> _boneIndices;
         NativeReference<HumanoidPoseInput> _poseInput;
 
-        bool _hasControllerPlayable;
         bool _isGraphPlaying;
         bool _isTracking;
 
@@ -113,15 +121,15 @@ namespace Lilium.LiveStudio
         /// <summary>True while the motion source is providing valid frames.</summary>
         public bool isTracking => _isTracking;
 
-        /// <summary>True when the animator had a runtime controller wrapped into the graph.</summary>
-        public bool hasControllerPlayable => _hasControllerPlayable;
+        /// <summary>True when at least one runtime controller was wrapped into the graph.</summary>
+        public bool hasControllerPlayable => _controllerPlayables.Count > 0;
 
         /// <summary>
         /// The wrapped controller playable. Valid only when <see cref="hasControllerPlayable"/>.
-        /// Owning components must write animator parameters here (Animator.SetFloat does
-        /// not reach a controller wrapped inside a PlayableGraph).
+        /// Prefer the parameter accessors (<see cref="SetFloat"/> / <see cref="GetFloat"/> etc.).
         /// </summary>
-        public AnimatorControllerPlayable controllerPlayable => _controllerPlayable;
+        public AnimatorControllerPlayable controllerPlayable
+            => _controllerPlayables.Count > 0 ? _controllerPlayables[0] : default;
 
         /// <summary>
         /// Builds the PlayableGraph and binds the humanoid bones. Call from Start
@@ -166,12 +174,7 @@ namespace Lilium.LiveStudio
             };
             _posePlayable = AnimationScriptPlayable.Create(_graph, job);
 
-            if (animator.runtimeAnimatorController != null)
-            {
-                _controllerPlayable = AnimatorControllerPlayable.Create(_graph, animator.runtimeAnimatorController);
-                _posePlayable.AddInput(_controllerPlayable, 0, 1f);
-                _hasControllerPlayable = true;
-            }
+            _BuildController(animator);
 
             _output = AnimationPlayableOutput.Create(_graph, "Body", animator);
             _output.SetSourcePlayable(_posePlayable);
@@ -179,10 +182,36 @@ namespace Lilium.LiveStudio
             // With a controller, keep the graph playing so its animation runs even
             // before/after tracking. Without one, stay stopped until the first valid
             // frame so the avatar keeps its imported pose instead of snapping to T-pose.
-            if (_hasControllerPlayable)
+            if (hasControllerPlayable)
             {
                 PlayGraph();
             }
+        }
+
+        /// <summary>
+        /// Wraps the avatar's runtime controller in an <see cref="AnimatorControllerPlayable"/>,
+        /// records its declared parameter hashes, and connects it into the pose job.
+        /// </summary>
+        void _BuildController(Animator animator)
+        {
+            if (animator.runtimeAnimatorController == null) return; // コントローラ無し（凍結経路へ）
+            _AddControllerPlayable(animator.runtimeAnimatorController);
+            _posePlayable.AddInput(_controllerPlayables[0], 0, 1f);
+        }
+
+        void _AddControllerPlayable(RuntimeAnimatorController controller)
+        {
+            var playable = AnimatorControllerPlayable.Create(_graph, controller);
+
+            var hashes = new HashSet<int>();
+            int paramCount = playable.GetParameterCount();
+            for (int i = 0; i < paramCount; i++)
+            {
+                hashes.Add(playable.GetParameter(i).nameHash);
+            }
+
+            _controllerPlayables.Add(playable);
+            _controllerParamHashes.Add(hashes);
         }
 
         /// <summary>
@@ -201,7 +230,7 @@ namespace Lilium.LiveStudio
                     SetPoseEnabled(false);
                     // No controller to fall back to: freeze the last pose by stopping
                     // the graph (an empty stream would otherwise reset to T-pose).
-                    if (!_hasControllerPlayable) StopGraph();
+                    if (!hasControllerPlayable) StopGraph();
                 }
                 _isTracking = false;
                 return false;
@@ -226,6 +255,102 @@ namespace Lilium.LiveStudio
             if (_handles.IsCreated) _handles.Dispose();
             if (_boneIndices.IsCreated) _boneIndices.Dispose();
             if (_poseInput.IsCreated) _poseInput.Dispose();
+            _controllerPlayables.Clear();
+            _controllerParamHashes.Clear();
+        }
+
+        //----------------------------------------------------------------------
+        // Animator パラメータのブロードキャスト
+        // 同名パラメータを宣言する全コントローラへ書き込み、読み取りは最初の宣言から行う。
+        // 未宣言のコントローラへ書くと Unity が警告を出すため Contains で事前判定する。
+        //----------------------------------------------------------------------
+
+        /// <summary>いずれかのコントローラが指定 nameHash のパラメータを宣言していれば true。</summary>
+        public bool HasParameter(int nameHash)
+        {
+            for (int i = 0; i < _controllerParamHashes.Count; i++)
+            {
+                if (_controllerParamHashes[i].Contains(nameHash)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>名前で最初に一致したパラメータ定義を返す。</summary>
+        public bool TryGetParameter(string name, out AnimatorControllerParameter result)
+        {
+            for (int i = 0; i < _controllerPlayables.Count; i++)
+            {
+                var ctrl = _controllerPlayables[i];
+                int count = ctrl.GetParameterCount();
+                for (int j = 0; j < count; j++)
+                {
+                    var p = ctrl.GetParameter(j);
+                    if (p.name == name)
+                    {
+                        result = p;
+                        return true;
+                    }
+                }
+            }
+            result = default;
+            return false;
+        }
+
+        public void SetFloat(int nameHash, float value)
+        {
+            for (int i = 0; i < _controllerPlayables.Count; i++)
+            {
+                if (_controllerParamHashes[i].Contains(nameHash))
+                    _controllerPlayables[i].SetFloat(nameHash, value);
+            }
+        }
+
+        public void SetInteger(int nameHash, int value)
+        {
+            for (int i = 0; i < _controllerPlayables.Count; i++)
+            {
+                if (_controllerParamHashes[i].Contains(nameHash))
+                    _controllerPlayables[i].SetInteger(nameHash, value);
+            }
+        }
+
+        public void SetBool(int nameHash, bool value)
+        {
+            for (int i = 0; i < _controllerPlayables.Count; i++)
+            {
+                if (_controllerParamHashes[i].Contains(nameHash))
+                    _controllerPlayables[i].SetBool(nameHash, value);
+            }
+        }
+
+        public float GetFloat(int nameHash)
+        {
+            for (int i = 0; i < _controllerPlayables.Count; i++)
+            {
+                if (_controllerParamHashes[i].Contains(nameHash))
+                    return _controllerPlayables[i].GetFloat(nameHash);
+            }
+            return 0f;
+        }
+
+        public int GetInteger(int nameHash)
+        {
+            for (int i = 0; i < _controllerPlayables.Count; i++)
+            {
+                if (_controllerParamHashes[i].Contains(nameHash))
+                    return _controllerPlayables[i].GetInteger(nameHash);
+            }
+            return 0;
+        }
+
+        public bool GetBool(int nameHash)
+        {
+            for (int i = 0; i < _controllerPlayables.Count; i++)
+            {
+                if (_controllerParamHashes[i].Contains(nameHash))
+                    return _controllerPlayables[i].GetBool(nameHash);
+            }
+            return false;
         }
 
         void SetPoseEnabled(bool enabled)

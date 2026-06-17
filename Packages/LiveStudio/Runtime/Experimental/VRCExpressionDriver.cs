@@ -92,9 +92,9 @@ namespace Lilium.LiveStudio
     }
 
     /// <summary>
-    /// PlayableGraph 内にラップされた AnimatorController に書き込む port (VRCFTAvatar 用)。
-    /// AnimatorControllerPlayable は struct のため毎回 driver から取得し、有効性は
-    /// hasControllerPlayable で判定する。
+    /// PlayableGraph 内にラップされた AnimatorController 群に書き込む port (VRCFTAvatar 用)。
+    /// 書き込みは <see cref="AvatarBodyDriver"/> のブロードキャストメソッドへ委譲し、同名パラメータを
+    /// 宣言する全コントローラ（base + 追加レイヤー）へ配る。
     /// </summary>
     internal sealed class ControllerPlayableParameterPort : IAnimatorParameterPort
     {
@@ -108,28 +108,14 @@ namespace Lilium.LiveStudio
         public bool isReady => _driver.hasControllerPlayable;
 
         public bool TryGetParameter(string name, out AnimatorControllerParameter result)
-        {
-            var ctrl = _driver.controllerPlayable;
-            int count = ctrl.GetParameterCount();
-            for (int i = 0; i < count; i++)
-            {
-                var p = ctrl.GetParameter(i);
-                if (p.name == name)
-                {
-                    result = p;
-                    return true;
-                }
-            }
-            result = default;
-            return false;
-        }
+            => _driver.TryGetParameter(name, out result);
 
-        public float GetFloat(int nameHash) => _driver.controllerPlayable.GetFloat(nameHash);
-        public void SetFloat(int nameHash, float value) => _driver.controllerPlayable.SetFloat(nameHash, value);
-        public int GetInteger(int nameHash) => _driver.controllerPlayable.GetInteger(nameHash);
-        public void SetInteger(int nameHash, int value) => _driver.controllerPlayable.SetInteger(nameHash, value);
-        public bool GetBool(int nameHash) => _driver.controllerPlayable.GetBool(nameHash);
-        public void SetBool(int nameHash, bool value) => _driver.controllerPlayable.SetBool(nameHash, value);
+        public float GetFloat(int nameHash) => _driver.GetFloat(nameHash);
+        public void SetFloat(int nameHash, float value) => _driver.SetFloat(nameHash, value);
+        public int GetInteger(int nameHash) => _driver.GetInteger(nameHash);
+        public void SetInteger(int nameHash, int value) => _driver.SetInteger(nameHash, value);
+        public bool GetBool(int nameHash) => _driver.GetBool(nameHash);
+        public void SetBool(int nameHash, bool value) => _driver.SetBool(nameHash, value);
     }
 
     /// <summary>

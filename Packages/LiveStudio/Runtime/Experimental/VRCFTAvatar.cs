@@ -19,7 +19,7 @@ namespace Lilium.LiveStudio
     /// </summary>
     [DefaultExecutionOrder(10)]
     [RequireComponent(typeof(Animator))]
-    public class VRCFTAvatar : MonoBehaviour, IAvatar
+    public class VRCFTAvatar : MonoBehaviour, IAvatar, IAvatarParameterSource
     {
         [SerializeReference, Select]
         public IExpressionResolver expressionResolver = new DefaultExpressionResolver();
@@ -332,8 +332,8 @@ namespace Lilium.LiveStudio
         {
             _animator = GetComponent<Animator>();
 
-            // 体アニメ用 PlayableGraph を構築。これ以降 AnimatorController は graph 内に
-            // ラップされるため、パラメータの読み書きは driver.controllerPlayable 経由で行う。
+            // 体アニメ用 PlayableGraph を構築。AnimatorController は graph 内にラップされるため、
+            // パラメータの読み書きは driver のアクセサ経由で行う。
             _bodyDriver.Initialize(_animator);
 
             _targetValues = new float[FT_ParamCount];
@@ -343,30 +343,21 @@ namespace Lilium.LiveStudio
                 _paramHashes[i] = Animator.StringToHash(s_ftParamNames[i]);
             }
 
-            // AnimatorController に実在するパラメータのみをフィルタ
-            var existingParams = new HashSet<int>();
+            // 初期値を設定。driver.SetFloat は同名パラメータを宣言するコントローラのみへ書き込み、
+            // 未宣言は自動スキップするため存在チェックは不要。
             if (_bodyDriver.hasControllerPlayable)
             {
-                var ctrl = _bodyDriver.controllerPlayable;
-                int paramCount = ctrl.GetParameterCount();
-                for (int i = 0; i < paramCount; i++)
-                    existingParams.Add(ctrl.GetParameter(i).nameHash);
-
-                // 存在するパラメータのみ初期値を設定
-                if (existingParams.Contains(Animator.StringToHash("EyeTrackingActive")))
-                    ctrl.SetFloat("EyeTrackingActive", 1f);
-                if (existingParams.Contains(Animator.StringToHash("LipTrackingActive")))
-                    ctrl.SetFloat("LipTrackingActive", 1f);
-                if (existingParams.Contains(Animator.StringToHash("ExpressionTrackingActive")))
-                    ctrl.SetFloat("ExpressionTrackingActive", 1f);
-                if (existingParams.Contains(Animator.StringToHash("IsLocal")))
-                    ctrl.SetFloat("IsLocal", 1f);
+                _bodyDriver.SetFloat(Animator.StringToHash("EyeTrackingActive"), 1f);
+                _bodyDriver.SetFloat(Animator.StringToHash("LipTrackingActive"), 1f);
+                _bodyDriver.SetFloat(Animator.StringToHash("ExpressionTrackingActive"), 1f);
+                _bodyDriver.SetFloat(Animator.StringToHash("IsLocal"), 1f);
             }
 
+            // 全コントローラ（base + 追加レイヤー）の和集合に実在する FT パラメータのみをフィルタ。
             var validIndices = new List<int>(FT_ParamCount);
             for (int i = 0; i < FT_ParamCount; i++)
             {
-                if (existingParams.Contains(_paramHashes[i]))
+                if (_bodyDriver.HasParameter(_paramHashes[i]))
                     validIndices.Add(i);
             }
             _validParamIndices = validIndices.ToArray();
@@ -652,15 +643,14 @@ namespace Lilium.LiveStudio
 
         void _WriteToController()
         {
-            // AnimatorController は PlayableGraph 内にラップされているため、
-            // Animator.SetFloat ではなく controllerPlayable.SetFloat に書き込む。
+            // AnimatorController は PlayableGraph 内にラップされているため、Animator.SetFloat ではなく
+            // driver のブロードキャスト経由で書き込む（同名パラメータを持つ全レイヤーへ同期される）。
             if (!_bodyDriver.hasControllerPlayable) return;
 
-            var ctrl = _bodyDriver.controllerPlayable;
             for (int i = 0; i < _validParamIndices.Length; i++)
             {
                 int idx = _validParamIndices[i];
-                ctrl.SetFloat(_paramHashes[idx], _targetValues[idx]);
+                _bodyDriver.SetFloat(_paramHashes[idx], _targetValues[idx]);
             }
         }
 
@@ -694,6 +684,17 @@ namespace Lilium.LiveStudio
         {
             _expressions = expressions ?? Array.Empty<VRCExpression>();
         }
+
+        #region IAvatarParameterSource
+
+        // AnimatorController は PlayableGraph 内にラップされるため、子アクセサが値を読むには
+        // Animator ではなく driver 経由で読む必要がある。driver 未初期化時は false / 0 を返す。
+        bool IAvatarParameterSource.HasParameter(int nameHash) => _bodyDriver.HasParameter(nameHash);
+        float IAvatarParameterSource.GetFloat(int nameHash) => _bodyDriver.GetFloat(nameHash);
+        int IAvatarParameterSource.GetInteger(int nameHash) => _bodyDriver.GetInteger(nameHash);
+        bool IAvatarParameterSource.GetBool(int nameHash) => _bodyDriver.GetBool(nameHash);
+
+        #endregion
 
         #region IAvatar
 

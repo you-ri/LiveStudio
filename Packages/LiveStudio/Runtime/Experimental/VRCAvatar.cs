@@ -24,7 +24,7 @@ namespace Lilium.LiveStudio
     /// </summary>
     [DefaultExecutionOrder(10)]
     [RequireComponent(typeof(Animator))]
-    public class VRCAvatar : MonoBehaviour, IAvatar
+    public class VRCAvatar : MonoBehaviour, IAvatar, IAvatarParameterSource
     {
         [SerializeReference, Select]
         public IExpressionResolver expressionResolver = new DefaultExpressionResolver();
@@ -140,6 +140,9 @@ namespace Lilium.LiveStudio
         MotionSourceBase _motionSource;
         bool _isTracking;
 
+        // 子 prop (AvatarProp) のパラメータブリッジ用。controller 宣言パラメータの nameHash 集合。
+        System.Collections.Generic.HashSet<int> _paramHashes;
+
         int _visemeHash;
         int _voiceHash;
         bool _hasViseme;
@@ -184,6 +187,14 @@ namespace Lilium.LiveStudio
         void Start()
         {
             _animator = GetComponent<Animator>();
+
+            // 子アクセサのパラメータブリッジ用に controller パラメータの nameHash をキャッシュ。
+            _paramHashes = new System.Collections.Generic.HashSet<int>();
+            if (_animator.runtimeAnimatorController != null)
+            {
+                var ps = _animator.parameters;
+                for (int i = 0; i < ps.Length; i++) _paramHashes.Add(ps[i].nameHash);
+            }
 
             _target = new float[kVisemeCount];
             _smoothed = new float[kVisemeCount];
@@ -505,6 +516,16 @@ namespace Lilium.LiveStudio
         {
             _expressions = expressions ?? Array.Empty<VRCExpression>();
         }
+
+        #region IAvatarParameterSource
+
+        // VRCAvatar は素の Animator を使うため値は Animator から直接読める。存在判定のみ nameHash キャッシュで行う。
+        bool IAvatarParameterSource.HasParameter(int nameHash) => _paramHashes != null && _paramHashes.Contains(nameHash);
+        float IAvatarParameterSource.GetFloat(int nameHash) => _animator.GetFloat(nameHash);
+        int IAvatarParameterSource.GetInteger(int nameHash) => _animator.GetInteger(nameHash);
+        bool IAvatarParameterSource.GetBool(int nameHash) => _animator.GetBool(nameHash);
+
+        #endregion
 
         /// <summary>
         /// AvatarAnimatorTrackingControl から呼ばれ、部位ごとのトラッキング状態を更新する。

@@ -13,6 +13,7 @@ namespace Lilium.LiveStudio
     /// <list type="bullet">
     ///   <item><c>*.scene.lsb</c> — a scene bundle (one Unity scene, loaded additively).</item>
     ///   <item><c>*.avatar.lsb</c> — an avatar bundle (a single root prefab).</item>
+    ///   <item><c>*.prop.lsb</c> — a prop bundle (a single root prefab; avatar prop or stage prop).</item>
     ///   <item><c>*.lsavatar</c> — legacy avatar bundle, kept for input compatibility.</item>
     /// </list>
     ///
@@ -28,11 +29,17 @@ namespace Lilium.LiveStudio
         /// <summary>Suffix of an avatar bundle file (case-insensitive).</summary>
         public const string AvatarExtension = ".avatar.lsb";
 
+        /// <summary>Suffix of a prop bundle file (case-insensitive).</summary>
+        public const string PropExtension = ".prop.lsb";
+
         /// <summary>Legacy avatar bundle suffix. Accepted on input, no longer produced on export.</summary>
         public const string LegacyAvatarExtension = ".lsavatar";
 
         /// <summary>True if <paramref name="path"/> names a scene bundle (<c>*.scene.lsb</c>).</summary>
         public static bool IsSceneBundle(string path) => _HasSuffix(path, SceneExtension);
+
+        /// <summary>True if <paramref name="path"/> names a prop bundle (<c>*.prop.lsb</c>).</summary>
+        public static bool IsPropBundle(string path) => _HasSuffix(path, PropExtension);
 
         /// <summary>
         /// True if <paramref name="path"/> names an avatar bundle, either the current
