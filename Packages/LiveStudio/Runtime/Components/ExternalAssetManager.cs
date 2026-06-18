@@ -80,6 +80,13 @@ namespace Lilium.LiveStudio
         [NonSerialized]
         private bool _restorePending;
 
+        /// <summary>
+        /// Raised whenever the <c>assets</c> array or an entry's load state changes (every
+        /// <see cref="_Broadcast"/>). <see cref="WorldManager"/> subscribes to rebuild its projected
+        /// scene view from the <see cref="SceneBundleAsset"/> entries here.
+        /// </summary>
+        public event Action onAssetsChanged;
+
         public void OnEnable()
         {
             _current = this;
@@ -304,6 +311,29 @@ namespace Lilium.LiveStudio
             }
         }
 
+        /// <summary>
+        /// Read-only view of the managed assets, so <see cref="WorldManager"/> can project the
+        /// <see cref="SceneBundleAsset"/> entries into its scene view without owning the array.
+        /// </summary>
+        public IReadOnlyList<AssetBase> assetsView => assets;
+
+        /// <summary>Returns the asset with the given id, or null. Used to reach a loaded scene handle.</summary>
+        public AssetBase FindAsset(string assetId) => _Find(assetId);
+
+        /// <summary>
+        /// Sets an asset's desired <see cref="AssetBase.enabled"/> state and schedules a diff, so a
+        /// facade such as <see cref="WorldManager"/> can drive load/unload through the same pipeline as
+        /// a direct remote-app edit. No-op when the id is unknown or the value is unchanged.
+        /// </summary>
+        public void SetAssetEnabled(string assetId, bool value)
+        {
+            var asset = _Find(assetId);
+            if (asset == null || asset.enabled == value) return;
+            asset.enabled = value;
+            _dirty = true;
+            _Broadcast();
+        }
+
         private void _OnPropertyChanged(ExposedProperty property, object oldValue)
         {
             if (!_initialized) return;
@@ -500,6 +530,12 @@ namespace Lilium.LiveStudio
 
         private static AssetBase _CreateAsset(string filePath)
         {
+            // Evaluated first: IsSceneBundle matches the *.scene.lsb compound suffix only, so it never
+            // collides with the *.avatar.lsb / *.prop.lsb suffixes checked below.
+            if (LiveStudioBundle.IsSceneBundle(filePath))
+            {
+                return new SceneBundleAsset();
+            }
             if (LiveStudioBundle.IsAvatarBundle(filePath) ||
                 filePath.EndsWith(".vrm", StringComparison.OrdinalIgnoreCase))
             {
@@ -517,11 +553,13 @@ namespace Lilium.LiveStudio
         private void _Broadcast()
         {
             ExposedPropertyBroadcast.BroadcastProperty(this, "assets");
+            onAssetsChanged?.Invoke();
         }
 
         // Derives a display name by stripping a known asset suffix, else the plain file name.
         private static readonly string[] kKnownSuffixes =
         {
+            LiveStudioBundle.SceneExtension,
             LiveStudioBundle.PropExtension,
             LiveStudioBundle.AvatarExtension,
             LiveStudioBundle.LegacyAvatarExtension,

@@ -3,7 +3,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Threading.Tasks;
 
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -36,23 +35,17 @@ namespace Lilium.LiveStudio
         public string filePath;
 
         /// <summary>
-        /// Desired state. Toggling this loads (true) or unloads (false) the scene. Persisted, so a
-        /// saved live scene restores which bundles were visible at startup.
+        /// Desired state. Toggling this loads (true) or unloads (false) the scene. Mirrored to the
+        /// backing <see cref="SceneBundleAsset"/>, which is where the state is actually persisted.
         /// </summary>
         [ExposedField]
         public bool enabled;
 
-        /// <summary>
-        /// Actual state, synced by the manager after a load/unload completes. Not persisted: it is
-        /// derived from the real load and re-established when the restored entries finish loading.
-        /// </summary>
+        /// <summary>Actual state, projected from the backing <see cref="SceneBundleAsset"/>.</summary>
         [ExposedField(persistable = false)]
         public bool isLoaded;
 
-        /// <summary>
-        /// True when this scene is the active scene. Persisted, so the saved active scene is
-        /// reactivated on restore once it has loaded.
-        /// </summary>
+        /// <summary>True when this scene is the active scene.</summary>
         [ExposedField]
         public bool isActive;
 
@@ -66,22 +59,27 @@ namespace Lilium.LiveStudio
     }
 
     /// <summary>
-    /// Manages a list of scene bundles (<c>*.scene.lsb</c>) at runtime. Each entry can be loaded
-    /// additively or unloaded independently, and the list is editable from the remote app.
+    /// Surfaces the loaded scene bundles to the remote app's Worlds page and owns the scene-specific
+    /// concepts the unified asset pipeline does not model: the active scene and the bootstrap
+    /// (persistent) scene.
     ///
-    /// Patterned after <see cref="MultiSceneManager"/> (which creates empty in-memory scenes), but
-    /// this manager loads real scenes from AssetBundles via <see cref="SceneBundleLoader"/> and owns
-    /// the loaded bundles until they are unloaded.
+    /// The actual load/unload of scene bundles is delegated to <see cref="ExternalAssetManager"/>,
+    /// where each scene is a <see cref="SceneBundleAsset"/> alongside props and avatars. This manager keeps
+    /// no bundles of its own: <see cref="scenes"/> is a runtime-only projection of the SceneBundleAsset
+    /// entries (plus the synthetic persistent entry), so the persisted source of truth lives entirely
+    /// on the assets side. Remote-app edits to an entry's <see cref="SceneBundleEntry.enabled"/> flag
+    /// are forwarded to the matching SceneBundleAsset; activation is applied here through the asset's loaded
+    /// scene handle.
     /// </summary>
     [Serializable]
     [ExposedClass(Icon = "public", Category = "Scene")]
     [MovedFrom(false, null, null, "RuntimeSceneManager")]
-    public class WorldManager : IExposedObject, IExposedDeserializeCallback
+    public class WorldManager : IExposedObject
     {
         const string kId = "b2f7c9a1-3d4e-4f8a-9c1b-7e2d5a6f8c30";
 
         // Stable id for the synthetic entry representing the bootstrap / persistent scene. A short
-        // literal is safe because real bundle entries use 32-char GUIDs and never collide with it.
+        // literal is safe because real bundle entries use path-based ids and never collide with it.
         const string kPersistentSceneId = "persistent";
 
 #if UNITY_EDITOR
@@ -107,42 +105,27 @@ namespace Lilium.LiveStudio
 
         public string id => kId;
 
-        // The list of added scene bundles, exposed as an editable array. The remote app toggles each
-        // entry's `enabled` flag (load/unload) and removes entries; persisted to the live scene JSON.
+        // Projected view of the scene bundles for the remote app's Worlds page: the persistent entry
+        // followed by each SceneBundleAsset in ExternalAssetManager. Not persisted — the SceneBundleAsset entries
+        // are the persisted source of truth — so it is rebuilt whenever the asset list changes.
         [NonSerialized]
-        [ExposedField]
+        [ExposedField(persistable = false)]
         private SceneBundleEntry[] scenes = Array.Empty<SceneBundleEntry>();
-
-        // Loaded bundles owned by this manager, keyed by entry id. Held until the scene is unloaded.
-        [NonSerialized]
-        private readonly Dictionary<string, LoadedSceneBundle> _loaded =
-            new Dictionary<string, LoadedSceneBundle>();
-
-        // Entries currently being loaded or unloaded; guards against re-entrant requests.
-        [NonSerialized]
-        private readonly HashSet<string> _busy = new HashSet<string>();
 
         // The scene that was active when this manager started (the bootstrap / persistent scene).
         // When an active bundle scene is unloaded, the active scene is restored to this.
         [NonSerialized]
         private Scene _persistentScene;
 
-        // The entry id that should become the active scene once it has finished loading. Captured
-        // from a restored live scene's persisted `isActive` flag at startup, cleared after applied.
-        [NonSerialized]
-        private string _pendingActiveId;
-
-        [NonSerialized]
-        private bool _dirty;
-
         [NonSerialized]
         private bool _initialized;
 
-        // True from OnEnable until the first Update tick. The live scene restore (host Start) runs in
-        // this window, so OnAfterExposedDeserialize can tell the startup restore apart from the later
-        // per-property edits that also fire it.
+        // The ExternalAssetManager we are subscribed to (null when not subscribed). The manager may not
+        // exist yet at OnEnable (load order), so subscription is deferred to Update. Holding the
+        // instance — rather than re-reading the singleton — lets us unsubscribe cleanly even if the
+        // manager is torn down before us.
         [NonSerialized]
-        private bool _restorePending;
+        private ExternalAssetManager _subscribedManager;
 
         public void OnEnable()
         {
@@ -153,35 +136,26 @@ namespace Lilium.LiveStudio
             // first, non-removable entry so the remote app can see and re-activate it.
             if (Application.isPlaying)
             {
-                _restorePending = true;
                 _persistentScene = SceneManager.GetActiveScene();
-                _EnsurePersistentEntry();
             }
 
-            // Note: a restored live scene's `scenes` array is not available here. `scenes` is
-            // [NonSerialized], so it is empty at OnEnable and only populated later when the live
-            // scene JSON is deserialized (RemoteControlBehaviour.Start). Restoring the saved
-            // visible/active state (loading enabled entries, reactivating the saved active scene)
-            // is handled in OnAfterExposedDeserialize, which fires right after that array is restored.
-
             _initialized = true;
+            _RebuildScenesView();
         }
 
         public void OnDisable()
         {
-            _dirty = false;
             _initialized = false;
 
             ExposedClass.Get<WorldManager>().onPropertyChanged -= _OnPropertyChanged;
 
-            // Unload everything we own so leaving the scene does not leak bundles.
-            foreach (var loaded in _loaded.Values)
+            // ExternalAssetManager owns the loaded scene bundles and unloads them in its own teardown;
+            // here we only drop our subscription.
+            if (_subscribedManager != null)
             {
-                _ = loaded.UnloadAsync();
+                _subscribedManager.onAssetsChanged -= _OnAssetsChanged;
+                _subscribedManager = null;
             }
-            _loaded.Clear();
-            _busy.Clear();
-            _pendingActiveId = null;
 
             ExposedObjectRegistry.FindByTarget(this)?.Unregister();
         }
@@ -191,64 +165,14 @@ namespace Lilium.LiveStudio
             OnDisable();
         }
 
-        /// <summary>
-        /// Fires after the <c>scenes</c> array is restored from a saved live scene — and also after
-        /// every per-property edit from the remote app (the SetProperty path triggers it too). Only
-        /// the startup restore is handled here, gated by <see cref="_restorePending"/>.
-        ///
-        /// Restores the saved state: re-establishes the bootstrap entry (the restore overwrote the
-        /// one added in <see cref="OnEnable"/>), remembers which scene was active so it can be
-        /// reactivated once loaded, and schedules a diff so the saved-enabled bundles load.
-        /// </summary>
-        public void OnAfterExposedDeserialize()
-        {
-            if (!Application.isPlaying) return;
-            if (!_restorePending) return;
-
-            _EnsurePersistentEntry();
-
-            // Remember the scene that was active when saved; reactivated in _LoadEntryAsync once loaded.
-            _pendingActiveId = null;
-            for (int i = 0; i < scenes.Length; i++)
-            {
-                if (scenes[i].isPersistent) continue;
-                if (!scenes[i].isActive) continue;
-                _pendingActiveId = scenes[i].id;
-                break;
-            }
-
-            // _CreatePersistentEntry recomputes isActive from the *current* active scene, which at
-            // restore is still the bootstrap scene (true) because the saved active bundle loads
-            // asynchronously on a later Update. Settle it to its final value now so the save baseline
-            // captured right after this matches the post-restore steady state; otherwise
-            // persistent.isActive flips true->false once the bundle activates and the live scene
-            // looks unsaved at quit with no user edit.
-            for (int i = 0; i < scenes.Length; i++)
-            {
-                if (!scenes[i].isPersistent) continue;
-                var persistent = scenes[i];
-                persistent.isActive = string.IsNullOrEmpty(_pendingActiveId);
-                scenes[i] = persistent;
-                break;
-            }
-
-            // Load the entries that were enabled when saved on the next Update.
-            _dirty = true;
-        }
-
         public void Update()
         {
-            // The startup restore (host Start) has completed by the first tick; later
-            // OnAfterExposedDeserialize calls are per-property edits, not a restore.
-            _restorePending = false;
-
-            if (!_dirty) return;
-            if (!_initialized) { _dirty = false; return; }
+            if (!_initialized) return;
+            if (!Application.isPlaying) return;
 #if UNITY_EDITOR
-            if (_isExitingPlayMode) { _dirty = false; return; }
+            if (_isExitingPlayMode) return;
 #endif
-            _dirty = false;
-            _ApplySceneDiff();
+            _EnsureSubscribed();
         }
 
         public void Reset()
@@ -257,7 +181,9 @@ namespace Lilium.LiveStudio
 
         /// <summary>
         /// Adds a scene bundle and loads it. Intended to be invoked from the remote app after the
-        /// user picks a <c>*.scene.lsb</c> file.
+        /// user picks a <c>*.scene.lsb</c> file. Delegates to <see cref="ExternalAssetManager"/>, which
+        /// creates the backing <see cref="SceneBundleAsset"/>; the projected view rebuilds on the resulting
+        /// assets-changed notification.
         /// </summary>
         [ExposedFunction]
         public void AddScene(string filePath)
@@ -280,20 +206,14 @@ namespace Lilium.LiveStudio
                 return;
             }
 
-            var entry = new SceneBundleEntry
+            var manager = ExternalAssetManager.current;
+            if (manager == null)
             {
-                id = Guid.NewGuid().ToString("N"),
-                name = _DeriveName(filePath),
-                filePath = filePath,
-                enabled = true,
-                isLoaded = false,
-            };
+                Debug.LogError("[LiveStudio] No ExternalAssetManager in the scene; cannot add a scene bundle.");
+                return;
+            }
 
-            var list = new List<SceneBundleEntry>(scenes) { entry };
-            scenes = list.ToArray();
-
-            _dirty = true;
-            _Broadcast();
+            manager.AddAsset(filePath);
         }
 
         /// <summary>Unloads (if loaded) and removes the entry with the given id.</summary>
@@ -305,17 +225,7 @@ namespace Lilium.LiveStudio
             // The bootstrap scene is always present and cannot be removed.
             if (sceneId == kPersistentSceneId) return;
 
-            if (_loaded.TryGetValue(sceneId, out var loaded))
-            {
-                _loaded.Remove(sceneId);
-                _ = _UnloadBundleThenSyncAsync(loaded);
-            }
-
-            var list = new List<SceneBundleEntry>(scenes);
-            list.RemoveAll(e => e.id == sceneId);
-            scenes = list.ToArray();
-
-            _Broadcast();
+            ExternalAssetManager.current?.RemoveAsset(sceneId);
         }
 
         /// <summary>
@@ -327,238 +237,176 @@ namespace Lilium.LiveStudio
         {
             if (string.IsNullOrEmpty(sceneId)) return;
 
-            // Activating the bootstrap scene: it is not tracked in _loaded, so handle it directly.
+            var manager = ExternalAssetManager.current;
+
+            // Activating the bootstrap scene: clear the SceneBundleAsset active flags so it becomes active.
             if (sceneId == kPersistentSceneId)
             {
-                if (_persistentScene.IsValid() && _persistentScene.isLoaded)
+                _ClearSceneBundleAssetActiveFlags(manager);
+            }
+            else
+            {
+                var asset = manager?.FindAsset(sceneId) as SceneBundleAsset;
+                if (asset == null || !asset.hasScene)
                 {
-                    SceneManager.SetActiveScene(_persistentScene);
+                    Debug.LogWarning($"[LiveStudio] Cannot activate a scene that is not loaded: {sceneId}");
+                    return;
                 }
-                _SyncActiveStates();
-                _Broadcast();
-                return;
+
+                // Radio: only the target scene asset is flagged active.
+                var view = manager.assetsView;
+                for (int i = 0; i < view.Count; i++)
+                {
+                    if (view[i] is SceneBundleAsset s) s.isActive = s == asset;
+                }
             }
 
-            if (!_loaded.TryGetValue(sceneId, out var loaded))
-            {
-                Debug.LogWarning($"[LiveStudio] Cannot activate a scene that is not loaded: {sceneId}");
-                return;
-            }
-
-            if (loaded.scene.IsValid() && loaded.scene.isLoaded)
-            {
-                SceneManager.SetActiveScene(loaded.scene);
-            }
-
-            _SyncActiveStates();
-            _Broadcast();
+            _ReconcileActiveScene();
+            _RebuildScenesView();
         }
 
         /// <summary>
-        /// Reacts to <c>scenes</c> (or any of its elements) changing from the remote app and
-        /// schedules a diff pass on the next <see cref="Update"/>.
+        /// Forwards remote-app edits of <c>scenes</c> (an entry's <see cref="SceneBundleEntry.enabled"/>
+        /// flag) to the backing <see cref="SceneBundleAsset"/>, which drives the actual load/unload.
         /// </summary>
         private void _OnPropertyChanged(ExposedProperty property, object oldValue)
         {
             if (!_initialized) return;
             if (!property.PathContains(nameof(scenes))) return;
-            _dirty = true;
+            _TransferEnabledToAssets();
         }
 
-        /// <summary>
-        /// Brings the actual loaded scenes in line with the desired <see cref="SceneBundleEntry.enabled"/>
-        /// flags: load newly-enabled entries, unload newly-disabled ones, and unload entries that were
-        /// removed from the array.
-        /// </summary>
-        private void _ApplySceneDiff()
+        // Pushes each non-persistent entry's desired enabled state onto its SceneBundleAsset. SetAssetEnabled
+        // is a no-op when unchanged, so mirroring the whole list on any edit stays cheap.
+        private void _TransferEnabledToAssets()
         {
-            var desiredIds = new HashSet<string>();
-
+            var manager = ExternalAssetManager.current;
+            if (manager == null) return;
             for (int i = 0; i < scenes.Length; i++)
             {
-                var entry = scenes[i];
-                if (string.IsNullOrEmpty(entry.id)) continue;
-                desiredIds.Add(entry.id);
-
-                // The persistent scene is owned by the app, not by this manager: never load/unload it.
-                if (entry.isPersistent) continue;
-
-                if (_busy.Contains(entry.id)) continue;
-
-                bool loaded = _loaded.ContainsKey(entry.id);
-                if (entry.enabled && !loaded)
-                {
-                    _ = _LoadEntryAsync(entry.id, entry.filePath);
-                }
-                else if (!entry.enabled && loaded)
-                {
-                    _ = _UnloadEntryAsync(entry.id);
-                }
-            }
-
-            // Entries removed from the array while still loaded: unload them.
-            var orphans = new List<string>();
-            foreach (var id in _loaded.Keys)
-            {
-                if (!desiredIds.Contains(id) && !_busy.Contains(id))
-                {
-                    orphans.Add(id);
-                }
-            }
-            foreach (var id in orphans)
-            {
-                _ = _UnloadEntryAsync(id);
+                if (scenes[i].isPersistent) continue;
+                manager.SetAssetEnabled(scenes[i].id, scenes[i].enabled);
             }
         }
 
-        private async Task _LoadEntryAsync(string sceneId, string filePath)
+        private void _EnsureSubscribed()
         {
-            _busy.Add(sceneId);
-            try
-            {
-                var loader = new SceneBundleLoader();
-                var loaded = await loader.LoadAsync(filePath);
-                if (loaded != null)
-                {
-                    _loaded[sceneId] = loaded;
-                    _SetEntryLoaded(sceneId, true);
-
-                    // Restore the persisted active scene once it has finished loading.
-                    if (_pendingActiveId == sceneId &&
-                        loaded.scene.IsValid() && loaded.scene.isLoaded)
-                    {
-                        SceneManager.SetActiveScene(loaded.scene);
-                        _pendingActiveId = null;
-                    }
-                }
-                else
-                {
-                    // Load failed: reflect the failure back as disabled so the UI is not stuck "on".
-                    _SetEntryEnabled(sceneId, false);
-                    _SetEntryLoaded(sceneId, false);
-                }
-            }
-            finally
-            {
-                _busy.Remove(sceneId);
-                _SyncActiveStates();
-                _Broadcast();
-            }
+            if (_subscribedManager != null) return;
+            var manager = ExternalAssetManager.current;
+            if (manager == null) return;
+            manager.onAssetsChanged += _OnAssetsChanged;
+            _subscribedManager = manager;
+            // Catch up on any load/unload that completed before we subscribed.
+            _OnAssetsChanged();
         }
 
-        private async Task _UnloadEntryAsync(string sceneId)
+        // The asset list changed (load/unload completed, entry added/removed): reconcile the active
+        // scene and rebuild the projected view.
+        private void _OnAssetsChanged()
         {
-            _busy.Add(sceneId);
-            try
-            {
-                if (_loaded.TryGetValue(sceneId, out var loaded))
-                {
-                    _loaded.Remove(sceneId);
-                    await _UnloadBundleAsync(loaded);
-                }
-                _SetEntryLoaded(sceneId, false);
-            }
-            finally
-            {
-                _busy.Remove(sceneId);
-                _SyncActiveStates();
-                _Broadcast();
-            }
+            _ReconcileActiveScene();
+            _RebuildScenesView();
         }
 
         /// <summary>
-        /// Unloads a bundle and, if it was the active scene, restores the persistent scene as active.
+        /// Brings the actual active scene in line with the desired one: the loaded SceneBundleAsset flagged
+        /// <see cref="SceneBundleAsset.isActive"/>, or the bootstrap scene when none is. A scene flagged
+        /// active but not yet loaded is skipped until it loads (a later assets-changed fires this again).
         /// </summary>
-        private async Task _UnloadBundleAsync(LoadedSceneBundle loaded)
+        private void _ReconcileActiveScene()
         {
-            bool wasActive = loaded.scene == SceneManager.GetActiveScene();
-            await loaded.UnloadAsync();
-            if (wasActive && _persistentScene.IsValid() && _persistentScene.isLoaded)
+            if (!Application.isPlaying) return;
+
+            var current = SceneManager.GetActiveScene();
+            var desired = _FindActiveSceneBundleAsset();
+
+            if (desired != null)
+            {
+                if (desired.scene != current)
+                {
+                    SceneManager.SetActiveScene(desired.scene);
+                }
+            }
+            else if (_persistentScene.IsValid() && _persistentScene.isLoaded && current != _persistentScene)
             {
                 SceneManager.SetActiveScene(_persistentScene);
             }
         }
 
-        /// <summary>
-        /// <see cref="RemoveScene"/> path: unload the bundle (restoring the persistent scene if it was
-        /// active) and then resync the active flags. The entry itself is already removed synchronously.
-        /// </summary>
-        private async Task _UnloadBundleThenSyncAsync(LoadedSceneBundle loaded)
+        // The loaded SceneBundleAsset that should be the active scene, or null when the bootstrap scene is.
+        private SceneBundleAsset _FindActiveSceneBundleAsset()
         {
-            await _UnloadBundleAsync(loaded);
-            _SyncActiveStates();
-            _Broadcast();
-        }
-
-        /// <summary>Recomputes each entry's <see cref="SceneBundleEntry.isActive"/> from the active scene.</summary>
-        private void _SyncActiveStates()
-        {
-            var active = SceneManager.GetActiveScene();
-            for (int i = 0; i < scenes.Length; i++)
+            var manager = ExternalAssetManager.current;
+            if (manager == null) return null;
+            var view = manager.assetsView;
+            for (int i = 0; i < view.Count; i++)
             {
-                bool isActive = scenes[i].isPersistent
-                    ? _persistentScene.IsValid() && _persistentScene == active
-                    : _loaded.TryGetValue(scenes[i].id, out var loaded) && loaded.scene == active;
-                if (scenes[i].isActive == isActive) continue;
-                var entry = scenes[i];
-                entry.isActive = isActive;
-                scenes[i] = entry;
+                if (view[i] is SceneBundleAsset s && s.isActive && s.hasScene) return s;
             }
+            return null;
         }
 
-        private void _SetEntryLoaded(string sceneId, bool value)
+        private static bool _AnySceneBundleAssetActive(ExternalAssetManager manager)
         {
-            for (int i = 0; i < scenes.Length; i++)
+            if (manager == null) return false;
+            var view = manager.assetsView;
+            for (int i = 0; i < view.Count; i++)
             {
-                if (scenes[i].id != sceneId) continue;
-                var entry = scenes[i];
-                entry.isLoaded = value;
-                scenes[i] = entry;
-                return;
+                if (view[i] is SceneBundleAsset s && s.isActive) return true;
             }
+            return false;
         }
 
-        private void _SetEntryEnabled(string sceneId, bool value)
+        private static void _ClearSceneBundleAssetActiveFlags(ExternalAssetManager manager)
         {
-            for (int i = 0; i < scenes.Length; i++)
+            if (manager == null) return;
+            var view = manager.assetsView;
+            for (int i = 0; i < view.Count; i++)
             {
-                if (scenes[i].id != sceneId) continue;
-                var entry = scenes[i];
-                entry.enabled = value;
-                scenes[i] = entry;
-                return;
+                if (view[i] is SceneBundleAsset s) s.isActive = false;
             }
-        }
-
-        private void _Broadcast()
-        {
-            // Pass the target instance (not the nullable handle): the (object) overload resolves the
-            // handle via the registry. Passing an ExposedObjectHandle? would box to object and fail
-            // the registry lookup.
-            ExposedPropertyBroadcast.BroadcastProperty(this, "scenes");
         }
 
         /// <summary>
-        /// Rebuilds the <c>scenes</c> array so the bootstrap (persistent) scene is the first entry.
-        /// Any existing persistent entry (e.g. a stale one restored from saved JSON) is dropped — by
-        /// id, since <see cref="SceneBundleEntry.isPersistent"/> is not persisted — and replaced with
-        /// a fresh one reflecting the current bootstrap scene.
+        /// Rebuilds <c>scenes</c> from the current state: the persistent entry first, then each
+        /// <see cref="SceneBundleAsset"/> in <see cref="ExternalAssetManager"/> projected to a
+        /// <see cref="SceneBundleEntry"/>.
         /// </summary>
-        private void _EnsurePersistentEntry()
+        private void _RebuildScenesView()
         {
-            if (!Application.isPlaying) return;
+            var manager = ExternalAssetManager.current;
 
-            var list = new List<SceneBundleEntry>(scenes.Length + 1) { _CreatePersistentEntry() };
-            for (int i = 0; i < scenes.Length; i++)
+            var list = new List<SceneBundleEntry>();
+            if (Application.isPlaying && _persistentScene.IsValid())
             {
-                if (scenes[i].id == kPersistentSceneId) continue;
-                list.Add(scenes[i]);
+                list.Add(_CreatePersistentEntry(manager));
             }
+
+            if (manager != null)
+            {
+                var view = manager.assetsView;
+                for (int i = 0; i < view.Count; i++)
+                {
+                    if (!(view[i] is SceneBundleAsset s)) continue;
+                    list.Add(new SceneBundleEntry
+                    {
+                        id = s.id,
+                        name = s.name,
+                        filePath = s.filePath,
+                        enabled = s.enabled,
+                        isLoaded = s.isLoaded,
+                        isActive = s.isActive,
+                        isPersistent = false,
+                    });
+                }
+            }
+
             scenes = list.ToArray();
             _Broadcast();
         }
 
-        private SceneBundleEntry _CreatePersistentEntry()
+        // The bootstrap scene is active whenever no bundle scene is flagged active.
+        private SceneBundleEntry _CreatePersistentEntry(ExternalAssetManager manager)
         {
             var sceneName = _persistentScene.IsValid() ? _persistentScene.name : null;
             return new SceneBundleEntry
@@ -568,19 +416,17 @@ namespace Lilium.LiveStudio
                 filePath = string.Empty,
                 enabled = true,
                 isLoaded = true,
-                isActive = _persistentScene.IsValid() && _persistentScene == SceneManager.GetActiveScene(),
+                isActive = !_AnySceneBundleAssetActive(manager),
                 isPersistent = true,
             };
         }
 
-        private static string _DeriveName(string filePath)
+        private void _Broadcast()
         {
-            var fileName = Path.GetFileName(filePath);
-            if (fileName.EndsWith(LiveStudioBundle.SceneExtension, StringComparison.OrdinalIgnoreCase))
-            {
-                return fileName.Substring(0, fileName.Length - LiveStudioBundle.SceneExtension.Length);
-            }
-            return Path.GetFileNameWithoutExtension(fileName);
+            // Pass the target instance (not the nullable handle): the (object) overload resolves the
+            // handle via the registry. Passing an ExposedObjectHandle? would box to object and fail
+            // the registry lookup.
+            ExposedPropertyBroadcast.BroadcastProperty(this, "scenes");
         }
     }
 }
