@@ -30,12 +30,22 @@ namespace Lilium.LiveStudio
     ///
     /// Avatar-attached props live under the avatar, so swapping the avatar destroys them; this manager
     /// listens for <see cref="IAvatarService.onAvatarChanged"/> and reloads them onto the new avatar.
+    ///
+    /// This manager is the single source of truth for avatar selection: the active avatar is the enabled
+    /// exclusive <see cref="AvatarAsset"/> in <c>assets</c>, persisted here. <see cref="ExternalAvatarSource"/>
+    /// holds no persisted file path of its own — it is just the loader the selected avatar asset drives.
     /// </summary>
     [Serializable]
     [ExposedClass(Icon = "deployed_code", Category = "Asset")]
     public class ExternalAssetManager : IExposedObject, IExposedDeserializeCallback, IExposedSerializeCallback
     {
         const string kId = "a7d3f1e2-9c4b-4e85-b6a1-2f8c5d3e7b91";
+
+        // Runtime singleton (one manager per scene, fixed id). Lets loaders / inspectors such as
+        // ExternalAvatarSource surface the avatar selection without holding a hard reference.
+        [NonSerialized]
+        private static ExternalAssetManager _current;
+        public static ExternalAssetManager current => _current;
 
         public string name { get; set; } = "Asset Manager";
 
@@ -72,6 +82,7 @@ namespace Lilium.LiveStudio
 
         public void OnEnable()
         {
+            _current = this;
             ExposedObjectRegistry.Create<ExternalAssetManager>(this, kId);
             ExposedClass.Get<ExternalAssetManager>().onPropertyChanged += _OnPropertyChanged;
 
@@ -97,6 +108,8 @@ namespace Lilium.LiveStudio
             _UnloadAllAdditive();
 
             ExposedObjectRegistry.FindByTarget(this)?.Unregister();
+
+            if (_current == this) _current = null;
         }
 
         public void OnDispose()
@@ -234,6 +247,61 @@ namespace Lilium.LiveStudio
             assets = list.ToArray();
 
             _Broadcast();
+        }
+
+        /// <summary>
+        /// Display names of the registered avatar (exclusive) assets, with an empty entry first that
+        /// represents "none / default avatar". Used as the option source for an avatar selector UI.
+        /// </summary>
+        public string[] GetAvatarNames()
+        {
+            var names = new List<string> { string.Empty };
+            for (int i = 0; i < assets.Length; i++)
+            {
+                var asset = assets[i];
+                if (asset != null && asset.isExclusive) names.Add(asset.name ?? string.Empty);
+            }
+            return names.ToArray();
+        }
+
+        /// <summary>Name of the currently selected (enabled) avatar, or empty when on the default avatar.</summary>
+        public string GetSelectedAvatarName()
+        {
+            for (int i = 0; i < assets.Length; i++)
+            {
+                var asset = assets[i];
+                if (asset != null && asset.isExclusive && asset.enabled) return asset.name ?? string.Empty;
+            }
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// Selects the avatar with the given display name (empty resets to the default avatar), driving the
+        /// same exclusive reconcile as toggling the asset's <see cref="AssetBase.enabled"/> flag directly.
+        /// </summary>
+        public void SelectAvatarByName(string avatarName)
+        {
+            if (string.IsNullOrEmpty(avatarName))
+            {
+                // Disable the currently-enabled avatar; the reconcile then resets to the default avatar.
+                bool changed = false;
+                for (int i = 0; i < assets.Length; i++)
+                {
+                    var asset = assets[i];
+                    if (asset != null && asset.isExclusive && asset.enabled) { asset.enabled = false; changed = true; }
+                }
+                if (changed) { _dirty = true; _Broadcast(); }
+                return;
+            }
+
+            for (int i = 0; i < assets.Length; i++)
+            {
+                var asset = assets[i];
+                if (asset == null || !asset.isExclusive || asset.name != avatarName) continue;
+                if (!asset.enabled) { asset.enabled = true; _dirty = true; }
+                _Broadcast();
+                return;
+            }
         }
 
         private void _OnPropertyChanged(ExposedProperty property, object oldValue)

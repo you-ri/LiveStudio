@@ -13,6 +13,11 @@ namespace Lilium.LiveStudio
     /// <summary>
     /// 外部アバターファイルを読み込むアバターソース。拡張子で .vrm / .avatar.lsb (旧 .lsavatar) を判別し、
     /// フォーマット固有処理は <see cref="IExternalAvatarLoader"/> 実装へ委譲する。
+    ///
+    /// ロードは <see cref="ExternalAssetManager"/>（<see cref="AvatarAsset"/> 経由 → <see cref="AvatarService"/>
+    /// → <see cref="AvatarController.RequestLoad"/>）からのみ駆動される純粋なローダー実行役。
+    /// 「どのアバターを読むか」の選択状態と永続化は ExternalAssetManager の assets 配列が唯一の source of truth。
+    /// このコンポーネント自身は exposed なモデルファイルプロパティを持たない。
     /// </summary>
     [DefaultExecutionOrder(250)]
     [ExposedClass("ExternalAvatarSource", Category = "Avatar", Icon = "deployed_code")]
@@ -21,14 +26,34 @@ namespace Lilium.LiveStudio
     {
         public event Action<GameObject> onAvatarReady;
 
+        // 現在ロード中（または直近に要求された）アバターファイルパス。RequestLoad でのみ設定される
+        // ランタイム状態で、永続化も exposed もしない（永続化は ExternalAssetManager の assets が担う）。
         // アバターバンドルは複合拡張子 ".avatar.lsb" で絞る（".scene.lsb" と区別するため）。
         // 旧 ".lsavatar" も後方互換のため受理する。
-        [SerializeField]
-        [ExposedField(label = "AVATAR_MODELFILEPATH"), GLTFFileSelector("vrm", "avatar.lsb", "lsavatar")]
-        [ExposedHelp("AVATAR_VRMMODELFILEPATH_HELP")]
         string _modelFilePath;
 
         public string modelFilePath => _modelFilePath;
+
+        // 登録済みアバター名の一覧（先頭の空文字 = 既定アバター）。selectedAvatar の選択肢ソース。
+        // ExternalAssetManager のアバター選択への view であり、ここには永続化状態を持たない。
+        [ExposedProperty, Hide]
+        public string[] avatarOptions =>
+            ExternalAssetManager.current != null
+                ? ExternalAssetManager.current.GetAvatarNames()
+                : Array.Empty<string>();
+
+        // ライブシーンページ等のインスペクタから、ExternalAssetManager に登録済みのアバターを
+        // ドロップダウンで選択する。get/set とも manager に委譲する（backing field なし = 非永続）。
+        [ExposedProperty(label = "AVATAR_SELECT"), StringSelector(nameof(avatarOptions))]
+        [ExposedHelp("AVATAR_SELECT_HELP")]
+        public string selectedAvatar
+        {
+            get =>
+                ExternalAssetManager.current != null
+                    ? ExternalAssetManager.current.GetSelectedAvatarName()
+                    : string.Empty;
+            set => ExternalAssetManager.current?.SelectAvatarByName(value);
+        }
 
         public void RequestLoad(string filepath)
         {
@@ -39,12 +64,10 @@ namespace Lilium.LiveStudio
         void OnEnable()
         {
             Service<IVRMLoadObserver>.Register(this);
-            ExposedClass.Get<ExternalAvatarSource>().onPropertyChanged += OnPropertyChanged;
         }
 
         void OnDisable()
         {
-            ExposedClass.Get<ExternalAvatarSource>().onPropertyChanged -= OnPropertyChanged;
             Service<IVRMLoadObserver>.Unregister(this);
         }
 
@@ -87,14 +110,6 @@ namespace Lilium.LiveStudio
             if (instance != null)
             {
                 onAvatarReady?.Invoke(instance);
-            }
-        }
-
-        void OnPropertyChanged(ExposedProperty property, object oldValue)
-        {
-            if (property.PathContains(nameof(_modelFilePath)))
-            {
-                _LoadIfFileExists();
             }
         }
 

@@ -21,6 +21,8 @@
     "AVATAR_RESETPHYSICS_HELP": "Resets physics bones that are stuck or in an unnatural position.",
     "AVATAR_RESETPHYSICS": "Reset Physics",
     "AVATAR_MODELFILEPATH": "Model File",
+    "AVATAR_SELECT": "Avatar",
+    "AVATAR_SELECT_HELP": "Select an avatar from the list registered in the Asset Manager. Choose \"None\" to return to the default avatar.",
     "AVATAR_SELECTEDPREFAB": "Avatar Prefab",
     "AVATAR_SELECTEDPREFAB_HELP": "Select an avatar from the registered prefab list. Selecting will replace the current avatar.",
     "GLTF_MODELFILEPATH": "glTF Model File",
