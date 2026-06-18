@@ -276,11 +276,28 @@ namespace Lilium.LiveStudio
             var meshes = avatar.GetComponentsInChildren<SkinnedMeshRenderer>(includeInactive: true);
 
             var avatarTarget = avatar.GetComponent<Animator>();
-            var avatarRotation = avatarTransform.rotation;
-            Socket.CreateSocket(avatarTarget.GetBoneTransform(HumanBodyBones.Head), "Head", avatarRotation);
-            Socket.CreateSocket(avatarTarget.GetBoneTransform(HumanBodyBones.LeftHand), "LeftHand", avatarRotation);
-            Socket.CreateSocket(avatarTarget.GetBoneTransform(HumanBodyBones.RightHand), "RightHand", avatarRotation);
- 
+            var avatarRotation = avatarTransform.rotation; // root rotation; independent of bone pose
+
+            // Standard prop attachment sockets. Each is normalized to the avatar-root rotation so a
+            // single prop offset works across models with different bone axis conventions.
+            //
+            // Sockets bake the bone-to-root orientation delta at creation time, so they must be created
+            // from a pose that is identical across models; otherwise an A-pose import yields a different
+            // socket frame than a T-pose import and a single prop offset cannot fit both. The avatar is
+            // driven to its configured T-pose (stored per-bone in Avatar.humanDescription.skeleton, which
+            // for VRChat / VRM avatars is an exact T-pose: arms horizontal and straight to the sides), the
+            // sockets are created, then the original pose is restored.
+            var restorePose = _ApplyConfiguredTPose(avatarTarget, avatarTransform);
+
+            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.Hips, "Hips", avatarRotation);
+            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.Spine, "Spine", avatarRotation);
+            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.Chest, "Chest", avatarRotation);
+            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.Head, "Head", avatarRotation);
+            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.LeftHand, "LeftHand", avatarRotation);
+            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.RightHand, "RightHand", avatarRotation);
+
+            _RestorePose(restorePose); // the motion driver re-poses next frame anyway, but avoid a 1-frame artifact
+
             foreach (var meshInfo in meshStateOverrides)
             {
                 var prevSkinnedMeshRenderer = meshInfo.skinnedMeshRenderer;
@@ -305,6 +322,62 @@ namespace Lilium.LiveStudio
             // Start path and _ReplaceAvatar path since both flow through here. The argument is
             // the GameObject whose name corresponds to TransformRef.ownerName ("Main Avatar" etc.).
             TransformStructureService.NotifyStructureChanged(this.gameObject);
+        }
+
+        // Create a normalized Socket on a humanoid bone, skipping optional bones the rig lacks
+        // (e.g. Chest) so Socket.CreateSocket does not log a null-parent error. The caller is expected
+        // to have driven the avatar to the canonical T-pose first, so the bone's current world rotation
+        // is the T-pose orientation that CreateSocket bakes against.
+        private static void _CreateSocketIfBonePresent(Animator animator, HumanBodyBones bone, string socketName, Quaternion referenceWorldRotation)
+        {
+            var boneTransform = animator.GetBoneTransform(bone);
+            if (boneTransform == null) return;
+            Socket.CreateSocket(boneTransform, socketName, referenceWorldRotation);
+        }
+
+        // Force the avatar into its configured T-pose by writing each bone's local rotation from
+        // Avatar.humanDescription.skeleton (the per-bone reference TRS captured when the avatar was built;
+        // for VRChat / VRM avatars an exact T-pose with arms horizontal and straight to the sides). This is
+        // exact and rig-independent, unlike a guessed muscle config. Only local rotations are written (bone
+        // local positions are pose-invariant, so they are left untouched). A socket reads the world rotation
+        // of its bone, which depends on the whole parent chain, so the pose is applied to every matching
+        // transform under the avatar. The avatar root (referenceTransform) is skipped so the captured
+        // reference rotation stays valid. Returns a snapshot for _RestorePose; null if no skeleton data.
+        private static Dictionary<Transform, Quaternion> _ApplyConfiguredTPose(Animator animator, Transform referenceTransform)
+        {
+            if (animator == null || animator.avatar == null || !animator.avatar.isValid) return null;
+
+            var skeleton = animator.avatar.humanDescription.skeleton;
+            if (skeleton == null || skeleton.Length == 0) return null;
+
+            var byName = new Dictionary<string, Quaternion>(skeleton.Length);
+            foreach (var bone in skeleton)
+            {
+                if (!byName.ContainsKey(bone.name)) byName[bone.name] = bone.rotation;
+            }
+
+            var restore = new Dictionary<Transform, Quaternion>();
+            var transforms = animator.transform.GetComponentsInChildren<Transform>(includeInactive: true);
+            foreach (var t in transforms)
+            {
+                if (t == referenceTransform) continue;
+                if (byName.TryGetValue(t.name, out var rotation))
+                {
+                    restore[t] = t.localRotation;
+                    t.localRotation = rotation;
+                }
+            }
+            return restore;
+        }
+
+        // Restore the local rotations captured by _ApplyConfiguredTPose.
+        private static void _RestorePose(Dictionary<Transform, Quaternion> restore)
+        {
+            if (restore == null) return;
+            foreach (var kv in restore)
+            {
+                if (kv.Key != null) kv.Key.localRotation = kv.Value;
+            }
         }
 
         private void _ApplyAnimationParameterOverrides(GameObject avatar)

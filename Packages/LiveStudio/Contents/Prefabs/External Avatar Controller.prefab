@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: 392381634851875560}
   - component: {fileID: -3814253721157403627}
   m_Layer: 0
-  m_Name: VRM Avatar Controller
+  m_Name: External Avatar Controller
   m_TagString: Avatar
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

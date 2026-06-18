@@ -35,28 +35,49 @@ namespace Lilium.LiveStudio
         IAvatarParameterSource _source;
         BridgedParameter[] _parameters = System.Array.Empty<BridgedParameter>();
 
-        // 親アバターの humanoid Animator (GetBoneTransform 用)。アバターは遅延ロードされ得るため
-        // 解決できるまで Update で再試行する。
+        // Parent avatar's humanoid Animator, used to scope socket lookup to this avatar. The avatar
+        // may load lazily, so resolution is retried in Update until it succeeds.
         Animator _avatarAnimator;
-        // 指定 bone への ParentConstraint。アバター解決後に生成する。
+        // ParentConstraint onto the resolved socket. Created once the avatar is available.
         ParentConstraint _constraint;
-        // 現在 source として適用済みの bone。_targetBone と異なれば source を作り直す。
-        HumanBodyBones _appliedBone = (HumanBodyBones)(-1);
+        // Socket name currently applied as the constraint source. When it differs from _socketName
+        // the source is rebuilt.
+        string _appliedSocketName;
 
         [ExposedProperty("name"), Hide]
         public string displayName => this.name;
 
-        // 拘束先の humanoid bone。値変更は Update が検知して source を作り直す。
+        // Target socket name. The prop attaches to the avatar socket with this name. Sockets are
+        // created per-avatar with a normalized (avatar-root-aligned) orientation, so a single offset
+        // works across models regardless of their bone axis conventions. Value changes are detected
+        // by Update, which rebuilds the constraint source.
         // Shadow field (Hide + FormerlyExposedAs) so the [ExposedProperty] below is persistable:
         // its value is serialized to the live scene and restored across a prop unload/reload.
-        [SerializeField, ExposedField, Hide, FormerlyExposedAs("targetBone")]
-        HumanBodyBones _targetBone = HumanBodyBones.Hips;
+        [SerializeField, ExposedField, Hide, FormerlyExposedAs("socketName")]
+        string _socketName = "RightHand";
 
         [ExposedProperty]
-        public HumanBodyBones targetBone
+        [StringSelector(nameof(availableSocketNames))]
+        public string socketName
         {
-            get => _targetBone;
-            set => _targetBone = value;
+            get => _socketName;
+            set => _socketName = value;
+        }
+
+        // Socket names available on the parent avatar, surfaced to the RemoteApp dropdown.
+        [ExposedProperty, Hide]
+        public string[] availableSocketNames
+        {
+            get
+            {
+                if (_avatarAnimator == null) _avatarAnimator = _ResolveAvatarAnimator();
+                if (_avatarAnimator == null) return System.Array.Empty<string>();
+
+                var sockets = _avatarAnimator.GetComponentsInChildren<Socket>(includeInactive: true);
+                var names = new string[sockets.Length];
+                for (int i = 0; i < sockets.Length; i++) names[i] = sockets[i].socketName;
+                return names;
+            }
         }
 
         // bone ローカルの位置オフセット。
@@ -100,38 +121,41 @@ namespace Lilium.LiveStudio
             return null;
         }
 
-        // 指定 bone へ ParentConstraint で追従させる。アバターは遅延ロードされ得るので解決できるまで
-        // 毎フレーム再試行し、bone 変更時のみ source を作り直す。offset は毎フレーム反映するので
-        // RemoteApp や Inspector でのランタイム変更が即座に効く。
-        void _UpdateBoneConstraint()
+        // Follow the named socket via a ParentConstraint. The avatar may load lazily, so resolution
+        // is retried each frame until the socket exists; the source is rebuilt only when the socket
+        // name changes. Offsets are pushed every frame so runtime edits (RemoteApp / Inspector) apply
+        // immediately. The socket carries a normalized orientation, so the offset is model-independent.
+        void _UpdateSocketConstraint()
         {
             if (_avatarAnimator == null)
             {
                 _avatarAnimator = _ResolveAvatarAnimator();
-                if (_avatarAnimator == null) return; // アバター未ロード。次フレーム再試行。
+                if (_avatarAnimator == null) return; // Avatar not loaded yet; retry next frame.
             }
 
             if (_constraint == null)
                 _constraint = GetComponent<ParentConstraint>() ?? gameObject.AddComponent<ParentConstraint>();
 
-            if (_appliedBone != _targetBone || _constraint.sourceCount == 0)
+            if (_appliedSocketName != _socketName || _constraint.sourceCount == 0)
             {
-                _appliedBone = _targetBone;
-
-                var bone = _avatarAnimator.GetBoneTransform(_targetBone);
-                if (bone == null)
+                var socket = _ResolveSocket(_socketName);
+                if (socket == null)
                 {
-                    // 指定 bone を持たないアバター。拘束を無効化して追従を止める。
+                    // Socket not present on this avatar (not created yet, or unknown name). Disable the
+                    // constraint and retry next frame WITHOUT latching _appliedSocketName, so a socket
+                    // that registers later is still picked up.
                     _constraint.constraintActive = false;
                     while (_constraint.sourceCount > 0) _constraint.RemoveSource(0);
                     return;
                 }
 
-                // source / offset を書き換える前に locked を解除し、書き込み後に再ロックする。
-                // 先に locked=true だと Unity が rest/offset を取り違える。
+                _appliedSocketName = _socketName;
+
+                // Unlock before rewriting source / offset, then re-lock. Setting locked=true first makes
+                // Unity mistake the rest/offset.
                 _constraint.locked = false;
                 while (_constraint.sourceCount > 0) _constraint.RemoveSource(0);
-                _constraint.AddSource(new ConstraintSource { sourceTransform = bone, weight = 1f });
+                _constraint.AddSource(new ConstraintSource { sourceTransform = socket.transform, weight = 1f });
                 _constraint.weight = 1f;
                 _constraint.constraintActive = true;
                 _constraint.locked = true;
@@ -139,10 +163,24 @@ namespace Lilium.LiveStudio
 
             if (_constraint.sourceCount > 0)
             {
-                // offset は毎フレーム反映 (ランタイム変更を即時に効かせる)。locked=true でも上書き可能。
+                // Push offsets every frame so runtime edits apply immediately (works even while locked).
                 _constraint.SetTranslationOffset(0, _positionOffset);
                 _constraint.SetRotationOffset(0, _rotationOffset);
             }
+        }
+
+        // Resolve a Socket by name within the parent avatar. Scoping the lookup to this avatar avoids
+        // picking up another avatar's identically-named socket. Allocates, so callers only invoke it
+        // on a socket change.
+        Socket _ResolveSocket(string name)
+        {
+            if (_avatarAnimator == null || string.IsNullOrEmpty(name)) return null;
+            var sockets = _avatarAnimator.GetComponentsInChildren<Socket>(includeInactive: true);
+            for (int i = 0; i < sockets.Length; i++)
+            {
+                if (sockets[i].socketName == name) return sockets[i];
+            }
+            return null;
         }
 
         // prop 自身の controller が宣言する非 Trigger パラメータをキャッシュ（毎フレームのブリッジ対象）。
@@ -172,7 +210,7 @@ namespace Lilium.LiveStudio
 
         void Update()
         {
-            _UpdateBoneConstraint();
+            _UpdateSocketConstraint();
 
             if (_source == null)
             {
