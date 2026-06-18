@@ -24,6 +24,7 @@ namespace Lilium.LiveStudio
         private ResetApiHandler _resetHandler;
         private QuitApiHandler _quitHandler;
         private VrmLoadApiHandler _vrmLoadHandler;
+        private AvatarImageHandler _avatarImageHandler;
 
         protected override void OnRegisterHandlers(RemoteControlServerCore server)
         {
@@ -35,6 +36,9 @@ namespace Lilium.LiveStudio
 
             _vrmLoadHandler = new VrmLoadApiHandler(server);
             server.RegisterRoute(_vrmLoadHandler);
+
+            _avatarImageHandler = new AvatarImageHandler(server);
+            server.RegisterRoute(_avatarImageHandler);
 
             // Serves both /api/input-actions and /api/input-actions/bind via its own Routes.
             _inputActionsHandler = new InputActionsApiHandler(server);
@@ -59,6 +63,7 @@ namespace Lilium.LiveStudio
             server.UnregisterRoute(_cameraHandler);
             server.UnregisterRoute(_manipulatorHandler);
             server.UnregisterRoute(_vrmLoadHandler);
+            server.UnregisterRoute(_avatarImageHandler);
             server.UnregisterRoute(_inputActionsHandler);
             server.UnregisterRoute(_expressionsHandler);
             server.UnregisterRoute(_commandsHandler);
@@ -68,6 +73,7 @@ namespace Lilium.LiveStudio
             _cameraHandler = null;
             _manipulatorHandler = null;
             _vrmLoadHandler = null;
+            _avatarImageHandler = null;
             _inputActionsHandler = null;
             _expressionsHandler = null;
             _commandsHandler = null;
