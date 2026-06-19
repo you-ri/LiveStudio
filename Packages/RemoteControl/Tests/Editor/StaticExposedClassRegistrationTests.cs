@@ -26,8 +26,8 @@ namespace Lilium.RemoteControl.Editor.Tests
                 .Select(t => t.typeName)
                 .ToList();
 
-            // ProjectManager / Screen は LiveStudio の代表的な static [ExposedClass]。
-            CollectionAssert.Contains(staticTypeNames, "ProjectManager",
+            // LiveSceneManager / Screen は LiveStudio の代表的な static [ExposedClass]。
+            CollectionAssert.Contains(staticTypeNames, "LiveSceneManager",
                 $"Static classes registered: [{string.Join(", ", staticTypeNames)}]");
         }
 
@@ -36,9 +36,9 @@ namespace Lilium.RemoteControl.Editor.Tests
         {
             ExposedClass.Reset();
 
-            var handle = ExposedObjectRegistry.FindById("ProjectManager");
-            Assert.IsTrue(handle.HasValue, "ProjectManager static handle should be registered.");
-            Assert.IsTrue(handle.Value.isValid, "ProjectManager static handle should be valid.");
+            var handle = ExposedObjectRegistry.FindById("LiveSceneManager");
+            Assert.IsTrue(handle.HasValue, "LiveSceneManager static handle should be registered.");
+            Assert.IsTrue(handle.Value.isValid, "LiveSceneManager static handle should be valid.");
         }
     }
 }

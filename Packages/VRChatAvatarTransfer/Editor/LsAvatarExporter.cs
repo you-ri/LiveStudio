@@ -31,7 +31,14 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 return false;
             }
 
-            return BundleBuildUtility.Build(kBundleName, new[] { prefabAssetPath }, destPath);
+            // Pack a BundleThumbnail alongside the prefab so the remote app can show a thumbnail for this
+            // .avatar.lsb. The asset is persistent (kept next to the prefab) so the user can replace the
+            // auto-rendered preview with their own image; it is reused on re-export.
+            var thumbnailPath = BundleThumbnailAuthoring.GetOrCreateThumbnailAssetPath(prefabAssetPath);
+            var assetNames = string.IsNullOrEmpty(thumbnailPath)
+                ? new[] { prefabAssetPath }
+                : new[] { prefabAssetPath, thumbnailPath };
+            return BundleBuildUtility.Build(kBundleName, assetNames, destPath);
         }
 
         [MenuItem(kMenuPath)]

@@ -13,11 +13,15 @@ namespace Lilium.LiveStudio
     /// Serves an avatar's preview thumbnail as raw image bytes.
     ///
     /// <c>GET /api/avatar/image?id=&lt;assetId&gt;</c> looks up the matching <see cref="AvatarAsset"/>
-    /// in <see cref="ExternalAssetManager"/> and, for VRM (.vrm / .glb) files, returns the embedded
-    /// VRM thumbnail extracted straight from the file via <see cref="GlbThumbnailExtractor"/>.
-    /// Because it reads the file (not the loaded instance), previews are available for every
-    /// registered VRM avatar, not just the currently active one. Non-VRM assets (AssetBundle
-    /// .avatar.lsb / .lsavatar) and avatars without a thumbnail return 404.
+    /// in <see cref="ExternalAssetManager"/> and returns its thumbnail:
+    /// <list type="bullet">
+    ///   <item>VRM (.vrm / .glb): the embedded VRM thumbnail, extracted from the file via
+    ///   <see cref="GlbThumbnailExtractor"/>.</item>
+    ///   <item>Avatar bundle (.avatar.lsb / .lsavatar): the <see cref="BundleThumbnail"/> packed into
+    ///   the bundle at export time, cached by the loader and served via <see cref="BundleThumbnailCache"/>.</item>
+    /// </list>
+    /// VRM previews are available for every registered avatar (read from the file). Bundle previews are
+    /// available after the avatar has been loaded at least once. Avatars without a thumbnail return 404.
     /// </summary>
     public class AvatarImageHandler : BaseRemoteControlApiHandler
     {
@@ -33,31 +37,49 @@ namespace Lilium.LiveStudio
             var assetId = context.Request.QueryString["id"];
 
             // Resolve the asset's file path on the main thread (ExternalAssetManager touches Unity state).
+            // Any asset kind is accepted (avatar / prop); the file extension below decides how the
+            // thumbnail is obtained.
             string filePath = await ExecuteOnMainThread<string>(() =>
             {
                 if (string.IsNullOrEmpty(assetId)) return null;
                 var manager = ExternalAssetManager.current;
                 if (manager == null) return null;
-                return manager.FindAsset(assetId) is AvatarAsset avatar ? avatar.filePath : null;
+                return manager.FindAsset(assetId)?.filePath;
             });
 
-            if (string.IsNullOrEmpty(filePath) || !IsVrmFile(filePath))
+            if (string.IsNullOrEmpty(filePath))
             {
                 await WriteError(context, 404, "Avatar thumbnail not available");
                 return;
             }
 
-            // File read + glb parse is pure CPU/IO; keep it off the main thread.
             byte[] imageBytes = null;
             string mimeType = null;
-            await Task.Run(() =>
+
+            if (IsVrmFile(filePath))
             {
-                if (GlbThumbnailExtractor.TryExtract(filePath, out var bytes, out var mime))
+                // VRM: extract the embedded thumbnail from the file. Pure CPU/IO, keep off the main thread.
+                await Task.Run(() =>
                 {
-                    imageBytes = bytes;
-                    mimeType = mime;
-                }
-            });
+                    if (GlbThumbnailExtractor.TryExtract(filePath, out var bytes, out var mime))
+                    {
+                        imageBytes = bytes;
+                        mimeType = mime;
+                    }
+                });
+            }
+            else if (LiveStudioBundle.IsAvatarBundle(filePath) || LiveStudioBundle.IsPropBundle(filePath))
+            {
+                // Avatar/prop bundle: serve the BundleThumbnail cached when the bundle was loaded. Available
+                // only after the avatar has been loaded at least once (reading the thumbnail re-opens no
+                // bundle here, which would stall the server). Dictionary read; main thread for safety.
+                var result = await ExecuteOnMainThread<(byte[] bytes, string mime)>(() =>
+                    BundleThumbnailCache.TryGet(filePath, out var bytes, out var mime)
+                        ? (bytes, mime)
+                        : (null, null));
+                imageBytes = result.bytes;
+                mimeType = result.mime;
+            }
 
             if (imageBytes != null && imageBytes.Length > 0)
             {

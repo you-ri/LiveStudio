@@ -42,6 +42,17 @@ namespace Lilium.RemoteControl.LiveScene
             _saveAsDefaultDirectoryOverride = absolutePath;
         }
 
+        /// <summary>
+        /// True if the path is a live scene file (current ".live.json" or legacy ".scene.json").
+        /// Lets a project crawler classify files by path alone, without reading their contents.
+        /// </summary>
+        public static bool IsLiveSceneFile(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath)) return false;
+            return filePath.EndsWith(kLiveSceneFileExtension, StringComparison.OrdinalIgnoreCase)
+                || filePath.EndsWith(kLegacyFileExtension, StringComparison.OrdinalIgnoreCase);
+        }
+
         public ExposedObjectContainer objectContainer => _objectContainer;
         public string defaultFileName => _defaultFileName;
         public bool autoSaveOnQuit { get; set; }

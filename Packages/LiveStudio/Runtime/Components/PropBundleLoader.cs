@@ -97,15 +97,22 @@ namespace Lilium.LiveStudio
                         return null;
                     }
 
-                    var assetRequest = bundle.LoadAssetAsync<GameObject>(assetNames[0]);
+                    // The bundle may also contain a BundleThumbnail (a ScriptableObject), so load the
+                    // GameObject explicitly instead of assuming assetNames[0] is the root prefab.
+                    var assetRequest = bundle.LoadAllAssetsAsync<GameObject>();
                     await _AwaitOperation(assetRequest);
 
-                    var prefab = assetRequest.asset as GameObject;
+                    var allAssets = assetRequest.allAssets;
+                    var prefab = (allAssets != null && allAssets.Length > 0) ? allAssets[0] as GameObject : null;
                     if (prefab == null)
                     {
                         Debug.LogError($"[LiveStudio] Prop bundle root is not a GameObject: {filePath}");
                         return null;
                     }
+
+                    // Cache the packed BundleThumbnail while the bundle is open so the REST handler can
+                    // serve it without re-opening the bundle (the remote app shows it as the prop preview).
+                    _CacheBundleThumbnail(bundle, filePath);
 
                     _prefabCache[filePath] = prefab;
                     return prefab;
@@ -128,6 +135,17 @@ namespace Lilium.LiveStudio
             var instance = Object.Instantiate(prefab, parent, worldPositionStays: false);
             instance.name = prefab.name;
             return instance;
+        }
+
+        // 既に開いているバンドルから BundleThumbnail を読み、ファイルパスをキーにキャッシュする。
+        static void _CacheBundleThumbnail(AssetBundle bundle, string filePath)
+        {
+            var thumbnails = bundle.LoadAllAssets<BundleThumbnail>();
+            if (thumbnails == null || thumbnails.Length == 0) return;
+            var thumbnail = thumbnails[0];
+            if (thumbnail == null || !thumbnail.HasImage) return;
+            // Unload(false) で生成済みアセットは生存するが、UnityEngine.Object 参照を持ち越さないよう複製する。
+            BundleThumbnailCache.Store(filePath, (byte[])thumbnail.ImageData.Clone(), thumbnail.MimeType);
         }
 
         static Task _AwaitOperation(AsyncOperation operation)

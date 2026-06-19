@@ -67,7 +67,7 @@ MonoBehaviour:
       type: {class: NavigateObjectSelector, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
       data:
         objectIds:
-        - ProjectManager
+        - LiveSceneManager
     - rid: 1948541687429857378
       type: {class: ScenePage, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
       data:

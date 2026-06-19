@@ -54,10 +54,26 @@ namespace Lilium.LiveStudio
         public string id => kId;
 
         // Added assets, exposed as an editable polymorphic array. The remote app toggles each entry's
-        // `enabled` flag (load/unload) and removes entries; persisted to the live scene JSON.
+        // `enabled` flag (load/unload) and removes entries. NOT persisted directly: the live list mixes
+        // the project's disabled catalog (re-created by the project crawl) with the assets actually in
+        // use; only the used ones are persisted, via the `_persistedAssets` shadow below.
         [NonSerialized]
-        [ExposedField]
+        [ExposedField(persistable = false)]
         private AssetBase[] assets = Array.Empty<AssetBase>();
+
+        // Persistence shadow for `assets`: holds only the assets actually in use (enabled / loaded), so
+        // the live scene JSON saves the selected avatar / loaded props / active world but NOT the
+        // disabled project catalog. Refreshed in OnBeforeExposedSerialize; applied back to `assets` in
+        // OnAfterExposedDeserialize (the catalog is then re-added by the project crawl).
+        [NonSerialized]
+        [ExposedField, Hide]
+        private AssetBase[] _persistedAssets = Array.Empty<AssetBase>();
+
+        // The `_persistedAssets` reference this manager last applied to / produced for the live set.
+        // Lets OnAfterExposedDeserialize tell a real restore (FromJson replaces the reference) from an
+        // unrelated property write (reference unchanged), so a plain enabled-toggle is not clobbered.
+        [NonSerialized]
+        private AssetBase[] _lastAppliedPersisted;
 
         // Currently-loaded additive (non-exclusive) assets, tracked so entries removed from the array
         // while still loaded can be detected and unloaded.
@@ -77,8 +93,11 @@ namespace Lilium.LiveStudio
         [NonSerialized]
         private bool _initialized;
 
+        // One-shot guard so the project manager's pending folder crawl runs once, after the live scene
+        // (if any) has been restored in Start. Re-armed (set false) on every live scene restore so the
+        // catalog is rebuilt after the used assets are applied.
         [NonSerialized]
-        private bool _restorePending;
+        private bool _assetManagerReadyNotified;
 
         /// <summary>
         /// Raised whenever the <c>assets</c> array or an entry's load state changes (every
@@ -95,11 +114,13 @@ namespace Lilium.LiveStudio
 
             if (Application.isPlaying)
             {
-                _restorePending = true;
                 _avatarService = SingletonService<IAvatarService>.subject;
                 if (_avatarService != null) _avatarService.onAvatarChanged += _OnAvatarChanged;
             }
 
+            // Match the current persisted reference so an unrelated property write before any real
+            // restore does not trigger a (clobbering) swap.
+            _lastAppliedPersisted = _persistedAssets;
             _initialized = true;
         }
 
@@ -124,27 +145,52 @@ namespace Lilium.LiveStudio
             OnDisable();
         }
 
-        /// <summary>Fires after the <c>assets</c> array is restored from a saved live scene; schedules a diff.</summary>
+        /// <summary>
+        /// Fires after a live scene is restored. The used assets were deserialized into
+        /// <see cref="_persistedAssets"/>; make them the live set, schedule a diff to (un)load them, and
+        /// re-arm the crawl so the project catalog is re-added on the next <see cref="Update"/>.
+        /// </summary>
         public void OnAfterExposedDeserialize()
         {
             if (!Application.isPlaying) return;
-            if (!_restorePending) return;
+
+            // This callback also fires after every individual exposed-property write (the owner's
+            // IExposedDeserializeCallback), not only after a full live-scene restore. Apply the
+            // persisted set to the live `assets` array ONLY when `_persistedAssets` was actually
+            // re-deserialized by a restore — detected by its reference changing to one this manager did
+            // not produce in OnBeforeExposedSerialize. Otherwise a plain enabled-toggle write would wipe
+            // the live assets (and the just-toggled selection).
+            if (ReferenceEquals(_persistedAssets, _lastAppliedPersisted)) return;
+
+            _lastAppliedPersisted = _persistedAssets;
+            assets = _persistedAssets ?? Array.Empty<AssetBase>();
             _dirty = true;
+            _assetManagerReadyNotified = false;
         }
 
         /// <summary>
-        /// Fires before <c>assets</c> is serialized (e.g. on save). Refreshes each loaded asset's
-        /// <see cref="AssetBase.state"/> from its live values so the save captures the latest edits.
+        /// Fires before persistence. Refreshes each loaded asset's <see cref="AssetBase.state"/> from its
+        /// live values, then captures only the in-use assets (enabled / loaded) into
+        /// <see cref="_persistedAssets"/> so the saved live scene excludes the disabled project catalog.
         /// </summary>
         public void OnBeforeExposedSerialize()
         {
             for (int i = 0; i < _loaded.Count; i++) _loaded[i].CaptureState();
+
+            var used = new List<AssetBase>();
+            for (int i = 0; i < assets.Length; i++)
+            {
+                var asset = assets[i];
+                if (asset != null && (asset.enabled || asset.isLoaded)) used.Add(asset);
+            }
+            _persistedAssets = used.ToArray();
+            // We produced this reference (not a restore); record it so OnAfterExposedDeserialize does
+            // not re-apply it on a later property write.
+            _lastAppliedPersisted = _persistedAssets;
         }
 
         public void Update()
         {
-            _restorePending = false;
-
             // The avatar service may not have existed at OnEnable (load order). Bind late so prop
             // reloads track avatar swaps.
             if (Application.isPlaying && _avatarService == null)
@@ -155,6 +201,14 @@ namespace Lilium.LiveStudio
                     _avatarService.onAvatarChanged += _OnAvatarChanged;
                     _dirty = true; // a new avatar is available; (re)load enabled assets onto it.
                 }
+            }
+
+            // Once the live scene (if any) has been restored in Start, let the project manager run its
+            // pending folder crawl so discovered assets merge on top of the restored set.
+            if (Application.isPlaying && !_assetManagerReadyNotified)
+            {
+                _assetManagerReadyNotified = true;
+                ProjectManager.OnAssetManagerReady();
             }
 
             if (!_dirty) return;
@@ -202,25 +256,92 @@ namespace Lilium.LiveStudio
                 return;
             }
 
-            AssetBase asset = _CreateAsset(filePath);
+            AssetBase asset = _CreateEntry(filePath, enabled: true);
             if (asset == null)
             {
                 Debug.LogError($"[LiveStudio] Unsupported asset file: {filePath}");
                 return;
             }
 
-            asset.id = assetId;
-            asset.name = _DeriveName(filePath);
-            asset.filePath = filePath;
-            asset.enabled = true;
-            asset.isLoaded = false;
-            // Assign the stable exposed-object id up front so it persists and is reused on every load.
-            asset.objectId = Guid.NewGuid().ToString();
-
             var list = new List<AssetBase>(assets) { asset };
             assets = list.ToArray();
 
             _dirty = true;
+            _Broadcast();
+        }
+
+        /// <summary>
+        /// True if the file extension maps to a supported asset kind (bundle / VRM / glTF). Lets a
+        /// project crawler classify files by path alone, without reading their contents.
+        /// </summary>
+        public static bool IsSupportedAssetFile(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath)) return false;
+            foreach (var suffix in kKnownSuffixes)
+            {
+                if (filePath.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Registers each supported file as a path-only, disabled (unloaded) entry — the content is not
+        /// read until the entry is enabled. Re-adding a known file keeps its existing entry/state (dedup
+        /// by path). Catalog-only entries (disabled and unloaded) whose file is absent from the supplied
+        /// set are pruned, so the list stays in sync with the project folder. Used by the project crawler.
+        /// </summary>
+        public void RegisterDiscoveredAssets(IReadOnlyList<string> filePaths)
+        {
+            var discovered = new HashSet<string>();
+            if (filePaths != null)
+            {
+                for (int i = 0; i < filePaths.Count; i++)
+                {
+                    if (string.IsNullOrEmpty(filePaths[i])) continue;
+                    discovered.Add(_MakeId(filePaths[i]));
+                }
+            }
+
+            var list = new List<AssetBase>(assets);
+            bool changed = false;
+
+            // Prune stale catalog-only entries (disabled + unloaded) no longer present in the folder.
+            // Enabled or loaded entries are user-curated and left untouched.
+            for (int i = list.Count - 1; i >= 0; i--)
+            {
+                var entry = list[i];
+                if (entry == null) continue;
+                if (entry.enabled || entry.isLoaded) continue;
+                if (discovered.Contains(entry.id)) continue;
+                list.RemoveAt(i);
+                changed = true;
+            }
+
+            // Track ids already present so each discovered file is added at most once.
+            var existing = new HashSet<string>();
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i] != null) existing.Add(list[i].id);
+            }
+
+            if (filePaths != null)
+            {
+                for (int i = 0; i < filePaths.Count; i++)
+                {
+                    var path = filePaths[i];
+                    if (string.IsNullOrEmpty(path)) continue;
+                    var id = _MakeId(path);
+                    if (!existing.Add(id)) continue; // already registered or duplicate within this batch
+
+                    var entry = _CreateEntry(path, enabled: false);
+                    if (entry == null) { existing.Remove(id); continue; }
+                    list.Add(entry);
+                    changed = true;
+                }
+            }
+
+            if (!changed) return;
+            assets = list.ToArray();
             _Broadcast();
         }
 
@@ -254,6 +375,30 @@ namespace Lilium.LiveStudio
             assets = list.ToArray();
 
             _Broadcast();
+        }
+
+        /// <summary>
+        /// Opens the live scene with the given id. Unlike load/unload, this replaces the whole app state
+        /// (the scene JSON deserializes over every exposed object, including this `assets` array), so the
+        /// project folder is re-crawled afterwards to restore the available-file listing — done by
+        /// re-arming the one-shot ready hook so the next <see cref="Update"/> re-runs the crawl once the
+        /// restore has settled (same deferred path as startup).
+        /// </summary>
+        [ExposedFunction]
+        public void OpenLiveScene(string assetId)
+        {
+            if (string.IsNullOrEmpty(assetId)) return;
+
+            var asset = _Find(assetId);
+            if (asset is LiveSceneAsset scene)
+            {
+                scene.Open();
+                _assetManagerReadyNotified = false;
+            }
+            else if (asset != null)
+            {
+                Debug.LogError($"[LiveStudio] Asset is not a live scene: {assetId}");
+            }
         }
 
         /// <summary>
@@ -528,8 +673,31 @@ namespace Lilium.LiveStudio
             return null;
         }
 
+        // Builds a registered (but not yet loaded) entry for the file, or null if the extension is
+        // unsupported. The caller appends it to `assets` and broadcasts. enabled=true means the diff
+        // pass will load it; enabled=false registers it path-only (content read lazily on enable).
+        private static AssetBase _CreateEntry(string filePath, bool enabled)
+        {
+            var asset = _CreateAsset(filePath);
+            if (asset == null) return null;
+
+            asset.id = _MakeId(filePath);
+            asset.name = _DeriveName(filePath);
+            asset.filePath = filePath;
+            asset.enabled = enabled;
+            asset.isLoaded = false;
+            // Assign the stable exposed-object id up front so it persists and is reused on every load.
+            asset.objectId = Guid.NewGuid().ToString();
+            return asset;
+        }
+
         private static AssetBase _CreateAsset(string filePath)
         {
+            // Live scenes (*.live.json / *.scene.json) are launcher entries, not loadable resources.
+            if (LiveSceneSaveSystem.IsLiveSceneFile(filePath))
+            {
+                return new LiveSceneAsset();
+            }
             // Evaluated first: IsSceneBundle matches the *.scene.lsb compound suffix only, so it never
             // collides with the *.avatar.lsb / *.prop.lsb suffixes checked below.
             if (LiveStudioBundle.IsSceneBundle(filePath))
@@ -566,6 +734,8 @@ namespace Lilium.LiveStudio
             ".vrm",
             ".glb",
             ".gltf",
+            ".live.json",
+            ".scene.json",
         };
 
         private static string _DeriveName(string filePath)
