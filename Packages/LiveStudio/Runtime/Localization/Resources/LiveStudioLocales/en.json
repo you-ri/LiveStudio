@@ -35,5 +35,6 @@
     "AVATAR_MESHSTATEOVERRIDES": "Mesh State Override",
     "AVATAR_ANIMATIONPARAMETEROVERRIDES": "Animation Parameter Override",
     "AVATAR_RECEIVER": "Receiver",
-    "CAMERATRACKER_MOTIONSOURCE": "Motion Source"
+    "CAMERATRACKER_MOTIONSOURCE": "Motion Source",
+    "NOTIFY_PRESET_SAVED": "Preset saved"
 }

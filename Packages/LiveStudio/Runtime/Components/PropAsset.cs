@@ -1,6 +1,7 @@
 // Copyright (c) You-Ri, 2026
 
 using System;
+using System.IO;
 using System.Threading.Tasks;
 
 using UnityEngine;
@@ -32,22 +33,100 @@ namespace Lilium.LiveStudio
         // Only avatar props (*.prop.lsb) live under the avatar and must be reloaded on an avatar swap.
         public override bool reloadsOnAvatarChange => _isAvatarAttached;
 
+        // A *.preset.json entry loads a referenced source asset; everything else is the source itself.
+        private bool _isPreset => PropPreset.IsPresetFile(filePath);
+
+        // The asset actually loaded: the resolved source for a preset, otherwise filePath itself.
+        // Null for a preset that has not been loaded yet (so suffix checks return false until loaded).
+        private string _effectiveSourcePath => _isPreset ? _resolvedSourcePath : filePath;
+
         // *.prop.lsb attaches under the avatar; glTF is a free-standing scene prop.
-        private bool _isAvatarAttached => LiveStudioBundle.IsPropBundle(filePath);
+        private bool _isAvatarAttached => LiveStudioBundle.IsPropBundle(_effectiveSourcePath);
 
         [NonSerialized] private GameObject _instance;
         [NonSerialized] private ExposedGameObject _exposed;
         [NonSerialized] private RemoteControlContainer _container;
 
+        // Absolute source asset path resolved while loading a preset; null for a direct prop entry.
+        [NonSerialized] private string _resolvedSourcePath;
+
+        /// <summary>True if this entry is a preset (<c>*.preset.json</c>) referencing a source asset.</summary>
+        internal bool isPreset => _isPreset;
+
+        /// <summary>
+        /// The source asset path this prop represents: the resolved referenced asset for a preset,
+        /// otherwise the entry's own file path. Used when saving a new preset from a loaded prop.
+        /// </summary>
+        internal string sourceFilePath => _effectiveSourcePath;
+
+        /// <summary>Serializes the loaded prop's current parameter delta (vs the source defaults).</summary>
+        internal string CaptureDeltaState()
+        {
+            if (_instance == null) return null;
+            return AssetStateSnapshot.CaptureDelta(_exposed, _instance);
+        }
+
         public override async Task LoadAsync(AssetLoadContext context)
         {
+            if (_isPreset)
+            {
+                await _LoadPresetAsync(context);
+                return;
+            }
+
             if (_isAvatarAttached)
             {
-                await _LoadPropBundleAsync(context);
+                await _LoadPropBundleAsync(context, filePath);
             }
             else
             {
-                _LoadGltf(context);
+                _LoadGltf(context, filePath);
+            }
+        }
+
+        // --- Preset (*.preset.json) ---
+
+        // Reads the preset, resolves its referenced source asset, seeds the live state from the saved
+        // delta the first time, then delegates to the matching source loader. Once a live edit has been
+        // captured into `state` (e.g. across an unload/reload), that captured state wins over the delta.
+        private async Task _LoadPresetAsync(AssetLoadContext context)
+        {
+            string json;
+            try { json = File.ReadAllText(filePath); }
+            catch (Exception e)
+            {
+                Debug.LogError($"[LiveStudio] Failed to read prop preset '{filePath}': {e.Message}");
+                enabled = false;
+                isLoaded = false;
+                return;
+            }
+
+            if (!PropPreset.TryParse(json, out var preset))
+            {
+                enabled = false;
+                isLoaded = false;
+                return;
+            }
+
+            var source = PropPreset.ResolveSource(preset.source, Path.GetDirectoryName(filePath));
+            if (string.IsNullOrEmpty(source) || !File.Exists(source))
+            {
+                Debug.LogError($"[LiveStudio] Prop preset source asset not found: '{preset.source}' (from '{filePath}').");
+                enabled = false;
+                isLoaded = false;
+                return;
+            }
+
+            _resolvedSourcePath = source;
+            if (string.IsNullOrEmpty(state)) state = preset.state;
+
+            if (LiveStudioBundle.IsPropBundle(source))
+            {
+                await _LoadPropBundleAsync(context, source);
+            }
+            else
+            {
+                _LoadGltf(context, source);
             }
         }
 
@@ -68,7 +147,7 @@ namespace Lilium.LiveStudio
 
         // --- Avatar prop (*.prop.lsb) ---
 
-        private async Task _LoadPropBundleAsync(AssetLoadContext context)
+        private async Task _LoadPropBundleAsync(AssetLoadContext context, string sourcePath)
         {
             var avatarRoot = context?.avatarRoot;
             if (avatarRoot == null)
@@ -79,7 +158,7 @@ namespace Lilium.LiveStudio
             }
 
             var loader = new PropBundleLoader();
-            var instance = await loader.LoadAsync(filePath, avatarRoot);
+            var instance = await loader.LoadAsync(sourcePath, avatarRoot);
             if (instance == null)
             {
                 // Reflect the failure back as disabled so the UI is not stuck "on".
@@ -103,7 +182,7 @@ namespace Lilium.LiveStudio
 
         // --- Free-standing scene prop (*.glb / *.gltf) ---
 
-        private void _LoadGltf(AssetLoadContext context)
+        private void _LoadGltf(AssetLoadContext context, string sourcePath)
         {
 #if UNITY_GLTFAST
             // Build inactive so setting the path does not kick off a load before the wrapper is wired;
@@ -111,7 +190,7 @@ namespace Lilium.LiveStudio
             var host = new GameObject(string.IsNullOrEmpty(name) ? "Prop" : name);
             host.SetActive(false);
             var model = host.AddComponent<GltfModel>();
-            model.path = filePath;
+            model.path = sourcePath;
 
             // Expose the transform so the user can position the free-standing prop from the remote app.
             _Register(context, new ExposedGameObjectWithTransform(host), host);
@@ -149,6 +228,9 @@ namespace Lilium.LiveStudio
             _container = container;
             isLoaded = true;
 
+            // Record the freshly loaded values as the delta baseline (the source asset's defaults)
+            // BEFORE reapplying saved state, so a later "save as preset" captures only the user's edits.
+            AssetStateSnapshot.CaptureDefaults(_exposed, _instance);
             AssetStateSnapshot.Restore(state, _exposed, _instance);
         }
 

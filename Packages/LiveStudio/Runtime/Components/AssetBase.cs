@@ -1,6 +1,7 @@
 // Copyright (c) You-Ri, 2026
 
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 using UnityEngine;
@@ -113,48 +114,33 @@ namespace Lilium.LiveStudio
     {
         const int kVersion = 1;
 
+        // The JSON key under which the GameObject wrapper handle is stored (components use their
+        // exposed type name). Kept distinct from any exposed type name.
+        const string kWrapperKey = "wrapper";
+
+        /// <summary>Captures the full parameter values of the wrapper and components.</summary>
         public static string Capture(ExposedGameObject exposed, GameObject instance)
+            => _Build(exposed, instance, ExposedObjectSnapshot.Capture, skipEmpty: false);
+
+        /// <summary>
+        /// Captures only the values that differ from the captured defaults (the delta). Components with
+        /// no changes are omitted to keep the snapshot lean. Requires
+        /// <see cref="CaptureDefaults"/> to have run on the same live objects beforehand.
+        /// </summary>
+        public static string CaptureDelta(ExposedGameObject exposed, GameObject instance)
+            => _Build(exposed, instance, ExposedObjectSnapshot.CaptureDelta, skipEmpty: true);
+
+        /// <summary>
+        /// Records the current values of the wrapper and components as the baseline used for delta
+        /// capture. Call this right after a load and BEFORE applying any saved state, so the baseline
+        /// represents the source asset's defaults rather than already-overridden values.
+        /// </summary>
+        public static void CaptureDefaults(ExposedGameObject exposed, GameObject instance)
         {
-            if (instance == null) return null;
-
-            var root = new JObject { ["version"] = kVersion };
-
-            var wrapperHandle = exposed != null ? ExposedObjectRegistry.FindByTarget(exposed) : null;
-            if (wrapperHandle.HasValue)
+            foreach (var entry in _EnumerateHandles(exposed, instance))
             {
-                var wrapperJson = ExposedObjectSnapshot.Capture(wrapperHandle.Value);
-                if (!string.IsNullOrEmpty(wrapperJson))
-                {
-                    var wrapper = JObject.Parse(wrapperJson);
-                    // Parenting is owned by the manager, and component values are stored separately
-                    // below, so drop both to avoid clobbering the hierarchy on restore and keep the
-                    // snapshot lean. The per-instance @id changes every reload; drop it so restore
-                    // onto the new handle does not log a spurious id-mismatch warning.
-                    wrapper.Remove("@parent");
-                    wrapper.Remove("components");
-                    wrapper.Remove("@id");
-                    root["wrapper"] = wrapper;
-                }
+                ExposedObjectDefaultRegistry.CaptureDefaults(entry.handle, DefaultExposedObjectResolver.Instance);
             }
-
-            var components = new JObject();
-            foreach (var comp in instance.GetComponents<Component>())
-            {
-                if (comp == null) continue;
-                var type = comp.GetType();
-                if (!ExposedClass.Has(type)) continue;
-                var exposedClass = ExposedClass.Find(type);
-                if (exposedClass == null) continue;
-                var handle = ExposedObjectRegistry.GetOrCreate(Guid.NewGuid().ToString("N"), exposedClass, comp);
-                var json = ExposedObjectSnapshot.Capture(handle);
-                if (string.IsNullOrEmpty(json)) continue;
-                var componentObj = JObject.Parse(json);
-                componentObj.Remove("@id");
-                components[exposedClass.typeName] = componentObj;
-            }
-            root["components"] = components;
-
-            return root.ToString(Formatting.None);
         }
 
         public static void Restore(string json, ExposedGameObject exposed, GameObject instance)
@@ -169,26 +155,88 @@ namespace Lilium.LiveStudio
                 return;
             }
 
-            var wrapperHandle = exposed != null ? ExposedObjectRegistry.FindByTarget(exposed) : null;
-            if (wrapperHandle.HasValue && root["wrapper"] is JObject wrapper)
+            var components = root["components"] as JObject;
+            foreach (var entry in _EnumerateHandles(exposed, instance))
             {
-                ExposedObjectSnapshot.Restore(wrapper.ToString(Formatting.None), wrapperHandle.Value);
+                JObject value = entry.key == kWrapperKey
+                    ? root["wrapper"] as JObject
+                    : components?[entry.key] as JObject;
+                if (value == null) continue;
+                ExposedObjectSnapshot.Restore(value.ToString(Formatting.None), entry.handle);
             }
+        }
 
-            if (root["components"] is JObject components && components.Count > 0)
+        // Serializes each handle with the given strategy (full Capture or CaptureDelta) into the shared
+        // { version, wrapper, components } snapshot. The per-instance @id changes every reload, and
+        // wrapper parenting / nested component values are owned elsewhere, so those keys are stripped.
+        // When skipEmpty is true (delta mode), handles whose serialization carries no value beyond
+        // metadata are omitted.
+        private static string _Build(
+            ExposedGameObject exposed, GameObject instance, Func<ExposedObjectHandle, string> serialize, bool skipEmpty)
+        {
+            if (instance == null) return null;
+
+            var root = new JObject { ["version"] = kVersion };
+            var components = new JObject();
+            foreach (var entry in _EnumerateHandles(exposed, instance))
             {
-                foreach (var comp in instance.GetComponents<Component>())
+                var json = serialize(entry.handle);
+                if (string.IsNullOrEmpty(json)) continue;
+
+                JObject obj;
+                try { obj = JObject.Parse(json); }
+                catch { continue; }
+
+                obj.Remove("@id");
+                if (entry.key == kWrapperKey)
                 {
-                    if (comp == null) continue;
-                    var type = comp.GetType();
-                    if (!ExposedClass.Has(type)) continue;
-                    var exposedClass = ExposedClass.Find(type);
-                    if (exposedClass == null) continue;
-                    if (!(components[exposedClass.typeName] is JObject componentJson)) continue;
-                    var handle = ExposedObjectRegistry.GetOrCreate(Guid.NewGuid().ToString("N"), exposedClass, comp);
-                    ExposedObjectSnapshot.Restore(componentJson.ToString(Formatting.None), handle);
+                    obj.Remove("@parent");
+                    obj.Remove("components");
+                    if (skipEmpty && !_HasValues(obj)) continue;
+                    root["wrapper"] = obj;
+                }
+                else
+                {
+                    if (skipEmpty && !_HasValues(obj)) continue;
+                    components[entry.key] = obj;
                 }
             }
+            root["components"] = components;
+
+            return root.ToString(Formatting.None);
+        }
+
+        // Enumerates the exposed handles that make up an asset's snapshot: the GameObject wrapper
+        // (keyed by kWrapperKey) followed by each [ExposedClass] component on the root (keyed by its
+        // exposed type name, which is stable across reloads unlike the per-load object id).
+        private static IEnumerable<(string key, ExposedObjectHandle handle)> _EnumerateHandles(
+            ExposedGameObject exposed, GameObject instance)
+        {
+            var wrapperHandle = exposed != null ? ExposedObjectRegistry.FindByTarget(exposed) : null;
+            if (wrapperHandle.HasValue) yield return (kWrapperKey, wrapperHandle.Value);
+
+            if (instance == null) yield break;
+            foreach (var comp in instance.GetComponents<Component>())
+            {
+                if (comp == null) continue;
+                var type = comp.GetType();
+                if (!ExposedClass.Has(type)) continue;
+                var exposedClass = ExposedClass.Find(type);
+                if (exposedClass == null) continue;
+                var handle = ExposedObjectRegistry.GetOrCreate(Guid.NewGuid().ToString("N"), exposedClass, comp);
+                yield return (exposedClass.typeName, handle);
+            }
+        }
+
+        // True if the object carries at least one non-metadata property (metadata keys start with '@').
+        // Used to drop unchanged entries from a delta snapshot.
+        private static bool _HasValues(JObject obj)
+        {
+            foreach (var p in obj.Properties())
+            {
+                if (!p.Name.StartsWith("@", StringComparison.Ordinal)) return true;
+            }
+            return false;
         }
     }
 }

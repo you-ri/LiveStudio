@@ -35,5 +35,6 @@
     "AVATAR_MESHSTATEOVERRIDES": "メッシュ状態変更",
     "AVATAR_ANIMATIONPARAMETEROVERRIDES": "アニメーションパラメータ変更",
     "AVATAR_RECEIVER": "レシーバー",
-    "CAMERATRACKER_MOTIONSOURCE": "モーションソース"
+    "CAMERATRACKER_MOTIONSOURCE": "モーションソース",
+    "NOTIFY_PRESET_SAVED": "プリセットを保存しました"
 }

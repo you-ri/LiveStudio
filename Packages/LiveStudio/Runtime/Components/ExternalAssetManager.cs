@@ -9,6 +9,7 @@ using UnityEngine;
 
 using Lilium.RemoteControl;
 using Lilium.RemoteControl.LiveScene;
+using Lilium.RemoteControl.Notification;
 
 namespace Lilium.LiveStudio
 {
@@ -378,6 +379,41 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
+        /// Permanently deletes an asset's backing file from disk, then unloads and removes the entry.
+        /// The remote app drives this, but the file IO runs here (Studio) so it works even when the
+        /// remote app is on a different machine. Restricted to preset files (<c>*.preset.json</c>) for
+        /// now; other asset kinds are rejected.
+        /// </summary>
+        [ExposedFunction]
+        public void DeleteAssetFile(string assetId)
+        {
+            var asset = _Find(assetId);
+            if (asset == null)
+            {
+                Debug.LogError($"[LiveStudio] DeleteAssetFile: asset '{assetId}' not found.");
+                return;
+            }
+            if (!PropPreset.IsPresetFile(asset.filePath))
+            {
+                Debug.LogError($"[LiveStudio] DeleteAssetFile: only preset files can be deleted (got '{asset.filePath}').");
+                return;
+            }
+
+            try
+            {
+                if (File.Exists(asset.filePath)) File.Delete(asset.filePath);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[LiveStudio] DeleteAssetFile: failed to delete '{asset.filePath}': {e.Message}");
+                return;
+            }
+
+            // Unload (if loaded) and drop the entry from the list.
+            RemoveAsset(assetId);
+        }
+
+        /// <summary>
         /// Opens the live scene with the given id. Unlike load/unload, this replaces the whole app state
         /// (the scene JSON deserializes over every exposed object, including this `assets` array), so the
         /// project folder is re-crawled afterwards to restore the available-file listing — done by
@@ -464,6 +500,120 @@ namespace Lilium.LiveStudio
 
         /// <summary>Returns the asset with the given id, or null. Used to reach a loaded scene handle.</summary>
         public AssetBase FindAsset(string assetId) => _Find(assetId);
+
+        /// <summary>
+        /// Saves a loaded exposed object as a named preset (<c>*.preset.json</c>) in the project folder:
+        /// records how to recreate the object (a <c>target</c> descriptor) plus the parameter state to
+        /// reapply, then re-crawls so the preset appears as a loadable entry. The user can later load the
+        /// preset to recreate the object in the saved state.
+        ///
+        /// Keyed on the object's exposed <c>@id</c> so the API generalizes to any object; the recreation
+        /// strategy is resolved in <see cref="_ResolvePresetTarget"/>. Today only the asset strategy is
+        /// implemented: loaded props (delta state) and the active avatar (full AvatarController state).
+        /// Objects without a supported strategy are rejected.
+        /// </summary>
+        [ExposedFunction]
+        public void SaveAsPreset(string objectId, string presetName)
+        {
+            var projectPath = ProjectManager.projectPath;
+            if (string.IsNullOrEmpty(projectPath) || !Directory.Exists(projectPath))
+            {
+                Debug.LogError("[LiveStudio] SaveAsPreset: no project folder is open to save the preset into.");
+                return;
+            }
+
+            if (!_ResolvePresetTarget(objectId, out var kind, out var source, out var state))
+            {
+                Debug.LogError($"[LiveStudio] SaveAsPreset: object '{objectId}' is not presetable (loaded prop or active avatar only).");
+                return;
+            }
+
+            var json = PropPreset.BuildJson(
+                kind,
+                presetName,
+                PropPreset.Relativize(source, projectPath),
+                PropPreset.GetSourceKind(source),
+                state);
+
+            var fallbackName = Path.GetFileNameWithoutExtension(source);
+            var baseName = PropPreset.SanitizeFileName(string.IsNullOrEmpty(presetName) ? fallbackName : presetName);
+            var path = _UniquePresetPath(projectPath, baseName);
+            try
+            {
+                File.WriteAllText(path, json);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[LiveStudio] SaveAsPreset: failed to write '{path}': {e.Message}");
+                return;
+            }
+
+            // Re-crawl so the new preset is registered as a loadable entry right away.
+            ProjectManager.RecrawlProject();
+            RemoteNotificationSystem.Show(
+                LocalizationSystem.Translate("NOTIFY_PRESET_SAVED"), RemoteNotificationSystem.Type.Success, icon: "save");
+        }
+
+        // Resolves how to recreate the exposed object identified by objectId into a preset target
+        // descriptor (asset kind + source file + state snapshot). Returns false when no supported
+        // strategy applies. This is the single extension point for future preset strategies (e.g.
+        // factory-created objects, apply-to-existing scene objects).
+        private bool _ResolvePresetTarget(string objectId, out PropPreset.AssetKind kind, out string source, out string state)
+        {
+            kind = default;
+            source = null;
+            state = null;
+
+            // Prop strategy: a loaded prop whose exposed object id matches. Presets are eligible too —
+            // sourceFilePath resolves to the underlying source asset (not the preset file), so re-saving
+            // an edited preset writes a new preset against the same source with the current delta.
+            for (int i = 0; i < assets.Length; i++)
+            {
+                if (assets[i] is PropAsset prop && prop.isLoaded && prop.objectId == objectId &&
+                    !string.IsNullOrEmpty(prop.sourceFilePath))
+                {
+                    kind = PropPreset.AssetKind.Prop;
+                    source = prop.sourceFilePath;
+                    state = prop.CaptureDeltaState();
+                    return true;
+                }
+            }
+
+            // Avatar strategy: avatars are exposed through the shared AvatarController (not a per-asset
+            // wrapper), so capture its full state and pin the active avatar asset's source. A preset-loaded
+            // avatar is eligible too — its sourceFilePath resolves to the underlying avatar file.
+            var handle = ExposedObjectRegistry.FindById(objectId);
+            if (handle.HasValue && handle.Value.target is AvatarController)
+            {
+                for (int i = 0; i < assets.Length; i++)
+                {
+                    if (assets[i] is AvatarAsset avatar && avatar.enabled &&
+                        !string.IsNullOrEmpty(avatar.sourceFilePath))
+                    {
+                        kind = PropPreset.AssetKind.Avatar;
+                        source = avatar.sourceFilePath;
+                        state = ExposedObjectSnapshot.Capture(handle.Value);
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        // Builds a non-colliding "<name>.preset.json" path in the project folder, appending " (n)"
+        // when a file of that name already exists.
+        private static string _UniquePresetPath(string folder, string baseName)
+        {
+            var path = Path.Combine(folder, baseName + PropPreset.Extension);
+            int counter = 1;
+            while (File.Exists(path))
+            {
+                path = Path.Combine(folder, $"{baseName} ({counter}){PropPreset.Extension}");
+                counter++;
+            }
+            return path;
+        }
 
         /// <summary>
         /// Sets an asset's desired <see cref="AssetBase.enabled"/> state and schedules a diff, so a
@@ -693,6 +843,15 @@ namespace Lilium.LiveStudio
 
         private static AssetBase _CreateAsset(string filePath)
         {
+            // Presets (*.preset.json) reference a source asset and reapply state. The target kind in the
+            // file selects the concrete asset (prop / avatar). Checked before the live-scene check so the
+            // .json extension is not misclassified.
+            if (PropPreset.IsPresetFile(filePath))
+            {
+                return PropPreset.PeekKind(filePath) == PropPreset.AssetKind.Avatar
+                    ? (AssetBase)new AvatarAsset()
+                    : new PropAsset();
+            }
             // Live scenes (*.live.json / *.scene.json) are launcher entries, not loadable resources.
             if (LiveSceneSaveSystem.IsLiveSceneFile(filePath))
             {
@@ -734,6 +893,7 @@ namespace Lilium.LiveStudio
             ".vrm",
             ".glb",
             ".gltf",
+            PropPreset.Extension,
             ".live.json",
             ".scene.json",
         };
