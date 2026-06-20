@@ -465,8 +465,8 @@ namespace Lilium.RemoteControl.LiveScene
         }
 
         // A Unity scene counts as a "base scene" only when it is registered in build settings.
-        // Scenes loaded from AssetBundles (.scene.lsb worlds) have buildIndex == -1 and must
-        // never be recorded as baseSceneName — worlds are calibrated on top of a bundled base.
+        // Scenes loaded from AssetBundles (.set.lsb sets) have buildIndex == -1 and must
+        // never be recorded as baseSceneName — sets are calibrated on top of a bundled base.
         private static bool _IsBuildScene(Scene scene)
             => scene.buildIndex >= 0 && scene.buildIndex < SceneManager.sceneCountInBuildSettings;
 

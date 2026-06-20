@@ -102,8 +102,8 @@ namespace Lilium.LiveStudio
 
         /// <summary>
         /// Raised whenever the <c>assets</c> array or an entry's load state changes (every
-        /// <see cref="_Broadcast"/>). <see cref="WorldManager"/> subscribes to rebuild its projected
-        /// scene view from the <see cref="SceneBundleAsset"/> entries here.
+        /// <see cref="_Broadcast"/>). <see cref="StageManager"/> subscribes to rebuild its projected
+        /// set view from the <see cref="SetBundleAsset"/> entries here.
         /// </summary>
         public event Action onAssetsChanged;
 
@@ -164,7 +164,11 @@ namespace Lilium.LiveStudio
             if (ReferenceEquals(_persistedAssets, _lastAppliedPersisted)) return;
 
             _lastAppliedPersisted = _persistedAssets;
-            assets = _persistedAssets ?? Array.Empty<AssetBase>();
+            // A persisted entry deserializes to null when its @type is no longer registered (e.g.
+            // saved data referencing a removed/renamed asset kind). Compact those holes out so a null
+            // never reaches the live array or a broadcast — consumers that project the list
+            // (StageManager, the remote app) would otherwise dereference null and crash.
+            assets = _WithoutNulls(_persistedAssets);
             _dirty = true;
             _assetManagerReadyNotified = false;
         }
@@ -277,12 +281,7 @@ namespace Lilium.LiveStudio
         /// </summary>
         public static bool IsSupportedAssetFile(string filePath)
         {
-            if (string.IsNullOrEmpty(filePath)) return false;
-            foreach (var suffix in kKnownSuffixes)
-            {
-                if (filePath.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return true;
-            }
-            return false;
+            return AssetTypeRegistry.IsSupported(filePath);
         }
 
         /// <summary>
@@ -493,8 +492,8 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
-        /// Read-only view of the managed assets, so <see cref="WorldManager"/> can project the
-        /// <see cref="SceneBundleAsset"/> entries into its scene view without owning the array.
+        /// Read-only view of the managed assets, so <see cref="StageManager"/> can project the
+        /// <see cref="SetBundleAsset"/> entries into its set view without owning the array.
         /// </summary>
         public IReadOnlyList<AssetBase> assetsView => assets;
 
@@ -617,7 +616,7 @@ namespace Lilium.LiveStudio
 
         /// <summary>
         /// Sets an asset's desired <see cref="AssetBase.enabled"/> state and schedules a diff, so a
-        /// facade such as <see cref="WorldManager"/> can drive load/unload through the same pipeline as
+        /// facade such as <see cref="StageManager"/> can drive load/unload through the same pipeline as
         /// a direct remote-app edit. No-op when the id is unknown or the value is unchanged.
         /// </summary>
         public void SetAssetEnabled(string assetId, bool value)
@@ -823,16 +822,42 @@ namespace Lilium.LiveStudio
             return null;
         }
 
+        // Returns a copy of `source` with null entries removed (or an empty array). A persisted asset
+        // entry deserializes to null when its @type is no longer registered (e.g. saved data referencing
+        // a removed/renamed asset kind); such holes must not reach the live array or a broadcast. The
+        // input is returned as-is when it has no nulls, so the common case allocates nothing.
+        private static AssetBase[] _WithoutNulls(AssetBase[] source)
+        {
+            if (source == null || source.Length == 0) return Array.Empty<AssetBase>();
+
+            int count = 0;
+            for (int i = 0; i < source.Length; i++)
+            {
+                if (source[i] != null) count++;
+            }
+            if (count == source.Length) return source;
+
+            var result = new AssetBase[count];
+            int w = 0;
+            for (int i = 0; i < source.Length; i++)
+            {
+                if (source[i] != null) result[w++] = source[i];
+            }
+            return result;
+        }
+
         // Builds a registered (but not yet loaded) entry for the file, or null if the extension is
         // unsupported. The caller appends it to `assets` and broadcasts. enabled=true means the diff
         // pass will load it; enabled=false registers it path-only (content read lazily on enable).
         private static AssetBase _CreateEntry(string filePath, bool enabled)
         {
-            var asset = _CreateAsset(filePath);
+            // The concrete asset kind is resolved by the registry (extension / content), so adding a new
+            // kind needs no change here.
+            var asset = AssetTypeRegistry.Create(filePath);
             if (asset == null) return null;
 
             asset.id = _MakeId(filePath);
-            asset.name = _DeriveName(filePath);
+            asset.name = AssetTypeRegistry.DeriveName(filePath);
             asset.filePath = filePath;
             asset.enabled = enabled;
             asset.isLoaded = false;
@@ -841,74 +866,10 @@ namespace Lilium.LiveStudio
             return asset;
         }
 
-        private static AssetBase _CreateAsset(string filePath)
-        {
-            // Presets (*.preset.json) reference a source asset and reapply state. The target kind in the
-            // file selects the concrete asset (prop / avatar). Checked before the live-scene check so the
-            // .json extension is not misclassified.
-            if (PropPreset.IsPresetFile(filePath))
-            {
-                return PropPreset.PeekKind(filePath) == PropPreset.AssetKind.Avatar
-                    ? (AssetBase)new AvatarAsset()
-                    : new PropAsset();
-            }
-            // Live scenes (*.live.json / *.scene.json) are launcher entries, not loadable resources.
-            if (LiveSceneSaveSystem.IsLiveSceneFile(filePath))
-            {
-                return new LiveSceneAsset();
-            }
-            // Evaluated first: IsSceneBundle matches the *.scene.lsb compound suffix only, so it never
-            // collides with the *.avatar.lsb / *.prop.lsb suffixes checked below.
-            if (LiveStudioBundle.IsSceneBundle(filePath))
-            {
-                return new SceneBundleAsset();
-            }
-            if (LiveStudioBundle.IsAvatarBundle(filePath) ||
-                filePath.EndsWith(".vrm", StringComparison.OrdinalIgnoreCase))
-            {
-                return new AvatarAsset();
-            }
-            if (LiveStudioBundle.IsPropBundle(filePath) ||
-                filePath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) ||
-                filePath.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
-            {
-                return new PropAsset();
-            }
-            return null;
-        }
-
         private void _Broadcast()
         {
             ExposedPropertyBroadcast.BroadcastProperty(this, "assets");
             onAssetsChanged?.Invoke();
-        }
-
-        // Derives a display name by stripping a known asset suffix, else the plain file name.
-        private static readonly string[] kKnownSuffixes =
-        {
-            LiveStudioBundle.SceneExtension,
-            LiveStudioBundle.PropExtension,
-            LiveStudioBundle.AvatarExtension,
-            LiveStudioBundle.LegacyAvatarExtension,
-            ".vrm",
-            ".glb",
-            ".gltf",
-            PropPreset.Extension,
-            ".live.json",
-            ".scene.json",
-        };
-
-        private static string _DeriveName(string filePath)
-        {
-            var fileName = Path.GetFileName(filePath);
-            foreach (var suffix in kKnownSuffixes)
-            {
-                if (fileName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-                {
-                    return fileName.Substring(0, fileName.Length - suffix.Length);
-                }
-            }
-            return Path.GetFileNameWithoutExtension(fileName);
         }
     }
 }

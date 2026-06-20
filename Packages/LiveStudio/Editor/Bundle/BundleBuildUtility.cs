@@ -8,10 +8,10 @@ using UnityEngine;
 namespace Lilium.LiveStudio.Editor
 {
     /// <summary>
-    /// Builds a single LiveStudio bundle (<c>*.scene.lsb</c> / <c>*.avatar.lsb</c>) from one or more
+    /// Builds a single LiveStudio bundle (<c>*.set.lsb</c> / <c>*.avatar.lsb</c>) from one or more
     /// assets and copies the result to a destination path.
     ///
-    /// Shared by the scene and avatar exporters so the bundle build settings (compression, target,
+    /// Shared by the set and avatar exporters so the bundle build settings (compression, target,
     /// shader-variant stripping override) live in one place.
     /// </summary>
     public static class BundleBuildUtility

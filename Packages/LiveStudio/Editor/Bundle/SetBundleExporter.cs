@@ -9,16 +9,16 @@ using UnityEngine;
 namespace Lilium.LiveStudio.Editor
 {
     /// <summary>
-    /// Exports a Unity scene as a scene bundle (<c>*.scene.lsb</c>) that the Studio app can load
-    /// additively at runtime via <see cref="WorldManager"/>.
+    /// Exports a Unity scene as a set bundle (<c>*.set.lsb</c>) that the Studio app can load
+    /// additively at runtime via <see cref="StageManager"/>.
     /// </summary>
-    internal static class SceneBundleExporter
+    internal static class SetBundleExporter
     {
-        private const string kBundleName = "scene";
-        private const string kExtension = ".scene.lsb";
-        private const string kMenuPath = "Assets/Lilium Live Studio/Export Scene Bundle (.scene.lsb)";
+        private const string kBundleName = "set";
+        private const string kExtension = ".set.lsb";
+        private const string kMenuPath = "Assets/Lilium Live Studio/Export Set Bundle (.set.lsb)";
 
-        /// <summary>Builds a scene bundle from the given <c>.unity</c> scene asset and copies it to destPath.</summary>
+        /// <summary>Builds a set bundle from the given <c>.unity</c> scene asset and copies it to destPath.</summary>
         public static bool Export(string sceneAssetPath, string destPath)
         {
             if (string.IsNullOrEmpty(sceneAssetPath) ||
@@ -32,7 +32,7 @@ namespace Lilium.LiveStudio.Editor
         }
 
         [MenuItem(kMenuPath)]
-        private static void _ExportSelectedScene()
+        private static void _ExportSelectedSet()
         {
             var sceneAsset = Selection.activeObject as SceneAsset;
             var assetPath = AssetDatabase.GetAssetPath(sceneAsset);
@@ -43,16 +43,16 @@ namespace Lilium.LiveStudio.Editor
             }
 
             var defaultName = $"{Path.GetFileNameWithoutExtension(assetPath)}{kExtension}";
-            var savePath = EditorUtility.SaveFilePanel("Export Scene Bundle", "", defaultName, "lsb");
+            var savePath = EditorUtility.SaveFilePanel("Export Set Bundle", "", defaultName, "lsb");
             if (string.IsNullOrEmpty(savePath)) return;
 
             // SaveFilePanel only handles a single extension; guarantee the compound suffix.
             if (!savePath.EndsWith(kExtension, StringComparison.OrdinalIgnoreCase))
             {
                 savePath = Path.ChangeExtension(savePath, null);
-                if (savePath.EndsWith(".scene", StringComparison.OrdinalIgnoreCase))
+                if (savePath.EndsWith(".set", StringComparison.OrdinalIgnoreCase))
                 {
-                    savePath = savePath.Substring(0, savePath.Length - ".scene".Length);
+                    savePath = savePath.Substring(0, savePath.Length - ".set".Length);
                 }
                 savePath += kExtension;
             }
@@ -61,7 +61,7 @@ namespace Lilium.LiveStudio.Editor
         }
 
         [MenuItem(kMenuPath, validate = true)]
-        private static bool _ValidateExportSelectedScene()
+        private static bool _ValidateExportSelectedSet()
         {
             return Selection.activeObject is SceneAsset;
         }

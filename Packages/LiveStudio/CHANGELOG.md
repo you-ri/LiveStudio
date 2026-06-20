@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Breaking:** Renamed the scene-bundle concept to "set" and the world concept to "stage", aligning the vocabulary with virtual-production terms (a stage holds sets, props and marks). Set bundles are now exported as `.set.lsb`; `SceneBundleAsset` → `SetBundleAsset`, `SceneBundleLoader`/`LoadedSceneBundle` → `SetBundleLoader`/`LoadedSetBundle`, `SceneBundleExporter` → `SetBundleExporter` (menu "Export Set Bundle (.set.lsb)"), `LiveStudioBundle.SceneExtension`/`IsSceneBundle` → `SetExtension`/`IsSetBundle`, and `WorldManager` → `StageManager` (exposed functions `AddSet`/`RemoveSet`/`SetActiveSet`, exposed property `sets`). The legacy `.scene.lsb` extension is still accepted on input (loaded as a `SetBundleAsset`), no longer produced on export. Saved live scenes referencing the old `@type` names (e.g. `SceneBundleAsset`/`WorldManager`) are not migrated and must be re-saved; such unresolved entries now deserialize away instead of leaving a null hole. `StageManager` carries `[MovedFrom("WorldManager")]` so in-scene `[SerializeReference]` wiring migrates automatically.
+
 ## [0.22.0] - 2026-06-14
 
 ### Added

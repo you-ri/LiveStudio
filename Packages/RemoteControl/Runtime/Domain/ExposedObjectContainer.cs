@@ -31,7 +31,7 @@ namespace Lilium.RemoteControl
         private readonly HashSet<string> _persistentIds = new HashSet<string>();
 
         // Additional object lists merged in from other scenes (e.g. RemoteControlContainer
-        // components living in additively-loaded .scene.lsb worlds). Each source is keyed by its
+        // components living in additively-loaded .set.lsb sets). Each source is keyed by its
         // owner reference. The owning RemoteControlBehaviour adds/removes sources as the
         // containers enable/disable, and this container drives their lifecycle alongside _objects.
         private readonly List<SourceEntry> _sources = new List<SourceEntry>();

@@ -194,16 +194,48 @@ namespace Lilium.RemoteControl
                     var list = GameObject.FindObjectsByType(exposedClass.type, FindObjectsInactive.Include, FindObjectsSortMode.None);
                     if (list != null && list.Length > 0)
                     {
-                        var foundObjects = list.Select(v =>
-                        {
-                            return ExposedObjectRegistry.FindByTarget(v) ?? ExposedObjectHandle.CreateUnregistered(exposedClass, v);
-                        });
+                        var foundObjects = list
+                            .Select<UnityEngine.Object, ExposedObjectHandle?>(v =>
+                            {
+                                var existing = ExposedObjectRegistry.FindByTarget(v);
+                                if (existing != null) return existing;
+
+                                // ロード済み prop などのように、所属 GameObject が登録済みラッパー
+                                // (ExposedGameObject) で既に一覧へ出ているコンポーネントは、別の未登録
+                                // オブジェクトとして二重に列挙しない。ラッパーは GameObject を target に
+                                // 持つため component の FindByTarget では引けず、ここで明示的に除外する。
+                                if (v is Component component && _GameObjectHasRegisteredWrapper(component.gameObject))
+                                {
+                                    return null;
+                                }
+
+                                return ExposedObjectHandle.CreateUnregistered(exposedClass, v);
+                            })
+                            .Where(h => h.HasValue)
+                            .Select(h => h.Value);
                         instanceObjects = instanceObjects.Concat(foundObjects);
                     }
                 }
             }
 
             return instanceObjects;
+        }
+
+        /// <summary>
+        /// 指定 GameObject が、登録済み (id 付き) の ExposedObjectHandle ラッパーで既に
+        /// 表現されているかを返す。ExposedGameObject などラッパーの target から
+        /// 実体 GameObject を引き当てて一致を見る。コンポーネント型走査で、ラッパー管理下の
+        /// 生コンポーネントを二重列挙しないための判定に使う。
+        /// </summary>
+        private static bool _GameObjectHasRegisteredWrapper(GameObject gameObject)
+        {
+            if (gameObject == null) return false;
+            foreach (var candidate in ExposedObjectRegistry.instances)
+            {
+                if (!candidate.hasId) continue;
+                if (ExposedObjectRegistry.ResolveGameObject(candidate.target) == gameObject) return true;
+            }
+            return false;
         }
 
 

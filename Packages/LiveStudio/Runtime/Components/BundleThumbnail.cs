@@ -6,7 +6,7 @@ namespace Lilium.LiveStudio
 {
     /// <summary>
     /// Holds a preview thumbnail image packed inside a LiveStudio bundle
-    /// (<c>*.scene.lsb</c> / <c>*.avatar.lsb</c> / <c>*.prop.lsb</c>, see <see cref="LiveStudioBundle"/>).
+    /// (<c>*.set.lsb</c> / <c>*.avatar.lsb</c> / <c>*.prop.lsb</c>, see <see cref="LiveStudioBundle"/>).
     ///
     /// The image is stored as the raw encoded bytes (PNG / JPEG) rather than a <see cref="Texture2D"/>
     /// so it is self-contained (no readable/compression import settings to worry about) and can be

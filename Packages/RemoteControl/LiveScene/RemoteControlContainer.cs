@@ -14,7 +14,7 @@ namespace Lilium.RemoteControl.LiveScene
     /// </summary>
     /// <remarks>
     /// This component carries remote control across scene boundaries: place it in an additively
-    /// loaded world (e.g. a .scene.lsb bundle) and its objects become listable, resolvable,
+    /// loaded set (e.g. a .set.lsb bundle) and its objects become listable, resolvable,
     /// saveable and operable through the host behaviour's server. It owns no server of its own.
     /// </remarks>
     [DefaultExecutionOrder(-32760)]

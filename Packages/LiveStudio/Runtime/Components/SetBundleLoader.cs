@@ -9,11 +9,11 @@ using UnityEngine.SceneManagement;
 namespace Lilium.LiveStudio
 {
     /// <summary>
-    /// A scene additively loaded from a scene bundle (<c>*.scene.lsb</c>), together with the
+    /// A scene additively loaded from a set bundle (<c>*.set.lsb</c>), together with the
     /// owning <see cref="AssetBundle"/>. The bundle must stay loaded while the scene is live
     /// because the scene's assets are served from it, so unloading is the loader's responsibility.
     /// </summary>
-    internal sealed class LoadedSceneBundle
+    internal sealed class LoadedSetBundle
     {
         public AssetBundle bundle;
         public Scene scene;
@@ -24,7 +24,7 @@ namespace Lilium.LiveStudio
         {
             if (scene.IsValid() && scene.isLoaded)
             {
-                await SceneBundleLoader.AwaitOperation(SceneManager.UnloadSceneAsync(scene));
+                await SetBundleLoader.AwaitOperation(SceneManager.UnloadSceneAsync(scene));
             }
 
             if (bundle != null)
@@ -38,20 +38,20 @@ namespace Lilium.LiveStudio
     }
 
     /// <summary>
-    /// Loads a Unity scene from a scene bundle (<c>*.scene.lsb</c>, an AssetBundle containing a single
+    /// Loads a Unity scene from a set bundle (<c>*.set.lsb</c>, an AssetBundle containing a single
     /// scene) and adds it additively to the running app.
     ///
     /// Unlike <see cref="LsAvatarLoader"/> — which unloads its bundle immediately because it only
     /// needs the instantiated prefab — a scene keeps referencing assets inside the bundle, so the
-    /// bundle is retained in <see cref="LoadedSceneBundle"/> until the scene is unloaded.
+    /// bundle is retained in <see cref="LoadedSetBundle"/> until the scene is unloaded.
     /// </summary>
-    internal sealed class SceneBundleLoader
+    internal sealed class SetBundleLoader
     {
-        public async Task<LoadedSceneBundle> LoadAsync(string filePath)
+        public async Task<LoadedSetBundle> LoadAsync(string filePath)
         {
             if (!File.Exists(filePath))
             {
-                Debug.LogError($"[LiveStudio] .scene.lsb file not found: {filePath}");
+                Debug.LogError($"[LiveStudio] .set.lsb file not found: {filePath}");
                 return null;
             }
 
@@ -61,13 +61,13 @@ namespace Lilium.LiveStudio
             var bundle = bundleRequest.assetBundle;
             if (bundle == null)
             {
-                Debug.LogError($"[LiveStudio] Failed to load scene bundle: {filePath}");
+                Debug.LogError($"[LiveStudio] Failed to load set bundle: {filePath}");
                 return null;
             }
 
             if (!bundle.isStreamedSceneAssetBundle)
             {
-                Debug.LogError($"[LiveStudio] Bundle is not a scene bundle: {filePath}");
+                Debug.LogError($"[LiveStudio] Bundle is not a set bundle: {filePath}");
                 bundle.Unload(true);
                 return null;
             }
@@ -75,7 +75,7 @@ namespace Lilium.LiveStudio
             var scenePaths = bundle.GetAllScenePaths();
             if (scenePaths == null || scenePaths.Length == 0)
             {
-                Debug.LogError($"[LiveStudio] .scene.lsb contains no scene: {filePath}");
+                Debug.LogError($"[LiveStudio] .set.lsb contains no scene: {filePath}");
                 bundle.Unload(true);
                 return null;
             }
@@ -104,7 +104,7 @@ namespace Lilium.LiveStudio
                 return null;
             }
 
-            return new LoadedSceneBundle
+            return new LoadedSetBundle
             {
                 bundle = bundle,
                 scene = captured,

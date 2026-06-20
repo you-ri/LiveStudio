@@ -17,13 +17,13 @@ using Lilium.RemoteControl;
 namespace Lilium.LiveStudio
 {
     /// <summary>
-    /// One entry in <see cref="WorldManager.scenes"/>: a scene bundle (<c>*.scene.lsb</c>)
+    /// One entry in <see cref="StageManager.sets"/>: a set bundle (<c>*.set.lsb</c>)
     /// that the user has added. <see cref="enabled"/> is the desired state controlled from the
-    /// remote app; <see cref="isLoaded"/> reflects whether the scene is actually loaded.
+    /// remote app; <see cref="isLoaded"/> reflects whether the set is actually loaded.
     /// </summary>
     [Serializable]
     [ExposedClass]
-    public struct SceneBundleEntry
+    public struct SetBundleEntry
     {
         [ExposedField]
         public string id;
@@ -35,22 +35,22 @@ namespace Lilium.LiveStudio
         public string filePath;
 
         /// <summary>
-        /// Desired state. Toggling this loads (true) or unloads (false) the scene. Mirrored to the
-        /// backing <see cref="SceneBundleAsset"/>, which is where the state is actually persisted.
+        /// Desired state. Toggling this loads (true) or unloads (false) the set. Mirrored to the
+        /// backing <see cref="SetBundleAsset"/>, which is where the state is actually persisted.
         /// </summary>
         [ExposedField]
         public bool enabled;
 
-        /// <summary>Actual state, projected from the backing <see cref="SceneBundleAsset"/>.</summary>
+        /// <summary>Actual state, projected from the backing <see cref="SetBundleAsset"/>.</summary>
         [ExposedField(persistable = false)]
         public bool isLoaded;
 
-        /// <summary>True when this scene is the active scene.</summary>
+        /// <summary>True when this set is the active set.</summary>
         [ExposedField]
         public bool isActive;
 
         /// <summary>
-        /// True for the bootstrap (initial) scene the app loads at startup. This entry is always
+        /// True for the bootstrap (initial) set the app loads at startup. This entry is always
         /// present and loaded, and cannot be unloaded or removed; only activation is allowed.
         /// Rebuilt at runtime, so it is not persisted.
         /// </summary>
@@ -59,28 +59,28 @@ namespace Lilium.LiveStudio
     }
 
     /// <summary>
-    /// Surfaces the loaded scene bundles to the remote app's Worlds page and owns the scene-specific
-    /// concepts the unified asset pipeline does not model: the active scene and the bootstrap
-    /// (persistent) scene.
+    /// Surfaces the loaded set bundles to the remote app's Stage page and owns the set-specific
+    /// concepts the unified asset pipeline does not model: the active set and the bootstrap
+    /// (persistent) set.
     ///
-    /// The actual load/unload of scene bundles is delegated to <see cref="ExternalAssetManager"/>,
-    /// where each scene is a <see cref="SceneBundleAsset"/> alongside props and avatars. This manager keeps
-    /// no bundles of its own: <see cref="scenes"/> is a runtime-only projection of the SceneBundleAsset
+    /// The actual load/unload of set bundles is delegated to <see cref="ExternalAssetManager"/>,
+    /// where each set is a <see cref="SetBundleAsset"/> alongside props and avatars. This manager keeps
+    /// no bundles of its own: <see cref="sets"/> is a runtime-only projection of the SetBundleAsset
     /// entries (plus the synthetic persistent entry), so the persisted source of truth lives entirely
-    /// on the assets side. Remote-app edits to an entry's <see cref="SceneBundleEntry.enabled"/> flag
-    /// are forwarded to the matching SceneBundleAsset; activation is applied here through the asset's loaded
+    /// on the assets side. Remote-app edits to an entry's <see cref="SetBundleEntry.enabled"/> flag
+    /// are forwarded to the matching SetBundleAsset; activation is applied here through the asset's loaded
     /// scene handle.
     /// </summary>
     [Serializable]
-    [ExposedClass(Icon = "public", Category = "Scene")]
-    [MovedFrom(false, null, null, "RuntimeSceneManager")]
-    public class WorldManager : IExposedObject
+    [ExposedClass(Icon = "public", Category = "Stage")]
+    [MovedFrom(false, null, null, "WorldManager")]
+    public class StageManager : IExposedObject
     {
         const string kId = "b2f7c9a1-3d4e-4f8a-9c1b-7e2d5a6f8c30";
 
-        // Stable id for the synthetic entry representing the bootstrap / persistent scene. A short
+        // Stable id for the synthetic entry representing the bootstrap / persistent set. A short
         // literal is safe because real bundle entries use path-based ids and never collide with it.
-        const string kPersistentSceneId = "persistent";
+        const string kPersistentSetId = "persistent";
 
 #if UNITY_EDITOR
         private static bool _isExitingPlayMode;
@@ -99,21 +99,21 @@ namespace Lilium.LiveStudio
         }
 #endif
 
-        public string name { get; set; } = "World Manager";
+        public string name { get; set; } = "Stage Manager";
 
         public ExposedObjectHandle? exposedObject => ExposedObjectRegistry.FindByTarget(this);
 
         public string id => kId;
 
-        // Projected view of the scene bundles for the remote app's Worlds page: the persistent entry
-        // followed by each SceneBundleAsset in ExternalAssetManager. Not persisted — the SceneBundleAsset entries
-        // are the persisted source of truth — so it is rebuilt whenever the asset list changes.
+        // Projected view of the set bundles for the remote app's Stage page: the persistent entry
+        // followed by each SetBundleAsset in ExternalAssetManager. Not persisted — the SetBundleAsset
+        // entries are the persisted source of truth — so it is rebuilt whenever the asset list changes.
         [NonSerialized]
         [ExposedField(persistable = false)]
-        private SceneBundleEntry[] scenes = Array.Empty<SceneBundleEntry>();
+        private SetBundleEntry[] sets = Array.Empty<SetBundleEntry>();
 
-        // The scene that was active when this manager started (the bootstrap / persistent scene).
-        // When an active bundle scene is unloaded, the active scene is restored to this.
+        // The scene that was active when this manager started (the bootstrap / persistent set).
+        // When an active set's scene is unloaded, the active scene is restored to this.
         [NonSerialized]
         private Scene _persistentScene;
 
@@ -129,10 +129,10 @@ namespace Lilium.LiveStudio
 
         public void OnEnable()
         {
-            ExposedObjectRegistry.Create<WorldManager>(this, kId);
-            ExposedClass.Get<WorldManager>().onPropertyChanged += _OnPropertyChanged;
+            ExposedObjectRegistry.Create<StageManager>(this, kId);
+            ExposedClass.Get<StageManager>().onPropertyChanged += _OnPropertyChanged;
 
-            // The active scene at startup is the bootstrap / persistent scene. Surface it as the
+            // The active scene at startup is the bootstrap / persistent set. Surface it as the
             // first, non-removable entry so the remote app can see and re-activate it.
             if (Application.isPlaying)
             {
@@ -140,16 +140,16 @@ namespace Lilium.LiveStudio
             }
 
             _initialized = true;
-            _RebuildScenesView();
+            _RebuildSetsView();
         }
 
         public void OnDisable()
         {
             _initialized = false;
 
-            ExposedClass.Get<WorldManager>().onPropertyChanged -= _OnPropertyChanged;
+            ExposedClass.Get<StageManager>().onPropertyChanged -= _OnPropertyChanged;
 
-            // ExternalAssetManager owns the loaded scene bundles and unloads them in its own teardown;
+            // ExternalAssetManager owns the loaded set bundles and unloads them in its own teardown;
             // here we only drop our subscription.
             if (_subscribedManager != null)
             {
@@ -180,36 +180,36 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
-        /// Adds a scene bundle and loads it. Intended to be invoked from the remote app after the
-        /// user picks a <c>*.scene.lsb</c> file. Delegates to <see cref="ExternalAssetManager"/>, which
-        /// creates the backing <see cref="SceneBundleAsset"/>; the projected view rebuilds on the resulting
+        /// Adds a set bundle and loads it. Intended to be invoked from the remote app after the
+        /// user picks a <c>*.set.lsb</c> file. Delegates to <see cref="ExternalAssetManager"/>, which
+        /// creates the backing <see cref="SetBundleAsset"/>; the projected view rebuilds on the resulting
         /// assets-changed notification.
         /// </summary>
         [ExposedFunction]
-        public void AddScene(string filePath)
+        public void AddSet(string filePath)
         {
             if (string.IsNullOrEmpty(filePath))
             {
-                Debug.LogError("[LiveStudio] Scene bundle path cannot be empty.");
+                Debug.LogError("[LiveStudio] Set bundle path cannot be empty.");
                 return;
             }
 
-            if (!LiveStudioBundle.IsSceneBundle(filePath))
+            if (!LiveStudioBundle.IsSetBundle(filePath))
             {
-                Debug.LogError($"[LiveStudio] Not a scene bundle (*.scene.lsb): {filePath}");
+                Debug.LogError($"[LiveStudio] Not a set bundle (*.set.lsb): {filePath}");
                 return;
             }
 
             if (!File.Exists(filePath))
             {
-                Debug.LogError($"[LiveStudio] Scene bundle file not found: {filePath}");
+                Debug.LogError($"[LiveStudio] Set bundle file not found: {filePath}");
                 return;
             }
 
             var manager = ExternalAssetManager.current;
             if (manager == null)
             {
-                Debug.LogError("[LiveStudio] No ExternalAssetManager in the scene; cannot add a scene bundle.");
+                Debug.LogError("[LiveStudio] No ExternalAssetManager in the scene; cannot add a set bundle.");
                 return;
             }
 
@@ -218,74 +218,74 @@ namespace Lilium.LiveStudio
 
         /// <summary>Unloads (if loaded) and removes the entry with the given id.</summary>
         [ExposedFunction]
-        public void RemoveScene(string sceneId)
+        public void RemoveSet(string setId)
         {
-            if (string.IsNullOrEmpty(sceneId)) return;
+            if (string.IsNullOrEmpty(setId)) return;
 
-            // The bootstrap scene is always present and cannot be removed.
-            if (sceneId == kPersistentSceneId) return;
+            // The bootstrap set is always present and cannot be removed.
+            if (setId == kPersistentSetId) return;
 
-            ExternalAssetManager.current?.RemoveAsset(sceneId);
+            ExternalAssetManager.current?.RemoveAsset(setId);
         }
 
         /// <summary>
-        /// Makes the loaded scene with the given id the active scene (lighting/instantiation target).
-        /// Only loaded scenes can be activated.
+        /// Makes the loaded set with the given id the active set (lighting/instantiation target).
+        /// Only loaded sets can be activated.
         /// </summary>
         [ExposedFunction]
-        public void SetActiveScene(string sceneId)
+        public void SetActiveSet(string setId)
         {
-            if (string.IsNullOrEmpty(sceneId)) return;
+            if (string.IsNullOrEmpty(setId)) return;
 
             var manager = ExternalAssetManager.current;
 
-            // Activating the bootstrap scene: clear the SceneBundleAsset active flags so it becomes active.
-            if (sceneId == kPersistentSceneId)
+            // Activating the bootstrap set: clear the SetBundleAsset active flags so it becomes active.
+            if (setId == kPersistentSetId)
             {
-                _ClearSceneBundleAssetActiveFlags(manager);
+                _ClearSetBundleAssetActiveFlags(manager);
             }
             else
             {
-                var asset = manager?.FindAsset(sceneId) as SceneBundleAsset;
+                var asset = manager?.FindAsset(setId) as SetBundleAsset;
                 if (asset == null || !asset.hasScene)
                 {
-                    Debug.LogWarning($"[LiveStudio] Cannot activate a scene that is not loaded: {sceneId}");
+                    Debug.LogWarning($"[LiveStudio] Cannot activate a set that is not loaded: {setId}");
                     return;
                 }
 
-                // Radio: only the target scene asset is flagged active.
+                // Radio: only the target set asset is flagged active.
                 var view = manager.assetsView;
                 for (int i = 0; i < view.Count; i++)
                 {
-                    if (view[i] is SceneBundleAsset s) s.isActive = s == asset;
+                    if (view[i] is SetBundleAsset s) s.isActive = s == asset;
                 }
             }
 
             _ReconcileActiveScene();
-            _RebuildScenesView();
+            _RebuildSetsView();
         }
 
         /// <summary>
-        /// Forwards remote-app edits of <c>scenes</c> (an entry's <see cref="SceneBundleEntry.enabled"/>
-        /// flag) to the backing <see cref="SceneBundleAsset"/>, which drives the actual load/unload.
+        /// Forwards remote-app edits of <c>sets</c> (an entry's <see cref="SetBundleEntry.enabled"/>
+        /// flag) to the backing <see cref="SetBundleAsset"/>, which drives the actual load/unload.
         /// </summary>
         private void _OnPropertyChanged(ExposedProperty property, object oldValue)
         {
             if (!_initialized) return;
-            if (!property.PathContains(nameof(scenes))) return;
+            if (!property.PathContains(nameof(sets))) return;
             _TransferEnabledToAssets();
         }
 
-        // Pushes each non-persistent entry's desired enabled state onto its SceneBundleAsset. SetAssetEnabled
+        // Pushes each non-persistent entry's desired enabled state onto its SetBundleAsset. SetAssetEnabled
         // is a no-op when unchanged, so mirroring the whole list on any edit stays cheap.
         private void _TransferEnabledToAssets()
         {
             var manager = ExternalAssetManager.current;
             if (manager == null) return;
-            for (int i = 0; i < scenes.Length; i++)
+            for (int i = 0; i < sets.Length; i++)
             {
-                if (scenes[i].isPersistent) continue;
-                manager.SetAssetEnabled(scenes[i].id, scenes[i].enabled);
+                if (sets[i].isPersistent) continue;
+                manager.SetAssetEnabled(sets[i].id, sets[i].enabled);
             }
         }
 
@@ -305,12 +305,12 @@ namespace Lilium.LiveStudio
         private void _OnAssetsChanged()
         {
             _ReconcileActiveScene();
-            _RebuildScenesView();
+            _RebuildSetsView();
         }
 
         /// <summary>
-        /// Brings the actual active scene in line with the desired one: the loaded SceneBundleAsset flagged
-        /// <see cref="SceneBundleAsset.isActive"/>, or the bootstrap scene when none is. A scene flagged
+        /// Brings the actual active scene in line with the desired one: the loaded SetBundleAsset flagged
+        /// <see cref="SetBundleAsset.isActive"/>, or the bootstrap scene when none is. A set flagged
         /// active but not yet loaded is skipped until it loads (a later assets-changed fires this again).
         /// </summary>
         private void _ReconcileActiveScene()
@@ -318,7 +318,7 @@ namespace Lilium.LiveStudio
             if (!Application.isPlaying) return;
 
             var current = SceneManager.GetActiveScene();
-            var desired = _FindActiveSceneBundleAsset();
+            var desired = _FindActiveSetBundleAsset();
 
             if (desired != null)
             {
@@ -333,50 +333,50 @@ namespace Lilium.LiveStudio
             }
         }
 
-        // The loaded SceneBundleAsset that should be the active scene, or null when the bootstrap scene is.
-        private SceneBundleAsset _FindActiveSceneBundleAsset()
+        // The loaded SetBundleAsset that should be the active set, or null when the bootstrap set is.
+        private SetBundleAsset _FindActiveSetBundleAsset()
         {
             var manager = ExternalAssetManager.current;
             if (manager == null) return null;
             var view = manager.assetsView;
             for (int i = 0; i < view.Count; i++)
             {
-                if (view[i] is SceneBundleAsset s && s.isActive && s.hasScene) return s;
+                if (view[i] is SetBundleAsset s && s.isActive && s.hasScene) return s;
             }
             return null;
         }
 
-        private static bool _AnySceneBundleAssetActive(ExternalAssetManager manager)
+        private static bool _AnySetBundleAssetActive(ExternalAssetManager manager)
         {
             if (manager == null) return false;
             var view = manager.assetsView;
             for (int i = 0; i < view.Count; i++)
             {
-                if (view[i] is SceneBundleAsset s && s.isActive) return true;
+                if (view[i] is SetBundleAsset s && s.isActive) return true;
             }
             return false;
         }
 
-        private static void _ClearSceneBundleAssetActiveFlags(ExternalAssetManager manager)
+        private static void _ClearSetBundleAssetActiveFlags(ExternalAssetManager manager)
         {
             if (manager == null) return;
             var view = manager.assetsView;
             for (int i = 0; i < view.Count; i++)
             {
-                if (view[i] is SceneBundleAsset s) s.isActive = false;
+                if (view[i] is SetBundleAsset s) s.isActive = false;
             }
         }
 
         /// <summary>
-        /// Rebuilds <c>scenes</c> from the current state: the persistent entry first, then each
-        /// <see cref="SceneBundleAsset"/> in <see cref="ExternalAssetManager"/> projected to a
-        /// <see cref="SceneBundleEntry"/>.
+        /// Rebuilds <c>sets</c> from the current state: the persistent entry first, then each
+        /// <see cref="SetBundleAsset"/> in <see cref="ExternalAssetManager"/> projected to a
+        /// <see cref="SetBundleEntry"/>.
         /// </summary>
-        private void _RebuildScenesView()
+        private void _RebuildSetsView()
         {
             var manager = ExternalAssetManager.current;
 
-            var list = new List<SceneBundleEntry>();
+            var list = new List<SetBundleEntry>();
             if (Application.isPlaying && _persistentScene.IsValid())
             {
                 list.Add(_CreatePersistentEntry(manager));
@@ -387,8 +387,8 @@ namespace Lilium.LiveStudio
                 var view = manager.assetsView;
                 for (int i = 0; i < view.Count; i++)
                 {
-                    if (!(view[i] is SceneBundleAsset s)) continue;
-                    list.Add(new SceneBundleEntry
+                    if (!(view[i] is SetBundleAsset s)) continue;
+                    list.Add(new SetBundleEntry
                     {
                         id = s.id,
                         name = s.name,
@@ -401,22 +401,22 @@ namespace Lilium.LiveStudio
                 }
             }
 
-            scenes = list.ToArray();
+            sets = list.ToArray();
             _Broadcast();
         }
 
-        // The bootstrap scene is active whenever no bundle scene is flagged active.
-        private SceneBundleEntry _CreatePersistentEntry(ExternalAssetManager manager)
+        // The bootstrap set is active whenever no set bundle is flagged active.
+        private SetBundleEntry _CreatePersistentEntry(ExternalAssetManager manager)
         {
             var sceneName = _persistentScene.IsValid() ? _persistentScene.name : null;
-            return new SceneBundleEntry
+            return new SetBundleEntry
             {
-                id = kPersistentSceneId,
+                id = kPersistentSetId,
                 name = string.IsNullOrEmpty(sceneName) ? "Studio" : sceneName,
                 filePath = string.Empty,
                 enabled = true,
                 isLoaded = true,
-                isActive = !_AnySceneBundleAssetActive(manager),
+                isActive = !_AnySetBundleAssetActive(manager),
                 isPersistent = true,
             };
         }
@@ -426,7 +426,7 @@ namespace Lilium.LiveStudio
             // Pass the target instance (not the nullable handle): the (object) overload resolves the
             // handle via the registry. Passing an ExposedObjectHandle? would box to object and fail
             // the registry lookup.
-            ExposedPropertyBroadcast.BroadcastProperty(this, "scenes");
+            ExposedPropertyBroadcast.BroadcastProperty(this, "sets");
         }
     }
 }

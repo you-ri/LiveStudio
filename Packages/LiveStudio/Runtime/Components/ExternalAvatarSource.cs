@@ -28,7 +28,7 @@ namespace Lilium.LiveStudio
 
         // 現在ロード中（または直近に要求された）アバターファイルパス。RequestLoad でのみ設定される
         // ランタイム状態で、永続化も exposed もしない（永続化は ExternalAssetManager の assets が担う）。
-        // アバターバンドルは複合拡張子 ".avatar.lsb" で絞る（".scene.lsb" と区別するため）。
+        // アバターバンドルは複合拡張子 ".avatar.lsb" で絞る（".set.lsb" と区別するため）。
         // 旧 ".lsavatar" も後方互換のため受理する。
         string _modelFilePath;
 
@@ -85,7 +85,7 @@ namespace Lilium.LiveStudio
                 return;
             }
 
-            // .scene.lsb と .avatar.lsb はどちらも Path.GetExtension では ".lsb" になるため、
+            // .set.lsb と .avatar.lsb はどちらも Path.GetExtension では ".lsb" になるため、
             // 複合サフィックスで判別する。
             if (_modelFilePath.EndsWith(".vrm", StringComparison.OrdinalIgnoreCase))
             {

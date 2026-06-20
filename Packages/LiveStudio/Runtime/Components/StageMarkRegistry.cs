@@ -10,7 +10,7 @@ namespace Lilium.LiveStudio
     /// Static registry of all currently enabled <see cref="StageMark"/> instances.
     ///
     /// <see cref="StageMark"/> registers/unregisters itself on enable/disable, so the set stays
-    /// in sync with additive scene bundles (<c>*.scene.lsb</c>) being loaded and unloaded.
+    /// in sync with additive set bundles (<c>*.set.lsb</c>) being loaded and unloaded.
     /// <see cref="onChanged"/> fires whenever the set changes so consumers (e.g. the remote-app
     /// dropdown in <see cref="AvatarStageController"/>) can refresh their candidate list.
     /// </summary>

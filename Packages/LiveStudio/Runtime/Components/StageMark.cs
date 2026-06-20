@@ -9,7 +9,7 @@ namespace Lilium.LiveStudio
     /// (a blocking mark / spike mark) that the avatar can be warped to from the remote app.
     ///
     /// Marks register themselves with <see cref="StageMarkRegistry"/> on enable and unregister
-    /// on disable, so marks brought in or removed by additive scene bundles (<c>*.scene.lsb</c>)
+    /// on disable, so marks brought in or removed by additive set bundles (<c>*.set.lsb</c>)
     /// are tracked automatically without hooking SceneManager events.
     /// </summary>
     [DisallowMultipleComponent]
