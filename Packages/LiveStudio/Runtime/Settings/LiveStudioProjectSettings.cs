@@ -25,6 +25,13 @@ namespace Lilium.LiveStudio
         [Tooltip("Documents フォルダ配下のサブディレクトリ。空ならパッケージ既定値 (LiveStudio/Saved) を使用。アプリのブランド名を設定する想定 (例: \"Virgo Motion/Saved\")。")]
         string _savedBaseSubDir = "";
 
+        /// <summary>Initial project name shown before any project folder is opened.</summary>
+        public string defaultProjectName => _defaultProjectName;
+
+        [SerializeField]
+        [Tooltip("Initial project name shown before a project folder is opened. Empty falls back to \"Untitled\".")]
+        string _defaultProjectName = "Untitled";
+
         [Header("Remote App")]
         [Tooltip("If enabled, the configured Remote app is launched on application startup and stopped on shutdown.")]
         [SerializeField] bool _launchRemoteOnStartup = true;

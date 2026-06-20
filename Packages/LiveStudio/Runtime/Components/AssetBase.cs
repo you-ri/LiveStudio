@@ -24,7 +24,12 @@ namespace Lilium.LiveStudio
         /// <summary>Current avatar root transform, or null if no avatar is loaded.</summary>
         public Transform avatarRoot;
 
-        /// <summary>Container the asset's exposed wrapper is added to so the remote app can control it.</summary>
+        /// <summary>
+        /// The base-scene <see cref="RemoteControlContainer"/> the asset's wrapper is registered into so
+        /// the remote app can control it. The wrapper lives in the same (reloadable) base scene as the
+        /// instantiated GameObject, so both are torn down together on a base-scene reload — no stale
+        /// wrapper is left dangling in the persistent host container.
+        /// </summary>
         public RemoteControlContainer container;
     }
 

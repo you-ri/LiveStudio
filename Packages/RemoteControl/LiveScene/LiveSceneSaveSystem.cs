@@ -177,7 +177,12 @@ namespace Lilium.RemoteControl.LiveScene
 
         // --- Save / Load ---
 
-        public void LoadCurrentData()
+        /// <summary>
+        /// Loads the current scene file. Returns <c>true</c> when a base-scene switch was triggered
+        /// (the deserialize is then deferred until the new scene loads), <c>false</c> when the data was
+        /// deserialized in place.
+        /// </summary>
+        public bool LoadCurrentData()
         {
             string fullPath;
             if (_currentFilePath != _defaultFileName && System.IO.File.Exists(currentFullPath))
@@ -190,25 +195,31 @@ namespace Lilium.RemoteControl.LiveScene
                 fullPath = _ResolvePath(_defaultFileName);
             }
 
-            // If the file targets a different Unity base scene than the one currently active,
-            // switch first and let the new scene's RemoteControlBehaviour.Start() re-enter
-            // LoadCurrentData(). This unifies the order "read JSON -> switch scene -> deserialize"
-            // for both startup loads (PlayerPrefs-backed) and explicit LoadScene calls.
-            // When switching is disabled, skip the switch but still deserialize the saved
-            // property values into the current scene.
-            if (_switchSceneOnLoad && _TrySwitchBaseScene(fullPath)) return;
+            // If the file targets a different Unity base scene than the one currently active, switch
+            // first. The deserialize is deferred until the new scene loads: a non-persistent host is
+            // recreated by the reload and re-enters this in its Start(); a persistent host re-enters it
+            // from its sceneLoaded handler. This unifies the order "read JSON -> switch scene ->
+            // deserialize" for both startup loads (PlayerPrefs-backed) and explicit LoadScene calls.
+            // When switching is disabled, skip the switch but still deserialize the saved property
+            // values into the current scene.
+            if (_switchSceneOnLoad && _TrySwitchBaseScene(fullPath)) return true;
 
             _LoadFrom(fullPath);
+            return false;
         }
 
-        public void LoadCurrentDataFrom(string filePath)
+        /// <summary>
+        /// Sets <see cref="currentFilePath"/> then loads it. Returns <c>true</c> when a base-scene
+        /// switch was triggered (see <see cref="LoadCurrentData"/>).
+        /// </summary>
+        public bool LoadCurrentDataFrom(string filePath)
         {
-            if (_objectContainer == null) return;
+            if (_objectContainer == null) return false;
 
             currentFilePath = filePath;
             // Delegate to LoadCurrentData so the base-scene switch path is exercised
             // identically to the startup load path.
-            LoadCurrentData();
+            return LoadCurrentData();
         }
 
         /// <summary>

@@ -29,6 +29,12 @@ namespace Lilium.RemoteControl.LiveScene
         [Tooltip("Server configuration to use")]
         private RemoteControlServerConfig _serverConfig;
 
+        [SerializeField]
+        [Tooltip("Survive base-scene reloads (DontDestroyOnLoad). The host then owns project-scoped " +
+                 "objects that must outlive a live-scene switch; scene-scoped objects live in a " +
+                 "RemoteControlContainer in the (reloaded) base scene instead.")]
+        private bool _persistAcrossScenes;
+
         [SerializeReference, Select]
         [ExposedField(persistable = false)]
         public List<IExposedObject> _objects = new List<IExposedObject>();
@@ -43,6 +49,47 @@ namespace Lilium.RemoteControl.LiveScene
         private bool _serverStarted;
         private bool _handlersRegistered;
         private bool _dialogPending;
+
+        // --- Persistence (DontDestroyOnLoad) ---
+
+        // The single surviving persistent host (when _persistAcrossScenes). A reloaded base scene
+        // brings a duplicate of this component; the duplicate destroys its own GameObject in Awake.
+        private static RemoteControlBehaviour _persistentInstance;
+
+        // True on a duplicate host that lost the singleton race: it must no-op every lifecycle method
+        // so it neither starts a second server nor tears the surviving host's state down.
+        private bool _isDuplicate;
+
+        // True after a load triggered a base-scene switch and we are waiting for the new scene to finish
+        // loading to re-run the deserialize. Only meaningful on the persistent host (no new host Start
+        // re-enters the load for us).
+        private bool _switchPendingReload;
+
+        /// <summary>
+        /// Whether this host survives base-scene reloads. Subclasses can force it on regardless of the
+        /// serialized field (e.g. an app host that always owns project-scoped objects).
+        /// </summary>
+        protected virtual bool persistAcrossScenes => _persistAcrossScenes;
+
+        /// <summary>
+        /// Raised by a persistent host immediately after a base-scene switch, before the saved data is
+        /// re-deserialized. Project-scoped objects that persist across the switch use this to re-sync
+        /// with the new scene's per-scene global state (e.g. RenderSettings, the active Scene handle),
+        /// which a reload resets. It fires only on a real base-scene switch on a persistent host — never
+        /// when a non-persistent object is simply recreated by the reload — so a handler can re-capture
+        /// the new scene's defaults without mistaking its own already-applied state for them.
+        /// </summary>
+        public static event System.Action onBaseSceneReloaded;
+
+        // Reset statics at runtime startup so disabling Domain Reload does not leak the previous play
+        // session's host (a stale reference would make the first host of the new session mistake itself
+        // for a duplicate) or its subscribers.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void _ResetPersistentStatics()
+        {
+            _persistentInstance = null;
+            onBaseSceneReloaded = null;
+        }
 
         // --- Public API ---
 
@@ -71,8 +118,19 @@ namespace Lilium.RemoteControl.LiveScene
         public string currentFullPath => _sceneSave?.currentFullPath;
 
         // Convenience pass-throughs (callers historically went through LiveSceneSaveSystem).
-        public void LoadCurrentData() => _sceneSave?.LoadCurrentData();
-        public void LoadCurrentDataFrom(string path) => _sceneSave?.LoadCurrentDataFrom(path);
+        // A base-scene switch arms the deferred re-deserialize on a persistent host: the runtime
+        // live-scene-open path (LiveSceneManager.LoadScene) flows through LoadCurrentDataFrom here, so
+        // the flag must be set here too, not only in Start().
+        public void LoadCurrentData()
+        {
+            bool switched = _sceneSave?.LoadCurrentData() ?? false;
+            if (switched && persistAcrossScenes) _switchPendingReload = true;
+        }
+        public void LoadCurrentDataFrom(string path)
+        {
+            bool switched = _sceneSave?.LoadCurrentDataFrom(path) ?? false;
+            if (switched && persistAcrossScenes) _switchPendingReload = true;
+        }
         public void SaveCurrentData() => _sceneSave?.SaveCurrentData();
         public void SaveCurrentDataTo(string path) => _sceneSave?.SaveCurrentDataTo(path);
         public bool HasUnsavedChanges() => _sceneSave?.HasUnsavedChanges() ?? false;
@@ -83,11 +141,49 @@ namespace Lilium.RemoteControl.LiveScene
 
         protected virtual void Awake()
         {
+            if (_EnsurePersistenceRegistration()) return; // duplicate destroyed itself
             _BuildHelpers();
+        }
+
+        // Registers this host as the surviving persistent instance (DontDestroyOnLoad), or marks it a
+        // duplicate to destroy. Returns true when this is a duplicate the caller must bail out of.
+        // Idempotent and a no-op in edit mode / when persistence is off.
+        //
+        // Called from BOTH Awake and OnEnable: with Enter Play Mode Options "Disable Scene Reload" and
+        // [ExecuteAlways], Awake only runs in edit mode (isPlaying == false), so on play-enter the
+        // registration must happen in OnEnable, which does re-run. Duplicate detection still leans on
+        // Awake — a runtime base-scene reload (the only source of a duplicate) runs the full
+        // Awake/OnEnable lifecycle, and DestroyImmediate in Awake (before any OnEnable) is what stops
+        // the duplicate's sibling RemoteControlContainer from registering colliding objects.
+        private bool _EnsurePersistenceRegistration()
+        {
+            if (!persistAcrossScenes || !Application.isPlaying) return false;
+            if (_persistentInstance == this) return false; // already the registered instance
+
+            if (_persistentInstance != null)
+            {
+                // A reloaded base scene re-instantiated the persistent host. Destroy this duplicate so it
+                // never starts a second server or re-registers the project-scoped objects (whose fixed ids
+                // would collide with the surviving instance's, then unregister them on teardown). The
+                // scene-scoped objects live in a separate base-scene GameObject, so this host carries none
+                // to lose.
+                _isDuplicate = true;
+                DestroyImmediate(gameObject);
+                return true;
+            }
+
+            _persistentInstance = this;
+            DontDestroyOnLoad(gameObject);
+            return false;
         }
 
         protected virtual void OnEnable()
         {
+            if (_isDuplicate) return;
+            // Play-enter registration when Awake did not re-run (Disable Scene Reload); a no-op when Awake
+            // already registered this instance. Bails if this turned out to be a duplicate.
+            if (_EnsurePersistenceRegistration()) return;
+
             _BuildHelpers();
             _container.SetName(gameObject.name);
 
@@ -110,6 +206,12 @@ namespace Lilium.RemoteControl.LiveScene
 
             _sceneSave.OnEnable();
 
+            // A persistent host owns the load flow across base-scene switches: there is no new host in
+            // the reloaded scene to re-enter LoadCurrentData, so we re-run it ourselves once the new
+            // scene has finished loading (see _OnSceneLoaded).
+            if (persistAcrossScenes)
+                UnityEngine.SceneManagement.SceneManager.sceneLoaded += _OnSceneLoaded;
+
 #if UNITY_EDITOR
             UnityEditor.EditorApplication.playModeStateChanged += _OnPlayModeStateChanged;
 #else
@@ -122,14 +224,24 @@ namespace Lilium.RemoteControl.LiveScene
             // Start runs after all OnEnables of all enabled components, so by now any
             // scene-side targets referenced by ExposedObjectHandle items have finished their
             // own Awake/OnEnable. Safe to load the scene JSON.
+            if (_isDuplicate) return;
             if (!Application.isPlaying) return;
-            _sceneSave.LoadCurrentData();
+
+            // The pass-through arms the deferred re-deserialize when a base-scene switch is triggered
+            // (persistent host); a non-persistent host is destroyed by the reload and its replacement
+            // re-enters Start.
+            LoadCurrentData();
         }
 
         protected virtual void OnDisable()
         {
+            if (_isDuplicate) return;
+
             RemoteControlContainer.onRegistered -= _OnContainerRegistered;
             RemoteControlContainer.onUnregistered -= _OnContainerUnregistered;
+
+            if (persistAcrossScenes)
+                UnityEngine.SceneManagement.SceneManager.sceneLoaded -= _OnSceneLoaded;
 
             if (Application.isPlaying)
             {
@@ -159,6 +271,10 @@ namespace Lilium.RemoteControl.LiveScene
 
         protected virtual void OnDestroy()
         {
+            if (_persistentInstance == this) _persistentInstance = null;
+
+            if (_isDuplicate) return;
+
             if (Application.isPlaying)
                 _serverRunner?.ShutdownServer();
         }
@@ -186,6 +302,29 @@ namespace Lilium.RemoteControl.LiveScene
             if (container == null) return;
             _container.AddSource(container._objects, container);
             _container.InitializeSource(container);
+        }
+
+        // Re-deserialize after a base-scene switch on a persistent host. There is no new host in the
+        // reloaded scene to re-enter the load, so the surviving host drives it once the new scene's
+        // objects are available.
+        private void _OnSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode)
+        {
+            // Only a base-scene switch (Single) needs a re-deserialize; additive set bundles keep the
+            // active live scene. Act only when a prior load actually requested the switch.
+            if (mode != UnityEngine.SceneManagement.LoadSceneMode.Single) return;
+            if (!_switchPendingReload) return;
+            _switchPendingReload = false;
+
+            // Let persistent project-scoped objects re-sync with the new scene's per-scene global state
+            // first (RenderSettings, active Scene handle), while RenderSettings still holds the new
+            // scene's authored values — before the deserialize below applies any saved overrides on top.
+            onBaseSceneReloaded?.Invoke();
+
+            // The new base scene's RemoteControlContainer registered during its OnEnable (before this
+            // callback), so the host container now resolves the new scene's objects. The active scene
+            // now matches the saved baseSceneName, so LoadCurrentData deserializes in place without
+            // switching again.
+            _sceneSave.LoadCurrentData();
         }
 
         private void _OnContainerUnregistered(RemoteControlContainer container)

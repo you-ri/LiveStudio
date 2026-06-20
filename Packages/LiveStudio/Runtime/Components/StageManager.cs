@@ -139,6 +139,8 @@ namespace Lilium.LiveStudio
                 _persistentScene = SceneManager.GetActiveScene();
             }
 
+            Lilium.RemoteControl.LiveScene.RemoteControlBehaviour.onBaseSceneReloaded += _OnBaseSceneReloaded;
+
             _initialized = true;
             _RebuildSetsView();
         }
@@ -146,6 +148,8 @@ namespace Lilium.LiveStudio
         public void OnDisable()
         {
             _initialized = false;
+
+            Lilium.RemoteControl.LiveScene.RemoteControlBehaviour.onBaseSceneReloaded -= _OnBaseSceneReloaded;
 
             ExposedClass.Get<StageManager>().onPropertyChanged -= _OnPropertyChanged;
 
@@ -177,6 +181,16 @@ namespace Lilium.LiveStudio
 
         public void Reset()
         {
+        }
+
+        // After a base-scene switch (persistent host), the previous bootstrap (persistent) scene was
+        // unloaded. Adopt the new active scene as the bootstrap set and rebuild the projected view so
+        // the Stage page's non-removable entry reflects the new base scene.
+        private void _OnBaseSceneReloaded()
+        {
+            if (!Application.isPlaying) return;
+            _persistentScene = SceneManager.GetActiveScene();
+            _RebuildSetsView();
         }
 
         /// <summary>

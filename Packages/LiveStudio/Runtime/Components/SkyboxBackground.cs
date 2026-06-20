@@ -159,10 +159,23 @@ namespace Lilium.LiveStudio
             _InitializeMaterials();
             ExposedObjectRegistry.Create<SkyboxBackground>(this, kId);
 
+            Lilium.RemoteControl.LiveScene.RemoteControlBehaviour.onBaseSceneReloaded += _OnBaseSceneReloaded;
+
             _ApplyAll();
         }
 
         public void OnAfterExposedDeserialize() => _ApplyAll();
+
+        // After a base-scene switch (persistent host), Unity reset RenderSettings to the new scene's
+        // authored skybox. Re-capture it as the default and re-apply our background on top, so the
+        // "no texture -> restore default" path uses the new scene's skybox, not the old one's. The
+        // background mode and texture are left to the saved-data restore (or kept as-is) so a base-scene
+        // switch does not clobber the user's chosen mode.
+        private void _OnBaseSceneReloaded()
+        {
+            _defaultSkybox = RenderSettings.skybox;
+            _ApplyAll();
+        }
 
         void _ApplyAll()
         {
@@ -180,6 +193,8 @@ namespace Lilium.LiveStudio
 
         public void OnDisable()
         {
+            Lilium.RemoteControl.LiveScene.RemoteControlBehaviour.onBaseSceneReloaded -= _OnBaseSceneReloaded;
+
             _RestoreSkybox();
 
             _DestroyMaterials();

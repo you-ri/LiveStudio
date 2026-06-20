@@ -119,6 +119,8 @@ namespace Lilium.LiveStudio
                 if (_avatarService != null) _avatarService.onAvatarChanged += _OnAvatarChanged;
             }
 
+            RemoteControlBehaviour.onBaseSceneReloaded += _OnBaseSceneReloaded;
+
             // Match the current persisted reference so an unrelated property write before any real
             // restore does not trigger a (clobbering) swap.
             _lastAppliedPersisted = _persistedAssets;
@@ -129,6 +131,8 @@ namespace Lilium.LiveStudio
         {
             _dirty = false;
             _initialized = false;
+
+            RemoteControlBehaviour.onBaseSceneReloaded -= _OnBaseSceneReloaded;
 
             ExposedClass.Get<ExternalAssetManager>().onPropertyChanged -= _OnPropertyChanged;
             if (_avatarService != null) _avatarService.onAvatarChanged -= _OnAvatarChanged;
@@ -653,6 +657,19 @@ namespace Lilium.LiveStudio
             _dirty = true;
         }
 
+        // A persistent host reloaded the base scene: every loaded asset's GameObject was destroyed with
+        // it, but this manager (and its container entries) survived. Drop the now-dangling additive
+        // wrappers — Unload removes each from the container, so a stale reference is never serialized by
+        // the re-deserialize that follows — and forget the exclusive (avatar) selection so the reconcile
+        // reloads it. The pending diff then reloads every enabled asset onto the freshly loaded scene.
+        private void _OnBaseSceneReloaded()
+        {
+            if (!Application.isPlaying) return;
+            _UnloadAllAdditive();
+            _selectedExclusiveId = null;
+            _dirty = true;
+        }
+
         /// <summary>
         /// Brings the actual loaded assets in line with the desired <see cref="AssetBase.enabled"/>
         /// flags: additive assets load/unload independently, exclusive assets reconcile as a group.
@@ -793,16 +810,24 @@ namespace Lilium.LiveStudio
             return target != null ? target.transform : null;
         }
 
-        // The RemoteControlContainer this manager lives in (so loaded assets join the same container);
-        // falls back to the first registered container.
+        // The base-scene RemoteControlContainer that loaded props register into. A loaded prop's
+        // GameObject lives in the (reloadable) base scene, so its wrapper belongs in that scene's
+        // container: both are then torn down and rebuilt together on a base-scene reload, leaving no
+        // dangling wrapper in the persistent host container (which would crash live-scene serialization
+        // when accessed after its GameObject is destroyed). Prefers a container in a build (base) scene;
+        // additively-loaded set-bundle scenes have buildIndex -1.
         private RemoteControlContainer _ResolveContainer()
         {
             var all = RemoteControlContainer.all;
+            RemoteControlContainer fallback = null;
             for (int i = 0; i < all.Count; i++)
             {
-                if (all[i] != null && all[i]._objects.Contains(this)) return all[i];
+                var c = all[i];
+                if (c == null) continue;
+                if (fallback == null) fallback = c;
+                if (c.gameObject.scene.buildIndex >= 0) return c;
             }
-            return all.Count > 0 ? all[0] : null;
+            return fallback;
         }
 
         // Derives a stable entry id from the file path. Path separators are normalized so the same

@@ -370,11 +370,14 @@ namespace Lilium.RemoteControl
         [Preserve]
         public bool active
         {
-            get => _reference?.activeSelf ?? false;
+            // Use the Unity-overloaded == (not the C# ?. operator): a destroyed UnityEngine.Object is
+            // "fake null" — not C# null — so _reference?.activeSelf would NOT short-circuit and would
+            // throw MissingReferenceException. Matches the _reference == null guard used elsewhere.
+            get => _reference != null ? _reference.activeSelf : false;
             set
             {
                 _active = value;
-                _reference?.SetActive(value);
+                if (_reference != null) _reference.SetActive(value);
             }
         }
 

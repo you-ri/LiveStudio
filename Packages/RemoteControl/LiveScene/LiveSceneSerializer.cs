@@ -311,15 +311,21 @@ namespace Lilium.RemoteControl.LiveScene
                 {
                     wrapper.OnEnable();
 
-                    // resolver が ExposedObjectContainer の場合、wrapper を _objects に追加する。
-                    // Container の _objects は JSON 永続化対象外のため、ロード時にここで復元する。
-                    // 1 live.json = 1 Container 前提のため、resolver 自身を「そのシーンのContainer」として扱う。
-                    if (resolver is ExposedObjectContainer container)
+                    // 復元したプレハブ インスタンスはベースシーンの RemoteControlContainer に登録する。
+                    // こうするとベースシーン リロード時にそのシーンと一緒に破棄され、常駐ホストの
+                    // ExposedObjectContainer に stale エントリが蓄積しない (リロードのたびに再生成される
+                    // ため)。シーンに RemoteControlContainer が無い構成 (テスト等) では従来どおり
+                    // resolver 自身のコンテナにフォールバックする。
+                    var sceneContainer = _ResolveSceneContainer();
+                    if (sceneContainer != null)
+                    {
+                        if (!sceneContainer._objects.Contains(wrapper))
+                            sceneContainer._objects.Add(wrapper);
+                    }
+                    else if (resolver is ExposedObjectContainer container)
                     {
                         if (!container._objects.Contains(wrapper))
-                        {
                             container._objects.Add(wrapper);
-                        }
                     }
                 }
             }
@@ -472,10 +478,34 @@ namespace Lilium.RemoteControl.LiveScene
             return false;
         }
 
+        // The base-scene RemoteControlContainer that restored prefab instances register into, so they
+        // share the (reloadable) base scene's lifecycle rather than lingering in the persistent host
+        // container. Prefers a container in a build (base) scene; additively-loaded set-bundle scenes
+        // have buildIndex -1. Returns null when no RemoteControlContainer exists (e.g. headless tests).
+        private static RemoteControlContainer _ResolveSceneContainer()
+        {
+            var all = RemoteControlContainer.all;
+            RemoteControlContainer fallback = null;
+            for (int i = 0; i < all.Count; i++)
+            {
+                var c = all[i];
+                if (c == null) continue;
+                if (fallback == null) fallback = c;
+                if (c.gameObject.scene.buildIndex >= 0) return c;
+            }
+            return fallback;
+        }
+
         private static bool _IsValidObject(ExposedObjectHandle obj, bool excludeStatic)
         {
             if (obj == null) return false;
             if (excludeStatic && obj.targetType != null && obj.targetType.isStatic) return false;
+            // Skip wrappers whose backing scene object has been destroyed. This happens transiently
+            // during a base-scene reload: a prop/avatar GameObject is destroyed with the scene while its
+            // wrapper briefly lingers in a source container not yet unregistered. Use the Unity-overloaded
+            // == (not C# null) so a destroyed-but-not-collected object is detected; serializing it would
+            // dereference the destroyed object and throw MissingReferenceException.
+            if (obj.target is ExposedUnityObjectBase unityObj && unityObj.reference == null) return false;
             return true;
         }
 

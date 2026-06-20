@@ -34,13 +34,21 @@ namespace Lilium.LiveStudio
             _ambientColor = RenderSettings.ambientLight;
             _ambientIntensity = RenderSettings.ambientIntensity;
 
+            Lilium.RemoteControl.LiveScene.RemoteControlBehaviour.onBaseSceneReloaded += _OnBaseSceneReloaded;
+
             _ApplyAmbient();
         }
 
         public void OnDisable()
         {
+            Lilium.RemoteControl.LiveScene.RemoteControlBehaviour.onBaseSceneReloaded -= _OnBaseSceneReloaded;
             ExposedObjectRegistry.FindByTarget(this)?.Unregister();
         }
+
+        // After a base-scene switch (persistent host), Unity reset RenderSettings.ambient* to the new
+        // scene's authored values. Re-assert our current settings so the user's ambient persists across
+        // the switch (a saved live scene still overrides these afterwards via OnAfterExposedDeserialize).
+        private void _OnBaseSceneReloaded() => _ApplyAmbient();
 
         public void OnDispose()
         {

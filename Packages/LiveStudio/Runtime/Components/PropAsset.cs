@@ -192,6 +192,13 @@ namespace Lilium.LiveStudio
             var model = host.AddComponent<GltfModel>();
             model.path = sourcePath;
 
+            // Place the free-standing prop in the base scene (where its RemoteControlContainer lives), not
+            // the active scene which may be a set bundle. new GameObject() lands in the active scene, so
+            // move it explicitly; the GameObject is a root here, which MoveGameObjectToScene requires.
+            var baseContainer = context?.container;
+            if (baseContainer != null)
+                UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(host, baseContainer.gameObject.scene);
+
             // Expose the transform so the user can position the free-standing prop from the remote app.
             _Register(context, new ExposedGameObjectWithTransform(host), host);
 
@@ -212,7 +219,7 @@ namespace Lilium.LiveStudio
             var container = context?.container;
             if (container == null)
             {
-                Debug.LogWarning("[LiveStudio] No RemoteControlContainer found; prop loaded but not remote-controllable.");
+                Debug.LogWarning("[LiveStudio] No base-scene RemoteControlContainer found; prop loaded but not remote-controllable.");
             }
             else
             {

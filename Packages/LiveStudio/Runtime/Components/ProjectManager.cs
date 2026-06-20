@@ -27,6 +27,26 @@ namespace Lilium.LiveStudio
         [ExposedProperty, Hide]
         public static string projectPath => _projectPath;
 
+        /// <summary>
+        /// Display name of the project: the open folder's name, or the configured initial name
+        /// (<see cref="LiveStudioProjectSettings.defaultProjectName"/>) when no project is open.
+        /// </summary>
+        [ExposedProperty, Hide]
+        public static string projectName
+        {
+            get
+            {
+                if (!string.IsNullOrEmpty(_projectPath))
+                {
+                    var name = Path.GetFileName(_projectPath.TrimEnd('/', '\\'));
+                    if (!string.IsNullOrEmpty(name)) return name;
+                }
+
+                var configured = LiveStudioProjectSettings.Instance?.defaultProjectName;
+                return string.IsNullOrEmpty(configured) ? "Untitled" : configured;
+            }
+        }
+
         // Restore the persisted project path at runtime start (works with Domain Reload disabled).
         // The crawl itself runs once ExternalAssetManager is ready (see OnAssetManagerReady).
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
