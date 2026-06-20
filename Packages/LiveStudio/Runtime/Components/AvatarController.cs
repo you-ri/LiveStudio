@@ -276,6 +276,12 @@ namespace Lilium.LiveStudio
             var meshes = avatar.GetComponentsInChildren<SkinnedMeshRenderer>(includeInactive: true);
 
             var avatarTarget = avatar.GetComponent<Animator>();
+
+            // Keep the avatar animating even when its renderers are off-screen / culled. The pose is
+            // motion-driven (sockets, prop attachments, expression) and must stay correct regardless of
+            // camera view, so disable Animator culling on every setup pass.
+            if (avatarTarget != null) avatarTarget.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+
             var avatarRotation = avatarTransform.rotation; // root rotation; independent of bone pose
 
             // Standard prop attachment sockets. Each is normalized to the avatar-root rotation so a
