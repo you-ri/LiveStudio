@@ -36,6 +36,5 @@
     "AVATAR_ANIMATIONPARAMETEROVERRIDES": "Animation Parameter Override",
     "AVATAR_RECEIVER": "Receiver",
     "CAMERATRACKER_MOTIONSOURCE": "Motion Source",
-    "NOTIFY_PRESET_SAVED": "Preset saved",
-    "NOTIFY_ASSET_REIMPORTED": "Asset re-imported"
+    "NOTIFY_PRESET_SAVED": "Preset saved"
 }

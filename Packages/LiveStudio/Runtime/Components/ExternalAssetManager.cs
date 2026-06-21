@@ -218,11 +218,11 @@ namespace Lilium.LiveStudio
 
         /// <summary>
         /// Imports an external asset into the open project folder and loads it. Invoked from the remote
-        /// app after the user picks a file: the picked file (the source) is copied into a kind-specific
-        /// subfolder of the project (e.g. Avatars / Props / Sets), and the registered entry points at the
-        /// in-project copy while remembering its source in <see cref="AssetBase.importSourcePath"/> so it
-        /// can be re-imported later. A source already inside the project folder is registered in place
-        /// (no copy). The concrete asset kind is chosen by file extension.
+        /// app after the user picks a file: the picked file is copied into a kind-specific subfolder of
+        /// the project (e.g. Avatars / Props / Sets) and the registered entry points at the in-project
+        /// copy, so the project folder is the single home for the asset. A file already inside the
+        /// project folder is registered in place (no copy). The concrete asset kind is chosen by file
+        /// extension.
         ///
         /// Only the single picked file is copied; assets that reference sibling files (e.g. a *.gltf with
         /// an external .bin / textures) are not yet bundled — that is a future per-extension conversion
@@ -252,24 +252,10 @@ namespace Lilium.LiveStudio
             var sourcePath = filePath;
 
             // A file already inside the project folder is part of the project: register it in place (like
-            // the crawl) rather than copying it onto itself. It has no external import source.
+            // the crawl) rather than copying it onto itself.
             if (_IsInsideProject(sourcePath, projectPath))
             {
-                _RegisterImported(sourcePath, importSourcePath: string.Empty);
-                return;
-            }
-
-            // Re-importing the same source: keep the existing entry (and its state) instead of copying a
-            // second file. Just (re)enable it.
-            var duplicate = _FindByImportSource(sourcePath);
-            if (duplicate != null)
-            {
-                if (!duplicate.enabled)
-                {
-                    duplicate.enabled = true;
-                    _dirty = true;
-                }
-                _Broadcast();
+                _RegisterImported(sourcePath);
                 return;
             }
 
@@ -289,13 +275,12 @@ namespace Lilium.LiveStudio
                 return;
             }
 
-            _RegisterImported(destPath, importSourcePath: sourcePath);
+            _RegisterImported(destPath);
         }
 
-        // Registers a project-folder file as an enabled entry and schedules its load. When the file came
-        // from an external import, importSourcePath records the original source for later re-import; for a
-        // file already in the project it is empty. Re-crawls so the catalog stays consistent.
-        private void _RegisterImported(string projectFilePath, string importSourcePath)
+        // Registers a project-folder file as an enabled entry and schedules its load. Re-crawls so the
+        // catalog stays consistent.
+        private void _RegisterImported(string projectFilePath)
         {
             // An already-registered project file (e.g. picked again) is just (re)enabled, not duplicated.
             var existing = _Find(_MakeId(projectFilePath));
@@ -316,7 +301,6 @@ namespace Lilium.LiveStudio
                 Debug.LogError($"[LiveStudio] Unsupported asset file: {projectFilePath}");
                 return;
             }
-            asset.importSourcePath = importSourcePath;
 
             var list = new List<AssetBase>(assets) { asset };
             _SetAssets(list.ToArray());
@@ -325,69 +309,6 @@ namespace Lilium.LiveStudio
             // Keep the project catalog in sync (dedups by id, so the just-added entry is untouched).
             ProjectManager.RecrawlProject();
             _Broadcast();
-        }
-
-        /// <summary>
-        /// Re-imports an asset by re-copying its <see cref="AssetBase.importSourcePath"/> over the
-        /// in-project file, then reloading it so an edited source is picked up. Invoked from the remote
-        /// app. Only assets imported from an external source (non-empty importSourcePath) can be
-        /// re-imported; crawl-discovered assets are rejected.
-        ///
-        /// Note: bundle formats (*.lsb / *.lsavatar) are cached by Unity per path; the reload is a
-        /// best-effort unload/reload and a fully reliable refresh may need loader-side bundle eviction.
-        /// </summary>
-        [ExposedFunction]
-        public void ReimportAsset(string assetId)
-        {
-            var asset = _Find(assetId);
-            if (asset == null)
-            {
-                Debug.LogError($"[LiveStudio] ReimportAsset: asset '{assetId}' not found.");
-                return;
-            }
-            if (string.IsNullOrEmpty(asset.importSourcePath))
-            {
-                Debug.LogError($"[LiveStudio] ReimportAsset: asset '{assetId}' was not imported from an external source.");
-                return;
-            }
-            if (!File.Exists(asset.importSourcePath))
-            {
-                Debug.LogError($"[LiveStudio] ReimportAsset: import source not found: {asset.importSourcePath}");
-                return;
-            }
-
-            // Unload first so the in-project file is not held open / cached, then re-copy and let the diff
-            // reload the asset if it was active.
-            bool wasActive = asset.enabled;
-            if (asset.isExclusive)
-            {
-                if (_selectedExclusiveId == asset.id)
-                {
-                    asset.Unload(_MakeContext());
-                    _selectedExclusiveId = null;
-                }
-            }
-            else if (asset.isLoaded)
-            {
-                asset.Unload(_MakeContext());
-                _loaded.Remove(asset);
-            }
-            asset.isLoaded = false;
-
-            try
-            {
-                File.Copy(asset.importSourcePath, asset.filePath, overwrite: true);
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[LiveStudio] ReimportAsset: failed to copy '{asset.importSourcePath}' to '{asset.filePath}': {e.Message}");
-                return;
-            }
-
-            if (wasActive) _dirty = true;
-            _Broadcast();
-            RemoteNotificationSystem.Show(
-                LocalizationSystem.Translate("NOTIFY_ASSET_REIMPORTED"), RemoteNotificationSystem.Type.Success, icon: "sync");
         }
 
         /// <summary>
@@ -965,20 +886,6 @@ namespace Lilium.LiveStudio
             for (int i = 0; i < assets.Length; i++)
             {
                 if (assets[i] != null && assets[i].id == assetId) return assets[i];
-            }
-            return null;
-        }
-
-        // The entry imported from the given external source path, or null. Compares normalized paths so a
-        // re-add of the same source resolves to its existing entry instead of importing a second copy.
-        private AssetBase _FindByImportSource(string sourcePath)
-        {
-            var key = _MakeId(sourcePath);
-            for (int i = 0; i < assets.Length; i++)
-            {
-                var asset = assets[i];
-                if (asset != null && !string.IsNullOrEmpty(asset.importSourcePath) &&
-                    _MakeId(asset.importSourcePath) == key) return asset;
             }
             return null;
         }
