@@ -10,6 +10,8 @@
 - Project asset catalog with live-scene assets and bundle thumbnails; exported `.prop.lsb` / `.avatar.lsb` bundles embed a thumbnail used by the remote app's asset cards.
 - Avatar VRM thumbnail served over `/api/avatar/image?id=`, extracted from the VRM's embedded thumbnail without a UniVRM dependency.
 - Cross-scene remote control: additively loaded set bundles expose their objects to the single persistent host server. New stage marks (`StageMark` / `StageMarkRegistry` / `AvatarStageController`) warp the avatar to named marks (plus a built-in Zero origin) from the remote app, and the saved active scene is restored on load.
+- Adding an asset now imports it into the project: `AddAsset` copies the picked file into a kind-specific subfolder of the open project folder (`Avatars` / `Props` / `Sets`, resolved per asset kind, colliding names get a ` (n)` suffix) and registers the in-project copy. A picked file already inside the project folder is registered in place without copying. Only the single picked file is copied for now.
+- A project folder is the home for all saved data: on first launch `Documents/<brand>/<project>` is created and opened, it is used as the default Save As location for live scenes, and "Open Save Folder" opens it.
 
 ### Changed
 
@@ -17,6 +19,8 @@
 - `VRCFTAvatar` expression now flows through `ExpressionResolver`, and converted avatars auto-gain hand-gesture expressions.
 - Received poses are now time-interpolated between the two nearest received 60fps frames during the variable-fps render update (`AvatarAnimationSystem.Lerp`), so the avatar advances smoothly and SpringBones no longer shiver on held frames.
 - **Breaking:** Renamed the scene-bundle concept to "set" and the world concept to "stage", aligning the vocabulary with virtual-production terms (a stage holds sets, props and marks). Set bundles are now exported as `.set.lsb`; `SceneBundleAsset` → `SetBundleAsset`, `SceneBundleLoader`/`LoadedSceneBundle` → `SetBundleLoader`/`LoadedSetBundle`, `SceneBundleExporter` → `SetBundleExporter` (menu "Export Set Bundle (.set.lsb)"), `LiveStudioBundle.SceneExtension`/`IsSceneBundle` → `SetExtension`/`IsSetBundle`, and `WorldManager` → `StageManager` (exposed functions `AddSet`/`RemoveSet`/`SetActiveSet`, exposed property `sets`). The legacy `.scene.lsb` extension is still accepted on input (loaded as a `SetBundleAsset`), no longer produced on export. Saved live scenes referencing the old `@type` names (e.g. `SceneBundleAsset`/`WorldManager`) are not migrated and must be re-saved; such unresolved entries now deserialize away instead of leaving a null hole. `StageManager` carries `[MovedFrom("WorldManager")]` so in-scene `[SerializeReference]` wiring migrates automatically.
+- `ExternalAssetManager` now persists its asset array directly to the live scene; the project-folder crawl rebuilds the disabled catalog on load, so the separate persistence shadow was removed.
+- `SavedPaths` derives its base directory from the configured brand name and organizes saved data into per-project folders, replacing the single `Scene` subfolder and the standalone `LiveStudioPathsInitializer` (folder setup now lives in `ProjectManager`).
 
 ### Fixed
 
