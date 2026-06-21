@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.23.0] - 2026-06-21
+
+### Changed
+
+- `VirgoMotionSource` now interpolates between the two nearest received 60fps frames inside `Update` (with a configurable `_delaySeconds` lead so the interpolation target is already buffered), so the avatar advances smoothly under variable render fps and SpringBones no longer shiver on held frames. An optional `anchor` transform is used as the placement basis, letting the source live inside an additively loaded set.
+- `VRCFTAvatar` expression is now routed through `ExpressionResolver`.
+
+### Fixed
+
+- `ResetCamera` now reads the capture-camera channel (device/ARKit yaw) instead of the pose-driven avatar root, which latched onto a jittery pose snapshot and made every reset land slightly differently; repeated resets are now stable. A new `_cameraHeight` field (default 1.5 m) lifts the virtual camera to eye level instead of dropping it to the floor.
+
 ## [0.22.0] - 2026-06-14
 
 ### Added

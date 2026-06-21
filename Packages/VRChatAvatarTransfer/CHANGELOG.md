@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.23.0] - 2026-06-21
+
+### Added
+
+- VRChat Prop Builder: a new editor window/tool that builds a runtime avatar prop (`.prop.lsb`) from a VRChat avatar so it can be attached to avatars in the Studio app.
+- Hand-gesture expressions are now generated automatically during conversion (`GestureExpressionBuilder`), sharing the VRChat expression driver.
+- PhysBone → VRM SpringBone conversion exposes gravity and stiffness coefficient inputs to tune the converted springs.
+- Exported avatar bundles embed a thumbnail, used by the remote app's avatar cards.
+
+### Fixed
+
+- VRChat `StateMachineBehaviour`s are now stripped from the converted avatar's controllers (`VrcStateMachineBehaviourStripper`), avoiding missing-script references in the exported `.avatar.lsb`.
+
 ## [0.22.0] - 2026-06-14
 
 ### Changed

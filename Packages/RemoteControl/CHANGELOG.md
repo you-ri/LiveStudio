@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.23.0] - 2026-06-21
+
+### Added
+
+- `[ExposedExternalEnum(typeof(T))]` assembly attribute registers external or built-in enums (e.g. `HumanBodyBones`) as remote-app dropdowns without modifying the type; supports `excludeNames` and the registration survives `Reset()`.
+- `ExposedObjectSnapshot` can now capture an exposed object's default state and compute the delta against it (`CaptureDefaults` / `CaptureDelta`), the basis for prop presets.
+- The remote app is now notified when a live scene is saved.
+
+### Fixed
+
+- Saved live-scene entries that reference an unresolved `@type` now deserialize away cleanly instead of leaving a null hole.
+- Live-scene restore now reapplies scene visibility and active state correctly on startup.
+
 ## [0.22.1] - 2026-06-14
 
 ### Fixed
