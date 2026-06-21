@@ -40,10 +40,15 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// Convert seconds to a frame number, truncating toward zero.
         /// </summary>
+        /// <remarks>
+        /// Keep the math in double. Casting to float here lost precision once the frame number
+        /// exceeded float's 2^24 integer limit (~3.2 days at 60fps), which made consecutive frame
+        /// numbers collapse onto the same value and stuttered the Studio playback buffer routing.
+        /// double is exact for integers up to 2^53 (~4700 years at 60fps).
+        /// </remarks>
         public long AsFrameNumber(double time)
         {
-            float ftime = (float)time;
-            return (int)((ftime) * denominator / numerator);
+            return (long)(time * denominator / numerator);
         }
 
         /// <summary>

@@ -208,5 +208,29 @@ namespace Lilium.RemoteControl.Tests
             Assert.AreEqual(0, timecode.minutes);
             Assert.AreEqual(0, timecode.seconds);
         }
+
+        // Regression: frame numbers must stay exact and strictly increasing well past float's
+        // 2^24 integer limit (~3.2 days at 60fps). The old (float) cast collapsed neighbouring
+        // frame numbers onto the same value, which stuttered the long-running playback pipeline.
+        [Test]
+        public void AsFrameNumber_BeyondFloatPrecision_StaysExact()
+        {
+            // 300000s @ 60fps = 18,000,000 frames, above 2^24 = 16,777,216.
+            double time = 300000.0;
+            long frame = frameRate60.AsFrameNumber(time);
+
+            Assert.AreEqual(18_000_000L, frame);
+        }
+
+        [Test]
+        public void AsFrameNumber_BeyondFloatPrecision_OneFrameStepAdvancesByOne()
+        {
+            // One frame apart (1/60s) at a large elapsed time must differ by exactly one frame.
+            double time = 300000.0;
+            long frame0 = frameRate60.AsFrameNumber(time);
+            long frame1 = frameRate60.AsFrameNumber(time + 1.0 / 60.0);
+
+            Assert.AreEqual(frame0 + 1, frame1);
+        }
     }
 }
