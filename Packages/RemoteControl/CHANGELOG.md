@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.23.2] - 2026-06-21
+
+### Fixed
+
+- `FrameRate.AsFrameNumber` now computes in `double` instead of casting through `float`. Past 2^24 (~3.2 days at 60fps) `float` lost integer precision, collapsing consecutive frame numbers onto the same value and stuttering the Studio playback buffer routing; `double` is exact for frame integers up to 2^53.
+
 ## [0.23.0] - 2026-06-21
 
 ### Added
