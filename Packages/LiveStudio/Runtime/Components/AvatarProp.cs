@@ -22,6 +22,10 @@ namespace Lilium.LiveStudio
     /// </summary>
     [DefaultExecutionOrder(20)] // after the avatar (VRCFTAvatar order 10) has written its params this frame
     [RequireComponent(typeof(Animator))]
+    // The socket follow needs a ParentConstraint; require it so authored prop prefabs carry one
+    // (added at edit time). Runtime AddComponent<ParentConstraint> is unreliable on some objects,
+    // so the component must already exist on the prefab.
+    [RequireComponent(typeof(ParentConstraint))]
     [ExposedClass("Prop", Category = "Avatar", Icon = "deployed_code")]
     public class AvatarProp : MonoBehaviour
     {
@@ -54,7 +58,7 @@ namespace Lilium.LiveStudio
         // Shadow field (Hide + FormerlyExposedAs) so the [ExposedProperty] below is persistable:
         // its value is serialized to the live scene and restored across a prop unload/reload.
         [SerializeField, ExposedField, Hide, FormerlyExposedAs("socketName")]
-        string _socketName = "RightHand";
+        string _socketName = "RightWrist";
 
         [ExposedProperty]
         [StringSelector(nameof(availableSocketNames))]
@@ -134,7 +138,14 @@ namespace Lilium.LiveStudio
             }
 
             if (_constraint == null)
-                _constraint = GetComponent<ParentConstraint>() ?? gameObject.AddComponent<ParentConstraint>();
+            {
+                // [RequireComponent] makes authored prefabs carry a ParentConstraint. Fall back to adding
+                // one for older bundles exported before that — but AddComponent<ParentConstraint> can fail
+                // (returns a Unity-null) on some objects, so bail out instead of dereferencing it.
+                _constraint = GetComponent<ParentConstraint>();
+                if (_constraint == null) _constraint = gameObject.AddComponent<ParentConstraint>();
+                if (_constraint == null) return; // socket follow unavailable; retry next frame.
+            }
 
             if (_appliedSocketName != _socketName || _constraint.sourceCount == 0)
             {
@@ -164,7 +175,14 @@ namespace Lilium.LiveStudio
             if (_constraint.sourceCount > 0)
             {
                 // Push offsets every frame so runtime edits apply immediately (works even while locked).
-                _constraint.SetTranslationOffset(0, _positionOffset);
+                // ParentConstraint does NOT multiply the translation offset by the source's scale, so a
+                // raw offset stays a fixed distance while the bone moves with the avatar's scale, drifting
+                // the prop. Pre-scale by the socket's lossyScale (which carries the avatar scale) so the
+                // offset tracks the avatar size, matching what true parenting to the bone would do. The
+                // offset is authored in normalized (scale-1) bone-local space. Rotation needs no scaling.
+                var socketTransform = _constraint.GetSource(0).sourceTransform;
+                var socketScale = socketTransform != null ? socketTransform.lossyScale : Vector3.one;
+                _constraint.SetTranslationOffset(0, Vector3.Scale(_positionOffset, socketScale));
                 _constraint.SetRotationOffset(0, _rotationOffset);
             }
         }
