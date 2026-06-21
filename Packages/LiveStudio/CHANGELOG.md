@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.23.1] - 2026-06-21
+
+### Fixed
+
+- The Studio no longer reports unsaved changes on every launch (which blocked quit with an unsaved-changes dialog when a project folder contained files). Persisting the `ExternalAssetManager` asset array directly let the deferred project-folder crawl populate it after the live-scene save baseline was captured; the in-use-only persistence shadow is restored so the crawl-built catalog stays out of the saved/dirty state.
+
 ## [0.23.0] - 2026-06-21
 
 ### Added
