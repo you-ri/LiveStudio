@@ -42,6 +42,13 @@ namespace Lilium.LiveStudio
         /// a preset resolves to a prop or an avatar by peeking the file.
         /// </summary>
         public Func<string, AssetBase> create;
+
+        /// <summary>
+        /// Subfolder (relative to the project folder) that imported files of this kind are copied into,
+        /// e.g. "Avatars". Null/empty copies into the project root. Content-free; classification is by
+        /// path only, like the rest of this descriptor.
+        /// </summary>
+        public string importSubfolder;
     }
 
     /// <summary>
@@ -123,6 +130,23 @@ namespace Lilium.LiveStudio
                 if (_Matches(_descriptors[i], filePath)) return true;
             }
             return false;
+        }
+
+        /// <summary>
+        /// Returns the import subfolder for the file's kind (the first matching descriptor's
+        /// <see cref="AssetTypeDescriptor.importSubfolder"/>), or null when no kind matches or the kind
+        /// imports into the project root. Used to organize imported files by kind under the project folder.
+        /// </summary>
+        public static string ResolveImportSubfolder(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath)) return null;
+            _EnsureInitialized();
+
+            for (int i = 0; i < _descriptors.Count; i++)
+            {
+                if (_Matches(_descriptors[i], filePath)) return _descriptors[i].importSubfolder;
+            }
+            return null;
         }
 
         /// <summary>
@@ -213,6 +237,7 @@ namespace Lilium.LiveStudio
                 suffixes = new[] { LiveStudioBundle.SetExtension, LiveStudioBundle.LegacySetExtension },
                 matches = LiveStudioBundle.IsSetBundle,
                 create = _ => new SetBundleAsset(),
+                importSubfolder = "Sets",
             });
 
             // Avatars (*.avatar.lsb / legacy *.lsavatar / *.vrm).
@@ -223,6 +248,7 @@ namespace Lilium.LiveStudio
                 matches = filePath => LiveStudioBundle.IsAvatarBundle(filePath) ||
                     filePath.EndsWith(".vrm", StringComparison.OrdinalIgnoreCase),
                 create = _ => new AvatarAsset(),
+                importSubfolder = "Avatars",
             });
 
             // Props (*.prop.lsb / *.glb / *.gltf). Same priority as avatars; the matchers are mutually
@@ -235,6 +261,7 @@ namespace Lilium.LiveStudio
                     filePath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) ||
                     filePath.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase),
                 create = _ => new PropAsset(),
+                importSubfolder = "Props",
             });
         }
     }

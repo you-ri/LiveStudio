@@ -54,27 +54,24 @@ namespace Lilium.LiveStudio
 
         public string id => kId;
 
-        // Added assets, exposed as an editable polymorphic array. The remote app toggles each entry's
-        // `enabled` flag (load/unload) and removes entries. NOT persisted directly: the live list mixes
-        // the project's disabled catalog (re-created by the project crawl) with the assets actually in
-        // use; only the used ones are persisted, via the `_persistedAssets` shadow below.
+        // Added assets, exposed as an editable polymorphic array AND persisted directly to the live
+        // scene JSON. The remote app toggles each entry's `enabled` flag (load/unload) and removes
+        // entries. Every entry now lives inside the project folder (imports are copied there, see
+        // AddAsset), so the project crawl reconstructs the whole catalog on load; persisting the array
+        // verbatim therefore just preserves the per-entry enabled / loaded selection and state on top of
+        // that catalog. The disabled catalog is saved too (redundant, since the crawl re-adds it), which
+        // is harmless: RegisterDiscoveredAssets dedups by id. The per-element `@type` discriminator
+        // round-trips the concrete kinds.
         [NonSerialized]
-        [ExposedField(persistable = false)]
+        [ExposedField]
         private AssetBase[] assets = Array.Empty<AssetBase>();
 
-        // Persistence shadow for `assets`: holds only the assets actually in use (enabled / loaded), so
-        // the live scene JSON saves the selected avatar / loaded props / active world but NOT the
-        // disabled project catalog. Refreshed in OnBeforeExposedSerialize; applied back to `assets` in
-        // OnAfterExposedDeserialize (the catalog is then re-added by the project crawl).
+        // The `assets` reference this manager last produced/applied. Lets OnAfterExposedDeserialize tell
+        // a real restore (FromJson replaces the field reference) from an unrelated property write (an
+        // element is mutated in place, reference unchanged), so a plain enabled-toggle is not clobbered.
+        // Kept in sync by _SetAssets for every internal reassignment.
         [NonSerialized]
-        [ExposedField, Hide]
-        private AssetBase[] _persistedAssets = Array.Empty<AssetBase>();
-
-        // The `_persistedAssets` reference this manager last applied to / produced for the live set.
-        // Lets OnAfterExposedDeserialize tell a real restore (FromJson replaces the reference) from an
-        // unrelated property write (reference unchanged), so a plain enabled-toggle is not clobbered.
-        [NonSerialized]
-        private AssetBase[] _lastAppliedPersisted;
+        private AssetBase[] _lastAppliedAssets;
 
         // Currently-loaded additive (non-exclusive) assets, tracked so entries removed from the array
         // while still loaded can be detected and unloaded.
@@ -121,9 +118,9 @@ namespace Lilium.LiveStudio
 
             RemoteControlBehaviour.onBaseSceneReloaded += _OnBaseSceneReloaded;
 
-            // Match the current persisted reference so an unrelated property write before any real
-            // restore does not trigger a (clobbering) swap.
-            _lastAppliedPersisted = _persistedAssets;
+            // Match the current array reference so an unrelated property write before any real restore
+            // does not trigger a (clobbering) swap.
+            _lastAppliedAssets = assets;
             _initialized = true;
         }
 
@@ -151,51 +148,40 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
-        /// Fires after a live scene is restored. The used assets were deserialized into
-        /// <see cref="_persistedAssets"/>; make them the live set, schedule a diff to (un)load them, and
-        /// re-arm the crawl so the project catalog is re-added on the next <see cref="Update"/>.
+        /// Fires after a live scene is restored. The restore replaced the <see cref="assets"/> array with
+        /// the persisted set; compact any null holes, schedule a diff to (un)load the entries, and re-arm
+        /// the crawl so the project catalog is re-added on the next <see cref="Update"/>.
         /// </summary>
         public void OnAfterExposedDeserialize()
         {
             if (!Application.isPlaying) return;
 
             // This callback also fires after every individual exposed-property write (the owner's
-            // IExposedDeserializeCallback), not only after a full live-scene restore. Apply the
-            // persisted set to the live `assets` array ONLY when `_persistedAssets` was actually
-            // re-deserialized by a restore — detected by its reference changing to one this manager did
-            // not produce in OnBeforeExposedSerialize. Otherwise a plain enabled-toggle write would wipe
-            // the live assets (and the just-toggled selection).
-            if (ReferenceEquals(_persistedAssets, _lastAppliedPersisted)) return;
+            // IExposedDeserializeCallback), not only after a full live-scene restore. A property write
+            // (e.g. an enabled-toggle on assets/{i}/enabled) mutates an element in place and leaves the
+            // `assets` field reference unchanged, while a full restore replaces the field with a freshly
+            // deserialized array. React ONLY to the latter — detected by the reference differing from the
+            // last one this manager produced (kept in sync by _SetAssets). Otherwise a plain toggle would
+            // re-run the apply and clobber the just-toggled selection.
+            if (ReferenceEquals(assets, _lastAppliedAssets)) return;
 
-            _lastAppliedPersisted = _persistedAssets;
             // A persisted entry deserializes to null when its @type is no longer registered (e.g.
             // saved data referencing a removed/renamed asset kind). Compact those holes out so a null
             // never reaches the live array or a broadcast — consumers that project the list
             // (StageManager, the remote app) would otherwise dereference null and crash.
-            assets = _WithoutNulls(_persistedAssets);
+            _SetAssets(_WithoutNulls(assets));
             _dirty = true;
             _assetManagerReadyNotified = false;
         }
 
         /// <summary>
         /// Fires before persistence. Refreshes each loaded asset's <see cref="AssetBase.state"/> from its
-        /// live values, then captures only the in-use assets (enabled / loaded) into
-        /// <see cref="_persistedAssets"/> so the saved live scene excludes the disabled project catalog.
+        /// live values so the saved <see cref="assets"/> array carries the latest edits. The array itself
+        /// is persisted verbatim (see its declaration); the project crawl rebuilds the catalog on load.
         /// </summary>
         public void OnBeforeExposedSerialize()
         {
             for (int i = 0; i < _loaded.Count; i++) _loaded[i].CaptureState();
-
-            var used = new List<AssetBase>();
-            for (int i = 0; i < assets.Length; i++)
-            {
-                var asset = assets[i];
-                if (asset != null && (asset.enabled || asset.isLoaded)) used.Add(asset);
-            }
-            _persistedAssets = used.ToArray();
-            // We produced this reference (not a restore); record it so OnAfterExposedDeserialize does
-            // not re-apply it on a later property write.
-            _lastAppliedPersisted = _persistedAssets;
         }
 
         public void Update()
@@ -231,8 +217,16 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
-        /// Adds an external asset and loads it. Invoked from the remote app after the user picks a file.
-        /// The concrete asset kind is chosen by file extension.
+        /// Imports an external asset into the open project folder and loads it. Invoked from the remote
+        /// app after the user picks a file: the picked file (the source) is copied into a kind-specific
+        /// subfolder of the project (e.g. Avatars / Props / Sets), and the registered entry points at the
+        /// in-project copy while remembering its source in <see cref="AssetBase.importSourcePath"/> so it
+        /// can be re-imported later. A source already inside the project folder is registered in place
+        /// (no copy). The concrete asset kind is chosen by file extension.
+        ///
+        /// Only the single picked file is copied; assets that reference sibling files (e.g. a *.gltf with
+        /// an external .bin / textures) are not yet bundled — that is a future per-extension conversion
+        /// step. For now the import is a plain copy.
         /// </summary>
         [ExposedFunction]
         public void AddAsset(string filePath)
@@ -248,14 +242,65 @@ namespace Lilium.LiveStudio
                 return;
             }
 
-            // The entry id is derived from the file path (not a random GUID) so re-adding the same
-            // file — or, in the future, re-crawling a project folder — resolves to the same entry and
-            // keeps its enabled / state instead of spawning a duplicate.
-            var assetId = _MakeId(filePath);
-            var existing = _Find(assetId);
+            var projectPath = ProjectManager.projectPath;
+            if (string.IsNullOrEmpty(projectPath) || !Directory.Exists(projectPath))
+            {
+                Debug.LogError("[LiveStudio] AddAsset: no project folder is open to import the asset into.");
+                return;
+            }
+
+            var sourcePath = filePath;
+
+            // A file already inside the project folder is part of the project: register it in place (like
+            // the crawl) rather than copying it onto itself. It has no external import source.
+            if (_IsInsideProject(sourcePath, projectPath))
+            {
+                _RegisterImported(sourcePath, importSourcePath: string.Empty);
+                return;
+            }
+
+            // Re-importing the same source: keep the existing entry (and its state) instead of copying a
+            // second file. Just (re)enable it.
+            var duplicate = _FindByImportSource(sourcePath);
+            if (duplicate != null)
+            {
+                if (!duplicate.enabled)
+                {
+                    duplicate.enabled = true;
+                    _dirty = true;
+                }
+                _Broadcast();
+                return;
+            }
+
+            // Copy the source into its kind's subfolder under the project, using a non-colliding name.
+            var subfolder = AssetTypeRegistry.ResolveImportSubfolder(sourcePath);
+            var destFolder = string.IsNullOrEmpty(subfolder) ? projectPath : Path.Combine(projectPath, subfolder);
+            string destPath;
+            try
+            {
+                Directory.CreateDirectory(destFolder);
+                destPath = _UniqueFilePath(destFolder, Path.GetFileName(sourcePath));
+                File.Copy(sourcePath, destPath);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[LiveStudio] AddAsset: failed to import '{sourcePath}': {e.Message}");
+                return;
+            }
+
+            _RegisterImported(destPath, importSourcePath: sourcePath);
+        }
+
+        // Registers a project-folder file as an enabled entry and schedules its load. When the file came
+        // from an external import, importSourcePath records the original source for later re-import; for a
+        // file already in the project it is empty. Re-crawls so the catalog stays consistent.
+        private void _RegisterImported(string projectFilePath, string importSourcePath)
+        {
+            // An already-registered project file (e.g. picked again) is just (re)enabled, not duplicated.
+            var existing = _Find(_MakeId(projectFilePath));
             if (existing != null)
             {
-                // Same file already registered: (re)enable it instead of duplicating.
                 if (!existing.enabled)
                 {
                     existing.enabled = true;
@@ -265,18 +310,84 @@ namespace Lilium.LiveStudio
                 return;
             }
 
-            AssetBase asset = _CreateEntry(filePath, enabled: true);
+            AssetBase asset = _CreateEntry(projectFilePath, enabled: true);
             if (asset == null)
             {
-                Debug.LogError($"[LiveStudio] Unsupported asset file: {filePath}");
+                Debug.LogError($"[LiveStudio] Unsupported asset file: {projectFilePath}");
+                return;
+            }
+            asset.importSourcePath = importSourcePath;
+
+            var list = new List<AssetBase>(assets) { asset };
+            _SetAssets(list.ToArray());
+
+            _dirty = true;
+            // Keep the project catalog in sync (dedups by id, so the just-added entry is untouched).
+            ProjectManager.RecrawlProject();
+            _Broadcast();
+        }
+
+        /// <summary>
+        /// Re-imports an asset by re-copying its <see cref="AssetBase.importSourcePath"/> over the
+        /// in-project file, then reloading it so an edited source is picked up. Invoked from the remote
+        /// app. Only assets imported from an external source (non-empty importSourcePath) can be
+        /// re-imported; crawl-discovered assets are rejected.
+        ///
+        /// Note: bundle formats (*.lsb / *.lsavatar) are cached by Unity per path; the reload is a
+        /// best-effort unload/reload and a fully reliable refresh may need loader-side bundle eviction.
+        /// </summary>
+        [ExposedFunction]
+        public void ReimportAsset(string assetId)
+        {
+            var asset = _Find(assetId);
+            if (asset == null)
+            {
+                Debug.LogError($"[LiveStudio] ReimportAsset: asset '{assetId}' not found.");
+                return;
+            }
+            if (string.IsNullOrEmpty(asset.importSourcePath))
+            {
+                Debug.LogError($"[LiveStudio] ReimportAsset: asset '{assetId}' was not imported from an external source.");
+                return;
+            }
+            if (!File.Exists(asset.importSourcePath))
+            {
+                Debug.LogError($"[LiveStudio] ReimportAsset: import source not found: {asset.importSourcePath}");
                 return;
             }
 
-            var list = new List<AssetBase>(assets) { asset };
-            assets = list.ToArray();
+            // Unload first so the in-project file is not held open / cached, then re-copy and let the diff
+            // reload the asset if it was active.
+            bool wasActive = asset.enabled;
+            if (asset.isExclusive)
+            {
+                if (_selectedExclusiveId == asset.id)
+                {
+                    asset.Unload(_MakeContext());
+                    _selectedExclusiveId = null;
+                }
+            }
+            else if (asset.isLoaded)
+            {
+                asset.Unload(_MakeContext());
+                _loaded.Remove(asset);
+            }
+            asset.isLoaded = false;
 
-            _dirty = true;
+            try
+            {
+                File.Copy(asset.importSourcePath, asset.filePath, overwrite: true);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[LiveStudio] ReimportAsset: failed to copy '{asset.importSourcePath}' to '{asset.filePath}': {e.Message}");
+                return;
+            }
+
+            if (wasActive) _dirty = true;
             _Broadcast();
+            RemoteNotificationSystem.Show(
+                LocalizationSystem.Translate("NOTIFY_ASSET_REIMPORTED"), RemoteNotificationSystem.Type.Success, icon: "sync");
         }
 
         /// <summary>
@@ -345,7 +456,7 @@ namespace Lilium.LiveStudio
             }
 
             if (!changed) return;
-            assets = list.ToArray();
+            _SetAssets(list.ToArray());
             _Broadcast();
         }
 
@@ -376,7 +487,7 @@ namespace Lilium.LiveStudio
 
             var list = new List<AssetBase>(assets);
             list.RemoveAll(e => e != null && e.id == assetId);
-            assets = list.ToArray();
+            _SetAssets(list.ToArray());
 
             _Broadcast();
         }
@@ -607,14 +718,25 @@ namespace Lilium.LiveStudio
         // Builds a non-colliding "<name>.preset.json" path in the project folder, appending " (n)"
         // when a file of that name already exists.
         private static string _UniquePresetPath(string folder, string baseName)
+            => _UniqueFilePath(folder, baseName + PropPreset.Extension);
+
+        // Builds a non-colliding path for fileName inside folder, inserting " (n)" before the extension
+        // when a file of that name already exists. The "extension" is everything after the asset kind's
+        // base name, so compound suffixes (e.g. ".avatar.lsb") are preserved; unknown kinds fall back to
+        // the last extension.
+        private static string _UniqueFilePath(string folder, string fileName)
         {
-            var path = Path.Combine(folder, baseName + PropPreset.Extension);
+            var path = Path.Combine(folder, fileName);
+            if (!File.Exists(path)) return path;
+
+            var baseName = AssetTypeRegistry.DeriveName(fileName);
+            var suffix = fileName.Substring(baseName.Length); // leading '.' / compound suffix, or empty
             int counter = 1;
-            while (File.Exists(path))
+            do
             {
-                path = Path.Combine(folder, $"{baseName} ({counter}){PropPreset.Extension}");
+                path = Path.Combine(folder, $"{baseName} ({counter}){suffix}");
                 counter++;
-            }
+            } while (File.Exists(path));
             return path;
         }
 
@@ -845,6 +967,48 @@ namespace Lilium.LiveStudio
                 if (assets[i] != null && assets[i].id == assetId) return assets[i];
             }
             return null;
+        }
+
+        // The entry imported from the given external source path, or null. Compares normalized paths so a
+        // re-add of the same source resolves to its existing entry instead of importing a second copy.
+        private AssetBase _FindByImportSource(string sourcePath)
+        {
+            var key = _MakeId(sourcePath);
+            for (int i = 0; i < assets.Length; i++)
+            {
+                var asset = assets[i];
+                if (asset != null && !string.IsNullOrEmpty(asset.importSourcePath) &&
+                    _MakeId(asset.importSourcePath) == key) return asset;
+            }
+            return null;
+        }
+
+        // True when filePath resolves to a location inside the project folder. Used to register a picked
+        // file already in the project in place rather than copying it onto itself.
+        private static bool _IsInsideProject(string filePath, string projectPath)
+        {
+            string full, root;
+            try
+            {
+                full = Path.GetFullPath(filePath);
+                root = Path.GetFullPath(projectPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            catch
+            {
+                return false;
+            }
+            return string.Equals(full, root, StringComparison.OrdinalIgnoreCase) ||
+                full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // Reassigns the `assets` array from internal code and records the new reference so the next
+        // OnAfterExposedDeserialize does not mistake this self-made change for a live-scene restore. The
+        // JSON deserializer writes the field directly (bypassing this helper), so real restores still
+        // leave the reference differing from _lastAppliedAssets and are detected.
+        private void _SetAssets(AssetBase[] value)
+        {
+            assets = value;
+            _lastAppliedAssets = value;
         }
 
         // Returns a copy of `source` with null entries removed (or an empty array). A persisted asset

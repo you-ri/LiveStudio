@@ -75,6 +75,14 @@ namespace Lilium.LiveStudio
         public string objectId;
 
         /// <summary>
+        /// Absolute path of the external file this asset was imported (copied) from, or empty for
+        /// assets discovered by the project crawl. Lets the remote app re-import (refresh) the
+        /// in-project copy from its original source. Persisted.
+        /// </summary>
+        [ExposedField]
+        public string importSourcePath;
+
+        /// <summary>
         /// Serialized snapshot of this asset's exposed parameter values, captured before unload and
         /// reapplied after reload so edits survive an unload/reload cycle. Hidden from the editor.
         /// </summary>

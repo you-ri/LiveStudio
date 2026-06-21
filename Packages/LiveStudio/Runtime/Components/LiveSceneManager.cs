@@ -97,7 +97,10 @@ namespace Lilium.LiveStudio
         [ExposedFunction(label = "LIVESCENE_OPEN_SAVE_FOLDER"), Hide]
         public static void OpenSaveFolder()
         {
-            var path = SavedPaths.EnsureSceneDirectory();
+            // 現在開いているプロジェクトフォルダ (既定保存先) を開く。未オープン時はベースディレクトリ。
+            var path = !string.IsNullOrEmpty(ProjectManager.projectPath)
+                ? ProjectManager.projectPath
+                : SavedPaths.baseDirectory;
             try
             {
                 var psi = new System.Diagnostics.ProcessStartInfo

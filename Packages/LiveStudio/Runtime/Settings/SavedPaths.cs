@@ -7,14 +7,16 @@ using UnityEngine;
 namespace Lilium.LiveStudio
 {
     /// <summary>
-    /// LiveStudio アプリのユーザー保存ファイル (シーン JSON 等) のベースディレクトリを
-    /// 一元管理する静的 API。デフォルトは MyDocuments/LiveStudio/Saved。
-    /// アプリ側で <see cref="SetBaseDirectory(string)"/> を起動時に呼んでブランド名を上書きできる。
+    /// LiveStudio アプリのユーザー保存ファイル (プロジェクトフォルダ / シーン JSON 等) の
+    /// ベースディレクトリを一元管理する静的 API。デフォルトは
+    /// MyDocuments/&lt;LiveStudioProjectSettings.savedBaseSubDir&gt; (例: "Virgo Motion")、
+    /// 設定が空ならパッケージ既定値 <see cref="kBaseSubDir"/> (LiveStudio/Saved) を使う。
+    /// 個々のプロジェクトはこのベース直下のフォルダ (例: "Virgo Motion/Default") として配置する。
     /// </summary>
     public static class SavedPaths
     {
+        /// <summary>設定が未指定のときに使うパッケージ既定のサブディレクトリ。</summary>
         public const string kBaseSubDir = "LiveStudio/Saved";
-        public const string kSceneSubDir = "Scene";
 
         public static string baseDirectory
         {
@@ -28,16 +30,22 @@ namespace Lilium.LiveStudio
             }
         }
 
-        public static string sceneDirectory => Path.Combine(baseDirectory, kSceneSubDir);
-
         private static string _baseDirectory;
 
+        /// <summary>
+        /// ベースディレクトリを明示的に上書きする (主にテスト用)。通常はアプリ側の
+        /// <see cref="LiveStudioProjectSettings.savedBaseSubDir"/> から自動解決されるため呼ぶ必要はない。
+        /// </summary>
         public static void SetBaseDirectory(string absolutePath)
         {
             _baseDirectory = absolutePath;
         }
 
-        public static string EnsureSceneDirectory() => _EnsureDirectory(sceneDirectory);
+        /// <summary>ベース直下のプロジェクトフォルダパスを返す (生成はしない)。</summary>
+        public static string ProjectDirectory(string projectName) => Path.Combine(baseDirectory, projectName);
+
+        /// <summary>ベース直下のプロジェクトフォルダを生成して返す。</summary>
+        public static string EnsureProjectDirectory(string projectName) => _EnsureDirectory(ProjectDirectory(projectName));
 
         private static string _EnsureDirectory(string path)
         {
@@ -71,7 +79,13 @@ namespace Lilium.LiveStudio
             {
                 root = Application.persistentDataPath;
             }
-            return Path.Combine(root, kBaseSubDir);
+
+            // アプリのブランド名 (例: "Virgo Motion") を設定から取得。空ならパッケージ既定値。
+            var settings = LiveStudioProjectSettings.Instance;
+            var subDir = settings != null && !string.IsNullOrEmpty(settings.savedBaseSubDir)
+                ? settings.savedBaseSubDir
+                : kBaseSubDir;
+            return Path.Combine(root, subDir);
         }
 
 #if UNITY_EDITOR

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.LiveScene;
 
 namespace Lilium.LiveStudio
 {
@@ -48,11 +49,39 @@ namespace Lilium.LiveStudio
         }
 
         // Restore the persisted project path at runtime start (works with Domain Reload disabled).
-        // The crawl itself runs once ExternalAssetManager is ready (see OnAssetManagerReady).
+        // When nothing is persisted (first launch) the initial project folder
+        // Documents/<brand>/<DefaultProject> is created and opened. The crawl itself runs once
+        // ExternalAssetManager is ready (see OnAssetManagerReady).
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void _Initialize()
         {
             _projectPath = PlayerPrefs.GetString(kProjectPathKey, "");
+            if (string.IsNullOrEmpty(_projectPath))
+            {
+                _projectPath = _EnsureInitialProjectPath();
+            }
+
+            // 開いているプロジェクトフォルダを Scene (live scene) の既定保存先に合わせる。
+            _ApplySaveDirectory();
+        }
+
+        // Resolves the initial project folder Documents/<brand>/<DefaultProject> and creates it.
+        // The default project is recomputed from the configured name each launch (not persisted);
+        // only an explicit OpenProject persists a path.
+        private static string _EnsureInitialProjectPath()
+        {
+            var name = LiveStudioProjectSettings.Instance?.defaultProjectName;
+            if (string.IsNullOrEmpty(name)) name = "Untitled";
+            return SavedPaths.EnsureProjectDirectory(name);
+        }
+
+        // Points the live-scene Save As dialog at the currently open project folder.
+        private static void _ApplySaveDirectory()
+        {
+            if (!string.IsNullOrEmpty(_projectPath))
+            {
+                LiveSceneSaveSystem.SetSaveAsDefaultDirectory(_projectPath);
+            }
         }
 
         /// <summary>
@@ -77,6 +106,7 @@ namespace Lilium.LiveStudio
             PlayerPrefs.SetString(kProjectPathKey, folderPath);
             PlayerPrefs.Save();
 
+            _ApplySaveDirectory();
             _Crawl();
         }
 

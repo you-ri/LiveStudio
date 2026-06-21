@@ -36,5 +36,6 @@
     "AVATAR_ANIMATIONPARAMETEROVERRIDES": "アニメーションパラメータ変更",
     "AVATAR_RECEIVER": "レシーバー",
     "CAMERATRACKER_MOTIONSOURCE": "モーションソース",
-    "NOTIFY_PRESET_SAVED": "プリセットを保存しました"
+    "NOTIFY_PRESET_SAVED": "プリセットを保存しました",
+    "NOTIFY_ASSET_REIMPORTED": "アセットを再インポートしました"
 }
