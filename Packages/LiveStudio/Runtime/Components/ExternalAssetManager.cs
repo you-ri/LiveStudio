@@ -54,24 +54,30 @@ namespace Lilium.LiveStudio
 
         public string id => kId;
 
-        // Added assets, exposed as an editable polymorphic array AND persisted directly to the live
-        // scene JSON. The remote app toggles each entry's `enabled` flag (load/unload) and removes
-        // entries. Every entry now lives inside the project folder (imports are copied there, see
-        // AddAsset), so the project crawl reconstructs the whole catalog on load; persisting the array
-        // verbatim therefore just preserves the per-entry enabled / loaded selection and state on top of
-        // that catalog. The disabled catalog is saved too (redundant, since the crawl re-adds it), which
-        // is harmless: RegisterDiscoveredAssets dedups by id. The per-element `@type` discriminator
-        // round-trips the concrete kinds.
+        // Added assets, exposed as an editable polymorphic array. The remote app toggles each entry's
+        // `enabled` flag (load/unload) and removes entries. NOT persisted directly: the live list mixes
+        // the project's disabled catalog (re-created by the project crawl) with the assets actually in
+        // use; only the used ones are persisted, via the `_persistedAssets` shadow below. Persisting the
+        // array directly would let the deferred crawl populate it after the live-scene save baseline is
+        // captured, marking the scene unsaved on every launch (and blocking quit) — the shadow exists to
+        // keep the crawl-built catalog out of the persisted state.
         [NonSerialized]
-        [ExposedField]
+        [ExposedField(persistable = false)]
         private AssetBase[] assets = Array.Empty<AssetBase>();
 
-        // The `assets` reference this manager last produced/applied. Lets OnAfterExposedDeserialize tell
-        // a real restore (FromJson replaces the field reference) from an unrelated property write (an
-        // element is mutated in place, reference unchanged), so a plain enabled-toggle is not clobbered.
-        // Kept in sync by _SetAssets for every internal reassignment.
+        // Persistence shadow for `assets`: holds only the assets actually in use (enabled / loaded), so
+        // the live scene JSON saves the selected avatar / loaded props / active world but NOT the
+        // disabled project catalog. Refreshed in OnBeforeExposedSerialize; applied back to `assets` in
+        // OnAfterExposedDeserialize (the catalog is then re-added by the project crawl).
         [NonSerialized]
-        private AssetBase[] _lastAppliedAssets;
+        [ExposedField, Hide]
+        private AssetBase[] _persistedAssets = Array.Empty<AssetBase>();
+
+        // The `_persistedAssets` reference this manager last applied to / produced for the live set.
+        // Lets OnAfterExposedDeserialize tell a real restore (FromJson replaces the reference) from an
+        // unrelated property write (reference unchanged), so a plain enabled-toggle is not clobbered.
+        [NonSerialized]
+        private AssetBase[] _lastAppliedPersisted;
 
         // Currently-loaded additive (non-exclusive) assets, tracked so entries removed from the array
         // while still loaded can be detected and unloaded.
@@ -118,9 +124,9 @@ namespace Lilium.LiveStudio
 
             RemoteControlBehaviour.onBaseSceneReloaded += _OnBaseSceneReloaded;
 
-            // Match the current array reference so an unrelated property write before any real restore
-            // does not trigger a (clobbering) swap.
-            _lastAppliedAssets = assets;
+            // Match the current persisted reference so an unrelated property write before any real
+            // restore does not trigger a (clobbering) swap.
+            _lastAppliedPersisted = _persistedAssets;
             _initialized = true;
         }
 
@@ -148,40 +154,51 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
-        /// Fires after a live scene is restored. The restore replaced the <see cref="assets"/> array with
-        /// the persisted set; compact any null holes, schedule a diff to (un)load the entries, and re-arm
-        /// the crawl so the project catalog is re-added on the next <see cref="Update"/>.
+        /// Fires after a live scene is restored. The used assets were deserialized into
+        /// <see cref="_persistedAssets"/>; make them the live set, schedule a diff to (un)load them, and
+        /// re-arm the crawl so the project catalog is re-added on the next <see cref="Update"/>.
         /// </summary>
         public void OnAfterExposedDeserialize()
         {
             if (!Application.isPlaying) return;
 
             // This callback also fires after every individual exposed-property write (the owner's
-            // IExposedDeserializeCallback), not only after a full live-scene restore. A property write
-            // (e.g. an enabled-toggle on assets/{i}/enabled) mutates an element in place and leaves the
-            // `assets` field reference unchanged, while a full restore replaces the field with a freshly
-            // deserialized array. React ONLY to the latter — detected by the reference differing from the
-            // last one this manager produced (kept in sync by _SetAssets). Otherwise a plain toggle would
-            // re-run the apply and clobber the just-toggled selection.
-            if (ReferenceEquals(assets, _lastAppliedAssets)) return;
+            // IExposedDeserializeCallback), not only after a full live-scene restore. Apply the
+            // persisted set to the live `assets` array ONLY when `_persistedAssets` was actually
+            // re-deserialized by a restore — detected by its reference changing to one this manager did
+            // not produce in OnBeforeExposedSerialize. Otherwise a plain enabled-toggle write would wipe
+            // the live assets (and the just-toggled selection).
+            if (ReferenceEquals(_persistedAssets, _lastAppliedPersisted)) return;
 
+            _lastAppliedPersisted = _persistedAssets;
             // A persisted entry deserializes to null when its @type is no longer registered (e.g.
             // saved data referencing a removed/renamed asset kind). Compact those holes out so a null
             // never reaches the live array or a broadcast — consumers that project the list
             // (StageManager, the remote app) would otherwise dereference null and crash.
-            _SetAssets(_WithoutNulls(assets));
+            assets = _WithoutNulls(_persistedAssets);
             _dirty = true;
             _assetManagerReadyNotified = false;
         }
 
         /// <summary>
         /// Fires before persistence. Refreshes each loaded asset's <see cref="AssetBase.state"/> from its
-        /// live values so the saved <see cref="assets"/> array carries the latest edits. The array itself
-        /// is persisted verbatim (see its declaration); the project crawl rebuilds the catalog on load.
+        /// live values, then captures only the in-use assets (enabled / loaded) into
+        /// <see cref="_persistedAssets"/> so the saved live scene excludes the disabled project catalog.
         /// </summary>
         public void OnBeforeExposedSerialize()
         {
             for (int i = 0; i < _loaded.Count; i++) _loaded[i].CaptureState();
+
+            var used = new List<AssetBase>();
+            for (int i = 0; i < assets.Length; i++)
+            {
+                var asset = assets[i];
+                if (asset != null && (asset.enabled || asset.isLoaded)) used.Add(asset);
+            }
+            _persistedAssets = used.ToArray();
+            // We produced this reference (not a restore); record it so OnAfterExposedDeserialize does
+            // not re-apply it on a later property write.
+            _lastAppliedPersisted = _persistedAssets;
         }
 
         public void Update()
@@ -303,7 +320,7 @@ namespace Lilium.LiveStudio
             }
 
             var list = new List<AssetBase>(assets) { asset };
-            _SetAssets(list.ToArray());
+            assets = list.ToArray();
 
             _dirty = true;
             // Keep the project catalog in sync (dedups by id, so the just-added entry is untouched).
@@ -377,7 +394,7 @@ namespace Lilium.LiveStudio
             }
 
             if (!changed) return;
-            _SetAssets(list.ToArray());
+            assets = list.ToArray();
             _Broadcast();
         }
 
@@ -408,7 +425,7 @@ namespace Lilium.LiveStudio
 
             var list = new List<AssetBase>(assets);
             list.RemoveAll(e => e != null && e.id == assetId);
-            _SetAssets(list.ToArray());
+            assets = list.ToArray();
 
             _Broadcast();
         }
@@ -906,16 +923,6 @@ namespace Lilium.LiveStudio
             }
             return string.Equals(full, root, StringComparison.OrdinalIgnoreCase) ||
                 full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
-        }
-
-        // Reassigns the `assets` array from internal code and records the new reference so the next
-        // OnAfterExposedDeserialize does not mistake this self-made change for a live-scene restore. The
-        // JSON deserializer writes the field directly (bypassing this helper), so real restores still
-        // leave the reference differing from _lastAppliedAssets and are detected.
-        private void _SetAssets(AssetBase[] value)
-        {
-            assets = value;
-            _lastAppliedAssets = value;
         }
 
         // Returns a copy of `source` with null entries removed (or an empty array). A persisted asset
