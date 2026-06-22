@@ -138,7 +138,7 @@ namespace Lilium.LiveStudio
 
         Animator _animator;
         MotionSourceBase _motionSource;
-        bool _isTracking;
+        AvatarVisibilityGate _visibilityGate;
 
         // 子 prop (AvatarProp) のパラメータブリッジ用。controller 宣言パラメータの nameHash 集合。
         System.Collections.Generic.HashSet<int> _paramHashes;
@@ -168,12 +168,7 @@ namespace Lilium.LiveStudio
         // VRChat 表情マッピングの選択・パラメータ適用は共通ドライバに委譲する。
         VRCExpressionDriver _expressionDriver;
 
-        Transform _leftEyeBone;
-        Transform _rightEyeBone;
-        Quaternion _leftEyeNeutral;
-        Quaternion _rightEyeNeutral;
-        Quaternion _leftEyeOffset;
-        Quaternion _rightEyeOffset;
+        EyeBoneRig _eyeRig;
         float _eyeLeftX, _eyeLeftY, _eyeRightX, _eyeRightY;
 
 #if VRMC_VRM10
@@ -244,8 +239,8 @@ namespace Lilium.LiveStudio
                                   && _blinkBlendShapeIndex >= 0
                                   && _blinkBlendShapeIndex < _eyelidsMesh.sharedMesh.blendShapeCount;
 
-            _SetupEyeBones();
-            _isTracking = false;
+            _eyeRig.Setup(_animator);
+            _visibilityGate.Initialize(transform);
 
 #if VRMC_VRM10
             // Vrm10Instance が同居していれば VRM の LookAt 経由で眼球を適用する。
@@ -260,23 +255,6 @@ namespace Lilium.LiveStudio
             ((IAvatar)this).BuildAvatar();
         }
 
-        void _SetupEyeBones()
-        {
-            _leftEyeBone = _animator.GetBoneTransform(HumanBodyBones.LeftEye);
-            _rightEyeBone = _animator.GetBoneTransform(HumanBodyBones.RightEye);
-            var headBone = _animator.GetBoneTransform(HumanBodyBones.Head);
-
-            if (_leftEyeBone != null && headBone != null)
-            {
-                _leftEyeNeutral = _leftEyeBone.localRotation;
-                _leftEyeOffset = Quaternion.Inverse(headBone.rotation) * _leftEyeBone.rotation;
-            }
-            if (_rightEyeBone != null && headBone != null)
-            {
-                _rightEyeNeutral = _rightEyeBone.localRotation;
-                _rightEyeOffset = Quaternion.Inverse(headBone.rotation) * _rightEyeBone.rotation;
-            }
-        }
 
         void OnDestroy()
         {
@@ -285,21 +263,8 @@ namespace Lilium.LiveStudio
 
         void Update()
         {
-            if (_motionSource == null || !_motionSource.frameData.isValid)
-            {
-                if (_isTracking)
-                {
-                    _SetShowMeshes(false);
-                }
-                _isTracking = false;
-                return;
-            }
-
-            if (!_isTracking)
-            {
-                _SetShowMeshes(true);
-            }
-            _isTracking = true;
+            bool isValid = _motionSource != null && _motionSource.frameData.isValid;
+            if (!_visibilityGate.Update(isValid)) return;
 
             // ARKit 52 weight を resolver で reshape (neutral 表情の差分 + 各表情ウェイト合成 + スムージング)。
             // 以降のロジックは resolver の arkitWeightData / smoothedOutputs を参照する。
@@ -343,7 +308,7 @@ namespace Lilium.LiveStudio
 
         void LateUpdate()
         {
-            if (!_isTracking || _motionSource == null) return;
+            if (!_visibilityGate.isTracking || _motionSource == null) return;
 
             AvatarAnimationSystem.UpdateBodyAnimation(_animator, in _motionSource.frameData);
 
@@ -355,7 +320,7 @@ namespace Lilium.LiveStudio
             // Eyes & Eyelids が Animation のときは eye bone 回転を止め FX に明け渡す。
             if (_tracking[kTrackEyes] == AvatarTrackingType.Tracking)
             {
-                _ApplyEyeRotation();
+                _eyeRig.Apply(_eyeLeftX, _eyeLeftY, _eyeRightX, _eyeRightY, _eyeRotationMax);
             }
         }
 
@@ -555,53 +520,15 @@ namespace Lilium.LiveStudio
             }
         }
 
-        void _ApplyEyeRotation()
-        {
-            if (_leftEyeBone != null)
-            {
-                // EyeLeftX: 正=左向き(LookOut) なので反転して正=右向きに統一
-                float yaw = _eyeLeftX * _eyeRotationMax.x;
-                float pitch = _eyeLeftY * _eyeRotationMax.y;
-                Vector3 input = new Vector3(-pitch, -yaw, 0f);
-                _leftEyeBone.localRotation = Quaternion.Inverse(_leftEyeOffset) * Quaternion.Euler(input) * _leftEyeOffset * _leftEyeNeutral;
-            }
-
-            if (_rightEyeBone != null)
-            {
-                float yaw = -_eyeRightX * _eyeRotationMax.x;
-                float pitch = _eyeRightY * _eyeRotationMax.y;
-                Vector3 input = new Vector3(-pitch, -yaw, 0f);
-                _rightEyeBone.localRotation = Quaternion.Inverse(_rightEyeOffset) * Quaternion.Euler(input) * _rightEyeOffset * _rightEyeNeutral;
-            }
-        }
-
-        void _SetShowMeshes(bool visible)
-        {
-            var renderers = GetComponentsInChildren<Renderer>();
-            foreach (var renderer in renderers)
-            {
-                renderer.enabled = visible;
-            }
-        }
 
         #region IAvatar
 
         void IAvatar.BuildAvatar()
         {
-            if (_animator == null || _animator.avatar == null)
-            {
-                return;
-            }
-
-            var humanDescription = _animator.avatar.humanDescription;
-            var avatarBuildData = AvatarBuildSystem.CreateAvatarBuildData(transform, humanDescription);
-            if (avatarBuildData.humanBones == null || avatarBuildData.humanBones.Length == 0)
-            {
-                Debug.LogError("[Studio] VRCAvatar: Failed to extract Avatar data.");
-                return;
-            }
-
-            AvatarBuildNotifier.NotifyAvatarBuilt(in avatarBuildData);
+            // 旧実装は animator/avatar 未準備時に無言で return していたため、共通ヘルパーの
+            // null ログを避けるべくここで silent ガードしてから委譲する。
+            if (_animator == null || _animator.avatar == null) return;
+            AvatarBuildNotifier.BuildAndNotify(_animator, "VRCAvatar");
         }
 
         void IAvatar.SetExpressionConfig(AvatarExpressionConfig config)

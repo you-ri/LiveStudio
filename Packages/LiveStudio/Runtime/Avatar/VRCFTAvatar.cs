@@ -313,12 +313,7 @@ namespace Lilium.LiveStudio
         // 書き込み先は PlayableGraph 内の AnimatorController (driver.controllerPlayable)。
         VRCExpressionDriver _expressionDriver;
 
-        Transform _leftEyeBone;
-        Transform _rightEyeBone;
-        Quaternion _leftEyeNeutral;
-        Quaternion _rightEyeNeutral;
-        Quaternion _leftEyeOffset;
-        Quaternion _rightEyeOffset;
+        EyeBoneRig _eyeRig;
 
 #if VRMC_VRM10
         // Vrm10Instance がある場合は VRM の LookAt に視線を委譲する。
@@ -380,7 +375,7 @@ namespace Lilium.LiveStudio
 
             expressionResolver.Setup();
 
-            _SetupEyeBones();
+            _eyeRig.Setup(_animator);
 
 #if VRMC_VRM10
             // Vrm10Instance が同居していれば VRM の LookAt 経由で眼球を適用する。
@@ -401,23 +396,6 @@ namespace Lilium.LiveStudio
             expressionResolver?.Dispose();
         }
 
-        void _SetupEyeBones()
-        {
-            _leftEyeBone = _animator.GetBoneTransform(HumanBodyBones.LeftEye);
-            _rightEyeBone = _animator.GetBoneTransform(HumanBodyBones.RightEye);
-            var headBone = _animator.GetBoneTransform(HumanBodyBones.Head);
-
-            if (_leftEyeBone != null && headBone != null)
-            {
-                _leftEyeNeutral = _leftEyeBone.localRotation;
-                _leftEyeOffset = Quaternion.Inverse(headBone.rotation) * _leftEyeBone.rotation;
-            }
-            if (_rightEyeBone != null && headBone != null)
-            {
-                _rightEyeNeutral = _rightEyeBone.localRotation;
-                _rightEyeOffset = Quaternion.Inverse(headBone.rotation) * _rightEyeBone.rotation;
-            }
-        }
 
         void Update()
         {
@@ -450,7 +428,8 @@ namespace Lilium.LiveStudio
             // ここでの直接書き込みは行わない（行うと VRM に上書きされる/競合する）。
             if (_vrm10LookAt != null) return;
 #endif
-            _ApplyEyeRotation();
+            _eyeRig.Apply(_targetValues[FT_EyeLeftX], _targetValues[FT_EyeLeftY],
+                _targetValues[FT_EyeRightX], _targetValues[FT_EyeRightY], _eyeRotationMax);
         }
 
         // Vrm10Instance がある場合のみ、VRM の LookAt に視線(yaw/pitch)を委譲する。
@@ -654,25 +633,6 @@ namespace Lilium.LiveStudio
             }
         }
 
-        void _ApplyEyeRotation()
-        {
-            if (_leftEyeBone != null)
-            {
-                // EyeLeftX: 正=左向き(LookOut) なので反転して正=右向きに統一
-                float yaw = _targetValues[FT_EyeLeftX] * _eyeRotationMax.x;
-                float pitch = _targetValues[FT_EyeLeftY] * _eyeRotationMax.y;
-                Vector3 input = new Vector3(-pitch, -yaw, 0f);
-                _leftEyeBone.localRotation = Quaternion.Inverse(_leftEyeOffset) * Quaternion.Euler(input) * _leftEyeOffset * _leftEyeNeutral;
-            }
-
-            if (_rightEyeBone != null)
-            {
-                float yaw = -_targetValues[FT_EyeRightX] * _eyeRotationMax.x;
-                float pitch = _targetValues[FT_EyeRightY] * _eyeRotationMax.y;
-                Vector3 input = new Vector3(-pitch, -yaw, 0f);
-                _rightEyeBone.localRotation = Quaternion.Inverse(_rightEyeOffset) * Quaternion.Euler(input) * _rightEyeOffset * _rightEyeNeutral;
-            }
-        }
 
         /// <summary>
         /// VRChat ExpressionsMenu から移植した表情マッピングを注入する (変換ツールから呼ばれる)。

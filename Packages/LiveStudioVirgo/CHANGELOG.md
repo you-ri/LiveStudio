@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.23.5] - 2026-06-22
+
+### Added
+
+- The Readme inspector now verifies the project settings required for gamepad background input (Player Settings "Run In Background" and Input System "Background Behavior = Ignore Focus"). When either is disabled it shows a warning with a one-click button that enables both, so gamepad input keeps working in builds while the app is not the foreground window.
+
 ## [0.23.0] - 2026-06-21
 
 ### Changed

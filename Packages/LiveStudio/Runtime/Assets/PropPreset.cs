@@ -22,22 +22,20 @@ namespace Lilium.LiveStudio
     /// project folder and are crawled as loadable entries, so a user can adjust an object in the live
     /// scene, save it as a named preset, and recall the configuration later.
     ///
-    /// <para>Structure (v2, asset strategy):</para>
+    /// <para>Structure (asset strategy):</para>
     /// <code>
     /// {
-    ///   "format": "object.preset",
-    ///   "version": 2,
+    ///   "format": "jp.lilium.remotecontrol.preset",
+    ///   "formatVersion": 1,
     ///   "name": "&lt;display name&gt;",
     ///   "target": {
     ///     "strategy": "asset",
     ///     "kind": "prop",              // or "avatar" — which concrete asset to recreate
-    ///     "source": "Props/foo.glb",   // relative to the preset file when possible, else absolute
-    ///     "sourceKind": "glb"           // redundant kind hint for validation
+    ///     "source": "Props/foo.glb"    // relative to the preset file when possible, else absolute
     ///   },
     ///   "state": { ... AssetStateSnapshot-shaped state (prop: delta, avatar: full) ... }
     /// }
     /// </code>
-    /// Legacy <c>prop.preset</c> files (root-level <c>source</c>) are still read for back-compat.
     /// </summary>
     public static class PropPreset
     {
@@ -45,20 +43,16 @@ namespace Lilium.LiveStudio
         public const string Extension = ".preset.json";
 
         /// <summary>
-        /// Format discriminator stored in the file. v2 wraps the recreation info in a
-        /// <c>target</c> descriptor so additional strategies can be added later; the legacy
-        /// <see cref="LegacyPropFormatId"/> (root-level <c>source</c>) is still read for back-compat.
+        /// Format discriminator stored in the <c>format</c> field. Aligned with the live scene
+        /// format identifier scheme (<c>jp.lilium.remotecontrol.*</c>).
         /// </summary>
-        public const string FormatId = "object.preset";
-
-        /// <summary>Legacy format id (prop presets written before the generic target descriptor).</summary>
-        public const string LegacyPropFormatId = "prop.preset";
+        public const string FormatId = "jp.lilium.remotecontrol.preset";
 
         /// <summary>Recreation strategy: load an external source asset (prop / avatar) and reapply state.</summary>
         public const string StrategyAsset = "asset";
 
         /// <summary>Current file format version.</summary>
-        public const int Version = 2;
+        public const int CurrentFormatVersion = 1;
 
         /// <summary>Which concrete asset kind a preset recreates (drives PropAsset vs AvatarAsset on crawl).</summary>
         public enum AssetKind { Prop, Avatar }
@@ -72,9 +66,6 @@ namespace Lilium.LiveStudio
             /// <summary>Source asset reference (relative to the preset file, or absolute).</summary>
             public string source;
 
-            /// <summary>Source kind hint (e.g. <c>prop.lsb</c> / <c>glb</c> / <c>vrm</c> / <c>avatar.lsb</c>).</summary>
-            public string sourceKind;
-
             /// <summary>Concrete asset kind to instantiate when loading the preset.</summary>
             public AssetKind kind;
 
@@ -85,24 +76,6 @@ namespace Lilium.LiveStudio
         /// <summary>True if <paramref name="path"/> names a prop preset (<c>*.preset.json</c>).</summary>
         public static bool IsPresetFile(string path)
             => !string.IsNullOrEmpty(path) && path.EndsWith(Extension, StringComparison.OrdinalIgnoreCase);
-
-        /// <summary>
-        /// Returns a short kind hint for a source asset path (<c>prop.lsb</c> / <c>glb</c> /
-        /// <c>gltf</c> / <c>avatar.lsb</c> / <c>vrm</c> / <c>lsavatar</c>), or the plain extension
-        /// without the dot as a fallback.
-        /// </summary>
-        public static string GetSourceKind(string sourcePath)
-        {
-            if (string.IsNullOrEmpty(sourcePath)) return "";
-            if (LiveStudioBundle.IsPropBundle(sourcePath)) return "prop.lsb";
-            if (sourcePath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase)) return "glb";
-            if (sourcePath.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase)) return "gltf";
-            if (sourcePath.EndsWith(".vrm", StringComparison.OrdinalIgnoreCase)) return "vrm";
-            // The legacy *.lsavatar suffix must be checked before IsAvatarBundle, which also matches it.
-            if (sourcePath.EndsWith(LiveStudioBundle.LegacyAvatarExtension, StringComparison.OrdinalIgnoreCase)) return "lsavatar";
-            if (LiveStudioBundle.IsAvatarBundle(sourcePath)) return "avatar.lsb";
-            return Path.GetExtension(sourcePath).TrimStart('.').ToLowerInvariant();
-        }
 
         /// <summary>
         /// Reads a preset file and returns which concrete asset kind it recreates, defaulting to
@@ -125,7 +98,7 @@ namespace Lilium.LiveStudio
         /// it is embedded as a parsed object so the file stays readable. The recreation info is wrapped
         /// in a <c>target</c> descriptor so future strategies can extend the format.
         /// </summary>
-        public static string BuildJson(AssetKind kind, string name, string source, string sourceKind, string stateJson)
+        public static string BuildJson(AssetKind kind, string name, string source, string stateJson)
         {
             JToken state;
             if (string.IsNullOrEmpty(stateJson))
@@ -143,13 +116,12 @@ namespace Lilium.LiveStudio
                 ["strategy"] = StrategyAsset,
                 ["kind"] = kind == AssetKind.Avatar ? "avatar" : "prop",
                 ["source"] = source ?? "",
-                ["sourceKind"] = sourceKind ?? "",
             };
 
             var root = new JObject
             {
                 ["format"] = FormatId,
-                ["version"] = Version,
+                ["formatVersion"] = CurrentFormatVersion,
                 ["name"] = name ?? "",
                 ["target"] = target,
                 ["state"] = state,
@@ -158,9 +130,8 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
-        /// Parses preset file JSON. Accepts both the v2 <c>object.preset</c> format (with a
-        /// <c>target</c> descriptor) and the legacy <c>prop.preset</c> format (root-level
-        /// <c>source</c>/<c>sourceKind</c>, always a prop). Returns false (and logs) if the content is
+        /// Parses preset file JSON in the <c>jp.lilium.remotecontrol.preset</c> format (recreation
+        /// info under a <c>target</c> descriptor). Returns false (and logs) if the content is
         /// unparseable, is not a preset, or targets a newer format version.
         /// </summary>
         public static bool TryParse(string json, out PresetData data)
@@ -184,31 +155,21 @@ namespace Lilium.LiveStudio
             data.name = root["name"]?.Value<string>() ?? "";
             data.state = root["state"] is JObject stateObj ? stateObj.ToString(Formatting.None) : null;
 
-            // Legacy prop preset: source/sourceKind at the root, always a prop.
-            if (string.Equals(format, LegacyPropFormatId, StringComparison.Ordinal))
-            {
-                data.source = root["source"]?.Value<string>() ?? "";
-                data.sourceKind = root["sourceKind"]?.Value<string>() ?? "";
-                data.kind = AssetKind.Prop;
-                return true;
-            }
-
             if (!string.Equals(format, FormatId, StringComparison.Ordinal))
             {
                 Debug.LogError($"[LiveStudio] Not a preset (format='{format}').");
                 return false;
             }
 
-            var version = root["version"]?.Value<int>() ?? 0;
-            if (version > Version)
+            var formatVersion = root["formatVersion"]?.Value<int>() ?? 0;
+            if (formatVersion > CurrentFormatVersion)
             {
-                Debug.LogError($"[LiveStudio] Preset version {version} is newer than supported ({Version}).");
+                Debug.LogError($"[LiveStudio] Preset format version {formatVersion} is newer than supported ({CurrentFormatVersion}).");
                 return false;
             }
 
             var target = root["target"] as JObject;
             data.source = target?["source"]?.Value<string>() ?? "";
-            data.sourceKind = target?["sourceKind"]?.Value<string>() ?? "";
             data.kind = string.Equals(target?["kind"]?.Value<string>(), "avatar", StringComparison.Ordinal)
                 ? AssetKind.Avatar
                 : AssetKind.Prop;

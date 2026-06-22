@@ -196,23 +196,8 @@ namespace Lilium.RemoteControl.Reflection
         /// <returns>PropertyInfo（存在しない場合はnull）</returns>
         public static PropertyInfo GetProperty(Type type, string name, BindingFlags flags = kDefaultFlags)
         {
-            if (type == null || string.IsNullOrEmpty(name)) return null;
-
-            // キャッシュキーにはprefixを付けてプロパティとフィールドを区別
-            var cacheKey = "p:" + name;
-
-            if (ReflectionCache.TryGetMember(type, cacheKey, out var cached))
-            {
-                return cached as PropertyInfo;
-            }
-
-            var prop = type.GetProperty(name, flags);
-            if (prop != null)
-            {
-                ReflectionCache.SetMember(type, cacheKey, prop);
-            }
-
-            return prop;
+            // prefix "p:" でフィールドのキャッシュエントリと区別する
+            return _GetCachedMember(type, name, "p:", _lookupProperty, flags);
         }
 
         /// <summary>
@@ -224,23 +209,36 @@ namespace Lilium.RemoteControl.Reflection
         /// <returns>FieldInfo（存在しない場合はnull）</returns>
         public static FieldInfo GetField(Type type, string name, BindingFlags flags = kDefaultFlags)
         {
+            // prefix "f:" でプロパティのキャッシュエントリと区別する
+            return _GetCachedMember(type, name, "f:", _lookupField, flags);
+        }
+
+        // GetProperty / GetField 共通のキャッシュ定型: null/空チェック → prefix 付き cacheKey で
+        // ReflectionCache を引き、ミスなら reflection で取得してキャッシュする。delegate は
+        // static readonly で1度だけ確保し per-call の GC を避ける。
+        private static readonly Func<Type, string, BindingFlags, PropertyInfo> _lookupProperty =
+            (t, n, f) => t.GetProperty(n, f);
+        private static readonly Func<Type, string, BindingFlags, FieldInfo> _lookupField =
+            (t, n, f) => t.GetField(n, f);
+
+        private static T _GetCachedMember<T>(Type type, string name, string prefix,
+            Func<Type, string, BindingFlags, T> lookup, BindingFlags flags) where T : MemberInfo
+        {
             if (type == null || string.IsNullOrEmpty(name)) return null;
 
-            // キャッシュキーにはprefixを付けてプロパティとフィールドを区別
-            var cacheKey = "f:" + name;
-
+            var cacheKey = prefix + name;
             if (ReflectionCache.TryGetMember(type, cacheKey, out var cached))
             {
-                return cached as FieldInfo;
+                return cached as T;
             }
 
-            var field = type.GetField(name, flags);
-            if (field != null)
+            var member = lookup(type, name, flags);
+            if (member != null)
             {
-                ReflectionCache.SetMember(type, cacheKey, field);
+                ReflectionCache.SetMember(type, cacheKey, member);
             }
 
-            return field;
+            return member;
         }
 
         /// <summary>

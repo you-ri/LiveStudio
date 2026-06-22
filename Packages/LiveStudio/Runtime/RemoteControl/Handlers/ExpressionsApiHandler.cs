@@ -10,7 +10,6 @@ using Lilium.RemoteControl;
 using Lilium.RemoteControl.Core;
 using Lilium.RemoteControl.Server;
 using Lilium.RemoteControl.RestApi;
-using Newtonsoft.Json;
 
 namespace Lilium.LiveStudio
 {
@@ -107,17 +106,14 @@ namespace Lilium.LiveStudio
 
         protected override async Task HandlePostRequest(HttpListenerContext context)
         {
-            var body = await ReadRequestBody(context.Request);
-                
-            if (string.IsNullOrEmpty(body))
+            var (ok, request, error) = await TryReadRequest<ExpressionControlRequest>(context.Request);
+            if (!ok)
             {
-                await WriteError(context, 400, "Empty request body");
+                await WriteError(context, 400, error);
                 return;
             }
 
-            var request = JsonConvert.DeserializeObject<ExpressionControlRequest>(body);
-
-            if (request?.data != null)
+            if (request.data != null)
             {
                 var response = await ExecuteOnMainThread(() => {
                     var result = ExecuteExpressionAction(request.data);

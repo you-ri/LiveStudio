@@ -12,7 +12,7 @@ namespace Lilium.LiveStudio
     /// バンドルをロードして単一の root プレハブを取り出し、インスタンス化したアバターを返す。
     /// 生成済みアセットを生かしたままバンドルコンテナのみ即解放するため、同一ファイルの再ロードも可能。
     /// </summary>
-    internal sealed class LsAvatarLoader : IExternalAvatarLoader
+    internal sealed class AvatarBundleLoader : IExternalAvatarLoader
     {
         public async Task<GameObject> LoadAsync(string filePath, Transform parent)
         {

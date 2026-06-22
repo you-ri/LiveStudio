@@ -54,8 +54,7 @@ namespace Lilium.LiveStudio
             if (loaded == null)
             {
                 // Reflect the failure back as disabled so the UI is not stuck "on".
-                enabled = false;
-                isLoaded = false;
+                MarkLoadFailed();
                 return;
             }
 

@@ -19,7 +19,7 @@ namespace Lilium.LiveStudio
     [RequireComponent(typeof(VRMBlendShapeProxy))]
     public class VRM0Avatar : MonoBehaviour, IAvatar
     {
-        private bool _isTracking = false;
+        private AvatarVisibilityGate _visibilityGate;
 
         private Animator _animator;
 
@@ -79,7 +79,7 @@ namespace Lilium.LiveStudio
             _InitializeLookAt();
             _InitializeSpringBones();
 
-            _isTracking = false;
+            _visibilityGate.Initialize(transform);
         }
 
         void OnValidate()
@@ -101,36 +101,10 @@ namespace Lilium.LiveStudio
             expressionResolver.Dispose();
         }
 
-        void _SetShowMeshes(bool visible)
-        {
-            var renderers = GetComponentsInChildren<Renderer>();
-            foreach (var renderer in renderers)
-            {
-                renderer.enabled = visible;
-            }
-        }
-
         void Update()
         {
-            if (_motionSource == null || !_motionSource.frameData.isValid)
-            {
-                if (_isTracking)
-                {
-                    // トラッキングロスト
-                    _SetShowMeshes(false);
-                }
-                _isTracking = false;
-                return;
-            }
-            else
-            {
-                if (!_isTracking)
-                {
-                    // トラッキング復帰
-                    _SetShowMeshes(true);
-                }
-                _isTracking = true;
-            }
+            bool isValid = _motionSource != null && _motionSource.frameData.isValid;
+            if (!_visibilityGate.Update(isValid)) return;
 
             if (_animator != null)
             {
@@ -435,21 +409,7 @@ namespace Lilium.LiveStudio
         // IAvatar implementation
         void IAvatar.BuildAvatar()
         {
-            if (_animator == null || _animator.avatar == null)
-            {
-                Debug.LogError("[Studio] VRM0Avatar: Animator or Avatar is null.");
-                return;
-            }
-
-            var humanDescription = _animator.avatar.humanDescription;
-            var avatarBuildData = AvatarBuildSystem.CreateAvatarBuildData(transform, humanDescription);
-            if (avatarBuildData.humanBones == null || avatarBuildData.humanBones.Length == 0)
-            {
-                Debug.LogError("[Studio] VRM0Avatar: Failed to extract Avatar data.");
-                return;
-            }
-
-            AvatarBuildNotifier.NotifyAvatarBuilt(in avatarBuildData);
+            AvatarBuildNotifier.BuildAndNotify(_animator, "VRM0Avatar");
         }
 
         void IAvatar.SetExpressionConfig(AvatarExpressionConfig config)

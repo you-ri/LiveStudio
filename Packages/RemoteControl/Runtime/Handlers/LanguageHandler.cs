@@ -38,36 +38,34 @@ namespace Lilium.RemoteControl
 
         protected override async Task HandlePutRequest(HttpListenerContext context)
         {
-            try
+            var (ok, jObject, error) = await TryReadRequest<JObject>(context.Request,
+                emptyMessage: "Invalid JSON body.", invalidMessage: "Invalid JSON body.");
+            if (!ok)
             {
-                var body = await ReadRequestBody(context.Request).ConfigureAwait(false);
-                var jObject = JObject.Parse(body);
-                var language = jObject["language"]?.ToString();
-
-                if (string.IsNullOrEmpty(language))
-                {
-                    await WriteError(context, 400, "'language' field is required.");
-                    return;
-                }
-
-                await ExecuteOnMainThread(() =>
-                {
-                    LocalizationSystem.currentLanguage = language;
-                });
-
-                var responseObj = new JObject
-                {
-                    ["success"] = true,
-                    ["current"] = language
-                };
-
-                context.Response.StatusCode = 200;
-                await WriteResponse(context.Response, responseObj.ToString(Formatting.None));
+                await WriteError(context, 400, error);
+                return;
             }
-            catch (JsonException)
+
+            var language = jObject["language"]?.ToString();
+            if (string.IsNullOrEmpty(language))
             {
-                await WriteError(context, 400, "Invalid JSON body.");
+                await WriteError(context, 400, "'language' field is required.");
+                return;
             }
+
+            await ExecuteOnMainThread(() =>
+            {
+                LocalizationSystem.currentLanguage = language;
+            });
+
+            var responseObj = new JObject
+            {
+                ["success"] = true,
+                ["current"] = language
+            };
+
+            context.Response.StatusCode = 200;
+            await WriteResponse(context.Response, responseObj.ToString(Formatting.None));
         }
     }
 }

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.23.5] - 2026-06-22
+
+### Changed
+
+- Object preset files (`*.preset.json`) now use the `jp.lilium.remotecontrol.preset` format identifier with a `formatVersion` field, aligned with the live-scene file format. The redundant `sourceKind` hint was dropped (it is derived from the source path).
+
+### Removed
+
+- Backward-compatible reading of the legacy `prop.preset` preset format; presets saved before this change must be re-saved.
+
 ## [0.23.1] - 2026-06-21
 
 ### Fixed

@@ -258,17 +258,14 @@ namespace Lilium.LiveStudio
             }
 
             // /api/camera エンドポイント
-            var body = await ReadRequestBody(context.Request);
-
-            if (string.IsNullOrEmpty(body))
+            var (ok, request, error) = await TryReadRequest<CameraControlRequest>(context.Request);
+            if (!ok)
             {
-                await WriteError(context, 400, "Empty request body");
+                await WriteError(context, 400, error);
                 return;
             }
 
-            var request = JsonConvert.DeserializeObject<CameraControlRequest>(body);
-
-            if (request?.data != null)
+            if (request.data != null)
             {
                 var response = await ExecuteOnMainThread(() => {
                     var result = ExecuteCameraAction(request.data);
@@ -291,17 +288,14 @@ namespace Lilium.LiveStudio
 
         private async Task HandleSwitchRequest(HttpListenerContext context)
         {
-            var body = await ReadRequestBody(context.Request);
-
-            if (string.IsNullOrEmpty(body))
+            var (ok, request, error) = await TryReadRequest<CameraSwitchRequest>(context.Request, invalidMessage: "Invalid or missing cameraId");
+            if (!ok)
             {
-                await WriteError(context, 400, "Empty request body");
+                await WriteError(context, 400, error);
                 return;
             }
 
-            var request = JsonConvert.DeserializeObject<CameraSwitchRequest>(body);
-
-            if (request == null || string.IsNullOrEmpty(request.cameraId) || !Guid.TryParse(request.cameraId, out Guid cameraId))
+            if (string.IsNullOrEmpty(request.cameraId) || !Guid.TryParse(request.cameraId, out Guid cameraId))
             {
                 await WriteError(context, 400, "Invalid or missing cameraId");
                 return;

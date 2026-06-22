@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEditor;
 using System;
 using System.IO;
@@ -169,6 +170,8 @@ public class ReadmeEditor : UnityEditor.Editor
             GUILayout.Space(k_Space);
         }
 
+        DrawProjectSettings(lang);
+
         DrawOptionalPackages(readme, lang);
     }
 
@@ -248,6 +251,94 @@ public class ReadmeEditor : UnityEditor.Editor
 
         EditorGUI.EndDisabledGroup();
         GUILayout.Space(k_Space);
+    }
+
+    // Draws the "Project Settings Verification" section. Each project-readiness check is a sub-item
+    // under this heading; more checks are expected to be added here over time.
+    void DrawProjectSettings(string lang)
+    {
+        GUILayout.Label(
+            Localize(lang, "Project Settings Verification", "プロジェクト設定の検証", "项目设置验证"),
+            HeadingStyle);
+
+        DrawBackgroundInputCheck(lang);
+    }
+
+    // Verifies the project settings required for gamepad input to keep working while the built app
+    // is not the foreground window. Two settings must be enabled together:
+    //   - Player Settings "Run In Background" so the player loop keeps running without focus.
+    //   - Input System "Background Behavior = Ignore Focus" so the Input System does not disable
+    //     devices when focus is lost.
+    // When either is off, a warning and a one-click fix button are shown.
+    void DrawBackgroundInputCheck(string lang)
+    {
+        bool runInBackground = PlayerSettings.runInBackground;
+        bool ignoreFocus = InputSystem.settings != null &&
+            InputSystem.settings.backgroundBehavior == InputSettings.BackgroundBehavior.IgnoreFocus;
+        bool ok = runInBackground && ignoreFocus;
+
+        // Item title on the left, status/fix button right-aligned (same layout as Optional Packages).
+        GUILayout.BeginHorizontal();
+        GUILayout.Label(
+            Localize(lang, "Gamepad Background Input", "ゲームパッドのバックグラウンド入力", "手柄后台输入"),
+            BodyStyle);
+        GUILayout.FlexibleSpace();
+        if (ok)
+        {
+            GUILayout.Label(Localize(lang, "Enabled", "有効", "已启用"), BodyStyle);
+        }
+        else if (GUILayout.Button(
+                     Localize(lang, "Enable", "有効化", "启用"),
+                     ButtonStyle, GUILayout.ExpandWidth(false)))
+        {
+            EnableBackgroundInput();
+            Repaint();
+        }
+        GUILayout.EndHorizontal();
+
+        if (!ok)
+        {
+            EditorGUILayout.HelpBox(
+                Localize(lang,
+                    "Background input requires Player Settings \"Run In Background\" and Input System \"Background Behavior = Ignore Focus\". They are currently disabled, so gamepad input stops when the built app is not the foreground window.",
+                    "バックグラウンド入力には Player Settings の「Run In Background」と Input System の「Background Behavior = Ignore Focus」が必要です。現在無効のため、ビルドしたアプリが非アクティブだとゲームパッド入力が止まります。",
+                    "后台输入需要 Player Settings 的“Run In Background”以及 Input System 的“Background Behavior = Ignore Focus”。当前已禁用，因此构建后的应用在非前台时手柄输入会停止。"),
+                MessageType.Warning);
+        }
+
+        GUILayout.Space(k_Space);
+    }
+
+    static void EnableBackgroundInput()
+    {
+        PlayerSettings.runInBackground = true;
+
+        var settings = InputSystem.settings;
+        // The InputSystem.settings setter only registers the value in EditorBuildSettings (so it
+        // ships with the build) when the value is an on-disk asset. The default in-memory settings
+        // would not persist, so make sure an asset exists and is registered as the active settings
+        // (this mirrors the Input System's own "Create settings asset" flow).
+        if (settings == null || !AssetDatabase.Contains(settings))
+        {
+            var guids = AssetDatabase.FindAssets("t:InputSettings");
+            if (guids.Length > 0)
+            {
+                settings = AssetDatabase.LoadAssetAtPath<InputSettings>(
+                    AssetDatabase.GUIDToAssetPath(guids[0]));
+            }
+            else
+            {
+                settings = ScriptableObject.CreateInstance<InputSettings>();
+                if (!AssetDatabase.IsValidFolder("Assets/Settings"))
+                    AssetDatabase.CreateFolder("Assets", "Settings");
+                AssetDatabase.CreateAsset(settings, "Assets/Settings/InputSystem.inputsettings.asset");
+            }
+            InputSystem.settings = settings;
+        }
+
+        settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
+        EditorUtility.SetDirty(settings);
+        AssetDatabase.SaveAssets();
     }
 
     bool m_Initialized;

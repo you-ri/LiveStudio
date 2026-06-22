@@ -41,7 +41,7 @@ namespace Lilium.LiveStudio
     /// Loads a Unity scene from a set bundle (<c>*.set.lsb</c>, an AssetBundle containing a single
     /// scene) and adds it additively to the running app.
     ///
-    /// Unlike <see cref="LsAvatarLoader"/> — which unloads its bundle immediately because it only
+    /// Unlike <see cref="AvatarBundleLoader"/> — which unloads its bundle immediately because it only
     /// needs the instantiated prefab — a scene keeps referencing assets inside the bundle, so the
     /// bundle is retained in <see cref="LoadedSetBundle"/> until the scene is unloaded.
     /// </summary>

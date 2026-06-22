@@ -12,9 +12,9 @@ namespace Lilium.LiveStudio.EditorTests
 {
     /// <summary>
     /// Pure-logic tests for the <see cref="PropPreset"/> object-preset file format: build/parse
-    /// round-trip for both asset kinds, backward compatibility with the legacy <c>prop.preset</c>
-    /// format, the crawl-time kind peek, and the path/name helpers. Assertions use plain string
-    /// checks so the test assembly needs no JSON library reference of its own.
+    /// round-trip for both asset kinds, the crawl-time kind peek, and the path/name helpers.
+    /// Assertions use plain string checks so the test assembly needs no JSON library reference of
+    /// its own.
     /// </summary>
     public class PropPresetTests
     {
@@ -23,12 +23,11 @@ namespace Lilium.LiveStudio.EditorTests
         {
             var state = "{\"version\":1,\"wrapper\":{\"x\":5}}";
             var json = PropPreset.BuildJson(
-                PropPreset.AssetKind.Prop, "My Prop", "Props/foo.glb", "glb", state);
+                PropPreset.AssetKind.Prop, "My Prop", "Props/foo.glb", state);
 
             Assert.IsTrue(PropPreset.TryParse(json, out var data));
             Assert.AreEqual("My Prop", data.name);
             Assert.AreEqual("Props/foo.glb", data.source);
-            Assert.AreEqual("glb", data.sourceKind);
             Assert.AreEqual(PropPreset.AssetKind.Prop, data.kind);
             // The embedded state survives the round-trip (compact form, key order preserved).
             StringAssert.Contains("\"wrapper\":{\"x\":5}", data.state);
@@ -38,7 +37,7 @@ namespace Lilium.LiveStudio.EditorTests
         public void BuildJson_Avatar_PreservesKindAndUsesObjectPresetFormat()
         {
             var json = PropPreset.BuildJson(
-                PropPreset.AssetKind.Avatar, "My Avatar", "Avatars/foo.vrm", "vrm", "{\"a\":1}");
+                PropPreset.AssetKind.Avatar, "My Avatar", "Avatars/foo.vrm", "{\"a\":1}");
 
             // The new format wraps recreation info in a target descriptor.
             StringAssert.Contains(PropPreset.FormatId, json);
@@ -48,23 +47,6 @@ namespace Lilium.LiveStudio.EditorTests
             Assert.IsTrue(PropPreset.TryParse(json, out var data));
             Assert.AreEqual(PropPreset.AssetKind.Avatar, data.kind);
             Assert.AreEqual("Avatars/foo.vrm", data.source);
-            Assert.AreEqual("vrm", data.sourceKind);
-        }
-
-        [Test]
-        public void TryParse_LegacyPropFormat_ParsesAsProp()
-        {
-            // A file written before the target-descriptor change: root-level source/sourceKind.
-            var legacy =
-                "{\"format\":\"prop.preset\",\"version\":1,\"name\":\"Old\"," +
-                "\"source\":\"Props/old.prop.lsb\",\"sourceKind\":\"prop.lsb\"," +
-                "\"state\":{\"version\":1}}";
-
-            Assert.IsTrue(PropPreset.TryParse(legacy, out var data));
-            Assert.AreEqual(PropPreset.AssetKind.Prop, data.kind);
-            Assert.AreEqual("Old", data.name);
-            Assert.AreEqual("Props/old.prop.lsb", data.source);
-            Assert.AreEqual("prop.lsb", data.sourceKind);
         }
 
         [Test]
@@ -78,7 +60,7 @@ namespace Lilium.LiveStudio.EditorTests
         public void TryParse_NewerVersion_ReturnsFalse()
         {
             LogAssert.ignoreFailingMessages = true;
-            var future = "{\"format\":\"object.preset\",\"version\":999,\"target\":{}}";
+            var future = "{\"format\":\"jp.lilium.remotecontrol.preset\",\"formatVersion\":999,\"target\":{}}";
             Assert.IsFalse(PropPreset.TryParse(future, out _));
         }
 
@@ -88,17 +70,6 @@ namespace Lilium.LiveStudio.EditorTests
             LogAssert.ignoreFailingMessages = true;
             Assert.IsFalse(PropPreset.TryParse("", out _));
             Assert.IsFalse(PropPreset.TryParse("not json", out _));
-        }
-
-        [TestCase("a/b/foo.prop.lsb", "prop.lsb")]
-        [TestCase("foo.glb", "glb")]
-        [TestCase("foo.gltf", "gltf")]
-        [TestCase("dir/foo.avatar.lsb", "avatar.lsb")]
-        [TestCase("foo.vrm", "vrm")]
-        [TestCase("foo.lsavatar", "lsavatar")]
-        public void GetSourceKind_ReturnsExpectedHint(string path, string expected)
-        {
-            Assert.AreEqual(expected, PropPreset.GetSourceKind(path));
         }
 
         [TestCase("foo.preset.json", true)]
@@ -160,12 +131,12 @@ namespace Lilium.LiveStudio.EditorTests
             {
                 var avatarPath = Path.Combine(dir, "av.preset.json");
                 File.WriteAllText(avatarPath, PropPreset.BuildJson(
-                    PropPreset.AssetKind.Avatar, "av", "a.vrm", "vrm", ""));
+                    PropPreset.AssetKind.Avatar, "av", "a.vrm", ""));
                 Assert.AreEqual(PropPreset.AssetKind.Avatar, PropPreset.PeekKind(avatarPath));
 
                 var propPath = Path.Combine(dir, "pr.preset.json");
                 File.WriteAllText(propPath, PropPreset.BuildJson(
-                    PropPreset.AssetKind.Prop, "pr", "a.glb", "glb", ""));
+                    PropPreset.AssetKind.Prop, "pr", "a.glb", ""));
                 Assert.AreEqual(PropPreset.AssetKind.Prop, PropPreset.PeekKind(propPath));
 
                 // Missing / unreadable file defaults to Prop (legacy behavior).

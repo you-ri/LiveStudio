@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
 
 using UnityEngine;
@@ -106,6 +107,54 @@ namespace Lilium.LiveStudio
 
         /// <summary>Refreshes <see cref="state"/> from the live object so a save captures latest edits.</summary>
         public virtual void CaptureState() { }
+
+        /// <summary>
+        /// Reflects a failed load: clears <see cref="enabled"/> so the UI does not show the asset stuck
+        /// "on", and <see cref="isLoaded"/> so the manager re-diffs cleanly. Call from a load failure path.
+        /// </summary>
+        protected void MarkLoadFailed()
+        {
+            enabled = false;
+            isLoaded = false;
+        }
+
+        /// <summary>
+        /// Shared front-half of loading a preset (<c>*.preset.json</c>) entry: reads the file, parses it,
+        /// and resolves the referenced source asset to an existing absolute path. On any failure it logs
+        /// (using <paramref name="kindLabel"/> in the message), calls <see cref="MarkLoadFailed"/>, and
+        /// returns false. On success returns the parsed <paramref name="preset"/> and absolute
+        /// <paramref name="source"/>; the concrete kind then applies its own load behavior.
+        /// </summary>
+        protected bool TryReadPreset(string kindLabel, out PropPreset.PresetData preset, out string source)
+        {
+            preset = default;
+            source = null;
+
+            string json;
+            try { json = File.ReadAllText(filePath); }
+            catch (Exception e)
+            {
+                Debug.LogError($"[LiveStudio] Failed to read {kindLabel} preset '{filePath}': {e.Message}");
+                MarkLoadFailed();
+                return false;
+            }
+
+            if (!PropPreset.TryParse(json, out preset))
+            {
+                MarkLoadFailed();
+                return false;
+            }
+
+            source = PropPreset.ResolveSource(preset.source, Path.GetDirectoryName(filePath));
+            if (string.IsNullOrEmpty(source) || !File.Exists(source))
+            {
+                Debug.LogError($"[LiveStudio] {kindLabel} preset source not found: '{preset.source}' (from '{filePath}').");
+                MarkLoadFailed();
+                return false;
+            }
+
+            return true;
+        }
     }
 
     /// <summary>
@@ -228,7 +277,12 @@ namespace Lilium.LiveStudio
                 if (!ExposedClass.Has(type)) continue;
                 var exposedClass = ExposedClass.Find(type);
                 if (exposedClass == null) continue;
-                var handle = ExposedObjectRegistry.GetOrCreate(Guid.NewGuid().ToString("N"), exposedClass, comp);
+                // Take an id-less handle: the snapshot keys components by exposed type name (above) and
+                // its consumers key by target reference (ExposedObjectDefaultRegistry) or operate on the
+                // handle directly (ExposedObjectSnapshot), so no registry id is needed. Registering the
+                // component with an id would make ExposedGameObject._components serialize it as an @ref,
+                // which the remote app then fetches as a stray top-level scene object (a duplicate entry).
+                var handle = ExposedObjectRegistry.GetOrCreateWithoutId(exposedClass, comp);
                 yield return (exposedClass.typeName, handle);
             }
         }

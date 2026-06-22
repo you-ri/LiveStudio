@@ -129,17 +129,14 @@ namespace Lilium.LiveStudio
 
         private async Task HandleBindRequest(HttpListenerContext context)
         {
-            var body = await ReadRequestBody(context.Request);
-            
-            if (string.IsNullOrEmpty(body))
+            var (ok, request, error) = await TryReadRequest<InputActionBindRequest>(context.Request);
+            if (!ok)
             {
-                await WriteError(context, 400, "Empty request body");
+                await WriteError(context, 400, error);
                 return;
             }
 
-            var request = JsonConvert.DeserializeObject<InputActionBindRequest>(body);
-            
-            if (request == null || string.IsNullOrEmpty(request.actionName))
+            if (string.IsNullOrEmpty(request.actionName))
             {
                 await WriteError(context, 400, "Invalid request format");
                 return;

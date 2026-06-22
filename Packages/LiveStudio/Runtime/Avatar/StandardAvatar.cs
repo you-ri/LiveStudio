@@ -73,7 +73,7 @@ namespace Lilium.LiveStudio
     [RequireComponent(typeof(Animator))]
     public class StandardAvatar : MonoBehaviour, IAvatar
     {
-        private bool _isTracking = false;
+        private AvatarVisibilityGate _visibilityGate;
 
         Animator _animator;
 
@@ -189,36 +189,10 @@ namespace Lilium.LiveStudio
             expressionResolver.Dispose();
         }
 
-        void _SetShowMeshes(bool visible)
-        {
-            var renderers = GetComponentsInChildren<Renderer>();
-            foreach (var renderer in renderers)
-            {
-                renderer.enabled = visible;
-            }
-        }
-
         void Update()
         {
-            if (_motionSource == null || !_motionSource.frameData.isValid)
-            {
-                if (_isTracking)
-                {
-                    // トラッキングロスト
-                    _SetShowMeshes(false);
-                }
-                _isTracking = false;
-                return;
-            }
-            else
-            {
-                if (!_isTracking)
-                {
-                    // トラッキング復帰
-                    _SetShowMeshes(true);
-                }
-                _isTracking = true;
-            }
+            bool isValid = _motionSource != null && _motionSource.frameData.isValid;
+            if (!_visibilityGate.Update(isValid)) return;
 
             expressionResolver.Resolve(in _motionSource.frameData.expression);
 
@@ -269,7 +243,7 @@ namespace Lilium.LiveStudio
             // PlayableGraphを構築
             _BuildGraph();
 
-            _isTracking = false;
+            _visibilityGate.Initialize(transform);
         }
 
         private void _BuildClipIndexMap()
@@ -473,21 +447,7 @@ namespace Lilium.LiveStudio
         #region IAvatar Implementation
         void IAvatar.BuildAvatar()
         {
-            if (_animator == null || _animator.avatar == null)
-            {
-                Debug.LogError("[Studio] StandardAvatar: Animator or Avatar is null.");
-                return;
-            }
-
-            var humanDescription = _animator.avatar.humanDescription;
-            var avatarBuildData = AvatarBuildSystem.CreateAvatarBuildData(transform, humanDescription);
-            if (avatarBuildData.humanBones == null || avatarBuildData.humanBones.Length == 0)
-            {
-                Debug.LogError("[Studio] StandardAvatar: Failed to extract Avatar data.");
-                return;
-            }
-
-            AvatarBuildNotifier.NotifyAvatarBuilt(in avatarBuildData);
+            AvatarBuildNotifier.BuildAndNotify(_animator, "StandardAvatar");
         }
 
         void IAvatar.SetExpressionConfig(AvatarExpressionConfig config)

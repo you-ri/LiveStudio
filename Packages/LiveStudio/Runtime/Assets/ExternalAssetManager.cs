@@ -584,7 +584,6 @@ namespace Lilium.LiveStudio
                 kind,
                 presetName,
                 PropPreset.Relativize(source, projectPath),
-                PropPreset.GetSourceKind(source),
                 state);
 
             var fallbackName = Path.GetFileNameWithoutExtension(source);

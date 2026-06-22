@@ -1,7 +1,6 @@
 // Copyright (c) You-Ri, 2026
 
 using System;
-using System.IO;
 using System.Threading.Tasks;
 
 using UnityEngine;
@@ -20,9 +19,11 @@ namespace Lilium.LiveStudio
     ///
     /// Avatars are exclusive: <see cref="AvatarController"/> holds exactly one avatar, so enabling one
     /// avatar asset replaces the current avatar and the manager disables the others (radio selection).
-    /// Loading does not create a fresh exposed wrapper — the loaded avatar is already operable through
-    /// the scene's AvatarController — so preset state is captured/restored on that controller rather
-    /// than a per-asset wrapper.
+    /// Loading does not instantiate a wrapper of its own; instead the entry's
+    /// <see cref="AssetBase.objectId"/> is pointed at the existing exposed GameObject wrapper that hosts
+    /// the shared AvatarController, so the remote app opens that GameObject (transform + components,
+    /// including the Avatar component) in its detail pane — symmetric with how a prop entry points at
+    /// its own wrapper. Preset state is still captured/restored on the AvatarController.
     /// </summary>
     [Serializable]
     [ExposedClass("AvatarAsset", Category = "Asset", Icon = "person")]
@@ -61,6 +62,7 @@ namespace Lilium.LiveStudio
             // manager via IAvatarService.onAvatarChanged. Mark loaded optimistically.
             AvatarService.Load(kAvatarServiceId, filePath);
             isLoaded = true;
+            objectId = _ResolveControllerObjectId();
             return Task.CompletedTask;
         }
 
@@ -68,31 +70,7 @@ namespace Lilium.LiveStudio
         // AvatarController state once the new avatar is ready, then requests the avatar load.
         private void _LoadPreset()
         {
-            string json;
-            try { json = File.ReadAllText(filePath); }
-            catch (Exception e)
-            {
-                Debug.LogError($"[LiveStudio] Failed to read avatar preset '{filePath}': {e.Message}");
-                enabled = false;
-                isLoaded = false;
-                return;
-            }
-
-            if (!PropPreset.TryParse(json, out var preset))
-            {
-                enabled = false;
-                isLoaded = false;
-                return;
-            }
-
-            var source = PropPreset.ResolveSource(preset.source, Path.GetDirectoryName(filePath));
-            if (string.IsNullOrEmpty(source) || !File.Exists(source))
-            {
-                Debug.LogError($"[LiveStudio] Avatar preset source not found: '{preset.source}' (from '{filePath}').");
-                enabled = false;
-                isLoaded = false;
-                return;
-            }
+            if (!TryReadPreset("avatar", out var preset, out var source)) return;
 
             _resolvedSourcePath = source;
 
@@ -115,6 +93,32 @@ namespace Lilium.LiveStudio
 
             AvatarService.Load(kAvatarServiceId, source);
             isLoaded = true;
+            objectId = _ResolveControllerObjectId();
+        }
+
+        // Resolves the exposed id of the GameObject wrapper that hosts the shared AvatarController, so the
+        // remote app can open the avatar's GameObject (transform + components, including the Avatar
+        // component) in its detail pane — symmetric with how a prop entry points at its own wrapper.
+        // The AvatarController's GameObject is a persistent scene object already exposed as an
+        // ExposedGameObjectWithTransform, so this only reads the existing wrapper (no new wrapper is made).
+        // Returns null if no controller / wrapper is present (e.g. the default avatar with no scene wrapper).
+        private static string _ResolveControllerObjectId()
+        {
+            if (!(SingletonService<IAvatarService>.subject is Component controller)) return null;
+            var go = controller.gameObject;
+            foreach (var handle in ExposedObjectRegistry.instances)
+            {
+                if (!handle.hasId) continue;
+                // The GameObject wrapper's target is an ExposedUnityObjectBase referencing the GameObject,
+                // distinct from the AvatarController component handle (raw component target) on the same GO.
+                if (handle.target is ExposedUnityObjectBase proxy
+                    && proxy.reference is GameObject wrappedGo
+                    && wrappedGo == go)
+                {
+                    return handle.id;
+                }
+            }
+            return null;
         }
 
         // Restores a captured AvatarController state snapshot onto the live controller.

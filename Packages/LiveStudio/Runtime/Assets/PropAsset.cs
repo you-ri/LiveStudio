@@ -1,7 +1,6 @@
 // Copyright (c) You-Ri, 2026
 
 using System;
-using System.IO;
 using System.Threading.Tasks;
 
 using UnityEngine;
@@ -91,31 +90,7 @@ namespace Lilium.LiveStudio
         // captured into `state` (e.g. across an unload/reload), that captured state wins over the delta.
         private async Task _LoadPresetAsync(AssetLoadContext context)
         {
-            string json;
-            try { json = File.ReadAllText(filePath); }
-            catch (Exception e)
-            {
-                Debug.LogError($"[LiveStudio] Failed to read prop preset '{filePath}': {e.Message}");
-                enabled = false;
-                isLoaded = false;
-                return;
-            }
-
-            if (!PropPreset.TryParse(json, out var preset))
-            {
-                enabled = false;
-                isLoaded = false;
-                return;
-            }
-
-            var source = PropPreset.ResolveSource(preset.source, Path.GetDirectoryName(filePath));
-            if (string.IsNullOrEmpty(source) || !File.Exists(source))
-            {
-                Debug.LogError($"[LiveStudio] Prop preset source asset not found: '{preset.source}' (from '{filePath}').");
-                enabled = false;
-                isLoaded = false;
-                return;
-            }
+            if (!TryReadPreset("prop", out var preset, out var source)) return;
 
             _resolvedSourcePath = source;
             if (string.IsNullOrEmpty(state)) state = preset.state;
@@ -162,8 +137,7 @@ namespace Lilium.LiveStudio
             if (instance == null)
             {
                 // Reflect the failure back as disabled so the UI is not stuck "on".
-                enabled = false;
-                isLoaded = false;
+                MarkLoadFailed();
                 return;
             }
 
@@ -205,8 +179,7 @@ namespace Lilium.LiveStudio
             host.SetActive(true);
 #else
             Debug.LogError("[LiveStudio] glTF props require the glTFast package (UNITY_GLTFAST define).");
-            enabled = false;
-            isLoaded = false;
+            MarkLoadFailed();
 #endif
         }
 

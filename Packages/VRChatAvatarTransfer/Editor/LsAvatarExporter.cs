@@ -10,7 +10,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
 {
     /// <summary>
     /// 変換済みアバタープレハブを AssetBundle 化し、*.avatar.lsb ファイルとして出力する。
-    /// Studio アプリ (jp.lilium.livestudio) の LsAvatarLoader が実行時に読み込む。
+    /// Studio アプリ (jp.lilium.livestudio) の AvatarBundleLoader が実行時に読み込む。
     /// バンドルのビルドは共有の <see cref="BundleBuildUtility"/> に委譲する。
     /// </summary>
     internal static class LsAvatarExporter

@@ -104,7 +104,7 @@ namespace Lilium.LiveStudio
 
         async Task _LoadLsAvatarAsync(string path)
         {
-            var loader = new LsAvatarLoader();
+            var loader = new AvatarBundleLoader();
             var instance = await loader.LoadAsync(path, this.transform);
             loader.Dispose();
             if (instance != null)
