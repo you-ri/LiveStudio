@@ -500,12 +500,17 @@ namespace Lilium.RemoteControl.LiveScene
         {
             if (obj == null) return false;
             if (excludeStatic && obj.targetType != null && obj.targetType.isStatic) return false;
-            // Skip wrappers whose backing scene object has been destroyed. This happens transiently
-            // during a base-scene reload: a prop/avatar GameObject is destroyed with the scene while its
-            // wrapper briefly lingers in a source container not yet unregistered. Use the Unity-overloaded
-            // == (not C# null) so a destroyed-but-not-collected object is detected; serializing it would
-            // dereference the destroyed object and throw MissingReferenceException.
-            if (obj.target is ExposedUnityObjectBase unityObj && unityObj.reference == null) return false;
+            // Skip wrappers whose backing scene object has been destroyed (Unity "fake null"). This
+            // happens transiently during a base-scene reload: a prop/avatar GameObject is destroyed with
+            // the scene while its wrapper briefly lingers in a source container not yet unregistered.
+            // Serializing it would dereference the destroyed object and throw MissingReferenceException.
+            // Distinguish this from a pure proxy that legitimately never has a backing reference
+            // (ReferenceEquals(reference, null) == true, e.g. id supplied from its own field) — those must
+            // still be serialized. So require a real reference (not C# null) that is now destroyed.
+            if (obj.target is ExposedUnityObjectBase unityObj
+                && !ReferenceEquals(unityObj.reference, null)  // a real reference was assigned...
+                && unityObj.reference == null)                 // ...but it is now a destroyed (fake null)
+                return false;
             return true;
         }
 

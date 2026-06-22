@@ -142,8 +142,16 @@ namespace Lilium.RemoteControl
         /// メインスレッド上で呼ぶこと。
         /// </summary>
         private IEnumerable<ExposedObjectHandle> _CollectExposedObjects(string typeName, string category)
+            => CollectExposedObjects(GetObjectContainer(), typeName, category);
+
+        /// <summary>
+        /// Container-scoped collection used by <see cref="_CollectExposedObjects"/>. Exposed as
+        /// <c>internal static</c> so tests can drive the type/category resolution with a hand-built
+        /// container, without standing up a full server. Behavior is identical to the instance path.
+        /// </summary>
+        internal static IEnumerable<ExposedObjectHandle> CollectExposedObjects(
+            ExposedObjectContainer container, string typeName, string category)
         {
-            var container = GetObjectContainer();
             if (container == null)
             {
                 return Enumerable.Empty<ExposedObjectHandle>();
@@ -152,7 +160,7 @@ namespace Lilium.RemoteControl
             // カテゴリ指定
             if (!string.IsNullOrEmpty(category))
             {
-                return FindExposedObjectsByCategory(category);
+                return ExposedObjectRegistry.FindByCategory(category, container);
             }
 
             var instanceObjects = Enumerable.Empty<ExposedObjectHandle>();
@@ -194,25 +202,16 @@ namespace Lilium.RemoteControl
                     var list = GameObject.FindObjectsByType(exposedClass.type, FindObjectsInactive.Include, FindObjectsSortMode.None);
                     if (list != null && list.Length > 0)
                     {
+                        // An explicit ?type=X query wants every X component surfaced as its own
+                        // addressable handle, even when its GameObject is *also* exposed through a
+                        // generic wrapper (e.g. an ExposedGameObjectWithTransform transform handle).
+                        // A component class such as AvatarController ("Avatar") is a distinct exposed
+                        // identity from the GameObject wrapper that happens to share its GameObject,
+                        // so it must not be filtered out by GameObject identity. Reusing an existing
+                        // registered handle via FindByTarget still collapses genuine same-target dupes.
                         var foundObjects = list
-                            .Select<UnityEngine.Object, ExposedObjectHandle?>(v =>
-                            {
-                                var existing = ExposedObjectRegistry.FindByTarget(v);
-                                if (existing != null) return existing;
-
-                                // ロード済み prop などのように、所属 GameObject が登録済みラッパー
-                                // (ExposedGameObject) で既に一覧へ出ているコンポーネントは、別の未登録
-                                // オブジェクトとして二重に列挙しない。ラッパーは GameObject を target に
-                                // 持つため component の FindByTarget では引けず、ここで明示的に除外する。
-                                if (v is Component component && _GameObjectHasRegisteredWrapper(component.gameObject))
-                                {
-                                    return null;
-                                }
-
-                                return ExposedObjectHandle.CreateUnregistered(exposedClass, v);
-                            })
-                            .Where(h => h.HasValue)
-                            .Select(h => h.Value);
+                            .Select(v => ExposedObjectRegistry.FindByTarget(v)
+                                ?? ExposedObjectHandle.CreateUnregistered(exposedClass, v));
                         instanceObjects = instanceObjects.Concat(foundObjects);
                     }
                 }
@@ -220,24 +219,6 @@ namespace Lilium.RemoteControl
 
             return instanceObjects;
         }
-
-        /// <summary>
-        /// 指定 GameObject が、登録済み (id 付き) の ExposedObjectHandle ラッパーで既に
-        /// 表現されているかを返す。ExposedGameObject などラッパーの target から
-        /// 実体 GameObject を引き当てて一致を見る。コンポーネント型走査で、ラッパー管理下の
-        /// 生コンポーネントを二重列挙しないための判定に使う。
-        /// </summary>
-        private static bool _GameObjectHasRegisteredWrapper(GameObject gameObject)
-        {
-            if (gameObject == null) return false;
-            foreach (var candidate in ExposedObjectRegistry.instances)
-            {
-                if (!candidate.hasId) continue;
-                if (ExposedObjectRegistry.ResolveGameObject(candidate.target) == gameObject) return true;
-            }
-            return false;
-        }
-
 
         private async Task HandleGetObject(HttpListenerContext context)
         {
@@ -743,14 +724,6 @@ namespace Lilium.RemoteControl
             }
 
             return null;
-        }
-
-        /// <summary>
-        /// カテゴリに一致するExposedObjectを収集する。
-        /// </summary>
-        private List<ExposedObjectHandle> FindExposedObjectsByCategory(string category)
-        {
-            return ExposedObjectRegistry.FindByCategory(category, GetObjectContainer());
         }
 
         /// <summary>
