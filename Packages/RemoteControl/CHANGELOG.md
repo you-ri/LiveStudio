@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.4] - 2026-06-22
+
+### Fixed
+
+- A `?type=X` query no longer drops a first-class `[ExposedClass]` component (e.g. `AvatarController` exposed as "Avatar") when its GameObject is also surfaced through a generic wrapper handle. The component and the wrapper are distinct exposed identities; the previous GameObject-identity de-duplication made RemoteApp pages report "No avatars available" once the avatar was exposed as an `ExposedGameObjectWithTransform`. Genuine same-target duplicates are still collapsed via `FindByTarget`.
+- Live scene serialization now skips only a real-but-destroyed (fake-null) Unity reference during a base-scene reload, while still serializing a pure proxy that legitimately never had a backing reference.
+
 ## [0.23.2] - 2026-06-21
 
 ### Fixed
