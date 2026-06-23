@@ -32,17 +32,35 @@ namespace Lilium.VRChatAvatarTransfer.Editor
         /// <returns>true when at least one VRCExpression was produced.</returns>
         public static bool Convert(GameObject avatarRoot, VRCAvatar target)
         {
-            if (avatarRoot == null || target == null) return false;
+            if (target == null) return false;
+
+            var collected = Collect(avatarRoot);
+            target.ConfigureExpressions(collected.ToArray());
+            EditorUtility.SetDirty(target);
+            return collected.Count > 0;
+        }
+
+        /// <summary>
+        /// Walks <paramref name="avatarRoot"/>'s VRCExpressionsMenu / ExpressionParameters and
+        /// returns the produced <see cref="VRCExpression"/> list (empty when unavailable). Shared
+        /// by <see cref="Convert"/> (avatar) and the prop builder, which filters the result to the
+        /// expressions whose parameters its own controller declares. Must be called before the
+        /// VRCAvatarDescriptor is stripped.
+        /// </summary>
+        public static List<VRCExpression> Collect(GameObject avatarRoot)
+        {
+            var collected = new List<VRCExpression>();
+            if (avatarRoot == null) return collected;
 
             var desc = avatarRoot.GetComponent<VRCAvatarDescriptor>();
-            if (desc == null) return false;
+            if (desc == null) return collected;
 
             var menu = desc.expressionsMenu;
             if (menu == null)
             {
                 VRChatAvatarTransferLog.Info(
                     $"'{avatarRoot.name}': no ExpressionsMenu on VRCAvatarDescriptor; expressions not ported.");
-                return false;
+                return collected;
             }
 
             var parameters = desc.expressionParameters;
@@ -50,7 +68,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             {
                 VRChatAvatarTransferLog.Warn(
                     $"'{avatarRoot.name}': ExpressionsMenu exists but ExpressionParameters is unset; expressions not ported (parameter types unknown).");
-                return false;
+                return collected;
             }
 
             // Parameter name -> value type (Int / Float / Bool). Used to decide which field
@@ -62,20 +80,16 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 paramTypes[p.name] = p.valueType;
             }
 
-            var collected = new List<VRCExpression>();
             var visited = new HashSet<VRCExpressionsMenu>();
             var stats = new ConvertStats();
 
             _Walk(menu, paramTypes, collected, visited, depth: 0, avatarRoot.name, stats);
 
-            target.ConfigureExpressions(collected.ToArray());
-            EditorUtility.SetDirty(target);
-
             VRChatAvatarTransferLog.Info(
-                $"'{avatarRoot.name}': ported {collected.Count} expression(s) from VRCExpressionsMenu "
+                $"'{avatarRoot.name}': collected {collected.Count} expression(s) from VRCExpressionsMenu "
                 + $"(toggle={stats.toggle}, button={stats.button}, submenu={stats.submenu}, "
                 + $"puppetSkipped={stats.puppetSkipped}, missingParam={stats.missingParam}).");
-            return collected.Count > 0;
+            return collected;
         }
 
         // Pass-by-reference counter so nested _Walk recursions accumulate into the same totals.

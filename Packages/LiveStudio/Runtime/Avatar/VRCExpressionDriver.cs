@@ -120,9 +120,11 @@ namespace Lilium.LiveStudio
 
     /// <summary>
     /// VRChat ExpressionsMenu から移植した表情マッピングを駆動する共通ロジック。
-    /// expressionResolver.smoothedOutputs から各 VRCExpression.name の重みを引き、最大ウェイトの
+    /// <see cref="IExpressionAvatar.GetWeight"/> で各 VRCExpression.name の重みを引き、最大ウェイトの
     /// 表情の AnimationParameterOverride を <see cref="IAnimatorParameterPort"/> 経由で書き込む。
     /// 切り替わったタイミングのみ実書き込みが走り、解除時は直前の default 値へ戻す。
+    /// ウェイトの供給元 (アバター本体 / 装着 prop) は <see cref="IExpressionAvatar"/> として渡され、
+    /// driver 自身はその実体 (resolver 等) を知らない。
     /// </summary>
     internal sealed class VRCExpressionDriver
     {
@@ -153,18 +155,16 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
-        /// resolver.smoothedOutputs から expressions[*].name と一致するエントリを探し、最大ウェイトの
+        /// <paramref name="expression"/> から expressions[*].name の重みを引き、最大ウェイトの
         /// 表情の AnimationParameterOverride を Animator に書き込む。切り替わったタイミングのみ実書き込みが
         /// 走る。全表情ウェイトが 0 のときは直前の parameters を default 値に戻して終了。
+        /// ウェイト供給元が未 setup の場合は GetWeight が 0 を返すため、表情なしとして扱われる。
         /// </summary>
-        public void Update(VRCExpression[] expressions, IExpressionResolver resolver)
+        public void Update(VRCExpression[] expressions, IExpressionAvatar expression)
         {
             if (expressions == null || expressions.Length == 0) return;
             if (!_port.isReady) return;
-            if (resolver == null || !resolver.isSetup) return;
-
-            var outputs = resolver.smoothedOutputs;
-            if (!outputs.IsCreated) return;
+            if (expression == null) return;
 
             // 最大ウェイト (0 < weight) の表情を選択。同値時は配列の先頭優先。
             int bestIndex = -1;
@@ -173,7 +173,8 @@ namespace Lilium.LiveStudio
             {
                 var exp = expressions[i];
                 if (exp == null || string.IsNullOrEmpty(exp.name)) continue;
-                if (outputs.TryGet(exp.name, out float w) && w > bestWeight)
+                float w = expression.GetWeight(FacialKey.CreateCustom(exp.name));
+                if (w > bestWeight)
                 {
                     bestWeight = w;
                     bestIndex = i;

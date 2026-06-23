@@ -2,9 +2,11 @@
 
 using System.Collections.Generic;
 using System.IO;
+using Lilium.LiveStudio;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
+using VRC.SDK3.Avatars.Components;
 
 namespace Lilium.VRChatAvatarTransfer.Editor
 {
@@ -97,8 +99,12 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 if (animator == null) animator = objRoot.AddComponent<Animator>();
                 animator.runtimeAnimatorController = cloned;
                 animator.applyRootMotion = false;
-                if (objRoot.GetComponent<Lilium.LiveStudio.AvatarProp>() == null)
-                    objRoot.AddComponent<Lilium.LiveStudio.AvatarProp>();
+                var avatarProp = objRoot.GetComponent<AvatarProp>();
+                if (avatarProp == null) avatarProp = objRoot.AddComponent<AvatarProp>();
+
+                // 4b. prop の表情を移植する。controller の gesture トグル (GestureExpressionBuilder) と、
+                //     アバター配下なら ExpressionsMenu (VRCExpressionsConverter) の両方を共有して構築する。
+                _ConfigurePropExpressions(subRoot, cloned, avatarProp);
 
                 // 5. プレハブ保存。
                 string prefabPath = $"{kOutputFolder}/{safeName}.prefab";
@@ -134,6 +140,63 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 VRChatAvatarTransferLog.Error($"Accessory build failed: {ex}");
                 return default;
             }
+        }
+
+        // prop の表情を焼き込む。実行時は親アバターの表情ウェイトを共有して prop 自身の Animator を駆動する。
+        // ソースは 2 つ:
+        //  (1) prop の controller の transition から導出する gesture 表情 (GestureExpressionBuilder 共有)。
+        //      単体プレハブでも動く。Straw_FX のように GestureRight==N で切り替わるトグルはここで拾われる。
+        //  (2) アバター配下の場合のみ、ExpressionsMenu のうち prop の controller が宣言するパラメータを
+        //      駆動する表情 (VRCExpressionsConverter 共有)。
+        // subRoot は元アバター配下のまま (objRoot は detach 済) なので、ここから VRCAvatarDescriptor を辿る。
+        static void _ConfigurePropExpressions(Transform subRoot, AnimatorController propController, AvatarProp prop)
+        {
+            if (prop == null || propController == null) return;
+
+            // prop の controller が宣言する (非 Trigger) パラメータ名集合。表情の override はこの集合に
+            // 含まれるものだけ残す。含まれない override は prop の Animator に存在しないため、Inspector で
+            // "(missing: …)" 表示になり実行時も駆動できない (例: Straw_FX は GestureRight のみで
+            // GestureRightWeight を持たないので、gesture 表情の Weight override は除外される)。
+            var propParams = new HashSet<string>();
+            foreach (var p in propController.parameters)
+            {
+                if (p.type != AnimatorControllerParameterType.Trigger) propParams.Add(p.name);
+            }
+
+            var collected = new List<Lilium.LiveStudio.VRCExpression>();
+            var seen = new HashSet<string>();
+
+            // 表情の override を prop に存在するものだけへ絞り、何も残らなければ捨てる。名前重複も排除。
+            void TryAdd(Lilium.LiveStudio.VRCExpression exp)
+            {
+                if (exp == null || string.IsNullOrEmpty(exp.name) || exp.parameters == null) return;
+
+                var kept = new List<AnimationParameterOverride>(exp.parameters.Length);
+                foreach (var ov in exp.parameters)
+                {
+                    if (ov != null && propParams.Contains(ov.name)) kept.Add(ov);
+                }
+                if (kept.Count == 0) return;        // この prop では何も駆動しない表情は除外
+                if (!seen.Add(exp.name)) return;    // 名前重複排除
+
+                exp.parameters = kept.ToArray();
+                collected.Add(exp);
+            }
+
+            // (1) controller の transition 条件から gesture 表情を導出 (controller のみで成立)。
+            foreach (var exp in GestureExpressionBuilder.Build(propController)) TryAdd(exp);
+
+            // (2) アバター配下なら ExpressionsMenu からも移植する。単体プレハブのときは desc == null でスキップ。
+            var desc = subRoot.GetComponentInParent<VRCAvatarDescriptor>(includeInactive: true);
+            if (desc != null)
+            {
+                foreach (var exp in VRCExpressionsConverter.Collect(desc.gameObject)) TryAdd(exp);
+            }
+
+            prop.ConfigureExpressions(collected.ToArray());
+            EditorUtility.SetDirty(prop);
+            VRChatAvatarTransferLog.Info(
+                $"Prop build: ported {collected.Count} expression(s) onto '{prop.name}'.");
         }
 
         // 複製 controller 内の全 Motion を辿り、AnimationClip を rebase 済みクローンへ差し替える。rebase 数を返す。

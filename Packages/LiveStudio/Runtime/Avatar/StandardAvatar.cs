@@ -467,11 +467,9 @@ namespace Lilium.LiveStudio
                 return false;
             }
 
-            if (!_clipIndexMap.ContainsKey(key.name))
-            {
-                return false;
-            }
-
+            // clip を持たない名前（装着 prop 専用の表情など）も resolver には流す。共有 resolver の
+            // smoothedOutputs を子 prop の VRCExpressionDriver が読むため。clip が無い名前は
+            // _ApplySmoothedWeights 側で mixer に適用されないので、自身の顔クリップには影響しない。
             // ターゲット値をバッファに保存（スムージング用）
             expressionResolver.SetWeight(key.name, Mathf.Clamp01(weight));
             return true;
@@ -487,6 +485,13 @@ namespace Lilium.LiveStudio
             if (_currentWeights.TryGetValue(key.name, out float weight))
             {
                 return weight;
+            }
+
+            // 自身の clip を持たない名前 (装着 prop 専用の表情など) は resolver の smoothedOutputs を引く。
+            // 他アバターの GetWeight と挙動を揃え、子 prop の VRCExpressionDriver にウェイトを届けるため。
+            if (expressionResolver.isSetup && expressionResolver.smoothedOutputs.TryGet(key.name, out float resolved))
+            {
+                return resolved;
             }
 
             return 0f;

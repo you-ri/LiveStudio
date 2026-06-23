@@ -299,8 +299,8 @@ namespace Lilium.LiveStudio
             _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.Spine, "Spine", avatarRotation);
             _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.Chest, "Chest", avatarRotation);
             _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.Head, "Head", avatarRotation);
-            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.LeftHand, "LeftWrist", avatarRotation);
-            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.RightHand, "RightWrist", avatarRotation);
+            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.LeftHand, "WristLeft", avatarRotation);
+            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.RightHand, "WristRight", avatarRotation);
 
             _RestorePose(restorePose); // the motion driver re-poses next frame anyway, but avoid a 1-frame artifact
 

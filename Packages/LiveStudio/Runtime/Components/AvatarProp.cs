@@ -1,5 +1,6 @@
 // Copyright (c) You-Ri, 2026
 
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Animations;
@@ -58,7 +59,7 @@ namespace Lilium.LiveStudio
         // Shadow field (Hide + FormerlyExposedAs) so the [ExposedProperty] below is persistable:
         // its value is serialized to the live scene and restored across a prop unload/reload.
         [SerializeField, ExposedField, Hide, FormerlyExposedAs("socketName")]
-        string _socketName = "RightWrist";
+        string _socketName = "WristRight";
 
         [ExposedProperty]
         [StringSelector(nameof(availableSocketNames))]
@@ -84,6 +85,8 @@ namespace Lilium.LiveStudio
             }
         }
 
+ 
+
         // bone ローカルの位置オフセット。
         [SerializeField, ExposedField, Hide, FormerlyExposedAs("positionOffset")]
         Vector3 _positionOffset = Vector3.zero;
@@ -106,11 +109,55 @@ namespace Lilium.LiveStudio
             set => _rotationOffset = value;
         }
 
+        // 拡縮オフセット。プレハブ本来の localScale への乗算 (1 で等倍)。socket 追従は位置・回転だけを
+        // 駆動し scale には触れないので、prop のサイズはここで毎フレーム適用する。アバターのスケールは
+        // 親 (avatarRoot) を通じて lossyScale に伝播するため、ここでは socket スケールで補正しない。
+        [SerializeField, ExposedField, Hide]
+        Vector3 _scaleOffset = Vector3.one;
+
+        [ExposedProperty]
+        public Vector3 scaleOffset
+        {
+            get => _scaleOffset;
+            set => _scaleOffset = value;
+        }
+
+        // プレハブ本来の localScale。scaleOffset はこれへの乗算として適用する。Start で一度だけ取得。
+        Vector3 _baseScale = Vector3.one;
+
+        [Header("Expression")]
+
+        // この prop 固有の表情マッピング。表情名→prop 自身の Animator に書き込む parameters。
+        // アバターと同じ VRCExpression 形式で、最大ウェイトの表情の parameters を毎フレーム適用する。
+        // ウェイトは親アバターの expressionResolver (smoothedOutputs) を共有して名前で引く。
+        [SerializeField]
+        [Tooltip("この prop の表情マッピング。表情のウェイト最大値のものをアクティブとし、その parameters を prop の Animator に書き込む")]
+        VRCExpression[] _expressions = Array.Empty<VRCExpression>();
+
+        // GetExpressions で公開する表情キー。_expressions から Start で構築。
+        FacialKey[] _expressionKeys = Array.Empty<FacialKey>();
+
+        // prop 自身の Animator に書き込む表情ドライバ。最大ウェイト表情の parameters を適用する。
+        VRCExpressionDriver _expressionDriver;
+
+        // 親アバターの表情ウェイト供給口。driver はこの GetWeight で各表情の重みを引く。
+        // アバターが遅延ロードされる場合があるため _source と同様に Update で再解決する。
+        IExpressionAvatar _avatarExpression;
+
         void Start()
         {
             _animator = GetComponent<Animator>();
+            _baseScale = transform.localScale;
             _CacheParameters();
             _ResolveSource();
+
+            // 表情キーを構築し、prop 自身の Animator へ書き込むドライバを用意する。
+            var keys = new List<FacialKey>();
+            VRCExpressionDriver.AppendExpressionKeys(_expressions, keys);
+            _expressionKeys = keys.ToArray();
+            _expressionDriver = new VRCExpressionDriver(new AnimatorParameterPort(_animator));
+
+            _ResolveAvatarExpression();
         }
 
         // 自身の Animator を除く、親階層で最初に見つかる humanoid Animator を返す。
@@ -226,32 +273,73 @@ namespace Lilium.LiveStudio
             _source = GetComponentInParent<IAvatarParameterSource>();
         }
 
+        // 親階層からアバターの表情ウェイト供給口を得る（prop はアバターの子）。
+        void _ResolveAvatarExpression()
+        {
+            _avatarExpression = GetComponentInParent<IExpressionAvatar>();
+        }
+
+        /// <summary>
+        /// この prop が公開する表情キー一覧。ExpressionController (AvatarExpression) が
+        /// アバターの表情と合わせてマージし、prop の表情も割り当て可能にする。
+        /// </summary>
+        public ReadOnlySpan<FacialKey> GetExpressions() => _expressionKeys;
+
+        /// <summary>
+        /// prop の表情マッピングを注入する (変換ツールから呼ばれる)。VRCAvatar.ConfigureExpressions と同形式。
+        /// 各 VRCExpression.name は実行時に親アバターの表情ウェイト (smoothedOutputs) を引くキーとして
+        /// 参照される (FacialKey 名を前提とする)。エクスポート時に prop プレハブへ焼き込む。
+        /// </summary>
+        public void ConfigureExpressions(VRCExpression[] expressions)
+        {
+            _expressions = expressions ?? Array.Empty<VRCExpression>();
+        }
+
         void Update()
         {
             _UpdateSocketConstraint();
 
-            if (_source == null)
+            // Apply the scale offset every frame so runtime edits (RemoteApp / Inspector) take effect
+            // immediately. The socket follow (ParentConstraint) drives position/rotation only, so scale
+            // is owned here; the avatar's own scale still propagates through the parent's lossyScale.
+            transform.localScale = Vector3.Scale(_baseScale, _scaleOffset);
+
+            // パラメータブリッジ: アバターの Animator パラメータを prop へ複製する。
+            // IAvatarParameterSource は VRCFTAvatar / VRCAvatar のみ実装するため、VRM/Standard 配下では
+            // _source は null のまま。その場合はブリッジをスキップするだけで、表情駆動 (下) は続行する。
+            if (_source == null) _ResolveSource();
+            if (_source != null)
             {
-                _ResolveSource();
-                if (_source == null) return;
+                for (int i = 0; i < _parameters.Length; i++)
+                {
+                    var p = _parameters[i];
+                    if (!_source.HasParameter(p.nameHash)) continue;
+
+                    switch (p.type)
+                    {
+                        case AnimatorControllerParameterType.Float:
+                            _animator.SetFloat(p.nameHash, _source.GetFloat(p.nameHash));
+                            break;
+                        case AnimatorControllerParameterType.Int:
+                            _animator.SetInteger(p.nameHash, _source.GetInteger(p.nameHash));
+                            break;
+                        case AnimatorControllerParameterType.Bool:
+                            _animator.SetBool(p.nameHash, _source.GetBool(p.nameHash));
+                            break;
+                    }
+                }
             }
 
-            for (int i = 0; i < _parameters.Length; i++)
+            // prop 固有の表情を駆動する。ウェイトは親アバターの IExpressionAvatar.GetWeight (内部で
+            // smoothedOutputs を共有して引く) から取得する。IExpressionAvatar は全アバター型が実装するため、
+            // ブリッジ (_source) の有無とは独立に動く。アバター (order 10) が当フレームの Resolve を
+            // 済ませた後 (prop は order 20) に走る。
+            if (_expressions.Length > 0)
             {
-                var p = _parameters[i];
-                if (!_source.HasParameter(p.nameHash)) continue;
-
-                switch (p.type)
+                if (_avatarExpression == null) _ResolveAvatarExpression();
+                if (_avatarExpression != null)
                 {
-                    case AnimatorControllerParameterType.Float:
-                        _animator.SetFloat(p.nameHash, _source.GetFloat(p.nameHash));
-                        break;
-                    case AnimatorControllerParameterType.Int:
-                        _animator.SetInteger(p.nameHash, _source.GetInteger(p.nameHash));
-                        break;
-                    case AnimatorControllerParameterType.Bool:
-                        _animator.SetBool(p.nameHash, _source.GetBool(p.nameHash));
-                        break;
+                    _expressionDriver.Update(_expressions, _avatarExpression);
                 }
             }
         }

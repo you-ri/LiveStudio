@@ -20,18 +20,25 @@ namespace Lilium.LiveStudio
     /// One entry in <see cref="StageManager.sets"/>: a set bundle (<c>*.set.lsb</c>)
     /// that the user has added. <see cref="enabled"/> is the desired state controlled from the
     /// remote app; <see cref="isLoaded"/> reflects whether the set is actually loaded.
+    ///
+    /// Surfaced to the remote app's stage detail page through the generic exposed-object UI: the
+    /// visible members are <see cref="name"/> and the <see cref="WarpTo"/> / <see cref="WarpToOrigin"/>
+    /// buttons. <see cref="WarpTo"/>'s argument is a dropdown sourced from <see cref="marks"/>.
     /// </summary>
     [Serializable]
     [ExposedClass]
     public struct SetBundleEntry
     {
-        [ExposedField]
+        // Identity / state fields are hidden from the generic object UI used by the stage detail page:
+        // there they would be noise, and load / activate are driven from the Stage page's cards. They
+        // are still serialized (Hide does not skip serialization), so the card list keeps reading them.
+        [ExposedField, Hide]
         public string id;
 
         [ExposedField]
         public string name;
 
-        [ExposedField]
+        [ExposedField, Hide]
         public string filePath;
 
         /// <summary>
@@ -42,11 +49,11 @@ namespace Lilium.LiveStudio
         public bool enabled;
 
         /// <summary>Actual state, projected from the backing <see cref="SetBundleAsset"/>.</summary>
-        [ExposedField(persistable = false)]
+        [ExposedField(persistable = false), Hide]
         public bool isLoaded;
 
         /// <summary>True when this set is the active set.</summary>
-        [ExposedField]
+        [ExposedField, Hide]
         public bool isActive;
 
         /// <summary>
@@ -54,8 +61,30 @@ namespace Lilium.LiveStudio
         /// present and loaded, and cannot be unloaded or removed; only activation is allowed.
         /// Rebuilt at runtime, so it is not persisted.
         /// </summary>
-        [ExposedField(persistable = false)]
+        [ExposedField(persistable = false), Hide]
         public bool isPersistent;
+
+        /// <summary>
+        /// Labels of the <see cref="StageMark"/>s in this set's loaded scene, in registration order.
+        /// The source of <see cref="WarpTo"/>'s dropdown options; not shown as its own control. Empty
+        /// when the set is not loaded. Derived view data, so not persisted.
+        /// </summary>
+        [ExposedField(persistable = false), Hide]
+        public string[] marks;
+
+        /// <summary>
+        /// Warps the current avatar to the named <see cref="StageMark"/> in this set. Surfaced as a
+        /// button in the generic object UI; the <paramref name="markLabel"/> argument is a dropdown
+        /// sourced from <see cref="marks"/>. Runs on a boxed copy of the entry, so it only reads its own
+        /// fields and delegates to the live <see cref="StageManager"/> singleton.
+        /// </summary>
+        [ExposedFunction]
+        public void WarpTo([StringSelector(nameof(marks))] string markLabel)
+            => StageManager.current?.WarpTo(id, markLabel);
+
+        /// <summary>Warps the current avatar to the origin (doubling as a "reset to zero").</summary>
+        [ExposedFunction]
+        public void WarpToOrigin() => StageManager.current?.WarpTo(id, string.Empty);
     }
 
     /// <summary>
@@ -81,6 +110,17 @@ namespace Lilium.LiveStudio
         // Stable id for the synthetic entry representing the bootstrap / persistent set. A short
         // literal is safe because real bundle entries use path-based ids and never collide with it.
         const string kPersistentSetId = "persistent";
+
+        // The active manager, so a value-type SetBundleEntry warp function (invoked on a boxed copy) can
+        // reach the live instance to warp. Set in OnEnable, cleared in OnDisable. Reset on subsystem
+        // registration for safety when Domain Reload is disabled.
+        [NonSerialized]
+        private static StageManager _current;
+
+        public static StageManager current => _current;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void _InitializeCurrent() => _current = null;
 
 #if UNITY_EDITOR
         private static bool _isExitingPlayMode;
@@ -129,6 +169,8 @@ namespace Lilium.LiveStudio
 
         public void OnEnable()
         {
+            _current = this;
+
             ExposedObjectRegistry.Create<StageManager>(this, kId);
             ExposedClass.Get<StageManager>().onPropertyChanged += _OnPropertyChanged;
 
@@ -141,6 +183,10 @@ namespace Lilium.LiveStudio
 
             Lilium.RemoteControl.LiveScene.RemoteControlBehaviour.onBaseSceneReloaded += _OnBaseSceneReloaded;
 
+            // Marks self-register globally as set scenes load/unload; rebuild so each set's
+            // projected `marks` list (and the remote app's warp UI) tracks them.
+            StageMarkRegistry.onChanged += _OnMarksChanged;
+
             _initialized = true;
             _RebuildSetsView();
         }
@@ -150,6 +196,8 @@ namespace Lilium.LiveStudio
             _initialized = false;
 
             Lilium.RemoteControl.LiveScene.RemoteControlBehaviour.onBaseSceneReloaded -= _OnBaseSceneReloaded;
+
+            StageMarkRegistry.onChanged -= _OnMarksChanged;
 
             ExposedClass.Get<StageManager>().onPropertyChanged -= _OnPropertyChanged;
 
@@ -162,6 +210,8 @@ namespace Lilium.LiveStudio
             }
 
             ExposedObjectRegistry.FindByTarget(this)?.Unregister();
+
+            if (_current == this) _current = null;
         }
 
         public void OnDispose()
@@ -276,6 +326,57 @@ namespace Lilium.LiveStudio
             }
 
             _ReconcileActiveScene();
+            _RebuildSetsView();
+        }
+
+        /// <summary>
+        /// Warps the current avatar to a <see cref="StageMark"/> within the given set's scene.
+        /// Invoked by <see cref="SetBundleEntry.WarpTo"/> / <see cref="SetBundleEntry.WarpToOrigin"/> from
+        /// the remote app's generic stage detail UI. An empty or null <paramref name="markLabel"/> warps
+        /// to the origin, doubling as a "reset to zero".
+        /// </summary>
+        /// <param name="setId">Id of the set whose scene the mark lives in (<see cref="SetBundleEntry.id"/>).</param>
+        /// <param name="markLabel">Label of the target mark, or empty/null for the origin.</param>
+        public void WarpTo(string setId, string markLabel)
+        {
+            Vector3 targetPosition;
+            Quaternion targetRotation;
+
+            if (string.IsNullOrEmpty(markLabel))
+            {
+                targetPosition = Vector3.zero;
+                targetRotation = Quaternion.identity;
+            }
+            else
+            {
+                var scene = _ResolveSetScene(setId);
+                var mark = _FindMarkInScene(scene, markLabel);
+                if (mark == null)
+                {
+                    Debug.LogWarning($"[LiveStudio] Stage mark not found: '{markLabel}' in set '{setId}'.");
+                    return;
+                }
+                targetPosition = mark.position;
+                targetRotation = mark.rotation;
+            }
+
+            // The avatar's world placement is driven by its anchor, which AvatarController sets to
+            // its own transform. The animator root is rewritten every frame relative to that anchor,
+            // so moving the anchor (not the animator GameObject) is what actually warps the avatar.
+            var anchor = (SingletonService<IAvatarService>.subject as MonoBehaviour)?.transform;
+            if (anchor == null)
+            {
+                Debug.LogWarning("[LiveStudio] No active avatar to place.");
+                return;
+            }
+
+            anchor.SetPositionAndRotation(targetPosition, targetRotation);
+        }
+
+        // Marks added/removed by set scenes; rebuild so each set's `marks` list reflects them.
+        private void _OnMarksChanged()
+        {
+            if (!_initialized) return;
             _RebuildSetsView();
         }
 
@@ -411,6 +512,7 @@ namespace Lilium.LiveStudio
                         isLoaded = s.isLoaded,
                         isActive = s.isActive,
                         isPersistent = false,
+                        marks = _MarkLabelsInScene(s.scene),
                     });
                 }
             }
@@ -432,7 +534,43 @@ namespace Lilium.LiveStudio
                 isLoaded = true,
                 isActive = !_AnySetBundleAssetActive(manager),
                 isPersistent = true,
+                marks = _MarkLabelsInScene(_persistentScene),
             };
+        }
+
+        // Resolves the scene a set's marks live in: the bootstrap scene for the persistent entry,
+        // otherwise the loaded SetBundleAsset's scene (default/invalid when not loaded).
+        private Scene _ResolveSetScene(string setId)
+        {
+            if (setId == kPersistentSetId) return _persistentScene;
+            var asset = ExternalAssetManager.current?.FindAsset(setId) as SetBundleAsset;
+            return asset != null ? asset.scene : default;
+        }
+
+        // Labels of the registered marks that belong to the given scene, in registration order.
+        // Returns an empty array for an invalid scene (e.g. an unloaded set).
+        private static string[] _MarkLabelsInScene(Scene scene)
+        {
+            if (!scene.IsValid()) return Array.Empty<string>();
+            var labels = new List<string>();
+            foreach (var mark in StageMarkRegistry.marks)
+            {
+                if (mark == null || mark.gameObject.scene != scene) continue;
+                var label = mark.label;
+                if (!string.IsNullOrEmpty(label)) labels.Add(label);
+            }
+            return labels.ToArray();
+        }
+
+        // The registered mark with the given label in the given scene, or null.
+        private static StageMark _FindMarkInScene(Scene scene, string label)
+        {
+            if (!scene.IsValid()) return null;
+            foreach (var mark in StageMarkRegistry.marks)
+            {
+                if (mark != null && mark.gameObject.scene == scene && mark.label == label) return mark;
+            }
+            return null;
         }
 
         private void _Broadcast()

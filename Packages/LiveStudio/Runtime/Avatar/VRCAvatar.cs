@@ -300,8 +300,9 @@ namespace Lilium.LiveStudio
             }
 #endif
 
-            // VRChat 表情: 最大ウェイトの表情の AnimationParameterOverride を Animator へ反映
-            _expressionDriver.Update(_expressions, expressionResolver);
+            // VRChat 表情: 最大ウェイトの表情の AnimationParameterOverride を Animator へ反映。
+            // ウェイトは自身の IExpressionAvatar.GetWeight (内部で smoothedOutputs を引く) から取得する。
+            _expressionDriver.Update(_expressions, this);
 
             AvatarAnimationSystem.UpdateBodyAnimation(_animator, in _motionSource.frameData);
         }

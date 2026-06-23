@@ -367,8 +367,12 @@ namespace Lilium.RemoteControl
     /// <summary>
     /// 限られたstring配列から選択するコントローラー属性。
     /// sourcePropertyNameには選択肢となるstring[]を返すプロパティ名を指定する。
+    /// Parameter にも付与でき、ExposedFunction の引数入力をドロップダウン化する
+    /// (選択肢は関数が属するオブジェクトの sourcePropertyName プロパティから取得)。
     /// </summary>
-    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
+    [AttributeUsage(
+        AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Parameter,
+        AllowMultiple = false)]
     public class StringSelectorAttribute : ControlAttribute
     {
         public string sourcePropertyName { get; }

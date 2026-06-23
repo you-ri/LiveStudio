@@ -94,7 +94,6 @@ MonoBehaviour:
   _serverConfig: {fileID: 11400000, guid: fe5d91a57c882da4791babe82a0d8d75, type: 2}
   _persistAcrossScenes: 1
   _objects:
-  - rid: 4217817217901789387
   - rid: 4217817217901789388
   - rid: 4217817217901789389
   - rid: 4217817217901789390
@@ -103,9 +102,6 @@ MonoBehaviour:
   references:
     version: 2
     RefIds:
-    - rid: 4217817217901789387
-      type: {class: AvatarStageController, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
-      data: 
     - rid: 4217817217901789388
       type: {class: SkyboxBackground, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
       data: 

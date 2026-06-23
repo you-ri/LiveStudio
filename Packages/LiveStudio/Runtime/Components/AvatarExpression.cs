@@ -196,21 +196,38 @@ namespace Lilium.LiveStudio
 
 
         /// <summary>
-        /// 利用可能な表情リストを取得
+        /// 利用可能な表情リストを取得。アバター本体の表情に加え、アバターが装着している
+        /// AvatarProp 固有の表情も名前で重複排除しつつマージして返す。
         /// </summary>
         public FacialKey[] GetAvailableExpressions()
         {
+            var result = new List<FacialKey>();
+            var seen = new HashSet<string>();
+
             var controller = _facialController;
             if (controller != null)
             {
-                var expressions = controller.GetExpressions();
-                if (expressions.Length > 0)
+                foreach (var key in controller.GetExpressions())
                 {
-                    return expressions.ToArray();
+                    if (seen.Add(key.name)) result.Add(key);
                 }
             }
 
-            return Array.Empty<FacialKey>();
+            // アバターが装着している prop の表情もマージする (prop はアバターの子)。
+            var target = _avatarService?.target;
+            if (target != null)
+            {
+                var props = target.GetComponentsInChildren<AvatarProp>(includeInactive: true);
+                foreach (var prop in props)
+                {
+                    foreach (var key in prop.GetExpressions())
+                    {
+                        if (seen.Add(key.name)) result.Add(key);
+                    }
+                }
+            }
+
+            return result.ToArray();
         }
 
 

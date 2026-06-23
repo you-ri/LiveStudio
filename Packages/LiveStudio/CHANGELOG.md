@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `AvatarProp` now exposes a `scaleOffset` (Vector3, default `1,1,1`) that multiplies the prop's authored local scale, so an avatar-attached prop's size can be tuned from the remote app / inspector. It is applied every frame and persists across an unload/reload like the position/rotation offsets.
+
+### Changed
+
+- Stage marks now warp the avatar through `StageManager` instead of the standalone `AvatarStageController`. Each `SetBundleEntry` exposes the `StageMark` labels in its own set scene (the new `marks` field, scoped per set), and `StageManager.WarpTo(setId, markLabel)` moves the avatar's anchor to the named mark within that set's scene (an empty label warps to the origin).
+
+### Removed
+
+- **Breaking:** `AvatarStageController` (the "Avatar Placement" exposed object with the `place` / `availablePlaces` dropdown of all loaded marks) was removed; warping is now per-set on `StageManager.WarpTo` (see above). It is also dropped from the `Live Studio System` prefab.
+
 ## [0.23.5] - 2026-06-22
 
 ### Changed
