@@ -68,6 +68,7 @@ namespace Lilium.RemoteControl
             };
             _postRoutes = new[]
             {
+                new EndpointRoute("/exposed/batch", RouteMatch.Exact, HandleBatch),
                 new EndpointRoute("/exposed/object/*/*/reset", RouteMatch.Wildcard, HandleResetProperty),
                 new EndpointRoute("/exposed/object/*/*", RouteMatch.Wildcard, HandleAddArrayElement),
                 new EndpointRoute("/exposed/function/*", RouteMatch.Wildcard, HandleInvokeFunction),
@@ -93,6 +94,7 @@ namespace Lilium.RemoteControl
             new RouteRule("/exposed/objects", RouteMatch.Prefix),
             new RouteRule("/exposed/types", RouteMatch.Prefix),
             new RouteRule("/exposed/enums", RouteMatch.Prefix),
+            new RouteRule("/exposed/batch", RouteMatch.Exact),
         };
 
         protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
@@ -305,40 +307,24 @@ namespace Lilium.RemoteControl
             HttpListenerContext context,
             bool readBody,
             bool stripResetSuffix,
-            Func<PropertyPipelineContext, PropertyResult> onProperty)
+            Func<PropertyPipelineContext, IExposedObjectResolver, PropertyResult> onProperty)
         {
             var path = context.Request.Url.AbsolutePath;
-            if (stripResetSuffix && path.EndsWith("/reset"))
-            {
-                path = path.Substring(0, path.Length - "/reset".Length);
-            }
 
-            var id = PathParser.GetPathSegment(path, 2);
-            var slashPath = PathParser.GetPathSegmentFrom(path, 3);
-
-            if (id == null || slashPath == null)
-            {
-                await WriteError(context, 400, "Invalid request format");
-                return;
-            }
-
-            // Slash形式からDotBracket形式に変換
-            var propertyPath = PropertyPath.FromSlash(slashPath);
-
-            var exposedObject = await ExecuteOnMainThread(() => FindExposedObjectById(id));
-
-            if (exposedObject == null)
-            {
-                await WriteError(context, 404, "Object not found");
-                return;
-            }
-
+            // body はワーカースレッドで先読みし、コンテキスト構築〜オペレーション適用を
+            // 1 回のメインスレッドホップにまとめる。応答バイトは従来と一致する
+            // (object 未解決時に InputStream を読むかどうかは応答内容に影響しない)。
             var body = readBody ? await ReadRequestBody(context.Request) : null;
 
-            var pipelineContext = new PropertyPipelineContext(
-                exposedObject.Value, id, slashPath, propertyPath.Value, body);
-
-            var result = await ExecuteOnMainThread(() => onProperty(pipelineContext));
+            var result = await ExecuteOnMainThread(() =>
+            {
+                if (!TryBuildPropertyContext(GetObjectContainer(), path, stripResetSuffix, body,
+                        out var ctx, out var errStatus, out var errMessage))
+                {
+                    return PropertyResult.Error(errStatus, errMessage);
+                }
+                return onProperty(ctx, GetResolver());
+            });
 
             if (!result.ok)
             {
@@ -349,127 +335,328 @@ namespace Lilium.RemoteControl
             await WriteResponse(200, context.Response, result.body);
         }
 
-        private Task HandleGetProperty(HttpListenerContext context)
+        /// <summary>
+        /// /exposed/object/{id}/{slashPath} 系の URL から <see cref="PropertyPipelineContext"/> を
+        /// 構築する HTTP 非依存コア。RunPropertyPipeline (単発) と batch 内側ディスパッチで共用する。
+        /// FindExposedObjectById が Unity API を含むためメインスレッド前提。
+        /// エラー時は (400 "Invalid request format" / 404 "Object not found") を out で返す。
+        /// </summary>
+        private static bool TryBuildPropertyContext(
+            ExposedObjectContainer container, string absolutePath, bool stripResetSuffix, string body,
+            out PropertyPipelineContext ctx, out int errStatus, out string errMessage)
         {
-            return RunPropertyPipeline(context, readBody: false, stripResetSuffix: false,
-                onProperty: ctx =>
-                {
-                    var property = ctx.exposedObject.FindProperty(ctx.propertyPath);
-                    if (!property.HasValue)
-                    {
-                        return PropertyResult.Error(404, "Property not found");
-                    }
+            ctx = default;
+            errStatus = 0;
+            errMessage = null;
 
-                    var json = ExposedPropertySerializer.ToJson(property.Value, GetResolver());
-                    return PropertyResult.Success(json);
-                });
+            var path = absolutePath;
+            if (stripResetSuffix && path.EndsWith("/reset"))
+            {
+                path = path.Substring(0, path.Length - "/reset".Length);
+            }
+
+            var id = PathParser.GetPathSegment(path, 2);
+            var slashPath = PathParser.GetPathSegmentFrom(path, 3);
+
+            if (id == null || slashPath == null)
+            {
+                errStatus = 400;
+                errMessage = "Invalid request format";
+                return false;
+            }
+
+            // Slash形式からDotBracket形式に変換
+            var propertyPath = PropertyPath.FromSlash(slashPath);
+
+            var exposedObject = FindExposedObjectById(container, id);
+            if (exposedObject == null)
+            {
+                errStatus = 404;
+                errMessage = "Object not found";
+                return false;
+            }
+
+            ctx = new PropertyPipelineContext(
+                exposedObject.Value, id, slashPath, propertyPath.Value, body);
+            return true;
         }
+
+        private Task HandleGetProperty(HttpListenerContext context)
+            => RunPropertyPipeline(context, readBody: false, stripResetSuffix: false, ApplyGetProperty);
 
         private Task HandleSetProperty(HttpListenerContext context)
-        {
-            return RunPropertyPipeline(context, readBody: true, stripResetSuffix: false,
-                onProperty: ctx =>
-                {
-                    var property = ctx.exposedObject.FindProperty(ctx.propertyPath);
-                    if (property == null)
-                    {
-                        return PropertyResult.Error(404, "Property not found");
-                    }
-
-                    var prop = property.Value;
-                    var result = ExposedPropertySerializer.FromJson(ctx.body, in prop);
-                    if (!result)
-                    {
-                        return PropertyResult.Error(400, "Failed to set property");
-                    }
-
-                    var json = ExposedPropertySerializer.ToJson(property.Value, GetResolver());
-
-                    // onPropertyChanged で親要素の他フィールドが書き換わる場合に備え、
-                    // 親が配列要素ならその要素全体を SSE でブロードキャストする。
-                    // 親インスタンスは property.obj で既に手元にあるので、登録済み ExposedObjectHandle を
-                    // 検索するのではなく、その場で CreateUnregistered で ExposedObjectHandle を作って使う。
-                    _BroadcastParentElement(ctx.id, ctx.slashPath, property.Value);
-
-                    return PropertyResult.Success(json);
-                });
-        }
+            => RunPropertyPipeline(context, readBody: true, stripResetSuffix: false, ApplySetProperty);
 
         private Task HandleAddArrayElement(HttpListenerContext context)
-        {
-            return RunPropertyPipeline(context, readBody: true, stripResetSuffix: false,
-                onProperty: ctx =>
-                {
-                    var property = ctx.exposedObject.FindProperty(ctx.propertyPath);
-                    if (property == null)
-                    {
-                        return PropertyResult.Error(404, "Property not found");
-                    }
-
-                    var prop = property.Value;
-                    return ExposedPropertySerializer.AddArrayElement(ctx.body, in prop)
-                        ? PropertyResult.Success("{}")
-                        : PropertyResult.Error(400, "Failed to add array element");
-                });
-        }
+            => RunPropertyPipeline(context, readBody: true, stripResetSuffix: false, ApplyAddArrayElement);
 
         private Task HandleRemoveArrayElement(HttpListenerContext context)
-        {
-            return RunPropertyPipeline(context, readBody: true, stripResetSuffix: false,
-                onProperty: ctx =>
-                {
-                    var property = ctx.exposedObject.FindProperty(ctx.propertyPath);
-                    if (property == null)
-                    {
-                        return PropertyResult.Error(404, "Property not found");
-                    }
-
-                    var prop = property.Value;
-                    return ExposedPropertySerializer.RemoveArrayElement(ctx.body, in prop)
-                        ? PropertyResult.Success("{}")
-                        : PropertyResult.Error(400, "Failed to remove array element");
-                });
-        }
+            => RunPropertyPipeline(context, readBody: true, stripResetSuffix: false, ApplyRemoveArrayElement);
 
         private Task HandleReorderArrayElement(HttpListenerContext context)
-        {
-            return RunPropertyPipeline(context, readBody: true, stripResetSuffix: false,
-                onProperty: ctx =>
-                {
-                    var property = ctx.exposedObject.FindProperty(ctx.propertyPath);
-                    if (property == null)
-                    {
-                        return PropertyResult.Error(404, "Property not found");
-                    }
-
-                    var prop = property.Value;
-                    return ExposedPropertySerializer.ReorderArrayElement(ctx.body, in prop)
-                        ? PropertyResult.Success("{}")
-                        : PropertyResult.Error(400, "Failed to reorder array element");
-                });
-        }
+            => RunPropertyPipeline(context, readBody: true, stripResetSuffix: false, ApplyReorderArrayElement);
 
         private Task HandleResetProperty(HttpListenerContext context)
-        {
             // Reset は body を消費するが未使用(InputStream 消費タイミング維持のため readBody:true)。
-            return RunPropertyPipeline(context, readBody: true, stripResetSuffix: true,
-                onProperty: ctx =>
-                {
-                    var property = ctx.exposedObject.FindProperty(ctx.propertyPath);
-                    if (property == null)
-                    {
-                        return PropertyResult.Error(404, "Property not found");
-                    }
+            => RunPropertyPipeline(context, readBody: true, stripResetSuffix: true, ApplyResetProperty);
 
-                    var prop = property.Value;
-                    ExposedPropertyUtility.ResetValue(ctx.exposedObject, in prop);
+        // ---- オペレーション計算部 (HTTP 非依存)。単発エンドポイントと batch で共用する。 ----
+        // 出力は従来の onProperty ラムダと厳密に一致させること (REST invariance)。
 
-                    var newProperty = ctx.exposedObject.FindProperty(ctx.propertyPath);
-                    var json = ExposedPropertySerializer.ToJson(newProperty.Value, GetResolver());
-                    return PropertyResult.Success(json);
-                });
+        private static PropertyResult ApplyGetProperty(PropertyPipelineContext ctx, IExposedObjectResolver resolver)
+        {
+            var property = ctx.exposedObject.FindProperty(ctx.propertyPath);
+            if (!property.HasValue)
+            {
+                return PropertyResult.Error(404, "Property not found");
+            }
+
+            var json = ExposedPropertySerializer.ToJson(property.Value, resolver);
+            return PropertyResult.Success(json);
         }
 
+        private static PropertyResult ApplySetProperty(PropertyPipelineContext ctx, IExposedObjectResolver resolver)
+        {
+            var property = ctx.exposedObject.FindProperty(ctx.propertyPath);
+            if (property == null)
+            {
+                return PropertyResult.Error(404, "Property not found");
+            }
+
+            var prop = property.Value;
+            var result = ExposedPropertySerializer.FromJson(ctx.body, in prop);
+            if (!result)
+            {
+                return PropertyResult.Error(400, "Failed to set property");
+            }
+
+            var json = ExposedPropertySerializer.ToJson(property.Value, resolver);
+
+            // onPropertyChanged で親要素の他フィールドが書き換わる場合に備え、
+            // 親が配列要素ならその要素全体を SSE でブロードキャストする。
+            // 親インスタンスは property.obj で既に手元にあるので、登録済み ExposedObjectHandle を
+            // 検索するのではなく、その場で CreateUnregistered で ExposedObjectHandle を作って使う。
+            _BroadcastParentElement(ctx.id, ctx.slashPath, property.Value);
+
+            return PropertyResult.Success(json);
+        }
+
+        private static PropertyResult ApplyAddArrayElement(PropertyPipelineContext ctx, IExposedObjectResolver resolver)
+        {
+            var property = ctx.exposedObject.FindProperty(ctx.propertyPath);
+            if (property == null)
+            {
+                return PropertyResult.Error(404, "Property not found");
+            }
+
+            var prop = property.Value;
+            return ExposedPropertySerializer.AddArrayElement(ctx.body, in prop)
+                ? PropertyResult.Success("{}")
+                : PropertyResult.Error(400, "Failed to add array element");
+        }
+
+        private static PropertyResult ApplyRemoveArrayElement(PropertyPipelineContext ctx, IExposedObjectResolver resolver)
+        {
+            var property = ctx.exposedObject.FindProperty(ctx.propertyPath);
+            if (property == null)
+            {
+                return PropertyResult.Error(404, "Property not found");
+            }
+
+            var prop = property.Value;
+            return ExposedPropertySerializer.RemoveArrayElement(ctx.body, in prop)
+                ? PropertyResult.Success("{}")
+                : PropertyResult.Error(400, "Failed to remove array element");
+        }
+
+        private static PropertyResult ApplyReorderArrayElement(PropertyPipelineContext ctx, IExposedObjectResolver resolver)
+        {
+            var property = ctx.exposedObject.FindProperty(ctx.propertyPath);
+            if (property == null)
+            {
+                return PropertyResult.Error(404, "Property not found");
+            }
+
+            var prop = property.Value;
+            return ExposedPropertySerializer.ReorderArrayElement(ctx.body, in prop)
+                ? PropertyResult.Success("{}")
+                : PropertyResult.Error(400, "Failed to reorder array element");
+        }
+
+        private static PropertyResult ApplyResetProperty(PropertyPipelineContext ctx, IExposedObjectResolver resolver)
+        {
+            var property = ctx.exposedObject.FindProperty(ctx.propertyPath);
+            if (property == null)
+            {
+                return PropertyResult.Error(404, "Property not found");
+            }
+
+            var prop = property.Value;
+            ExposedPropertyUtility.ResetValue(ctx.exposedObject, in prop);
+
+            var newProperty = ctx.exposedObject.FindProperty(ctx.propertyPath);
+            var json = ExposedPropertySerializer.ToJson(newProperty.Value, resolver);
+            return PropertyResult.Success(json);
+        }
+
+
+        // ---- Batch (POST /exposed/batch) ----
+        // Epic Remote Control の /remote/batch 相当。複数サブリクエストを 1 リクエストで
+        // 順次適用し、各結果を集約して返す。全件を 1 回のメインスレッドホップ内で適用するため
+        // フレーム内で一貫する。各 item は独立 (continue-on-error)。
+
+        /// <summary>
+        /// POST /exposed/batch: { "requests": [ { id, method, path, body }, ... ] }
+        /// → 200 { "responses": [ { id, status, body }, ... ] }
+        /// </summary>
+        private async Task HandleBatch(HttpListenerContext context)
+        {
+            var body = await ReadRequestBody(context.Request);
+            var responseJson = await ExecuteOnMainThread(
+                () => ExecuteBatch(GetObjectContainer(), GetResolver(), body));
+            await WriteResponse(200, context.Response, responseJson);
+        }
+
+        /// <summary>
+        /// batch リクエスト本文を解釈し、各サブリクエストを順に適用して
+        /// { "responses": [...] } JSON を返す HTTP 非依存コア。サーバーを立てずにテスト可能。
+        /// メインスレッド前提 (各オペレーションが Unity API を含む)。
+        /// </summary>
+        internal static string ExecuteBatch(
+            ExposedObjectContainer container, IExposedObjectResolver resolver, string requestsBodyJson)
+        {
+            var responses = new JArray();
+
+            JObject root = null;
+            if (!string.IsNullOrWhiteSpace(requestsBodyJson))
+            {
+                try { root = JObject.Parse(requestsBodyJson); }
+                catch (JsonException) { root = null; }
+            }
+
+            if (root?["requests"] is JArray requests)
+            {
+                foreach (var reqToken in requests)
+                {
+                    var req = reqToken as JObject;
+                    var idToken = req?["id"]; // クライアント指定の echo (欠落/null 可)
+                    var method = req?["method"]?.ToString();
+                    var path = req?["path"]?.ToString();
+                    var bodyToken = req?["body"];
+                    var subBody = bodyToken == null || bodyToken.Type == JTokenType.Null
+                        ? null
+                        : bodyToken.ToString(Formatting.None);
+
+                    PropertyResult opResult;
+                    if (req == null || string.IsNullOrEmpty(method) || string.IsNullOrEmpty(path))
+                    {
+                        opResult = PropertyResult.Error(400, "Invalid request format");
+                    }
+                    else
+                    {
+                        try
+                        {
+                            opResult = ExecuteOperation(container, resolver, method, path, subBody);
+                        }
+                        catch (Exception ex)
+                        {
+                            // 1 件の例外でバッチ全体を巻き込まない (continue-on-error)。
+                            Debug.LogError($"[RemoteControl] Batch operation failed ({method} {path}): {ex.Message}");
+                            opResult = PropertyResult.Error(500, "Internal error");
+                        }
+                    }
+
+                    responses.Add(_BuildBatchResponseItem(idToken, opResult));
+                }
+            }
+
+            var resultRoot = new JObject { ["responses"] = responses };
+            return resultRoot.ToString(Formatting.None);
+        }
+
+        /// <summary>
+        /// (method, path) を単発エンドポイントと同じパターンで内側ディスパッチし、対応する
+        /// Apply* / InvokeFunctionCore を呼ぶ。対応するのは /exposed/object/{id}/{path} 系
+        /// (GET/PUT/POST/DELETE/PATCH) と POST /exposed/function/{id}/{path}。
+        /// それ以外のパスは 404、未対応メソッドは 405。
+        /// </summary>
+        private static PropertyResult ExecuteOperation(
+            ExposedObjectContainer container, IExposedObjectResolver resolver,
+            string method, string absolutePath, string body)
+        {
+            var m = (method ?? string.Empty).ToUpperInvariant();
+
+            // 関数呼び出し
+            if (m == "POST" && MatchPattern(absolutePath, "/exposed/function/*", RouteMatch.Wildcard))
+            {
+                var id = PathParser.GetPathSegment(absolutePath, 2);
+                var functionPath = PathParser.GetPathSegmentFrom(absolutePath, 3);
+                if (id == null || functionPath == null)
+                {
+                    return PropertyResult.Error(400, "Invalid request format");
+                }
+                return InvokeFunctionCore(container, resolver, id, functionPath, body);
+            }
+
+            // プロパティ系パイプライン。reset サフィックスは単発ルートと同じ優先順で先に判定する。
+            var isReset = m == "POST"
+                && MatchPattern(absolutePath, "/exposed/object/*/*/reset", RouteMatch.Wildcard);
+            if (isReset || MatchPattern(absolutePath, "/exposed/object/*/*", RouteMatch.Wildcard))
+            {
+                if (!TryBuildPropertyContext(container, absolutePath, isReset, body,
+                        out var ctx, out var errStatus, out var errMessage))
+                {
+                    return PropertyResult.Error(errStatus, errMessage);
+                }
+
+                switch (m)
+                {
+                    case "GET": return ApplyGetProperty(ctx, resolver);
+                    case "PUT": return ApplySetProperty(ctx, resolver);
+                    case "POST": return isReset ? ApplyResetProperty(ctx, resolver) : ApplyAddArrayElement(ctx, resolver);
+                    case "DELETE": return ApplyRemoveArrayElement(ctx, resolver);
+                    case "PATCH": return ApplyReorderArrayElement(ctx, resolver);
+                    default: return PropertyResult.Error(405, "Method not allowed");
+                }
+            }
+
+            return PropertyResult.Error(404, "Not found");
+        }
+
+        /// <summary>
+        /// 1 サブリクエストの結果を { id, status, body } JObject に整形する。
+        /// 成功時の body はオペレーションの応答 JSON をパースしたトークン、失敗時は {"error": ...}。
+        /// </summary>
+        private static JObject _BuildBatchResponseItem(JToken idToken, PropertyResult result)
+        {
+            int status;
+            JToken bodyToken;
+            if (result.ok)
+            {
+                status = 200;
+                bodyToken = string.IsNullOrEmpty(result.body)
+                    ? JValue.CreateNull()
+                    : _SafeParseJson(result.body);
+            }
+            else
+            {
+                status = result.errorStatus;
+                bodyToken = new JObject { ["error"] = result.errorMessage };
+            }
+
+            return new JObject
+            {
+                ["id"] = idToken != null ? idToken.DeepClone() : JValue.CreateNull(),
+                ["status"] = status,
+                ["body"] = bodyToken,
+            };
+        }
+
+        private static JToken _SafeParseJson(string json)
+        {
+            try { return JToken.Parse(json); }
+            catch (JsonException) { return new JValue(json); }
+        }
 
         private async Task HandleGetTypes(HttpListenerContext context)
         {
@@ -516,6 +703,31 @@ namespace Lilium.RemoteControl
                 return;
             }
 
+            var body = await ReadRequestBody(context.Request);
+
+            // 関数の解決・パラメータ準備・実行・結果 JSON 化をすべてメインスレッドで行う
+            var result = await ExecuteOnMainThread(
+                () => InvokeFunctionCore(GetObjectContainer(), GetResolver(), id, functionPath, body));
+
+            if (!result.ok)
+            {
+                await WriteError(context, result.errorStatus, result.errorMessage);
+                return;
+            }
+
+            await WriteResponse(200, context.Response, result.body);
+        }
+
+        /// <summary>
+        /// /exposed/function/{id}/{functionPath} の HTTP 非依存コア。単発エンドポイントと
+        /// batch 内側ディスパッチで共用する。メインスレッド前提。成功時は {"result": ...} を
+        /// <see cref="PropertyResult.Success"/> で返す。失敗は従来の文言で Error を返す
+        /// (object 未解決=404 "Object not found"、関数未解決/引数失敗=400)。
+        /// </summary>
+        private static PropertyResult InvokeFunctionCore(
+            ExposedObjectContainer container, IExposedObjectResolver resolver,
+            string id, string functionPath, string body)
+        {
             // 最後の/で分割してプロパティパスと関数名に分離
             string propertyPath = null;
             string functionName = functionPath;
@@ -526,52 +738,29 @@ namespace Lilium.RemoteControl
                 functionName = functionPath.Substring(lastSlashIndex + 1);
             }
 
-            var exposedObject = await ExecuteOnMainThread(() =>
-            {
-                return FindExposedObjectById(id);
-            });
-
+            var exposedObject = FindExposedObjectById(container, id);
             if (exposedObject == null)
             {
-                await WriteError(context, 404, "Object not found");
-                return;
+                return PropertyResult.Error(404, "Object not found");
             }
 
-            var body = await ReadRequestBody(context.Request);
-
-            // 関数の検証とパラメータの準備、実行をすべてメインスレッドで行う
-            var result = await ExecuteOnMainThread(() =>
+            var function = _ResolveInvokeFunction(
+                exposedObject.Value, propertyPath, functionName, id, out var functionTarget);
+            if (function == null)
             {
-                var function = _ResolveInvokeFunction(
-                    exposedObject.Value, propertyPath, functionName, id, out var functionTarget);
-                if (function == null)
-                {
-                    return (success: false, invokeResult: (object)null);
-                }
-
-                var args = _BuildInvokeArguments(function, body);
-                var invokeResult = function.Invoke(functionTarget, args);
-                return (success: true, invokeResult);
-            });
-
-            if (!result.success)
-            {
-                await WriteError(context, 400, "Function not found or failed to parse arguments");
-                return;
+                return PropertyResult.Error(400, "Function not found or failed to parse arguments");
             }
+
+            var args = _BuildInvokeArguments(function, body);
+            var invokeResult = function.Invoke(functionTarget, args);
 
             // 結果をJSON形式で返す
             var resultJson = new JObject();
-            if (result.invokeResult != null)
-            {
-                resultJson["result"] = ExposedPropertySerializer.SerializeUnityType(GetResolver(), result.invokeResult);
-            }
-            else
-            {
-                resultJson["result"] = JValue.CreateNull();
-            }
+            resultJson["result"] = invokeResult != null
+                ? ExposedPropertySerializer.SerializeUnityType(resolver, invokeResult)
+                : JValue.CreateNull();
 
-            await WriteResponse(200, context.Response, JsonConvert.SerializeObject(resultJson));
+            return PropertyResult.Success(JsonConvert.SerializeObject(resultJson));
         }
 
         /// <summary>
@@ -579,7 +768,7 @@ namespace Lilium.RemoteControl
         /// プロパティ値の型から、無ければ exposedObject 直接から関数を検索する。
         /// 解決できなければ null(理由は Debug.LogError で出力)。メインスレッド前提。
         /// </summary>
-        private ExposedFunctionType _ResolveInvokeFunction(
+        private static ExposedFunctionType _ResolveInvokeFunction(
             ExposedObjectHandle exposedObject, string propertyPath, string functionName,
             string id, out object functionTarget)
         {
@@ -627,7 +816,7 @@ namespace Lilium.RemoteControl
         /// パラメータ個数ベースで確保し、未指定/null は HasDefaultValue があれば
         /// 既定値、無ければ型の default を使う。body 空 or args 無しなら null。
         /// </summary>
-        private object[] _BuildInvokeArguments(ExposedFunctionType function, string body)
+        private static object[] _BuildInvokeArguments(ExposedFunctionType function, string body)
         {
             object[] args = null;
             var parameters = function.parameters;
@@ -666,9 +855,15 @@ namespace Lilium.RemoteControl
         }
 
         private ExposedObjectHandle? FindExposedObjectById(string id)
-        {
-            var container = GetObjectContainer();
+            => FindExposedObjectById(GetObjectContainer(), id);
 
+        /// <summary>
+        /// id から <see cref="ExposedObjectHandle"/> を解決する HTTP 非依存コア。
+        /// container を明示的に受け取るため、サーバーを立てずに batch 等から再利用・テストできる。
+        /// Unity API (FindObjectsByType 等) を含むためメインスレッド前提。
+        /// </summary>
+        private static ExposedObjectHandle? FindExposedObjectById(ExposedObjectContainer container, string id)
+        {
             // Container に登録されているオブジェクトで検索（propertyName + グローバル _byId フォールバック）
             if (container != null)
             {

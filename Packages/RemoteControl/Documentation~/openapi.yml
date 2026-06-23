@@ -1,0 +1,686 @@
+openapi: '3.1.1'
+info:
+  title: Virgo Motion Remote API
+  version: '0.3'
+servers:
+  - url: http://localhost:3002
+paths:
+  /api/status:
+    get:
+      summary: Get the current status of the Virgo Motion Remote
+      responses:
+        '200':
+          description: Successful response with the current status
+
+  /exposed/types:
+    get:
+      summary: Get all exposed object types. Optionally filter by type name.
+      parameters:
+        - in: query
+          name: type
+          required: false
+          schema:
+            type: string
+          example: "Camera"
+          description: "Optional: Filter types by name. If omitted, returns all types."
+      responses:
+        '200':
+          description: Successful response with the current status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TypesGettingResponse"  
+
+  /exposed/objects:
+    get:
+      summary: Get the exposed object list. Optionally filter by type.
+      parameters:
+        - in: query
+          name: type
+          required: false
+          schema:
+            type: string
+          example: "Light"
+          description: "Optional: Filter objects by type. If omitted, returns all objects."
+      responses:
+        '200':
+          description: Successful response with the current status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ObjectsGettingResponse"  
+
+  /exposed/object/{id}:
+    get:
+      summary: Get all properties of the exposed object.
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          example: "3470a41c-f079-4d30-a002-3468fda088f7"
+      responses:
+        '200':
+          description: Successful response with the current status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ObjectGettingResponse"  
+
+
+  /exposed/object/{id}/{property}:
+    get:
+      summary: Get the property of the exposed object.
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          example: "3470a41c-f079-4d30-a002-3468fda088f7"
+        - in: path
+          name: property
+          schema:
+            type: string
+          example: "rotation"
+      responses:
+        '200':
+          description: Successful response with the current status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PropertyGettingResponse"              
+
+    put:
+      summary: Set the property of the exposed object.
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          example: "e79efd50-5ea6-4cc0-a7a7-49110eb3b0da"
+        - in: path
+          name: property
+          schema:
+            type: string
+          example: "enabled"      
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PropertySettingRequest"
+      responses:
+        '200':
+          description: Successful response with the current status
+
+    post:
+      summary: Add to the array property of the exposed object.
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          example: "07dc5512-2a94-4f0b-aa10-17fe76d2087a"
+        - in: path
+          name: property
+          schema:
+            type: string
+          example: "expressions"      
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PropertySettingRequest"
+
+    delete:
+      summary: Remove from the array property of the exposed object.
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          example: "07dc5512-2a94-4f0b-aa10-17fe76d2087a"
+        - in: path
+          name: property
+          schema:
+            type: string
+          example: "expressions"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PropertyDeleteRequest"
+
+    patch:
+      summary: Reorder an element in the array property of the exposed object.
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          example: "07dc5512-2a94-4f0b-aa10-17fe76d2087a"
+        - in: path
+          name: property
+          schema:
+            type: string
+          example: "expressions"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PropertyReorderRequest"
+      responses:
+        '200':
+          description: Successfully reordered the array element
+
+  /exposed/object/{id}/{property}/reset:
+    post:
+      summary: Reset the property of the exposed object to its default value.
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          example: "07dc5512-2a94-4f0b-aa10-17fe76d2087a"
+        - in: path
+          name: property
+          schema:
+            type: string
+          example: "expressions"      
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PropertyGettingResponse"
+
+  /exposed/function/{id}/{function}:
+    post:
+      summary: Call the function of the exposed object.
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          example: "3470a41c-f079-4d30-a002-3468fda088f7"
+        - in: path
+          name: function
+          schema:
+            type: string
+          example: "toggle"
+      responses:
+        '200':
+          description: Successful response with the current status
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /exposed/batch:
+    post:
+      summary: Apply multiple exposed-object operations in a single request.
+      description: >
+        Epic Remote Control's /remote/batch equivalent. Each sub-request targets an
+        /exposed/object/{id}/{path} operation (GET/PUT/POST/DELETE/PATCH) or a
+        POST /exposed/function/{id}/{path} call, and is applied in order within a single
+        frame. Items are independent: one failing item does not abort the others
+        (continue-on-error). The overall response is always 200; per-item results carry
+        their own status.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchRequest"
+      responses:
+        '200':
+          description: Per-item results in request order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchResponse"
+
+  /exposed/import:
+    post:
+      summary: Import exposed objects and their properties.
+      responses:
+        '200':
+          description: Successful response with the current status
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportRequest"
+
+  /exposed/export:
+    post:
+      summary: Export all exposed objects and their properties.
+      responses:
+        '200':
+          description: Successful response with the current status
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExportRequest"
+
+
+
+  /ui/sidemenu:
+    get:
+      summary: Get UI side menu definition configured in Unity
+      responses:
+        '200':
+          description: Successful response with menu items
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UISideMenuResponse"
+
+  /ui/info:
+    get:
+      summary: Get UI app info (Unity Application.productName etc.)
+      responses:
+        '200':
+          description: Successful response with UI app info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UIInfoResponse"
+
+  /license:
+    get:
+      summary: Get the current license information
+      responses:
+        '200':
+          description: Successful response with license information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LicenseInfoResponse"
+        '404':
+          description: No license key found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    put:
+      summary: Set or update the license key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LicenseKeyRequest"
+      responses:
+        '200':
+          description: License key successfully validated and saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LicenseInfoResponse"
+        '400':
+          description: Invalid license key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    delete:
+      summary: Clear the current license key
+      responses:
+        '200':
+          description: License key successfully cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+components:
+  schemas:
+      ImportRequest:
+        type: object
+        properties:
+          path:
+            type: string
+            example: "data.json"
+            description: "Path to the import file. If relative, it's relative to the Virgo Motion Remote working directory."
+
+      ExportRequest:
+        type: object
+        properties:
+          path:
+            type: string
+            example: "data.json"
+            description: "Path to the export file. If relative, it's relative to the Virgo Motion Remote working directory."
+
+      PropertySettingRequest:
+        type: object
+        properties:
+          value:
+            type: object
+            example: 100
+          changed:
+            type: boolean
+            example: true
+
+
+      PropertyGettingResponse:
+        type: object
+        properties:
+          value:
+            type: object
+            example: 100
+          id:
+            type: string
+            example: "3470a41c-f079-4d30-a002-3468fda088f7"
+            description: "The owner object ID. May differ from the request {id} when accessed via selector."
+          path:
+            type: string
+            example: "intensity"
+            description: "Slash-separated property path from the owner object root (e.g. 'objects/0/_config')."
+          changed:
+            type: boolean
+            example: true
+            description: "Whether the property value differs from its default. Used for UI 'revert' indication, not for update success."
+
+      BatchRequest:
+        type: object
+        required:
+          - requests
+        properties:
+          requests:
+            type: array
+            items:
+              $ref: "#/components/schemas/BatchSubRequest"
+
+      BatchSubRequest:
+        type: object
+        required:
+          - method
+          - path
+        properties:
+          id:
+            description: "Client-supplied correlation id echoed back verbatim in the matching response item. Any JSON value; may be omitted (echoed as null)."
+            example: 1
+          method:
+            type: string
+            description: "HTTP method of the sub-request (case-insensitive)."
+            enum: [GET, PUT, POST, DELETE, PATCH]
+            example: PUT
+          path:
+            type: string
+            description: "Absolute path of the sub-request. Limited to /exposed/object/{id}/{path} and /exposed/function/{id}/{path} families."
+            example: "/exposed/object/3470a41c-f079-4d30-a002-3468fda088f7/intensity"
+          body:
+            type: object
+            description: "Sub-request JSON body (e.g. {\"value\": 100} for PUT, {\"args\": [..]} for a function call). Omit when not needed."
+            example: { "value": 100 }
+
+      BatchResponse:
+        type: object
+        properties:
+          responses:
+            type: array
+            items:
+              $ref: "#/components/schemas/BatchResponseItem"
+
+      BatchResponseItem:
+        type: object
+        properties:
+          id:
+            description: "Echo of the sub-request id (null when the sub-request omitted it)."
+            example: 1
+          status:
+            type: integer
+            description: "Per-item HTTP-style status (200 success; 400/404/405/500 on failure)."
+            example: 200
+          body:
+            description: "On success, the operation's normal response JSON (e.g. PropertyGettingResponse, or {\"result\": ..} for a function). On failure, {\"error\": <message>}."
+            example: { "value": 100, "id": "3470a41c-f079-4d30-a002-3468fda088f7", "path": "intensity", "changed": true }
+
+      PropertyDeleteRequest:
+        type: object
+        properties:
+          index:
+            type: number
+            example: -1
+            description: Index of the element to remove from the array property. -1 means the last element.
+
+      PropertyReorderRequest:
+        type: object
+        required:
+          - fromIndex
+          - toIndex
+        properties:
+          fromIndex:
+            type: integer
+            example: 2
+            description: Current index of the element to move
+          toIndex:
+            type: integer
+            example: 0
+            description: Target index to move the element to
+
+      PropertyControllerResponse:
+        type: object
+        properties:
+          type:
+            type: string
+            example: "Single"
+          controller:
+            type: object
+            properties:
+              type:
+                type: string
+                example: "Slider"
+                description: "Controller type. Known values: Default, Hide, Slider, CameraController, TypeSelector, StringSelector, GLTFFileSelector, InlineReference"
+              min:
+                type: number
+                example: 0
+              max:
+                type: number
+                example: 100
+
+      ObjectGettingResponse:
+        type: object
+        properties:
+          type:
+            type: string
+            example: "Light"
+          id:
+            type: string
+            example: "2e910ddf-8cd8-4fb2-92f3-44b1ccd20c5f"
+          name:
+            type: string
+            example: "Directional Light"
+          position:
+            type: object
+            example: { x: 0, y: 10, z: 0 }
+          rotation:
+            type: object 
+            example: { x: 0, y: 0, z: 0 }
+
+      ObjectsGettingResponse:
+        type: object
+        properties:
+          objects:
+            type: array
+            items:
+              type: object
+              properties:
+                type:
+                  type: string
+                  example: "Light"
+                id:
+                  type: string
+                  example: "2e910ddf-8cd8-4fb2-92f3-44b1ccd20c5f"
+                name:
+                  type: string
+                  example: "Directional Light"
+                position:
+                  type: object
+                  example: { x: 0, y: 10, z: 0 }
+                rotation:
+                  type: object 
+                  example: { x: 0, y: 0, z: 0 }
+
+
+
+      TypesGettingResponse:
+        type: object
+        properties:
+          types:
+            type: array
+            items:
+              type: object
+              properties:
+                type:
+                  type: string
+                  example: "Light"
+                properties:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        example: "intensity"
+                      type:
+                        type: string
+                        example: "Single"
+                      isReadOnly:
+                        type: boolean
+                        example: false
+                      isArray:
+                        type: boolean
+                        example: false
+                      order:
+                        type: integer
+                        example: 0
+                        description: "Declaration order for mixed property/function display"
+                      controller:
+                        type: object
+                        properties:
+                          type:
+                            type: string
+                            example: "Slider"
+                          min:
+                            type: number
+                            example: 0
+                          max:
+                            type: number
+                            example: 100
+                functions:
+                  type: array
+                  description: "Parameterless functions available for this type"
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        example: "resetPhysics"
+                      returnType:
+                        type: string
+                        example: "Void"
+                      order:
+                        type: integer
+                        example: 5
+                        description: "Declaration order for mixed property/function display"
+                      help:
+                        type: string
+                        example: "Reset physics simulation"
+
+      LicenseInfoResponse:
+        type: object
+        properties:
+          userName:
+            type: string
+            example: "John Doe"
+          licenseName:
+            type: string
+            example: "VirgoMotion Pro"
+          expiryDate:
+            type: string
+            format: date-time
+            example: "2025-12-31T23:59:59Z"
+          isValid:
+            type: boolean
+            example: true
+          daysRemaining:
+            type: integer
+            example: 365
+            description: Number of days until license expiration
+
+      LicenseKeyRequest:
+        type: object
+        required:
+          - licenseKey
+        properties:
+          licenseKey:
+            type: string
+            example: "SGVsbG8gV29ybGQhIFRoaXMgaXMgYSBsaWNlbnNlIGtleQ=="
+            description: Base64-encoded license key
+          session:
+            type: boolean
+            example: true
+            description: "If true, the license key will only be valid for the current session and won't be saved persistently."
+
+      ErrorResponse:
+        type: object
+        properties:
+          error:
+            type: string
+            example: "Invalid license key"
+          message:
+            type: string
+            example: "License key signature verification failed"
+
+      SuccessResponse:
+        type: object
+        properties:
+          success:
+            type: boolean
+            example: true
+          message:
+            type: string
+            example: "Operation completed successfully"
+
+      UISideMenuResponse:
+        type: object
+        properties:
+          menuItems:
+            type: array
+            items:
+              $ref: "#/components/schemas/UIMenuItem"
+
+      UIInfoResponse:
+        type: object
+        properties:
+          title:
+            type: string
+            example: "VirgoMotionStudio"
+            description: "App title shown on the RemoteApp title bar (Unity Application.productName)."
+
+      UIMenuItem:
+        type: object
+        properties:
+          id:
+            type: string
+            example: "avatar"
+          icon:
+            type: string
+            example: "person"
+          label:
+            type: string
+            example: "Avatar"
+          objectCategory:
+            type: string
+            example: "Avatar"
+          position:
+            type: string
+            enum: [main, bottom]
+            example: "main"
+          order:
+            type: integer
+            example: 10
+
