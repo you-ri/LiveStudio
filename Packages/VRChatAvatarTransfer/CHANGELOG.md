@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.23.6] - 2026-06-23
+
+### Added
+
+- The VRChat Prop Builder now ports facial expressions onto the built prop: gesture toggles derived from the prop controller's transitions, plus the avatar's `ExpressionsMenu` expressions filtered to the parameters the prop's own controller declares (overrides that the prop cannot drive are dropped). Standalone prop prefabs still get their gesture expressions.
+
+### Changed
+
+- `VRCExpressionsConverter.Collect` was split out from `Convert` so the avatar and prop-builder paths share the same `VRCExpressionsMenu` walk.
+
 ## [0.23.0] - 2026-06-21
 
 ### Added

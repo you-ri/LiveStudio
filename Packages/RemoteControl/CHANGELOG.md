@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.23.6] - 2026-06-23
+
+### Changed
+
+- `[StringSelector]` can now annotate method parameters in addition to properties and fields. An `ExposedFunction` argument so marked is rendered as a dropdown whose choices come from the owning object's `sourcePropertyName` property, letting a function take a constrained string argument (e.g. selecting a named stage mark).
+
 ## [0.23.4] - 2026-06-22
 
 ### Fixed
