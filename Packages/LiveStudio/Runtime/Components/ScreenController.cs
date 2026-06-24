@@ -22,7 +22,8 @@ namespace Lilium.LiveStudio
     [RequireComponent(typeof(CinemachineBrain))]
     public class ScreenController : MonoBehaviour, IExposedDeserializeCallback
     {
-        [ExposedField, Hide]
+        // 出力解像度はどのシーンを開いても共通の出力設定なので Project scope で永続化する。
+        [ExposedField(persistScope = PersistScope.Project), Hide]
         [FormerlyExposedAs("width")]
         private int _width = 1920;
 
@@ -44,7 +45,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [ExposedField, Hide]
+        [ExposedField(persistScope = PersistScope.Project), Hide]
         [FormerlyExposedAs("height")]
         private int _height = 1080;
 
@@ -66,7 +67,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [ExposedField, Hide]
+        [ExposedField(persistScope = PersistScope.Project), Hide]
         [FormerlyExposedAs("isFullScreen")]
         private bool _isFullScreen;
 
@@ -148,7 +149,7 @@ namespace Lilium.LiveStudio
         SpoutSender _spoutSender;
 #endif
 
-        [SerializeField, ExposedField, Hide]
+        [SerializeField, ExposedField(persistScope = PersistScope.Project), Hide]
         [FormerlyExposedAs("useSpout")]
         private bool _useSpout;
 

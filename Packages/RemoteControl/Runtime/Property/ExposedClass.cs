@@ -18,6 +18,11 @@ namespace Lilium.RemoteControl
         public bool isPersistable;
 
         /// <summary>
+        /// 永続化先 (Scene=シーンファイル / Project=プロジェクト設定ファイル)。
+        /// </summary>
+        public PersistScope persistScope;
+
+        /// <summary>
         /// Shadow Field のメンバー名 (= Field の field.Name)。
         /// Property "X" に対する `[ExposedField, Hide, FormerlyExposedAs("X")]` Field を「Shadow Field」として
         /// 検出した場合にセットされる。Shadow Field は propertyTypes に独立 entry を作らず、
@@ -255,8 +260,8 @@ namespace Lilium.RemoteControl
             }
 
             // shadowField マップ: Property のメンバー名 (path) -> Shadow Field のメンバー名 (path)
-            // および Field 側の persistable 値 (Property の isPersistable に継承)
-            var shadowFieldByPropertyPath = new Dictionary<string, (string fieldPath, bool fieldPersistable)>(StringComparer.Ordinal);
+            // および Field 側の persistable / persistScope 値 (Property に継承)
+            var shadowFieldByPropertyPath = new Dictionary<string, (string fieldPath, bool fieldPersistable, PersistScope fieldScope)>(StringComparer.Ordinal);
             var shadowFieldMembers = new HashSet<MemberInfo>();
             for (int i = 0; i < allMembers.Count; i++)
             {
@@ -282,7 +287,7 @@ namespace Lilium.RemoteControl
                 }
                 if (targetPropertyPath == null) continue;
 
-                shadowFieldByPropertyPath[targetPropertyPath] = (fi.Name, fieldAttr.persistable);
+                shadowFieldByPropertyPath[targetPropertyPath] = (fi.Name, fieldAttr.persistable, fieldAttr.persistScope);
                 shadowFieldMembers.Add(fi);
             }
 
@@ -300,22 +305,33 @@ namespace Lilium.RemoteControl
                     // Shadow Field と判定された Field は propertyTypes に登録しない
                     if (shadowFieldMembers.Contains(member)) continue;
 
-                    // ExposedPropertyAttribute または ExposedFieldAttribute から name を取得
+                    // ExposedPropertyAttribute または ExposedFieldAttribute から name / persistScope を取得
                     string propName;
+                    PersistScope persistScope;
                     if (attr is ExposedPropertyAttribute propAttr)
+                    {
                         propName = propAttr.name ?? member.Name;
+                        persistScope = propAttr.persistScope;
+                    }
                     else if (attr is ExposedFieldAttribute fieldAttr)
+                    {
                         propName = fieldAttr.name ?? member.Name;
+                        persistScope = fieldAttr.persistScope;
+                    }
                     else
+                    {
                         propName = member.Name;
+                        persistScope = PersistScope.Scene;
+                    }
 
                     string shadowFieldPath = null;
                     if (member is PropertyInfo
                         && shadowFieldByPropertyPath.TryGetValue(member.Name, out var shadowInfo))
                     {
                         shadowFieldPath = shadowInfo.fieldPath;
-                        // Shadow Field 側の persistable を Property に継承
+                        // Shadow Field 側の persistable / persistScope を Property に継承
                         isPersistable = shadowInfo.fieldPersistable;
+                        persistScope = shadowInfo.fieldScope;
                     }
 
                     properties.Add(new ExposedPropertyDefine
@@ -323,6 +339,7 @@ namespace Lilium.RemoteControl
                         name = propName,
                         path = member.Name,
                         isPersistable = isPersistable,
+                        persistScope = persistScope,
                         shadowFieldPath = shadowFieldPath
                     });
                     propertyOrderMap[member.Name] = i;
@@ -831,6 +848,12 @@ namespace Lilium.RemoteControl
         public readonly bool isPersistable;
 
         /// <summary>
+        /// 永続化先 (Scene=シーンファイル / Project=プロジェクト設定ファイル)。
+        /// <see cref="isPersistable"/> が true の場合にのみ意味を持つ。
+        /// </summary>
+        public readonly PersistScope persistScope;
+
+        /// <summary>
         /// 有効なプロパティかどうか
         /// </summary>
         public bool isValid => isArrayElement || properyInfo != null || fieldInfo != null;
@@ -939,7 +962,7 @@ namespace Lilium.RemoteControl
         public bool forceValue => false;
 
 
-        public ExposedPropertyType(string name, MemberInfo info, bool isPersistable = true, FieldInfo shadowField = null)
+        public ExposedPropertyType(string name, MemberInfo info, bool isPersistable = true, FieldInfo shadowField = null, PersistScope persistScope = PersistScope.Scene)
         {
             Debug.Assert(info != null, "PropertyInfo cannot be null");
 
@@ -948,6 +971,7 @@ namespace Lilium.RemoteControl
             this.shadowField = shadowField;
             this._name = name;
             this.isPersistable = isPersistable;
+            this.persistScope = persistScope;
             this.isArrayElement = false;
             this.arrayElementType = null;
             this.arrayIndex = -1;
@@ -991,6 +1015,13 @@ namespace Lilium.RemoteControl
             if (this.controlAttribute is InlineReferenceAttribute)
             {
                 this.isPersistable = true;
+            }
+
+            // PersistScope.Project を指定しても persistable でなければどこにも保存されない。
+            // (shadow field / [InlineReference] を持たない [ExposedProperty] などが該当)。誤用を早期検知する。
+            if (this.persistScope == PersistScope.Project && !this.isPersistable)
+            {
+                Debug.LogWarning($"[RemoteControl] Member '{info?.DeclaringType?.Name}.{_name}' is marked PersistScope.Project but is not persistable, so it will not be saved anywhere. Pair it with a shadow field or make it a persistable [ExposedField].");
             }
 
             // TypeSelectorAttributeの場合、派生型を自動計算してoptionsを設定
@@ -1160,6 +1191,7 @@ namespace Lilium.RemoteControl
             this.arrayIndex = arrayIndex;
             this.controlType = "default";
             this.isPersistable = true;
+            this.persistScope = PersistScope.Scene;
             this.isReadOnly = false; // 配列要素は通常書き込み可能
             this.isStatic = false; // 配列要素はstaticではない
             this.exposedValueClass = ExposedClass.Find(elementType);

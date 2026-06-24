@@ -84,7 +84,7 @@ namespace Lilium.LiveStudio
             var thumbnail = thumbnails[0];
             if (thumbnail == null || !thumbnail.HasImage) return;
             // Unload(false) で生成済みアセットは生存するが、UnityEngine.Object 参照を持ち越さないよう複製する。
-            BundleThumbnailCache.Store(filePath, (byte[])thumbnail.ImageData.Clone(), thumbnail.MimeType);
+            ThumbnailCache.Store(filePath, (byte[])thumbnail.ImageData.Clone(), thumbnail.MimeType);
         }
 
         /// <summary>

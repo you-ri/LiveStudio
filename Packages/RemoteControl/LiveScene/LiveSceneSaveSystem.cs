@@ -25,12 +25,6 @@ namespace Lilium.RemoteControl.LiveScene
         private const string kLiveSceneFileDefaultName = "Untitled.live.json";
         private const string kSceneFileDefaultSubDir = "Virgo Motion/Saved";
 
-        // Fixed PlayerPrefs key that mirrors the absolute path of the most recently used
-        // scene file. Used by the BeforeSceneLoad startup hook to read the file without
-        // needing access to a per-app defaultFileName (no RemoteControlBehaviour exists yet
-        // at that point).
-        private const string kLastScenePathKey = "RemoteControl_LastScenePath";
-
         /// <summary>
         /// Optional directory override for the "Save As" dialog. Set by the upper-level
         /// application at startup via <see cref="SetSaveAsDefaultDirectory"/>.
@@ -41,6 +35,22 @@ namespace Lilium.RemoteControl.LiveScene
         {
             _saveAsDefaultDirectoryOverride = absolutePath;
         }
+
+        /// <summary>
+        /// Project folder used to locate the per-project startup state file
+        /// (<c>{projectPath}/Settings/startup.json</c>). Set by the upper-level application
+        /// whenever a project is opened (see project manager). When unset (e.g. RemoteControl
+        /// used standalone without a project manager), the state falls back to
+        /// <see cref="Application.persistentDataPath"/>.
+        /// </summary>
+        private static string _stateProjectDirectoryOverride;
+
+        public static void SetStateProjectDirectory(string projectPath)
+        {
+            _stateProjectDirectoryOverride = projectPath;
+        }
+
+        private static string _StateDir() => _stateProjectDirectoryOverride ?? Application.persistentDataPath;
 
         /// <summary>
         /// True if the path is a live scene file (current ".live.json" or legacy ".scene.json").
@@ -65,7 +75,7 @@ namespace Lilium.RemoteControl.LiveScene
 
         /// <summary>
         /// Current scene file path. Relative paths resolve against persistentDataPath.
-        /// Setter persists the value to PlayerPrefs.
+        /// Setter persists the value to the per-project startup state file.
         /// </summary>
         public string currentFilePath
         {
@@ -73,13 +83,11 @@ namespace Lilium.RemoteControl.LiveScene
             set
             {
                 _currentFilePath = value;
-                PlayerPrefs.SetString(_prefsKey, value ?? "");
-                // Mirror the absolute path into a fixed key so the BeforeSceneLoad hook
-                // can read it on next launch without knowing the per-app defaultFileName.
-                // When scene switching is disabled, write empty so the static startup hook
-                // (which has no access to this config) bails out and never switches.
+                // Record the absolute path into the project's startup state so the next launch
+                // (and the BeforeSceneLoad hook) can reopen it. When scene switching is disabled,
+                // write empty so the static startup hook bails out and never switches.
                 var fullPath = string.IsNullOrEmpty(value) ? "" : _ResolvePath(value);
-                PlayerPrefs.SetString(kLastScenePathKey, _switchSceneOnLoad ? fullPath : "");
+                StartupStateStore.Write(_StateDir(), _switchSceneOnLoad ? fullPath : "");
             }
         }
 
@@ -87,7 +95,6 @@ namespace Lilium.RemoteControl.LiveScene
 
         private readonly ExposedObjectContainer _objectContainer;
         private readonly string _defaultFileName;
-        private readonly string _prefsKey;
         private readonly bool _switchSceneOnLoad;
         private string _currentFilePath;
         private string _baselineJson;
@@ -100,16 +107,47 @@ namespace Lilium.RemoteControl.LiveScene
             _defaultFileName = defaultFileName ?? string.Empty;
             this.autoSaveOnQuit = autoSaveOnQuit;
             _switchSceneOnLoad = switchSceneOnLoad;
-            _prefsKey = "RemoteControl_ScenePath_" + _defaultFileName;
-            _currentFilePath = PlayerPrefs.GetString(_prefsKey, _defaultFileName);
+            // Restore the current scene from the project's startup state. When none is recorded,
+            // fall back to the default; a one-time migration imports the legacy PlayerPrefs value.
+            _currentFilePath = StartupStateStore.Read(_StateDir())
+                ?? _MigrateLegacyScenePath()
+                ?? _defaultFileName;
+        }
+
+        // One-time migration of the pre-startup.json PlayerPrefs state. Earlier builds stored the
+        // current scene under "RemoteControl_ScenePath_<defaultFileName>" (relative) and mirrored
+        // the absolute path to "RemoteControl_LastScenePath". If startup.json has no scene yet but a
+        // legacy value exists, adopt it, write it into startup.json, and delete the legacy keys so
+        // the migration runs only once. Returns the migrated path, or null when nothing to migrate.
+        private string _MigrateLegacyScenePath()
+        {
+            const string kLegacyPrefsPrefix = "RemoteControl_ScenePath_";
+            const string kLegacyLastScenePathKey = "RemoteControl_LastScenePath";
+
+            var legacyKey = kLegacyPrefsPrefix + _defaultFileName;
+            var legacy = PlayerPrefs.GetString(legacyKey, "");
+            // No usable legacy value (missing, or just the default the constructor would pick anyway).
+            if (string.IsNullOrEmpty(legacy) || legacy == _defaultFileName)
+            {
+                PlayerPrefs.DeleteKey(legacyKey);
+                PlayerPrefs.DeleteKey(kLegacyLastScenePathKey);
+                return null;
+            }
+
+            var fullPath = _ResolvePath(legacy);
+            StartupStateStore.Write(_StateDir(), _switchSceneOnLoad ? fullPath : "");
+            PlayerPrefs.DeleteKey(legacyKey);
+            PlayerPrefs.DeleteKey(kLegacyLastScenePathKey);
+            PlayerPrefs.Save();
+            return legacy;
         }
 
         // --- Startup hook ---
 
         /// <summary>
-        /// Runs before the first scene is loaded. If the most recently used scene file
-        /// (mirrored to <see cref="kLastScenePathKey"/>) targets a different Unity scene
-        /// than the one Unity is about to load, redirect to that scene up-front.
+        /// Runs before the first scene is loaded. If the project's startup state
+        /// (<c>{projectPath}/Settings/startup.json</c>) records a scene targeting a different
+        /// Unity scene than the one Unity is about to load, redirect to that scene up-front.
         /// This avoids switching scenes after the HTTP server has already started, which
         /// would race with in-flight requests and produce ObjectDisposedException noise.
         /// All error paths are silent: fall through to the normal startup scene.
@@ -119,7 +157,13 @@ namespace Lilium.RemoteControl.LiveScene
         {
             if (!Application.isPlaying) return;
 
-            var fullPath = PlayerPrefs.GetString(kLastScenePathKey, "");
+            // Read the persisted project path directly (no dependency on the upper-layer project
+            // manager and no reliance on static-init ordering). Fall back to persistentDataPath
+            // for the project-less standalone case.
+            var projectPath = PlayerPrefs.GetString(StartupStateStore.kProjectPathKey, "");
+            var stateDir = string.IsNullOrEmpty(projectPath) ? Application.persistentDataPath : projectPath;
+
+            var fullPath = StartupStateStore.Read(stateDir);
             if (string.IsNullOrEmpty(fullPath)) return;
             if (!System.IO.File.Exists(fullPath)) return;
 
@@ -199,7 +243,7 @@ namespace Lilium.RemoteControl.LiveScene
             // first. The deserialize is deferred until the new scene loads: a non-persistent host is
             // recreated by the reload and re-enters this in its Start(); a persistent host re-enters it
             // from its sceneLoaded handler. This unifies the order "read JSON -> switch scene ->
-            // deserialize" for both startup loads (PlayerPrefs-backed) and explicit LoadScene calls.
+            // deserialize" for both startup loads (startup.json-backed) and explicit LoadScene calls.
             // When switching is disabled, skip the switch but still deserialize the saved property
             // values into the current scene.
             if (_switchSceneOnLoad && _TrySwitchBaseScene(fullPath)) return true;
@@ -292,6 +336,10 @@ namespace Lilium.RemoteControl.LiveScene
             System.IO.File.WriteAllText(fullPath, json);
             _baselineJson = json;
 
+            // Project scope のメンバーは live.json から除外済みなので、ここで
+            // {projectPath}/Settings/{クラス名}.settings.json へ別途書き出す。
+            _SaveProjectSettings();
+
             Debug.Log($"[RemoteControl] Live scene saved to '{fullPath}'");
 
             // Let connected remote apps know the save completed (shown as a toast there).
@@ -301,6 +349,20 @@ namespace Lilium.RemoteControl.LiveScene
                 icon: "save");
         }
 
+        // Writes every Project-scoped member into per-class {projectPath}/Settings/{ClassName}.settings.json.
+        // Resolves the same object set BuildLiveSceneJson uses (main container + merged sources).
+        private void _SaveProjectSettings()
+        {
+            if (_objectContainer == null) return;
+            var projectPath = _stateProjectDirectoryOverride;
+            if (string.IsNullOrEmpty(projectPath)) return;
+
+            var allObjects = new List<IExposedObject>(_objectContainer.EnumerateAllObjects());
+            var objects = ExposedObjectGraph.ResolveExposedObjects(allObjects, _objectContainer);
+            var perClass = ProjectSettingsSerializer.BuildPerClassJson(objects, _objectContainer);
+            ProjectSettingsStore.WriteAll(projectPath, perClass);
+        }
+
         public bool HasUnsavedChanges()
             => LiveSceneSerializer.HasChanges(_objectContainer, _baselineJson);
 
@@ -308,7 +370,7 @@ namespace Lilium.RemoteControl.LiveScene
         {
             var fullPath = _ResolvePath(_currentFilePath);
             _currentFilePath = _defaultFileName;
-            PlayerPrefs.DeleteKey(_prefsKey);
+            StartupStateStore.Delete(_StateDir());
             _baselineJson = null;
 
             if (System.IO.File.Exists(fullPath))
@@ -463,16 +525,31 @@ namespace Lilium.RemoteControl.LiveScene
         {
             if (_objectContainer == null) return;
 
+            string fileJson = null;
             if (System.IO.File.Exists(fullPath))
             {
-                var json = System.IO.File.ReadAllText(fullPath);
-                LiveSceneSerializer.LiveSceneFromJson(json, _objectContainer);
+                fileJson = System.IO.File.ReadAllText(fullPath);
+                LiveSceneSerializer.LiveSceneFromJson(fileJson, _objectContainer);
             }
 
-            // Cache the post-load state as the baseline for HasUnsavedChanges. The baseline
-            // must use the same baseSceneName the next save will write so an unchanged scene
-            // does not appear dirty on round-trip.
-            _baselineJson = LiveSceneSerializer.BuildLiveSceneJson(_objectContainer, _ResolveBaseSceneName());
+            // Project scope のメンバーは scene ファイルに含まれないため、シーン適用後に
+            // {projectPath}/Settings/*.settings.json を冪等適用する。シーンロードのたびに走るので
+            // シーン切替を跨いで Project 設定が保たれる。Scene/Project はキーが互いに素なので順序は無害。
+            if (!string.IsNullOrEmpty(_stateProjectDirectoryOverride))
+            {
+                ProjectSettingsStore.ApplyAll(_stateProjectDirectoryOverride, _objectContainer);
+            }
+
+            // Use the loaded file's content verbatim as the dirty baseline. The file was written by a
+            // previous BuildLiveSceneJson save and already holds the COMPLETE saved state — including
+            // entries for assets (e.g. props) that finish loading asynchronously after this point.
+            // Re-snapshotting the live container here would capture it before those async loads complete,
+            // so the quit-time snapshot would always look "more populated" and falsely report unsaved
+            // changes (the dialog appeared on every launch→quit, even right after a clean save).
+            // HasChanges tolerates version / formatting differences, so comparing against the raw file is
+            // safe. When no file exists (a brand-new scene), fall back to a freshly built empty baseline.
+            _baselineJson = fileJson
+                ?? LiveSceneSerializer.BuildLiveSceneJson(_objectContainer, _ResolveBaseSceneName());
         }
 
         // A Unity scene counts as a "base scene" only when it is registered in build settings.

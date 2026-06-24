@@ -293,8 +293,11 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
-        /// Makes the loaded set with the given id the active set (lighting/instantiation target).
-        /// Only loaded sets can be activated.
+        /// Makes the loaded set with the given id the active set (lighting/instantiation target). Only
+        /// loaded sets can be activated; this does not load or unload any set. Drives the Stage page's set
+        /// selection — loading is controlled independently through each entry's enabled flag, so multiple
+        /// sets stay loaded and only the active one changes here. (A stage-switch action wanting a complete
+        /// replace uses <see cref="SwitchToSetByName"/> instead.)
         /// </summary>
         [ExposedFunction]
         public void SetActiveSet(string setId)
@@ -323,6 +326,72 @@ namespace Lilium.LiveStudio
                 {
                     if (view[i] is SetBundleAsset s) s.isActive = s == asset;
                 }
+            }
+
+            _ReconcileActiveScene();
+            _RebuildSetsView();
+        }
+
+        /// <summary>
+        /// Names of the known sets (the bootstrap set plus each added set bundle), in display order.
+        /// The option source for a stage selector such as a trigger's switch-stage action.
+        /// </summary>
+        public string[] GetSetNames()
+        {
+            var names = new string[sets.Length];
+            for (int i = 0; i < sets.Length; i++) names[i] = sets[i].name ?? string.Empty;
+            return names;
+        }
+
+        /// <summary>
+        /// Switches the active stage to the set with the given display name as a complete switch: every
+        /// other loaded set is unloaded and the named set is loaded on demand, leaving only the persistent
+        /// bootstrap scene and the named set loaded. Used by <see cref="SwitchStageAction"/>. A no-op when
+        /// no set matches. Distinct from <see cref="SetActiveSet"/>, which only re-flags the active set
+        /// among already-loaded sets and never unloads (the Stage page's selection).
+        /// </summary>
+        public void SwitchToSetByName(string setName)
+        {
+            if (string.IsNullOrEmpty(setName)) return;
+            for (int i = 0; i < sets.Length; i++)
+            {
+                if (sets[i].name == setName) { _SwitchToSet(sets[i].id); return; }
+            }
+        }
+
+        // Complete-switch core: flag only the target active, unload every other set bundle, and load the
+        // target on demand. _ReconcileActiveScene finishes activation once the target's scene is ready (or
+        // restores the bootstrap scene when switching to the persistent set). SetAssetEnabled is a no-op
+        // when the enabled flag is unchanged, so already-unloaded sets are skipped cheaply.
+        private void _SwitchToSet(string setId)
+        {
+            var manager = ExternalAssetManager.current;
+            if (manager == null) return;
+
+            // null target = switch to the bootstrap (persistent) scene: no set asset stays loaded.
+            SetBundleAsset target = null;
+            if (setId != kPersistentSetId)
+            {
+                target = manager.FindAsset(setId) as SetBundleAsset;
+                if (target == null)
+                {
+                    Debug.LogWarning($"[LiveStudio] Cannot switch to an unknown set: {setId}");
+                    return;
+                }
+            }
+
+            var view = manager.assetsView;
+            for (int i = 0; i < view.Count; i++)
+            {
+                if (view[i] is not SetBundleAsset s) continue;
+                bool isTarget = s == target;
+                s.isActive = isTarget;
+                if (!isTarget) manager.SetAssetEnabled(s.id, false);
+            }
+
+            if (target != null && !target.hasScene)
+            {
+                manager.SetAssetEnabled(setId, true);
             }
 
             _ReconcileActiveScene();

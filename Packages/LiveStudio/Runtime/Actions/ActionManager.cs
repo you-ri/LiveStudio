@@ -1,0 +1,338 @@
+// Copyright (c) You-Ri, 2026
+
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.Scripting.APIUpdating;
+
+using Lilium.RemoteControl;
+
+namespace Lilium.LiveStudio
+{
+    /// <summary>
+    /// The general "fire and act" base feature of LiveStudio: a list of <see cref="ActionSet"/>s the user
+    /// authors from the remote app, each binding one input <see cref="InputSource"/> to an ordered set of
+    /// <see cref="ActionBase"/>s. Each frame every enabled set evaluates its input and runs its actions in
+    /// order.
+    ///
+    /// A plain serializable <see cref="IExposedObject"/> (like <see cref="StageManager"/> /
+    /// <see cref="ExternalAssetManager"/>), stored in the scene's <c>RemoteControlBehaviour._objects</c>
+    /// through its <c>[SerializeReference]</c> list, so the authored sets persist in the scene.
+    /// </summary>
+    [Serializable]
+    [ExposedClass(Icon = "bolt", Category = "Action")]
+    [MovedFrom(false, null, null, "TriggerManager")]
+    public class ActionManager : IExposedObject, IExposedDeserializeCallback
+    {
+        const string kId = "c4e8b2d6-7a91-4f53-8e0c-1d9a6b3f2e74";
+
+        // The active manager, so actions / sources can reach it. Set in OnEnable, cleared in OnDisable.
+        // Reset on subsystem registration for safety when Domain Reload is disabled.
+        [NonSerialized]
+        private static ActionManager _current;
+
+        public static ActionManager current => _current;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void _InitializeCurrent() => _current = null;
+
+        public string name { get; set; } = "Action Manager";
+
+        public ExposedObjectHandle? exposedObject => ExposedObjectRegistry.FindByTarget(this);
+
+        public string id => kId;
+
+        /// <summary>The authored action sets. Polymorphic input/actions serialize via SerializeReference.</summary>
+        [SerializeReference, Select]
+        [ExposedField]
+        public List<ActionSet> actionSets = new List<ActionSet>();
+
+        // The shared input map all KeyInputSources create their actions in. Rebuilt when the set of
+        // inputs changes or an input's binding/type changes. Runtime-only.
+        [NonSerialized]
+        private InputActionMap _map;
+
+        [NonSerialized]
+        private bool _initialized;
+
+        public void OnEnable()
+        {
+            _current = this;
+
+            ExposedObjectRegistry.Create<ActionManager>(this, kId);
+            ExposedClass.Get<ActionManager>().onPropertyChanged += _OnPropertyChanged;
+
+            _RebuildInputMap();
+
+            _initialized = true;
+        }
+
+        public void OnDisable()
+        {
+            _initialized = false;
+
+            ExposedClass.Get<ActionManager>().onPropertyChanged -= _OnPropertyChanged;
+
+            _TeardownInputMap();
+
+            ExposedObjectRegistry.FindByTarget(this)?.Unregister();
+
+            if (_current == this) _current = null;
+        }
+
+        public void OnDispose() => OnDisable();
+
+        public void Update()
+        {
+            if (!_initialized) return;
+            if (!Application.isPlaying) return;
+
+            for (int i = 0; i < actionSets.Count; i++)
+            {
+                var set = actionSets[i];
+                if (set == null) continue;
+
+                // Snapshot the previous frame's hold before overwriting it, so the helper can detect the
+                // rising/falling edge of the manual hold.
+                bool wasHeld = set.heldPrev;
+                set.heldPrev = set.held;
+
+                if (!TryGetFiringContext(set, wasHeld, out var context))
+                {
+                    set.lastValue = 0f;
+                    continue;
+                }
+
+                // Record this frame's firing output so the remote app can poll it (actionSetValues).
+                set.lastValue = context.value;
+
+                // A set that just latched on (rising active edge) clears its groupmates so only one set in a
+                // named group stays on. No-op for ungrouped or non-toggle winners (see ApplyExclusiveGroup),
+                // so this is cheap for the common case.
+                if (context.pressed && context.active)
+                {
+                    ApplyExclusiveGroup(actionSets, i);
+                }
+
+                var actions = set.actions;
+                if (actions == null) continue;
+                for (int j = 0; j < actions.Count; j++)
+                {
+                    actions[j]?.Apply(in context);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Computes a set's firing context for this frame given the previous frame's hold state. Returns
+        /// false (skip, value 0) when the set is disabled or has no input and is not held. Pure aside from
+        /// advancing the input source's edge state, so it is unit-testable without play mode.
+        /// </summary>
+        /// <param name="set">The action set to evaluate. Must not be null.</param>
+        /// <param name="wasHeld">The set's <see cref="ActionSet.held"/> on the previous frame.</param>
+        internal static bool TryGetFiringContext(ActionSet set, bool wasHeld, out ActionContext context)
+        {
+            if (set.held)
+            {
+                // Manual hold: fire as if the input were held active. Overrides the bound input and works
+                // even when the set is disabled, since the user triggered it explicitly. Rising edge on the
+                // first held frame.
+                context = new ActionContext(1f, pressed: !wasHeld, released: false, active: true);
+                return true;
+            }
+
+            if (wasHeld)
+            {
+                // Hold released this frame: a single falling edge, then back to normal next frame.
+                context = new ActionContext(0f, pressed: false, released: true, active: false);
+                return true;
+            }
+
+            if (!set.enabled || set.input == null)
+            {
+                context = default;
+                return false;
+            }
+
+            context = set.input.Evaluate();
+            return true;
+        }
+
+        /// <summary>Per-set firing output (0..1) in <see cref="actionSets"/> order, for the remote app to
+        /// poll and light its cards while an input (or the manual hold) is firing. Read-only and hidden;
+        /// reflects the value recorded by the most recent <see cref="Update"/>. Polled rather than pushed
+        /// over SSE so it costs nothing while the Actions page is not open.</summary>
+        [ExposedProperty, Hide]
+        public float[] actionSetValues
+        {
+            get
+            {
+                var values = new float[actionSets.Count];
+                for (int i = 0; i < actionSets.Count; i++)
+                {
+                    values[i] = actionSets[i]?.lastValue ?? 0f;
+                }
+                return values;
+            }
+        }
+
+        public void Reset() { }
+
+        public void OnAfterExposedDeserialize()
+        {
+            // A live-scene restore replaces the action sets list; rebuild the input map so the restored
+            // inputs are bound. Idempotent, so harmless if it also fires on an unrelated property write.
+            _RebuildInputMap();
+        }
+
+        /// <summary>Adds a new action set (default key input, no actions) and rebuilds the input map.</summary>
+        [ExposedFunction]
+        public void AddActionSet()
+        {
+            actionSets.Add(new ActionSet
+            {
+                id = Guid.NewGuid().ToString(),
+                name = "Action Set",
+                enabled = true,
+                input = new KeyInputSource(),
+                actions = new List<ActionBase>(),
+            });
+            _RebuildInputMap();
+            _Broadcast();
+        }
+
+        /// <summary>Removes the action set with the given id and rebuilds the input map.</summary>
+        [ExposedFunction]
+        public void RemoveActionSet(string actionSetId)
+        {
+            int index = _IndexOf(actionSetId);
+            if (index < 0) return;
+            actionSets.RemoveAt(index);
+            _RebuildInputMap();
+            _Broadcast();
+        }
+
+        /// <summary>Toggles the manual hold of the action set with the given id. While held the set fires
+        /// from <see cref="Update"/> as if its input were held active (independent of
+        /// <see cref="ActionSet.enabled"/>); toggling off releases it. Lets the remote app fire a set from
+        /// its card without a bound input. The broadcast lets the card reflect the new hold state.</summary>
+        [ExposedFunction]
+        public void ToggleActionSet(string actionSetId)
+        {
+            int index = _IndexOf(actionSetId);
+            if (index < 0) return;
+
+            var set = actionSets[index];
+            if (set == null) return;
+
+            set.SetHeld(!set.held);
+            // Turning a grouped toggle on clears its groupmates (toggle-style radio); no-op otherwise.
+            if (set.held) ApplyExclusiveGroup(actionSets, index);
+            _Broadcast();
+        }
+
+        /// <summary>Sets the manual hold of the action set with the given id to an explicit state. Used by the
+        /// remote app's momentary (Button-mode) card, which holds on press and releases on pointer-up: an
+        /// idempotent set avoids the desync a flip (<see cref="ToggleActionSet"/>) would suffer if a press
+        /// or release event were missed. No-op (and no broadcast) when already in the requested state.</summary>
+        [ExposedFunction]
+        public void SetActionSetHeld(string actionSetId, bool held)
+        {
+            int index = _IndexOf(actionSetId);
+            if (index < 0) return;
+
+            var set = actionSets[index];
+            if (set == null || set.held == held) return;
+
+            set.SetHeld(held);
+            if (held) ApplyExclusiveGroup(actionSets, index);
+            _Broadcast();
+        }
+
+        // Action 要素の追加/削除/型選択は、RemoteApp の汎用配列「+」(elementTypeOptions による
+        // 型選択メニュー) と汎用削除でまかなう。専用の Add/RemoveAction 関数は持たない。
+
+        // Rebuilds enabled-set property edits that change input wiring (input type / binding) into a
+        // fresh input map. Action edits do not affect input, so they are ignored here.
+        private void _OnPropertyChanged(ExposedProperty property, object oldValue)
+        {
+            if (!_initialized) return;
+            if (!property.PathContains("input")) return;
+            _RebuildInputMap();
+        }
+
+        // Tears down the previous map and binds every current input into a fresh one. Building a new map
+        // discards stale actions in one step; inputs re-create their actions in Setup.
+        private void _RebuildInputMap()
+        {
+            _TeardownInputMap();
+
+            _map = new InputActionMap("Actions");
+            for (int i = 0; i < actionSets.Count; i++)
+            {
+                var set = actionSets[i];
+                if (set?.input == null || string.IsNullOrEmpty(set.id)) continue;
+                set.input.Setup(_map, _ActionName(set.id));
+            }
+            _map.Enable();
+        }
+
+        private void _TeardownInputMap()
+        {
+            if (_map == null) return;
+            _map.Disable();
+            _map.Dispose();
+            _map = null;
+        }
+
+        private static string _ActionName(string actionSetId) => "ActionSet." + actionSetId;
+
+        /// <summary>
+        /// Enforces toggle-style exclusivity within a named group: clears every other set sharing the
+        /// winner's non-empty group so only the winner stays on. Does nothing unless the winner is a grouped
+        /// <see cref="InputMode.Toggle"/> set, so ungrouped, button (momentary), and value sets never knock
+        /// others off. Clearing a groupmate drops both its manual hold and its latched keyboard toggle, and
+        /// is idempotent on sets that are already off. Static and list-based so it is unit-testable without
+        /// play mode.
+        /// </summary>
+        internal static void ApplyExclusiveGroup(List<ActionSet> sets, int winnerIndex)
+        {
+            if (sets == null || winnerIndex < 0 || winnerIndex >= sets.Count) return;
+
+            var winner = sets[winnerIndex];
+            if (!_IsExclusiveSet(winner)) return;
+
+            string group = winner.group;
+            for (int i = 0; i < sets.Count; i++)
+            {
+                if (i == winnerIndex) continue;
+                var other = sets[i];
+                if (other == null || other.group != group) continue;
+
+                other.SetHeld(false);
+                other.input?.SetToggleState(false);
+            }
+        }
+
+        // A set participates in group exclusivity only when it has a non-empty group and a Toggle-mode
+        // input: the radio behavior is meaningful only for latched (on/off) sets, not momentary buttons.
+        private static bool _IsExclusiveSet(ActionSet set)
+            => set != null
+               && !string.IsNullOrEmpty(set.group)
+               && set.input != null
+               && set.input.mode == InputMode.Toggle;
+
+        private int _IndexOf(string actionSetId)
+        {
+            if (string.IsNullOrEmpty(actionSetId)) return -1;
+            for (int i = 0; i < actionSets.Count; i++)
+            {
+                if (actionSets[i] != null && actionSets[i].id == actionSetId) return i;
+            }
+            return -1;
+        }
+
+        private void _Broadcast() => ExposedPropertyBroadcast.BroadcastProperty(this, "actionSets");
+    }
+}

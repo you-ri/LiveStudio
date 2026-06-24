@@ -137,6 +137,18 @@ namespace Lilium.RemoteControl.LiveScene
         public void ClearCurrentData() => _sceneSave?.ClearCurrentData();
         public void RevertAllToDefault() => _sceneSave?.RevertAllToDefault();
 
+        /// <summary>
+        /// Arms the deferred re-deserialize for a base-scene reload that is triggered programmatically
+        /// (e.g. New Scene) rather than through <see cref="LoadCurrentData"/>. Without this, a persistent
+        /// host's <see cref="_OnSceneLoaded"/> bails out and never fires <see cref="onBaseSceneReloaded"/>,
+        /// so project-scoped state (loaded props/avatar, lighting) is left untouched by the reload.
+        /// No-op on a non-persistent host (its replacement re-enters the load in Start) and in edit mode.
+        /// </summary>
+        public void PrepareBaseSceneReload()
+        {
+            if (persistAcrossScenes && Application.isPlaying) _switchPendingReload = true;
+        }
+
         // --- Unity lifecycle ---
 
         protected virtual void Awake()

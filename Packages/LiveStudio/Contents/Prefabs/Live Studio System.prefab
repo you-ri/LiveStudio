@@ -98,6 +98,7 @@ MonoBehaviour:
   - rid: 4217817217901789389
   - rid: 4217817217901789390
   - rid: 4217817217901789391
+  - rid: 4217817297473503388
   _uiDefinition: {fileID: 11400000, guid: 0d7378062cf94704d8b17ee9440d3b21, type: 2}
   references:
     version: 2
@@ -114,3 +115,7 @@ MonoBehaviour:
     - rid: 4217817217901789391
       type: {class: StageManager, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
       data: 
+    - rid: 4217817297473503388
+      type: {class: ActionManager, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      data:
+        actionSets: []

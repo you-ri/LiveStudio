@@ -128,7 +128,7 @@ namespace Lilium.RemoteControl
                             Debug.LogWarning($"[RemoteControl] Shadow field '{e.shadowFieldPath}' not found on {type.Name}; falling back to direct property access for '{e.name}'.");
                         }
                     }
-                    return new ExposedPropertyType(e.name, memberInfo, e.isPersistable, shadowField);
+                    return new ExposedPropertyType(e.name, memberInfo, e.isPersistable, shadowField, e.persistScope);
                 }
 
                 Debug.LogError($"[RemoteControl] Member not found for {type.Name}.{e.path}");
@@ -322,6 +322,22 @@ namespace Lilium.RemoteControl
             if (defaultProperty != null)
             {
                 return defaultProperty.GetValue(null);
+            }
+
+            // 抽象クラス / インターフェース (多態 SerializeReference 配列の要素型) は直接生成できない。
+            // 登録済みの具象 [ExposedClass] 派生型の先頭にフォールバックし、generic な「要素追加」が
+            // 有効なデフォルト要素を生成できるようにする (型は @type で後から変更できる)。
+            if (elementType.IsAbstract || elementType.IsInterface)
+            {
+                foreach (var derived in TypeReflectionSystem.FindDerivedTypes(elementType))
+                {
+                    if (!derived.IsAbstract && ExposedClass.Find(derived) != null)
+                    {
+                        return CreateDefaultElement(derived);
+                    }
+                }
+                Debug.LogWarning($"[RemoteControl] No concrete [ExposedClass] subtype found for abstract element type '{elementType.Name}'.");
+                return null;
             }
 
             // ExposedClassが登録されているか確認
