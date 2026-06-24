@@ -222,6 +222,23 @@ namespace Lilium.LiveStudio
             _Broadcast();
         }
 
+        /// <summary>Sets the manual hold of the action set with the given id to an explicit state. Used by the
+        /// remote app's momentary (Button-mode) card, which holds on press and releases on pointer-up: an
+        /// idempotent set avoids the desync a flip (<see cref="ToggleActionSet"/>) would suffer if a press
+        /// or release event were missed. No-op (and no broadcast) when already in the requested state.</summary>
+        [ExposedFunction]
+        public void SetActionSetHeld(string actionSetId, bool held)
+        {
+            int index = _IndexOf(actionSetId);
+            if (index < 0) return;
+
+            var set = actionSets[index];
+            if (set == null || set.held == held) return;
+
+            set.SetHeld(held);
+            _Broadcast();
+        }
+
         // Action 要素の追加/削除/型選択は、RemoteApp の汎用配列「+」(elementTypeOptions による
         // 型選択メニュー) と汎用削除でまかなう。専用の Add/RemoveAction 関数は持たない。
 
