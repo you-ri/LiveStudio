@@ -6,8 +6,9 @@ using Lilium.RemoteControl;
 namespace Lilium.LiveStudio
 {
     /// <summary>
-    /// Makes the named set the active stage on the rising edge, via <see cref="StageManager"/>.
-    /// Only loaded sets can be activated; activating an unloaded set is a no-op (logged by the manager).
+    /// Makes the named set the active stage on the rising edge, via <see cref="StageManager"/>. This is a
+    /// complete switch: any other loaded set is unloaded, and the named set is loaded on demand and
+    /// activated once its scene is ready.
     /// </summary>
     [Serializable]
     [ExposedClass(Category = "Action", Icon = "public")]
@@ -24,7 +25,7 @@ namespace Lilium.LiveStudio
         public override void Apply(in ActionContext context)
         {
             if (!context.pressed) return;
-            StageManager.current?.SetActiveSetByName(stage);
+            StageManager.current?.SwitchToSetByName(stage);
         }
     }
 }
