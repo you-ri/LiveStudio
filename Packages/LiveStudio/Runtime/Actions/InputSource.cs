@@ -68,7 +68,10 @@ namespace Lilium.LiveStudio
             bool released = !rawActive && _prevActive;
             _prevActive = rawActive;
 
-            return new ActionContext(output, pressed, released, output > kThreshold);
+            // Button commits on release (key-up); every other mode commits on press.
+            bool triggered = mode == InputMode.Button ? released : pressed;
+
+            return new ActionContext(output, pressed, released, output > kThreshold, triggered);
         }
 
         /// <summary>Resets latched runtime state (toggle / edge), e.g. when (re)bound.</summary>

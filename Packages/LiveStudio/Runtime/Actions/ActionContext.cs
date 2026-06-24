@@ -21,12 +21,18 @@ namespace Lilium.LiveStudio
         /// <summary>True while <see cref="value"/> is above the activation threshold.</summary>
         public readonly bool active;
 
-        public ActionContext(float value, bool pressed, bool released, bool active)
+        /// <summary>One-shot trigger pulse for discrete ("switch once") actions. Fires on release (key-up)
+        /// in <see cref="InputMode.Button"/> so a button commits when let go, and on press (rising edge) in
+        /// every other mode. Actions that act once per activation read this instead of <see cref="pressed"/>.</summary>
+        public readonly bool triggered;
+
+        public ActionContext(float value, bool pressed, bool released, bool active, bool triggered)
         {
             this.value = value;
             this.pressed = pressed;
             this.released = released;
             this.active = active;
+            this.triggered = triggered;
         }
     }
 }

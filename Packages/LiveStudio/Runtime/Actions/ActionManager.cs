@@ -133,19 +133,27 @@ namespace Lilium.LiveStudio
         /// <param name="wasHeld">The set's <see cref="ActionSet.held"/> on the previous frame.</param>
         internal static bool TryGetFiringContext(ActionSet set, bool wasHeld, out ActionContext context)
         {
+            // A button-mode set commits its one-shot trigger on release, so a held press must not trigger
+            // yet; other modes commit on the press edge. Mirrors InputSource.Evaluate for the manual hold.
+            bool isButton = set.input != null && set.input.mode == InputMode.Button;
+
             if (set.held)
             {
                 // Manual hold: fire as if the input were held active. Overrides the bound input and works
                 // even when the set is disabled, since the user triggered it explicitly. Rising edge on the
-                // first held frame.
-                context = new ActionContext(1f, pressed: !wasHeld, released: false, active: true);
+                // first held frame; button defers its trigger to the release frame.
+                bool rising = !wasHeld;
+                context = new ActionContext(1f, pressed: rising, released: false, active: true,
+                    triggered: isButton ? false : rising);
                 return true;
             }
 
             if (wasHeld)
             {
-                // Hold released this frame: a single falling edge, then back to normal next frame.
-                context = new ActionContext(0f, pressed: false, released: true, active: false);
+                // Hold released this frame: a single falling edge, then back to normal next frame. Button
+                // commits its one-shot trigger here.
+                context = new ActionContext(0f, pressed: false, released: true, active: false,
+                    triggered: isButton);
                 return true;
             }
 
@@ -188,18 +196,26 @@ namespace Lilium.LiveStudio
 
         /// <summary>Adds a new action set (default key input, no actions) and rebuilds the input map.</summary>
         [ExposedFunction]
-        public void AddActionSet()
+        public void AddActionSet() => AddActionSet(new KeyInputSource());
+
+        /// <summary>Adds a pre-built action set from the given input and actions, rebuilds the input map and
+        /// returns the created set. Generic and feature-agnostic: callers (e.g. the expression binding bridge)
+        /// supply whatever concrete <see cref="InputSource"/> / <see cref="ActionBase"/>s they need without
+        /// this manager knowing about them.</summary>
+        public ActionSet AddActionSet(InputSource input, params ActionBase[] actions)
         {
-            actionSets.Add(new ActionSet
+            var set = new ActionSet
             {
                 id = Guid.NewGuid().ToString(),
                 name = "Action Set",
                 enabled = true,
-                input = new KeyInputSource(),
-                actions = new List<ActionBase>(),
-            });
+                input = input ?? new KeyInputSource(),
+                actions = actions != null ? new List<ActionBase>(actions) : new List<ActionBase>(),
+            };
+            actionSets.Add(set);
             _RebuildInputMap();
             _Broadcast();
+            return set;
         }
 
         /// <summary>Removes the action set with the given id and rebuilds the input map.</summary>

@@ -6,8 +6,9 @@ using Lilium.RemoteControl;
 namespace Lilium.LiveStudio
 {
     /// <summary>
-    /// Switches the active avatar on the rising edge. Drives the same exclusive (radio) selection as
-    /// toggling an <see cref="AvatarAsset"/>'s enabled flag, via <see cref="ExternalAssetManager"/>.
+    /// Switches the active avatar when the input triggers (on release in Button mode, on press otherwise).
+    /// Drives the same exclusive (radio) selection as toggling an <see cref="AvatarAsset"/>'s enabled flag,
+    /// via <see cref="ExternalAssetManager"/>.
     /// </summary>
     [Serializable]
     [ExposedClass(Category = "Action", Icon = "face")]
@@ -23,7 +24,7 @@ namespace Lilium.LiveStudio
 
         public override void Apply(in ActionContext context)
         {
-            if (!context.pressed) return;
+            if (!context.triggered) return;
             ExternalAssetManager.current?.SelectAvatarByName(avatar);
         }
     }

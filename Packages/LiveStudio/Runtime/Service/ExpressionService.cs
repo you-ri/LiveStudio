@@ -1,6 +1,4 @@
-using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using UnityEngine;
 using Lilium.RemoteControl;
 
@@ -13,20 +11,6 @@ namespace Lilium.LiveStudio
     public static class ExpressionService
     {
         /// <summary>
-        /// 表情に対するバインドを開始
-        /// </summary>
-        public static async Task<bool> StartExpressionBindingAsync(string expressionName)
-        {
-            var controller = Service<IAvatarExpression>.subjects.FirstOrDefault();
-            if (controller == null)
-            {
-                Debug.LogError("[Studio] AvatarExpression is not available");
-                return false;
-            }
-            return await controller.StartExpressionBindingAsync(expressionName);
-        }
-
-        /// <summary>
         /// 利用可能な表情リストを取得
         /// </summary>
         public static FacialKey[] GetAvailableExpressions()
@@ -38,20 +22,6 @@ namespace Lilium.LiveStudio
                 return new FacialKey[0];
             }
             return controller.GetAvailableExpressions();
-        }
-
-        /// <summary>
-        /// すべての表情バインディング名を取得
-        /// </summary>
-        public static List<string> GetAllExpressionNames()
-        {
-            var controller = Service<IAvatarExpression>.subjects.FirstOrDefault();
-            if (controller == null)
-            {
-            Debug.LogWarning("[Studio] AvatarExpression is not available");
-                return new List<string>();
-            }
-            return controller.GetAllExpressionNames();
         }
 
         /// <summary>
@@ -74,34 +44,6 @@ namespace Lilium.LiveStudio
         {
             var controller = Service<IAvatarExpression>.subjects.FirstOrDefault();
             controller?.SetExpressionWeight(facialKey, weight);
-        }
-
-        /// <summary>
-        /// 新しい表情アクションを追加
-        /// </summary>
-        public static bool AddExpression(string expressionName)
-        {
-            var controller = Service<IAvatarExpression>.subjects.FirstOrDefault();
-            if (controller == null)
-            {
-                Debug.LogError("[Studio] AvatarExpression is not available");
-                return false;
-            }
-            return controller.AddExpression(expressionName);
-        }
-
-        /// <summary>
-        /// 指定した表情アクションを削除（
-        /// </summary>
-        public static bool RemoveExpression(string expressionName)
-        {
-            var controller = Service<IAvatarExpression>.subjects.FirstOrDefault();
-            if (controller == null)
-            {
-                Debug.LogError("[Studio] AvatarExpression is not available");
-                return false;
-            }
-            return controller.RemoveExpression(expressionName);
         }
 
         /// <summary>

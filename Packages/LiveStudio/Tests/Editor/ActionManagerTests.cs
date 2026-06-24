@@ -180,6 +180,60 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
+        public void HeldButton_TriggersOnReleaseNotPress()
+        {
+            // A button-mode set held via the remote app commits its one-shot trigger on release.
+            var set = new ActionSet
+            {
+                enabled = true,
+                input = new FakeInputSource { mode = InputMode.Button },
+            };
+
+            set.SetHeld(true);
+            ActionManager.TryGetFiringContext(set, wasHeld: false, out var press);
+            Assert.IsTrue(press.pressed);
+            Assert.IsFalse(press.triggered, "a held button does not trigger on press");
+
+            set.SetHeld(false);
+            ActionManager.TryGetFiringContext(set, wasHeld: true, out var release);
+            Assert.IsTrue(release.released);
+            Assert.IsTrue(release.triggered, "a held button triggers on release");
+        }
+
+        [Test]
+        public void HeldToggle_TriggersOnPress()
+        {
+            // Non-button (toggle) sets keep triggering on the press edge (when turned on).
+            var set = new ActionSet
+            {
+                enabled = true,
+                input = new FakeInputSource { mode = InputMode.Toggle },
+            };
+            set.SetHeld(true);
+
+            ActionManager.TryGetFiringContext(set, wasHeld: false, out var press);
+            Assert.IsTrue(press.triggered, "a toggle triggers when it turns on");
+        }
+
+        [Test]
+        public void AddActionSet_WithInputAndActions_AddsConfiguredSetAndReturnsIt()
+        {
+            var manager = new ActionManager();
+            var input = new FakeInputSource();
+            var action = new SetExpressionAction { expression = "Happy" };
+
+            var set = manager.AddActionSet(input, action);
+
+            Assert.IsNotNull(set);
+            Assert.AreSame(input, set.input, "the supplied input is used as-is");
+            Assert.AreEqual(1, set.actions.Count);
+            Assert.AreSame(action, set.actions[0], "the supplied action is used as-is");
+            Assert.IsFalse(string.IsNullOrEmpty(set.id), "a fresh id is assigned");
+            Assert.IsTrue(set.enabled);
+            Assert.AreSame(set, manager.actionSets[manager.actionSets.Count - 1], "the set is appended");
+        }
+
+        [Test]
         public void ActionSetValues_ReflectsLastValueInOrderWithNullsAsZero()
         {
             var a = new ActionSet { lastValue = 0.3f };

@@ -91,6 +91,54 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
+        public void Button_TriggersOnReleaseNotPress()
+        {
+            var source = new FakeInputSource { mode = InputMode.Button };
+
+            source.raw = 1f;
+            Assert.IsFalse(
+                source.Evaluate().triggered,
+                "a button does not commit its trigger on press"
+            );
+
+            // Held: still no trigger.
+            Assert.IsFalse(source.Evaluate().triggered);
+
+            source.raw = 0f;
+            Assert.IsTrue(
+                source.Evaluate().triggered,
+                "a button commits its trigger on release"
+            );
+        }
+
+        [Test]
+        public void Toggle_TriggersOnPress()
+        {
+            var source = new FakeInputSource { mode = InputMode.Toggle };
+
+            source.raw = 1f;
+            Assert.IsTrue(
+                source.Evaluate().triggered,
+                "non-button modes trigger on the press edge"
+            );
+
+            source.raw = 0f;
+            Assert.IsFalse(source.Evaluate().triggered, "release does not trigger");
+        }
+
+        [Test]
+        public void Value_TriggersOnPress()
+        {
+            var source = new FakeInputSource { mode = InputMode.Value };
+
+            source.raw = 1f;
+            Assert.IsTrue(source.Evaluate().triggered, "value mode triggers on press");
+
+            source.raw = 0f;
+            Assert.IsFalse(source.Evaluate().triggered);
+        }
+
+        [Test]
         public void ResetState_ClearsToggleAndEdgeLatch()
         {
             var source = new FakeInputSource { mode = InputMode.Toggle };

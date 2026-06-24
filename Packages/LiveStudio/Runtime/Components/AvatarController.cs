@@ -662,23 +662,29 @@ namespace Lilium.LiveStudio
             }
         }
 
+        // Expression key bindings now live on the generic ActionManager (one ActionSet per binding,
+        // KeyInputSource -> SetExpressionAction). These thin functions just expose the expression-side bridge
+        // so the remote app keeps talking to the avatar object, while the manager stays feature-agnostic.
+
         [Preserve]
         [ExposedFunction, Hide]
-        IEnumerable<ControlExpressionInfo> GetExpressionBindings()
-        {
-            if (_expressionConfig == null)
-            {
-                return Array.Empty<ControlExpressionInfo>();
-            }
-            var expressionKeys = ExpressionService.GetAvailableExpressions();
-            return _expressionConfig.expressions.Where(exp => expressionKeys.Any(key => key.name == exp.name)).Select(t => new ControlExpressionInfo
-            {
-                name = t.name,
-                bindings = InputActionService.FindInputAction("Expression." + t.name)?.bindings.Select(b =>
-                    UnityEngine.InputSystem.InputControlPath.ToHumanReadableString(b.effectivePath, UnityEngine.InputSystem.InputControlPath.HumanReadableStringOptions.UseShortNames)
-                ).ToArray()
-            });
-        }
+        ExpressionBindingInfo[] GetExpressionBindings() => ExpressionBindingSystem.GetBindings();
+
+        /// <summary>Creates a key binding for the given expression and returns its action-set id, so the remote
+        /// app can immediately start key capture for it.</summary>
+        [Preserve]
+        [ExposedFunction, Hide]
+        string AddExpressionBinding(string expressionName) => ExpressionBindingSystem.AddBinding(expressionName);
+
+        /// <summary>Starts interactive key capture for the binding's action set.</summary>
+        [Preserve]
+        [ExposedFunction, Hide]
+        void StartExpressionRebind(string setId) => ExpressionBindingSystem.StartRebind(setId);
+
+        /// <summary>Removes the binding (its action set) with the given id.</summary>
+        [Preserve]
+        [ExposedFunction, Hide]
+        void RemoveExpressionBinding(string setId) => ExpressionBindingSystem.RemoveBinding(setId);
 
         [Preserve]
         [ExposedFunction("getavailableexpressions"), Hide]
