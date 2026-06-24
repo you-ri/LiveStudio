@@ -107,6 +107,14 @@ namespace Lilium.LiveStudio
                 // Record this frame's firing output so the remote app can poll it (actionSetValues).
                 set.lastValue = context.value;
 
+                // A set that just latched on (rising active edge) clears its groupmates so only one set in a
+                // named group stays on. No-op for ungrouped or non-toggle winners (see ApplyExclusiveGroup),
+                // so this is cheap for the common case.
+                if (context.pressed && context.active)
+                {
+                    ApplyExclusiveGroup(actionSets, i);
+                }
+
                 var actions = set.actions;
                 if (actions == null) continue;
                 for (int j = 0; j < actions.Count; j++)
@@ -219,6 +227,8 @@ namespace Lilium.LiveStudio
             if (set == null) return;
 
             set.SetHeld(!set.held);
+            // Turning a grouped toggle on clears its groupmates (toggle-style radio); no-op otherwise.
+            if (set.held) ApplyExclusiveGroup(actionSets, index);
             _Broadcast();
         }
 
@@ -236,6 +246,7 @@ namespace Lilium.LiveStudio
             if (set == null || set.held == held) return;
 
             set.SetHeld(held);
+            if (held) ApplyExclusiveGroup(actionSets, index);
             _Broadcast();
         }
 
@@ -276,6 +287,41 @@ namespace Lilium.LiveStudio
         }
 
         private static string _ActionName(string actionSetId) => "ActionSet." + actionSetId;
+
+        /// <summary>
+        /// Enforces toggle-style exclusivity within a named group: clears every other set sharing the
+        /// winner's non-empty group so only the winner stays on. Does nothing unless the winner is a grouped
+        /// <see cref="InputMode.Toggle"/> set, so ungrouped, button (momentary), and value sets never knock
+        /// others off. Clearing a groupmate drops both its manual hold and its latched keyboard toggle, and
+        /// is idempotent on sets that are already off. Static and list-based so it is unit-testable without
+        /// play mode.
+        /// </summary>
+        internal static void ApplyExclusiveGroup(List<ActionSet> sets, int winnerIndex)
+        {
+            if (sets == null || winnerIndex < 0 || winnerIndex >= sets.Count) return;
+
+            var winner = sets[winnerIndex];
+            if (!_IsExclusiveSet(winner)) return;
+
+            string group = winner.group;
+            for (int i = 0; i < sets.Count; i++)
+            {
+                if (i == winnerIndex) continue;
+                var other = sets[i];
+                if (other == null || other.group != group) continue;
+
+                other.SetHeld(false);
+                other.input?.SetToggleState(false);
+            }
+        }
+
+        // A set participates in group exclusivity only when it has a non-empty group and a Toggle-mode
+        // input: the radio behavior is meaningful only for latched (on/off) sets, not momentary buttons.
+        private static bool _IsExclusiveSet(ActionSet set)
+            => set != null
+               && !string.IsNullOrEmpty(set.group)
+               && set.input != null
+               && set.input.mode == InputMode.Toggle;
 
         private int _IndexOf(string actionSetId)
         {

@@ -77,5 +77,10 @@ namespace Lilium.LiveStudio
             _toggleState = false;
             _prevActive = false;
         }
+
+        /// <summary>Forces the latched toggle state without touching edge tracking, so a still-held raw
+        /// input does not immediately re-latch and the next genuine press still flips correctly. Used by
+        /// <see cref="ActionManager"/> to clear a set when another set in its exclusive group turns on.</summary>
+        public void SetToggleState(bool value) => _toggleState = value;
     }
 }

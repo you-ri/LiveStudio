@@ -107,6 +107,79 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
+        public void ApplyExclusiveGroup_ClearsHeldGroupmate()
+        {
+            var winner = new ActionSet { group = "g", input = new FakeInputSource { mode = InputMode.Toggle } };
+            var loser = new ActionSet { group = "g", input = new FakeInputSource { mode = InputMode.Toggle } };
+            winner.SetHeld(true);
+            loser.SetHeld(true);
+
+            ActionManager.ApplyExclusiveGroup(new List<ActionSet> { winner, loser }, 0);
+
+            Assert.IsTrue(winner.held, "the winner stays on");
+            Assert.IsFalse(loser.held, "a groupmate's manual hold is cleared");
+        }
+
+        [Test]
+        public void ApplyExclusiveGroup_ClearsLatchedKeyboardToggleOfGroupmate()
+        {
+            var winner = new ActionSet { group = "g", input = new FakeInputSource { mode = InputMode.Toggle } };
+            var loser = new ActionSet
+            {
+                group = "g",
+                input = new FakeInputSource { mode = InputMode.Toggle, raw = 1f },
+            };
+
+            // Latch the loser on with a keyboard rising edge.
+            Assert.AreEqual(1f, loser.input.Evaluate().value, 1e-4f);
+
+            ActionManager.ApplyExclusiveGroup(new List<ActionSet> { winner, loser }, 0);
+
+            // The latched toggle is cleared; the still-held key no longer reads as on (no new rising edge).
+            Assert.AreEqual(0f, loser.input.Evaluate().value, 1e-4f);
+        }
+
+        [Test]
+        public void ApplyExclusiveGroup_LeavesOtherGroupsAndUngroupedUntouched()
+        {
+            var winner = new ActionSet { group = "g", input = new FakeInputSource { mode = InputMode.Toggle } };
+            var otherGroup = new ActionSet { group = "h", input = new FakeInputSource { mode = InputMode.Toggle } };
+            var ungrouped = new ActionSet { group = "", input = new FakeInputSource { mode = InputMode.Toggle } };
+            otherGroup.SetHeld(true);
+            ungrouped.SetHeld(true);
+
+            ActionManager.ApplyExclusiveGroup(
+                new List<ActionSet> { winner, otherGroup, ungrouped }, 0);
+
+            Assert.IsTrue(otherGroup.held, "a different group is unaffected");
+            Assert.IsTrue(ungrouped.held, "ungrouped sets are unaffected");
+        }
+
+        [Test]
+        public void ApplyExclusiveGroup_UngroupedWinner_DoesNothing()
+        {
+            var winner = new ActionSet { group = "", input = new FakeInputSource { mode = InputMode.Toggle } };
+            var other = new ActionSet { group = "", input = new FakeInputSource { mode = InputMode.Toggle } };
+            other.SetHeld(true);
+
+            ActionManager.ApplyExclusiveGroup(new List<ActionSet> { winner, other }, 0);
+
+            Assert.IsTrue(other.held, "no group means no exclusivity");
+        }
+
+        [Test]
+        public void ApplyExclusiveGroup_ButtonModeWinner_DoesNotClearGroupmates()
+        {
+            var winner = new ActionSet { group = "g", input = new FakeInputSource { mode = InputMode.Button } };
+            var other = new ActionSet { group = "g", input = new FakeInputSource { mode = InputMode.Toggle } };
+            other.SetHeld(true);
+
+            ActionManager.ApplyExclusiveGroup(new List<ActionSet> { winner, other }, 0);
+
+            Assert.IsTrue(other.held, "a momentary (button) winner does not enforce exclusivity");
+        }
+
+        [Test]
         public void ActionSetValues_ReflectsLastValueInOrderWithNullsAsZero()
         {
             var a = new ActionSet { lastValue = 0.3f };

@@ -28,6 +28,13 @@ namespace Lilium.LiveStudio
         [ExposedField]
         public bool enabled = true;
 
+        /// <summary>Optional group name, like a layer. Sets that share a non-empty group and whose
+        /// <see cref="input"/> is in <see cref="InputMode.Toggle"/> are mutually exclusive: turning one on
+        /// clears the others (toggle-style radio — all-off is still allowed). Empty means ungrouped (no
+        /// exclusivity). The remote app also groups its cards by this name.</summary>
+        [ExposedField]
+        public string group = string.Empty;
+
         /// <summary>The firing side. A single polymorphic field — the remote app swaps its concrete type
         /// through the <c>[TypeSelector]</c> dropdown (<c>FindDerivedTypes</c> only resolves derived types
         /// for a single field, not a list, so the actions list is edited through explicit add/remove).</summary>
