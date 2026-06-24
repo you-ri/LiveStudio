@@ -330,6 +330,30 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
+        /// Names of the known sets (the bootstrap set plus each added set bundle), in display order.
+        /// The option source for a stage selector such as a trigger's switch-stage action.
+        /// </summary>
+        public string[] GetSetNames()
+        {
+            var names = new string[sets.Length];
+            for (int i = 0; i < sets.Length; i++) names[i] = sets[i].name ?? string.Empty;
+            return names;
+        }
+
+        /// <summary>
+        /// Makes the (loaded) set with the given display name the active set. Resolves the name to its id
+        /// and defers to <see cref="SetActiveSet"/>; a no-op when no set matches.
+        /// </summary>
+        public void SetActiveSetByName(string setName)
+        {
+            if (string.IsNullOrEmpty(setName)) return;
+            for (int i = 0; i < sets.Length; i++)
+            {
+                if (sets[i].name == setName) { SetActiveSet(sets[i].id); return; }
+            }
+        }
+
+        /// <summary>
         /// Warps the current avatar to a <see cref="StageMark"/> within the given set's scene.
         /// Invoked by <see cref="SetBundleEntry.WarpTo"/> / <see cref="SetBundleEntry.WarpToOrigin"/> from
         /// the remote app's generic stage detail UI. An empty or null <paramref name="markLabel"/> warps
