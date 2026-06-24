@@ -10,18 +10,19 @@ using Lilium.RemoteControl.RestApi;
 namespace Lilium.LiveStudio
 {
     /// <summary>
-    /// Serves an avatar's preview thumbnail as raw image bytes.
+    /// Serves an avatar's (or prop's) preview thumbnail as raw image bytes.
     ///
-    /// <c>GET /api/avatar/image?id=&lt;assetId&gt;</c> looks up the matching <see cref="AvatarAsset"/>
-    /// in <see cref="ExternalAssetManager"/> and returns its thumbnail:
+    /// <c>GET /api/avatar/image?id=&lt;assetId&gt;</c> looks up the matching asset in
+    /// <see cref="ExternalAssetManager"/> and returns its thumbnail via <see cref="ThumbnailCache"/>:
     /// <list type="bullet">
     ///   <item>VRM (.vrm / .glb): the embedded VRM thumbnail, extracted from the file via
-    ///   <see cref="GlbThumbnailExtractor"/>.</item>
-    ///   <item>Avatar bundle (.avatar.lsb / .lsavatar): the <see cref="BundleThumbnail"/> packed into
-    ///   the bundle at export time, cached by the loader and served via <see cref="BundleThumbnailCache"/>.</item>
+    ///   <see cref="GlbThumbnailExtractor"/> on the first request and then cached.</item>
+    ///   <item>Avatar/prop bundle (.avatar.lsb / .prop.lsb / .lsavatar): the <see cref="BundleThumbnail"/>
+    ///   packed into the bundle at export time, cached by the loader.</item>
     /// </list>
-    /// VRM previews are available for every registered avatar (read from the file). Bundle previews are
-    /// available after the avatar has been loaded at least once. Avatars without a thumbnail return 404.
+    /// The cache is backed by disk under the project (<see cref="ProjectPaths"/>), so VRM previews are
+    /// available for every registered avatar and bundle previews survive restarts (available once the
+    /// bundle has been loaded at least once). Assets without a thumbnail return 404.
     /// </summary>
     public class AvatarImageHandler : BaseRemoteControlApiHandler
     {
@@ -56,30 +57,30 @@ namespace Lilium.LiveStudio
             byte[] imageBytes = null;
             string mimeType = null;
 
-            if (IsVrmFile(filePath))
+            // Resolve the thumbnail off the main thread (cache lookup, disk IO and VRM extraction are
+            // pure CPU/IO; ThumbnailCache is thread-safe).
+            await Task.Run(() =>
             {
-                // VRM: extract the embedded thumbnail from the file. Pure CPU/IO, keep off the main thread.
-                await Task.Run(() =>
+                // Cached (memory or disk) for any asset kind — survives restarts and is available for
+                // bundles once they have been loaded at least once.
+                if (ThumbnailCache.TryGet(filePath, out var cachedBytes, out var cachedMime))
                 {
-                    if (GlbThumbnailExtractor.TryExtract(filePath, out var bytes, out var mime))
-                    {
-                        imageBytes = bytes;
-                        mimeType = mime;
-                    }
-                });
-            }
-            else if (LiveStudioBundle.IsAvatarBundle(filePath) || LiveStudioBundle.IsPropBundle(filePath))
-            {
-                // Avatar/prop bundle: serve the BundleThumbnail cached when the bundle was loaded. Available
-                // only after the avatar has been loaded at least once (reading the thumbnail re-opens no
-                // bundle here, which would stall the server). Dictionary read; main thread for safety.
-                var result = await ExecuteOnMainThread<(byte[] bytes, string mime)>(() =>
-                    BundleThumbnailCache.TryGet(filePath, out var bytes, out var mime)
-                        ? (bytes, mime)
-                        : (null, null));
-                imageBytes = result.bytes;
-                mimeType = result.mime;
-            }
+                    imageBytes = cachedBytes;
+                    mimeType = cachedMime;
+                    return;
+                }
+
+                // VRM/glb: extract the embedded thumbnail from the file and cache it for next time.
+                // Bundle thumbnails cannot be read here (opening a bundle in a request handler would
+                // stall the server); they are cached by the loaders when the asset is loaded.
+                if (IsVrmFile(filePath)
+                    && GlbThumbnailExtractor.TryExtract(filePath, out var bytes, out var mime))
+                {
+                    ThumbnailCache.Store(filePath, bytes, mime);
+                    imageBytes = bytes;
+                    mimeType = mime;
+                }
+            });
 
             if (imageBytes != null && imageBytes.Length > 0)
             {

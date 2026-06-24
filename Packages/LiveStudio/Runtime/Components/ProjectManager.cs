@@ -20,7 +20,9 @@ namespace Lilium.LiveStudio
     public static class ProjectManager
     {
         // PlayerPrefs key mirroring the absolute project folder path (machine-global, not per-scene).
-        private const string kProjectPathKey = "RemoteControl_ProjectPath";
+        // The constant is owned by the lower RemoteControl layer so its startup hook can read the
+        // same key without depending on this manager.
+        private const string kProjectPathKey = StartupStateStore.kProjectPathKey;
 
         private static string _projectPath = "";
 
@@ -75,12 +77,15 @@ namespace Lilium.LiveStudio
             return SavedPaths.EnsureProjectDirectory(name);
         }
 
-        // Points the live-scene Save As dialog at the currently open project folder.
+        // Points the live-scene Save As dialog and the startup state file at the currently
+        // open project folder. Called on startup (_Initialize) and on every OpenProject so the
+        // per-project Settings/startup.json is read/written under the right folder.
         private static void _ApplySaveDirectory()
         {
             if (!string.IsNullOrEmpty(_projectPath))
             {
                 LiveSceneSaveSystem.SetSaveAsDefaultDirectory(_projectPath);
+                LiveSceneSaveSystem.SetStateProjectDirectory(_projectPath);
             }
         }
 
@@ -106,8 +111,23 @@ namespace Lilium.LiveStudio
             PlayerPrefs.SetString(kProjectPathKey, folderPath);
             PlayerPrefs.Save();
 
+            // Apply the state directory before loading so the load path writes startup.json under
+            // the newly opened project (not the previous one).
             _ApplySaveDirectory();
             _Crawl();
+
+            // Open the live scene recorded in the project's Settings/startup.json. When the project
+            // has no recorded scene (or it is missing on disk), drop to a fresh scene so the open
+            // project always determines the active scene.
+            var sceneFullPath = StartupStateStore.Read(folderPath);
+            if (!string.IsNullOrEmpty(sceneFullPath) && File.Exists(sceneFullPath))
+            {
+                LiveSceneManager.LoadScene(sceneFullPath);
+            }
+            else
+            {
+                LiveSceneManager.NewScene();
+            }
         }
 
         /// <summary>Re-scans the current project folder (e.g. after files were added on disk).</summary>
@@ -137,6 +157,8 @@ namespace Lilium.LiveStudio
             var assetPaths = new List<string>();
             foreach (var path in Directory.EnumerateFiles(_projectPath, "*", SearchOption.AllDirectories))
             {
+                // Skip the hidden ".livestudio" folder (local-only cache/temp), never project content.
+                if (ProjectPaths.IsInsideHiddenDir(path)) continue;
                 if (ExternalAssetManager.IsSupportedAssetFile(path)) assetPaths.Add(path);
                 // Any other file is ignored; its contents are never read.
             }

@@ -128,7 +128,7 @@ namespace Lilium.RemoteControl
                             Debug.LogWarning($"[RemoteControl] Shadow field '{e.shadowFieldPath}' not found on {type.Name}; falling back to direct property access for '{e.name}'.");
                         }
                     }
-                    return new ExposedPropertyType(e.name, memberInfo, e.isPersistable, shadowField);
+                    return new ExposedPropertyType(e.name, memberInfo, e.isPersistable, shadowField, e.persistScope);
                 }
 
                 Debug.LogError($"[RemoteControl] Member not found for {type.Name}.{e.path}");

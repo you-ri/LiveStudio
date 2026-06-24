@@ -181,6 +181,32 @@ namespace Lilium.RemoteControl
                 ["order"] = propertyType.order
             };
 
+            // 多態配列: 要素型に代入可能な具象 [ExposedClass] 型名を列挙し、クライアントの
+            // 「型を選んで要素追加」UI に渡す。プリミティブ等 (候補 0 件) では付与しない。
+            if (isArray && valueType != null)
+            {
+                var elementType = ExposedPropertyUtility.GetCollectionElementType(valueType);
+                if (elementType != null)
+                {
+                    var elementOptions = new JArray();
+                    if (!elementType.IsAbstract && !elementType.IsInterface)
+                    {
+                        var selfClass = ExposedClass.Find(elementType);
+                        if (selfClass != null) elementOptions.Add(selfClass.typeName);
+                    }
+                    foreach (var derived in Reflection.TypeReflectionSystem.FindDerivedTypes(elementType))
+                    {
+                        if (derived.IsAbstract) continue;
+                        var ec = ExposedClass.Find(derived);
+                        if (ec != null) elementOptions.Add(ec.typeName);
+                    }
+                    if (elementOptions.Count > 0)
+                    {
+                        jObject["elementTypeOptions"] = elementOptions;
+                    }
+                }
+            }
+
             // ExposedPropertyRef: 参照先メタデータ (targetTypeName / propertyPath) を emit する。
             // RemoteApp 側はこれを見て、表示時に参照先 ExposedObjectHandle のストアエントリから値を読み、
             // SSE による参照先プロパティ更新に自動追従する。

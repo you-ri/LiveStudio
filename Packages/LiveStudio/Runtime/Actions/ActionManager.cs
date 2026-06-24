@@ -7,7 +7,6 @@ using UnityEngine.InputSystem;
 using UnityEngine.Scripting.APIUpdating;
 
 using Lilium.RemoteControl;
-using Lilium.RemoteControl.Reflection;
 
 namespace Lilium.LiveStudio
 {
@@ -92,9 +91,21 @@ namespace Lilium.LiveStudio
             for (int i = 0; i < actionSets.Count; i++)
             {
                 var set = actionSets[i];
-                if (set == null || !set.enabled || set.input == null) continue;
+                if (set == null) continue;
 
-                var context = set.input.Evaluate();
+                // Snapshot the previous frame's hold before overwriting it, so the helper can detect the
+                // rising/falling edge of the manual hold.
+                bool wasHeld = set.heldPrev;
+                set.heldPrev = set.held;
+
+                if (!TryGetFiringContext(set, wasHeld, out var context))
+                {
+                    set.lastValue = 0f;
+                    continue;
+                }
+
+                // Record this frame's firing output so the remote app can poll it (actionSetValues).
+                set.lastValue = context.value;
 
                 var actions = set.actions;
                 if (actions == null) continue;
@@ -102,6 +113,59 @@ namespace Lilium.LiveStudio
                 {
                     actions[j]?.Apply(in context);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Computes a set's firing context for this frame given the previous frame's hold state. Returns
+        /// false (skip, value 0) when the set is disabled or has no input and is not held. Pure aside from
+        /// advancing the input source's edge state, so it is unit-testable without play mode.
+        /// </summary>
+        /// <param name="set">The action set to evaluate. Must not be null.</param>
+        /// <param name="wasHeld">The set's <see cref="ActionSet.held"/> on the previous frame.</param>
+        internal static bool TryGetFiringContext(ActionSet set, bool wasHeld, out ActionContext context)
+        {
+            if (set.held)
+            {
+                // Manual hold: fire as if the input were held active. Overrides the bound input and works
+                // even when the set is disabled, since the user triggered it explicitly. Rising edge on the
+                // first held frame.
+                context = new ActionContext(1f, pressed: !wasHeld, released: false, active: true);
+                return true;
+            }
+
+            if (wasHeld)
+            {
+                // Hold released this frame: a single falling edge, then back to normal next frame.
+                context = new ActionContext(0f, pressed: false, released: true, active: false);
+                return true;
+            }
+
+            if (!set.enabled || set.input == null)
+            {
+                context = default;
+                return false;
+            }
+
+            context = set.input.Evaluate();
+            return true;
+        }
+
+        /// <summary>Per-set firing output (0..1) in <see cref="actionSets"/> order, for the remote app to
+        /// poll and light its cards while an input (or the manual hold) is firing. Read-only and hidden;
+        /// reflects the value recorded by the most recent <see cref="Update"/>. Polled rather than pushed
+        /// over SSE so it costs nothing while the Actions page is not open.</summary>
+        [ExposedProperty, Hide]
+        public float[] actionSetValues
+        {
+            get
+            {
+                var values = new float[actionSets.Count];
+                for (int i = 0; i < actionSets.Count; i++)
+                {
+                    values[i] = actionSets[i]?.lastValue ?? 0f;
+                }
+                return values;
             }
         }
 
@@ -141,48 +205,25 @@ namespace Lilium.LiveStudio
             _Broadcast();
         }
 
-        /// <summary>Appends an action of the given exposed type to the set with the given id.</summary>
+        /// <summary>Toggles the manual hold of the action set with the given id. While held the set fires
+        /// from <see cref="Update"/> as if its input were held active (independent of
+        /// <see cref="ActionSet.enabled"/>); toggling off releases it. Lets the remote app fire a set from
+        /// its card without a bound input. The broadcast lets the card reflect the new hold state.</summary>
         [ExposedFunction]
-        public void AddAction(string actionSetId, [StringSelector(nameof(actionTypeNames))] string actionType)
+        public void ToggleActionSet(string actionSetId)
         {
-            var set = _Find(actionSetId);
+            int index = _IndexOf(actionSetId);
+            if (index < 0) return;
+
+            var set = actionSets[index];
             if (set == null) return;
 
-            var action = _CreateAction(actionType);
-            if (action == null) return;
-
-            set.actions ??= new List<ActionBase>();
-            set.actions.Add(action);
+            set.SetHeld(!set.held);
             _Broadcast();
         }
 
-        /// <summary>Removes the action at the given index from the set with the given id.</summary>
-        [ExposedFunction]
-        public void RemoveAction(string actionSetId, int index)
-        {
-            var set = _Find(actionSetId);
-            if (set?.actions == null) return;
-            if (index < 0 || index >= set.actions.Count) return;
-            set.actions.RemoveAt(index);
-            _Broadcast();
-        }
-
-        /// <summary>Exposed action type names — the dropdown source for <see cref="AddAction"/>.</summary>
-        [ExposedProperty, Hide]
-        public string[] actionTypeNames
-        {
-            get
-            {
-                var derived = TypeReflectionSystem.FindDerivedTypes(typeof(ActionBase));
-                var names = new List<string>();
-                foreach (var type in derived)
-                {
-                    var ec = ExposedClass.Find(type);
-                    if (ec != null) names.Add(ec.typeName);
-                }
-                return names.ToArray();
-            }
-        }
+        // Action 要素の追加/削除/型選択は、RemoteApp の汎用配列「+」(elementTypeOptions による
+        // 型選択メニュー) と汎用削除でまかなう。専用の Add/RemoveAction 関数は持たない。
 
         // Rebuilds enabled-set property edits that change input wiring (input type / binding) into a
         // fresh input map. Action edits do not affect input, so they are ignored here.
@@ -219,12 +260,6 @@ namespace Lilium.LiveStudio
 
         private static string _ActionName(string actionSetId) => "ActionSet." + actionSetId;
 
-        private ActionSet _Find(string actionSetId)
-        {
-            int index = _IndexOf(actionSetId);
-            return index >= 0 ? actionSets[index] : null;
-        }
-
         private int _IndexOf(string actionSetId)
         {
             if (string.IsNullOrEmpty(actionSetId)) return -1;
@@ -233,18 +268,6 @@ namespace Lilium.LiveStudio
                 if (actionSets[i] != null && actionSets[i].id == actionSetId) return i;
             }
             return -1;
-        }
-
-        private static ActionBase _CreateAction(string actionType)
-        {
-            if (string.IsNullOrEmpty(actionType)) return null;
-            var ec = ExposedClass.Find(actionType);
-            if (ec?.type == null)
-            {
-                Debug.LogError($"[LiveStudio] Unknown action type: {actionType}");
-                return null;
-            }
-            return Activator.CreateInstance(ec.type) as ActionBase;
         }
 
         private void _Broadcast() => ExposedPropertyBroadcast.BroadcastProperty(this, "actionSets");

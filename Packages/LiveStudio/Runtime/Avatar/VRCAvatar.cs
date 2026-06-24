@@ -548,6 +548,11 @@ namespace Lilium.LiveStudio
             int idx = _LocalVisemeIndex(key.name);
             if (idx >= 0)
             {
+                // The Action system / remote app can call this the moment the avatar registers as an
+                // expression subject (OnEnable), before Start() allocates the viseme buffers. The
+                // expressionResolver path below is field-initialized and always safe; only the viseme
+                // buffer needs the guard.
+                if (_target == null) return false;
                 _target[idx] = Mathf.Clamp01(weight);
                 return true;
             }
@@ -561,7 +566,7 @@ namespace Lilium.LiveStudio
         float IExpressionAvatar.GetWeight(FacialKey key)
         {
             int idx = _LocalVisemeIndex(key.name);
-            if (idx >= 0) return _smoothed[idx];
+            if (idx >= 0) return _smoothed != null ? _smoothed[idx] : 0f;
 
             if (!expressionResolver.isSetup) return 0f;
             if (expressionResolver.smoothedOutputs.TryGet(key.name, out float weight)) return weight;

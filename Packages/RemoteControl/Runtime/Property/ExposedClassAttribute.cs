@@ -6,6 +6,18 @@ using Newtonsoft.Json.Linq;
 namespace Lilium.RemoteControl
 {
     /// <summary>
+    /// 永続化メンバーの保存先を指定する。
+    /// <see cref="Scene"/> はシーンファイル (*.live.json) に、<see cref="Project"/> は
+    /// プロジェクト全体の設定ファイル ({projectPath}/Settings/{クラス名}.settings.json) に保存する。
+    /// 既定は <see cref="Scene"/> (=0) のため、未指定時は従来どおりシーンに保存される。
+    /// </summary>
+    public enum PersistScope
+    {
+        Scene = 0,
+        Project = 1,
+    }
+
+    /// <summary>
     /// structのカスタムデフォルト値を提供するstaticプロパティに付与するAttribute。
     /// </summary>
     /// <example>
@@ -145,6 +157,14 @@ namespace Lilium.RemoteControl
         /// </summary>
         public int order { get; set; } = 0;
 
+        /// <summary>
+        /// 永続化先。既定は <see cref="PersistScope.Scene"/>。
+        /// プロパティが実際に保存されるのは shadow field とのペアまたは [InlineReference] で
+        /// persistable になっている場合のみで、その場合に本値が保存先を決める
+        /// (shadow field を持つ場合は field 側の persistScope が優先される)。
+        /// </summary>
+        public PersistScope persistScope { get; set; } = PersistScope.Scene;
+
         public ExposedPropertyAttribute()
         {
             this.name = null;
@@ -178,6 +198,14 @@ namespace Lilium.RemoteControl
         /// 派生クラスで基底プロパティより前に表示したい場合などに使用する。
         /// </summary>
         public int order { get; set; } = 0;
+
+        /// <summary>
+        /// 永続化先。既定は <see cref="PersistScope.Scene"/>。
+        /// <see cref="PersistScope.Project"/> を指定すると、このフィールドはシーンファイルではなく
+        /// プロジェクト全体の設定ファイル ({クラス名}.settings.json) に保存される。
+        /// shadow field として使う場合、ペアとなる property の保存先も本値を継承する。
+        /// </summary>
+        public PersistScope persistScope { get; set; } = PersistScope.Scene;
 
         public ExposedFieldAttribute()
         {

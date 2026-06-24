@@ -681,6 +681,10 @@ namespace Lilium.LiveStudio
         bool IExpressionAvatar.SetWeight(FacialKey key, float weight)
         {
             if (string.IsNullOrEmpty(key.name)) return false;
+            // Callers reach this via the Action system / remote app the moment the avatar registers as an
+            // expression subject (OnEnable), which can be before Start() has built the FT maps. Bail out
+            // until the maps exist rather than dereferencing a null dictionary.
+            if (_ftNameToIndex == null) return false;
 
             // FT パラメータ - 既存経路
             if (_ftNameToIndex.TryGetValue(key.name, out int index))
@@ -698,6 +702,7 @@ namespace Lilium.LiveStudio
         float IExpressionAvatar.GetWeight(FacialKey key)
         {
             if (string.IsNullOrEmpty(key.name)) return 0f;
+            if (_ftNameToIndex == null) return 0f;
             if (_ftNameToIndex.TryGetValue(key.name, out int index)) return _targetValues[index];
 
             if (!expressionResolver.isSetup) return 0f;

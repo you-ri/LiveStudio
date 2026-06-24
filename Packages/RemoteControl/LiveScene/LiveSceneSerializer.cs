@@ -76,7 +76,8 @@ namespace Lilium.RemoteControl.LiveScene
                 // file-scope resolver を渡すことで、走査中の UnityEngine.Object 参照が
                 // fileid ベースの @ref に置き換わる。
                 fileResolver.SetCurrentRoot(obj);
-                var json = ExposedPropertySerializer.ToJson(obj, fileResolver, onlyDirty, forPersistence: true);
+                // Scene scope のメンバーのみ live.json に書き出す (Project scope は settings.json へ別出力)。
+                var json = ExposedPropertySerializer.ToJson(obj, fileResolver, onlyDirty, forPersistence: true, scopeFilter: PersistScope.Scene);
                 var jObj = JObject.Parse(json);
 
                 // Prefab から生成された新規エントリは「存在そのものが default からの差分」なので
@@ -142,7 +143,7 @@ namespace Lilium.RemoteControl.LiveScene
                     // tempExposed 経由でも同じ defaults が参照でき、正しく delta が計算できる。
                     // defaults 未登録の場合は _ToJsonDelta のフォールバックで「差分ゼロ＝
                     // metadata only」となり、HasNonMetaProperties チェックでスキップされる。
-                    var subJson = ExposedPropertySerializer.ToJson(tempExposed, fileResolver, isDirtyOnly: onlyDirty, forPersistence: true);
+                    var subJson = ExposedPropertySerializer.ToJson(tempExposed, fileResolver, isDirtyOnly: onlyDirty, forPersistence: true, scopeFilter: PersistScope.Scene);
                     entry = JObject.Parse(subJson);
 
                     // delta モードでメタデータ以外のプロパティを含まない pending は出力しない
@@ -200,7 +201,25 @@ namespace Lilium.RemoteControl.LiveScene
             if (container == null) return false;
             if (baselineJson == null) return false;
             var baseSceneName = ExtractBaseSceneName(baselineJson);
-            return !string.Equals(BuildLiveSceneJson(container, baseSceneName), baselineJson, StringComparison.Ordinal);
+            return !_LiveSceneEquals(BuildLiveSceneJson(container, baseSceneName), baselineJson);
+        }
+
+        /// <summary>
+        /// Compares two live-scene JSON documents for state equality, ignoring the informational
+        /// <c>metadata</c> block (package / app / unity version) and any formatting or property-order
+        /// differences. This lets a scene saved by a different build, or a file reformatted in an editor,
+        /// round-trip without being mistaken for an edit. An exact ordinal match short-circuits to equal;
+        /// if the strings differ and either side is not valid JSON, they are treated as not equal.
+        /// </summary>
+        private static bool _LiveSceneEquals(string a, string b)
+        {
+            if (string.Equals(a, b, StringComparison.Ordinal)) return true;
+            JObject ja, jb;
+            try { ja = JObject.Parse(a); jb = JObject.Parse(b); }
+            catch (JsonException) { return false; }
+            ja.Remove("metadata");
+            jb.Remove("metadata");
+            return JToken.DeepEquals(ja, jb);
         }
 
         /// <summary>

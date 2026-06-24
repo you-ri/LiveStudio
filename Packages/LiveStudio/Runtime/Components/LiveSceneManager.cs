@@ -57,7 +57,8 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [ExposedField, Hide]
+        // 品質設定はどのシーンを開いても共通の設定なので Project scope で永続化する。
+        [ExposedField(persistScope = PersistScope.Project), Hide]
         [FormerlyExposedAs("quality")]
         private static string _quality;
 
@@ -155,6 +156,12 @@ namespace Lilium.LiveStudio
             foreach (var provider in providers)
             {
                 provider.currentFilePath = "";
+                // 空の新規シーンには上書きするファイルが無いので、ロード済みの prop/avatar や
+                // camera 等の exposed 値が前のシーンのまま残る。明示的に既定へ戻し（per-asset の
+                // enabled も false に戻るので _ApplyDiff が再ロードしない）、ベースシーン再ロードで
+                // onBaseSceneReloaded を発火させて GameObject の破棄と project-scoped 状態の再同期を行う。
+                provider.RevertAllToDefault();
+                provider.PrepareBaseSceneReload();
             }
             _SwitchBaseScene(sceneName);
         }
