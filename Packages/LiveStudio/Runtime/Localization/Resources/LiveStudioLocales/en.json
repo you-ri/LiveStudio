@@ -20,6 +20,7 @@
     "LIVESCENE_LOAD_SCENE": "Load Scene",
     "LIVESCENE_OPEN_SAVE_FOLDER": "Open Save Folder",
     "PROJECT_OPEN_FOLDER": "Open Project Folder",
+    "PROJECT_OPEN_DEST_FOLDER": "Open Save Folder",
     "PROJECT_RECRAWL": "Rescan",
     "PROJECT_OPEN_SCENE": "Open Scene",
     "AVATAR_VRMMODELFILEPATH_HELP": "For VRM, a model with Perfect Sync support is recommended. Without it, mouth movements will fall back to the 'aa' blend shape.",

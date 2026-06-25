@@ -107,6 +107,45 @@ namespace Lilium.RemoteControl
         }
 
         // -------------------------------------------------------
+        // [RawJson] support
+        // -------------------------------------------------------
+        // A string member tagged [RawJson] stores a JSON document. On write its value is embedded as
+        // parsed JSON (object/array) instead of an escaped string; on read the embedded JSON is
+        // re-stringified. Legacy files that stored the value as a JSON string still read (verbatim).
+
+        // Returns the embedded-JSON token for a [RawJson] string value, or null when the member is not
+        // RawJson or the value is not parseable JSON (caller falls back to normal serialization).
+        internal static JToken TrySerializeRawJson(ExposedPropertyType propType, object value)
+        {
+            if (propType == null || !propType.isRawJson) return null;
+            if (!(value is string s) || string.IsNullOrEmpty(s)) return null;
+            try { return JToken.Parse(s); }
+            catch { return null; } // not valid JSON -> fall back to plain string serialization
+        }
+
+        // Converts a [RawJson] member's stored token back to the string its field holds. Returns true and
+        // sets `result` when the member is RawJson and the token is usable (object/array -> compact JSON
+        // string; string -> verbatim legacy value). Returns false when not RawJson or token is unusable
+        // (caller falls back to normal deserialization).
+        internal static bool TryDeserializeRawJson(ExposedPropertyType propType, JToken token, out string result)
+        {
+            result = null;
+            if (propType == null || !propType.isRawJson || token == null) return false;
+            switch (token.Type)
+            {
+                case JTokenType.String:
+                    result = token.Value<string>(); // legacy: stored as an escaped JSON string
+                    return true;
+                case JTokenType.Object:
+                case JTokenType.Array:
+                    result = token.ToString(Formatting.None);
+                    return true;
+                default:
+                    return false; // null / unexpected -> let the caller handle it
+            }
+        }
+
+        // -------------------------------------------------------
         // JToken Serialization
         // -------------------------------------------------------
 
@@ -266,7 +305,8 @@ namespace Lilium.RemoteControl
 
                     var propValue = ExposedPropertyUtility.GetValueRaw(value, propType);
                     fileResolver?.PushPath(propType.name);
-                    var serializedValue = SerializeUnityType(resolver, propValue, propType.forceValue, forPersistence);
+                    var serializedValue = TrySerializeRawJson(propType, propValue)
+                        ?? SerializeUnityType(resolver, propValue, propType.forceValue, forPersistence);
                     fileResolver?.PopPath();
 
                     if (serializedValue != null)
@@ -726,7 +766,9 @@ namespace Lilium.RemoteControl
                     var existingValue = propType.shadowField != null
                         ? propType.shadowField.GetValue(instance)
                         : ExposedPropertyUtility.GetValueRaw(instance, propType);
-                    var propValue = DeserializeUnityType(resolver, propToken, propType.valueType, existingValue);
+                    var propValue = TryDeserializeRawJson(propType, propToken, out var rawJsonValue)
+                        ? rawJsonValue
+                        : DeserializeUnityType(resolver, propToken, propType.valueType, existingValue);
                     if (propValue != null)
                     {
                         if (propType.shadowField != null)
@@ -845,9 +887,10 @@ namespace Lilium.RemoteControl
 
 
         /// <summary>
-        /// 結果ベースのdirty判定: @プレフィックス以外のプロパティが存在するか
+        /// 結果ベースのdirty判定: @プレフィックス以外のプロパティが存在するか。
+        /// public: 他アセンブリ (LiveStudio の AssetStateSnapshot 等) と同一述語を共有するため。
         /// </summary>
-        internal static bool HasNonMetaProperties(JObject jObj)
+        public static bool HasNonMetaProperties(JObject jObj)
         {
             foreach (var p in jObj.Properties())
             {
@@ -947,7 +990,8 @@ namespace Lilium.RemoteControl
                 }
 
                 fileResolver?.PushPath(propertyType.name);
-                var serializedValue = SerializeUnityType(resolver, value, propertyType.forceValue, forPersistence);
+                var serializedValue = TrySerializeRawJson(propertyType, value)
+                    ?? SerializeUnityType(resolver, value, propertyType.forceValue, forPersistence);
                 fileResolver?.PopPath();
 
                 if (serializedValue != null)
@@ -1587,6 +1631,15 @@ namespace Lilium.RemoteControl
             }
 
             if (token == null || token.Type == JTokenType.Null) return false;
+
+            // ③b [RawJson]: a string member storing a JSON document. Take the embedded JSON
+            // (object/array) as a compact string, or a legacy escaped-string value verbatim.
+            if (property.type.isRawJson
+                && TryDeserializeRawJson(property.type, token, out var rawJsonValue))
+            {
+                property.SetValue(rawJsonValue, captureDefault: captureDefaults);
+                return true;
+            }
 
             var existingValue = property.GetValue();
             var valueType = property.type.valueType;

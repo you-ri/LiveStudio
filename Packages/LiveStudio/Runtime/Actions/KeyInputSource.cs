@@ -55,8 +55,11 @@ namespace Lilium.LiveStudio
         /// <summary>
         /// Listens for the next control pressed on the Studio machine and binds it. Invoked from the
         /// remote app. Reuses <see cref="RuntimeKeyBindingSystem"/> (same path as expression rebinding).
+        /// Hidden from the generic object UI (like the expression-side rebind functions): the remote app
+        /// drives it through the Actions page's dedicated "Assign Input" button, which shows the key-capture
+        /// modal and polls for the result. A bare generic button would fire it with no such feedback.
         /// </summary>
-        [ExposedFunction]
+        [ExposedFunction, Hide]
         public void StartRebind() => _StartRebindAsync();
 
         private async void _StartRebindAsync()

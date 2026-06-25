@@ -26,18 +26,23 @@ namespace Lilium.LiveStudio
     /// </summary>
     public static class ExpressionBindingSystem
     {
-        /// <summary>Creates an action set bound to the given expression (momentary Button-mode key input by
-        /// default) and returns its id, or null when no manager is active. The key is assigned afterwards via
-        /// <see cref="StartRebind"/>.</summary>
+        /// <summary>Group name shared by every expression binding's action set, so the remote app lists them
+        /// together and they form a mutually-exclusive (radio) group while in <see cref="InputMode.Toggle"/>.</summary>
+        public const string ExpressionGroup = "Expression";
+
+        /// <summary>Creates an action set bound to the given expression (Toggle-mode key input, grouped under
+        /// <see cref="ExpressionGroup"/>) and returns its id, or null when no manager is active. The key is
+        /// assigned afterwards via <see cref="StartRebind"/>.</summary>
         public static string AddBinding(string expressionName)
         {
             var manager = ActionManager.current;
             if (manager == null) return null;
 
             var set = manager.AddActionSet(
-                new KeyInputSource(),
+                new KeyInputSource { mode = InputMode.Toggle },
                 new SetExpressionAction { expression = expressionName });
             set.name = expressionName;
+            set.group = ExpressionGroup;
             return set.id;
         }
 

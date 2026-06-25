@@ -42,7 +42,7 @@ namespace Lilium.LiveStudio
 
         /// <summary>
         /// 利用可能な表情リストを取得。アバター本体の表情に加え、アバターが装着している
-        /// AvatarProp 固有の表情も名前で重複排除しつつマージして返す。
+        /// AvatarItem 固有の表情も名前で重複排除しつつマージして返す。
         /// </summary>
         public FacialKey[] GetAvailableExpressions()
         {
@@ -58,14 +58,14 @@ namespace Lilium.LiveStudio
                 }
             }
 
-            // アバターが装着している prop の表情もマージする (prop はアバターの子)。
+            // アバターが装着している item の表情もマージする (item はアバターの子)。
             var target = _avatarService?.target;
             if (target != null)
             {
-                var props = target.GetComponentsInChildren<AvatarProp>(includeInactive: true);
-                foreach (var prop in props)
+                var items = target.GetComponentsInChildren<AvatarItem>(includeInactive: true);
+                foreach (var item in items)
                 {
-                    foreach (var key in prop.GetExpressions())
+                    foreach (var key in item.GetExpressions())
                     {
                         if (seen.Add(key.name)) result.Add(key);
                     }

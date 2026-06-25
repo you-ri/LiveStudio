@@ -848,6 +848,12 @@ namespace Lilium.RemoteControl
         public readonly bool isPersistable;
 
         /// <summary>
+        /// <see cref="RawJsonAttribute"/> が付いた string メンバーかどうか。true の場合、シリアライザは
+        /// 値文字列を JSON として埋め込み (エスケープ文字列にしない)、読込時に再文字列化する。
+        /// </summary>
+        public readonly bool isRawJson;
+
+        /// <summary>
         /// 永続化先 (Scene=シーンファイル / Project=プロジェクト設定ファイル)。
         /// <see cref="isPersistable"/> が true の場合にのみ意味を持つ。
         /// </summary>
@@ -1009,6 +1015,9 @@ namespace Lilium.RemoteControl
                 this.exposedValueClass = ExposedClass.Get(valueType);
             }
             this.controlAttribute = TypeReflectionSystem.GetCustomAttribute<ControlAttribute>(info) ?? new ControlAttribute("default");
+
+            // [RawJson]: string メンバーの値を埋め込み JSON として出力する (二重エンコード回避)。
+            this.isRawJson = TypeReflectionSystem.GetCustomAttribute<RawJsonAttribute>(info) != null;
 
             // [InlineReference] は保存時に Component などを pending entry として書き出すための
             // マーカー。readonly Property でも isPersistable=true 扱いになる。
@@ -1192,6 +1201,7 @@ namespace Lilium.RemoteControl
             this.controlType = "default";
             this.isPersistable = true;
             this.persistScope = PersistScope.Scene;
+            this.isRawJson = false; // 配列要素自体は RawJson 対象外 (要素内の string メンバーが個別に判定される)
             this.isReadOnly = false; // 配列要素は通常書き込み可能
             this.isStatic = false; // 配列要素はstaticではない
             this.exposedValueClass = ExposedClass.Find(elementType);

@@ -209,12 +209,26 @@ namespace Lilium.LiveStudio
 
         void Start()
         {
-            _target = GetComponentInChildren<Animator>()?.gameObject;
+            _target = _FindAvatarTarget()?.gameObject;
             if (_target != null)
             {
                 _PostSetupAvatar(_target);
                 onAvatarChanged?.Invoke();
             }
+        }
+
+        // First HUMANOID Animator (with a valid Avatar) in the children — the avatar to drive. Other
+        // Animators may live under this controller (e.g. a re-parented AvatarChair prop, or generic-rig
+        // props) whose `avatar` is null; those must not be mistaken for the avatar or GetBoneTransform
+        // throws "Avatar is null".
+        Animator _FindAvatarTarget()
+        {
+            var animators = GetComponentsInChildren<Animator>(includeInactive: true);
+            for (int i = 0; i < animators.Length; i++)
+            {
+                if (animators[i].avatar != null && animators[i].isHuman) return animators[i];
+            }
+            return null;
         }
 
         void OnDestroy()

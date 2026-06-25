@@ -20,6 +20,7 @@
     "LIVESCENE_LOAD_SCENE": "シーンを読み込み",
     "LIVESCENE_OPEN_SAVE_FOLDER": "保存先フォルダを開く",
     "PROJECT_OPEN_FOLDER": "プロジェクトフォルダを開く",
+    "PROJECT_OPEN_DEST_FOLDER": "保存先フォルダを開く",
     "PROJECT_RECRAWL": "再スキャン",
     "PROJECT_OPEN_SCENE": "シーンを開く",
     "AVATAR_VRMMODELFILEPATH_HELP": "VRMの場合 Perfect Sync 対応VRMの使用を推奨します。非対応の場合、口の開閉にはaaブレンドシェイプが使用されます。",

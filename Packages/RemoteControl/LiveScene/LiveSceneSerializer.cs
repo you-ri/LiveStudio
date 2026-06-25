@@ -22,6 +22,10 @@ namespace Lilium.RemoteControl.LiveScene
         public const string FormatIdentifier = "jp.lilium.remotecontrol.live";
         public const int CurrentFormatVersion = 1;
 
+        // Oldest version this reader accepts. Files below are rejected; at/above CurrentFormatVersion are
+        // read best-effort. See FormatHeader for the shared policy. Incompatible breaks use a new format id.
+        public const int MinSupportedVersion = 1;
+
         public static string LiveSceneToJson(IReadOnlyList<ExposedObjectHandle> objects, IExposedObjectResolver resolver, SerializeMode filter = SerializeMode.Snapshot, ExcludeFilter exclude = ExcludeFilter.None, string baseSceneName = null)
         {
             bool onlyDirty = filter == SerializeMode.Delta;
@@ -34,8 +38,7 @@ namespace Lilium.RemoteControl.LiveScene
 
             var jRoot = new JObject();
 
-            jRoot["format"] = FormatIdentifier;
-            jRoot["formatVersion"] = CurrentFormatVersion;
+            FormatHeader.Write(jRoot, FormatIdentifier, CurrentFormatVersion);
             // Top-level field that drives load-time behavior: name of the Unity scene to load
             // before applying objects[]. Older files without this field fall back to re-loading
             // the current active scene. Kept outside `metadata` because it is functional, not
@@ -64,7 +67,7 @@ namespace Lilium.RemoteControl.LiveScene
                 // Prefab追跡情報を収集 (値は Asset GUID)
                 if (obj.target is ExposedUnityObjectBase unityObj && !string.IsNullOrEmpty(unityObj.prefabSourceKey))
                 {
-                    var prefabGo = _GetGameObject(obj);
+                    var prefabGo = LiveSceneObjectUtil.GetGameObject(obj);
                     if (prefabGo != null)
                     {
                         goPrefabMap[prefabGo.GetInstanceID()] = unityObj.prefabSourceKey;
@@ -82,7 +85,7 @@ namespace Lilium.RemoteControl.LiveScene
 
                 // Prefab から生成された新規エントリは「存在そのものが default からの差分」なので
                 // Delta モードでもプロパティ差分の有無に関わらず必ず出力する。
-                var go = _GetGameObject(obj);
+                var go = LiveSceneObjectUtil.GetGameObject(obj);
                 bool isPrefabNew = go != null && goPrefabMap.ContainsKey(go.GetInstanceID());
 
                 // onlyDirty の場合、メタデータ(@type/@id/@name)以外のプロパティがなければスキップ
@@ -246,17 +249,8 @@ namespace Lilium.RemoteControl.LiveScene
 
             var jRoot = JObject.Parse(json);
 
-            // フォーマット検証
-            int formatVersion = _DetectFormatVersion(jRoot);
-            if (formatVersion < 0)
-            {
-                Debug.LogWarning("[RemoteControl] Unknown scene format.");
-                return;
-            }
-            if (formatVersion > CurrentFormatVersion)
-            {
-                Debug.LogWarning($"[RemoteControl] Scene format version {formatVersion} is newer than supported version {CurrentFormatVersion}. Some data may not load correctly.");
-            }
+            // フォーマット検証 (バージョン方針は FormatHeader に集約)。
+            if (!FormatHeader.TryReadVersion(jRoot, "Scene", CurrentFormatVersion, MinSupportedVersion, out _)) return;
 
             var jArray = jRoot["objects"] as JArray;
             if (jArray == null)
@@ -269,11 +263,24 @@ namespace Lilium.RemoteControl.LiveScene
             // 以降のエントリ走査で source-key ベースに再登録される。
             ExposedObjectFileRegistry.Clear();
 
-            // Pass 1: @prefab 付き(かつ @source なし)エントリから Prefab インスタンス化
-            // @prefab の値は Asset GUID。同じ GUID のエントリが複数あっても、求めるコンポーネントが
-            // 既に「消費済み」なら新規GOを生成する。
-            // - 同一GO上の異なる型のExposedObject (例: TestAdditionsComponent + TestAdditionsComponent2) → 同じGOを共有
-            // - 同一プレハブの別インスタンス (例: 4個のCamera) → それぞれ別のGOを生成
+            // 復元は 4 パスで行う（各パスは jArray を順走査する。詳細は各メソッド参照）。
+            _InstantiatePrefabs(jArray, resolver);   // Pass 1: @prefab からインスタンス化
+            _RegisterRoots(jArray, resolver);        // Pass 2: ルートを Registry へ反映
+            _RegisterFileObjects(jArray, resolver);  // Pass 2.5: source-key → UnityEngine.Object
+            _ApplyProperties(jArray, resolver);      // Pass 3: プロパティ適用
+        }
+
+        // -------------------------------------------------------
+        // Restore passes (LiveSceneFromJson から分割。挙動は不変)
+        // -------------------------------------------------------
+
+        // Pass 1: @prefab 付き(かつ @source なし)エントリから Prefab インスタンス化
+        // @prefab の値は Asset GUID。同じ GUID のエントリが複数あっても、求めるコンポーネントが
+        // 既に「消費済み」なら新規GOを生成する。
+        // - 同一GO上の異なる型のExposedObject (例: TestAdditionsComponent + TestAdditionsComponent2) → 同じGOを共有
+        // - 同一プレハブの別インスタンス (例: 4個のCamera) → それぞれ別のGOを生成
+        private static void _InstantiatePrefabs(JArray jArray, IExposedObjectResolver resolver)
+        {
             var prefabInstances = new List<(string prefabKey, GameObject go)>();
             var claimedTargets = new HashSet<UnityEngine.Object>();
             foreach (var jEntry in jArray)
@@ -348,13 +355,16 @@ namespace Lilium.RemoteControl.LiveScene
                     }
                 }
             }
+        }
 
-            // Pass 2: ルートエントリ (pending 以外) を Registry に反映する。
-            // - 既に id で登録済み → 何もしない
-            // - Factory 登録型 → typename フォールバックで解決
-            // - POCO → GetOrCreate で Activator 生成
-            // - Component 型 → シーン上を探す
-            // - それでも無ければ typename フォールバック
+        // Pass 2: ルートエントリ (pending 以外) を Registry に反映する。
+        // - 既に id で登録済み → 何もしない
+        // - Factory 登録型 → typename フォールバックで解決
+        // - POCO → GetOrCreate で Activator 生成
+        // - Component 型 → シーン上を探す
+        // - それでも無ければ typename フォールバック
+        private static void _RegisterRoots(JArray jArray, IExposedObjectResolver resolver)
+        {
             foreach (var jEntry in jArray)
             {
                 if (!(jEntry is JObject jObject)) continue;
@@ -401,9 +411,12 @@ namespace Lilium.RemoteControl.LiveScene
                     _TryResolveByTypeName(typeName, id, objectName);
                 }
             }
+        }
 
-            // Pass 2.5: source-key → UnityEngine.Object を FileRegistry に登録する。
-            // @source があれば rootId+path で解決 (path 空ならルート target)、無ければ @id から Registry 経由で解決。
+        // Pass 2.5: source-key → UnityEngine.Object を FileRegistry に登録する。
+        // @source があれば rootId+path で解決 (path 空ならルート target)、無ければ @id から Registry 経由で解決。
+        private static void _RegisterFileObjects(JArray jArray, IExposedObjectResolver resolver)
+        {
             foreach (var jEntry in jArray)
             {
                 if (!(jEntry is JObject jObject)) continue;
@@ -424,10 +437,13 @@ namespace Lilium.RemoteControl.LiveScene
                     Debug.LogWarning($"[RemoteControl] Failed to resolve pending entry '@source={sourceKey}' to UnityEngine.Object.");
                 }
             }
+        }
 
-            // Pass 3: プロパティデシリアライズ
-            // pending 子参照 (@source に path あり) は FileRegistry の target に一時 ExposedObjectHandle で適用、
-            // それ以外は entryKey で登録済み ExposedObjectHandle を引いて適用する。
+        // Pass 3: プロパティデシリアライズ
+        // pending 子参照 (@source に path あり) は FileRegistry の target に一時 ExposedObjectHandle で適用、
+        // それ以外は entryKey で登録済み ExposedObjectHandle を引いて適用する。
+        private static void _ApplyProperties(JArray jArray, IExposedObjectResolver resolver)
+        {
             foreach (var jEntry in jArray)
             {
                 if (!(jEntry is JObject jObject)) continue;
@@ -604,24 +620,6 @@ namespace Lilium.RemoteControl.LiveScene
                 : sourceKey.Substring(splitIndex);
         }
 
-        /// <summary>
-        /// フォーマットバージョンを検出する。
-        /// `formatVersion` が無い JSON は format ヘッダ未導入時代のレガシー入力として
-        /// CurrentFormatVersion 互換とみなす（読み込み自体は試行する）。
-        /// </summary>
-        private static int _DetectFormatVersion(JObject jRoot)
-        {
-            var jFormatVersion = jRoot["formatVersion"];
-            if (jFormatVersion != null)
-            {
-                return jFormatVersion.Value<int>();
-            }
-
-            // `formatVersion` 未指定はヘッダー導入前のJSONとみなす。
-            // objects 配列が無いケースは呼び出し側で別途警告される。
-            return CurrentFormatVersion;
-        }
-
         private static bool _TryGetMetadata(JToken token, out string typeName, out string id)
         {
             typeName = null;
@@ -668,18 +666,13 @@ namespace Lilium.RemoteControl.LiveScene
                     ExposedObjectRegistry.ReplaceId(match.Value, savedId);
                 }
             }
-        }
-
-        private static GameObject _GetGameObject(ExposedObjectHandle obj)
-        {
-            if (obj.target is Component comp) return comp.gameObject;
-            if (obj.target is GameObject g) return g;
-            if (obj.target is ExposedUnityObjectBase unityObj)
+            else if (matchCount > 1)
             {
-                if (unityObj.reference is GameObject gRef) return gRef;
-                if (unityObj.reference is Component cRef) return cRef.gameObject;
+                // 曖昧 (同型・同名が複数) なため安全側でスキップするが、復元漏れになり得るので可視化する。
+                Debug.LogWarning($"[RemoteControl] Ambiguous restore: {matchCount} objects match type '{typeName}'" +
+                    (string.IsNullOrEmpty(objectName) ? "" : $" name '{objectName}'") +
+                    $" for saved id '{savedId}'; skipped id restore to avoid mis-binding.");
             }
-            return null;
         }
 
         /// <summary>

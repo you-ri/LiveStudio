@@ -17,7 +17,7 @@ namespace Lilium.LiveStudio
     /// error that occurs when the same bundle file is loaded again before its container is freed.
     ///
     /// A prop bundle is either an avatar prop (attached under an avatar via
-    /// <see cref="AvatarProp"/>) or a free-standing stage prop. The loader itself does
+    /// <see cref="Prop"/>) or a free-standing stage prop. The loader itself does
     /// not parent or wire the instance; that is the caller's (source/manager) responsibility.
     /// </summary>
     internal sealed class PropBundleLoader

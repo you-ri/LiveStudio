@@ -13,7 +13,11 @@ namespace Lilium.LiveStudio
     /// Unlike props / avatars / scene bundles, a live scene is not a resource loaded *into* the current
     /// scene — opening it replaces the whole app state (it deserializes over every exposed object). It
     /// therefore does not participate in the load/unload (enabled) machinery: it is a launcher only.
-    /// <see cref="ExternalAssetManager.OpenLiveScene"/> invokes <see cref="Open"/> to switch scenes.
+    ///
+    /// Surfaced to the remote app's project detail pane through the generic exposed-object UI: the base
+    /// identity/state fields are hidden (see <see cref="AssetBase"/>), so the only visible members are
+    /// <see cref="AssetBase.name"/> (the title) and the <see cref="Open"/> button.
+    /// <see cref="ExternalAssetManager.OpenLiveScene"/> also invokes <see cref="Open"/> to switch scenes.
     /// </summary>
     [System.Serializable]
     [ExposedClass("LiveSceneAsset", Category = "Asset", Icon = "movie")]
@@ -27,7 +31,12 @@ namespace Lilium.LiveStudio
 
         public override void Unload(AssetLoadContext context) { }
 
-        /// <summary>Opens this live scene, replacing the current app state. The live-scene-specific work.</summary>
+        /// <summary>
+        /// Opens this live scene, replacing the current app state. The live-scene-specific work.
+        /// Exposed as a button in the generic object UI (the project detail pane) so the scene is
+        /// switched from there instead of by a bespoke launcher control.
+        /// </summary>
+        [ExposedFunction]
         public void Open()
         {
             if (string.IsNullOrEmpty(filePath)) return;

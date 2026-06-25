@@ -138,6 +138,33 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
+        /// Opens the current project folder in the OS file browser. Mirrors the live-scene
+        /// "Open Save Folder" action; both resolve to the same project folder (the save destination).
+        /// </summary>
+        [ExposedFunction(label = "PROJECT_OPEN_DEST_FOLDER"), Hide]
+        public static void OpenProjectFolder()
+        {
+            if (string.IsNullOrEmpty(_projectPath) || !Directory.Exists(_projectPath))
+            {
+                Debug.LogError($"[LiveStudio] Project folder not found: {_projectPath}");
+                return;
+            }
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = _projectPath,
+                    UseShellExecute = true,
+                };
+                System.Diagnostics.Process.Start(psi);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[LiveStudio] Failed to open project folder '{_projectPath}': {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Called by <see cref="ExternalAssetManager"/> once it is ready (after the live scene, if any,
         /// has been restored), so the restored project folder's assets are merged in on startup and
         /// re-merged after opening a live scene.

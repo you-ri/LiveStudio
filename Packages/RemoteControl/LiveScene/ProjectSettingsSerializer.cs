@@ -30,6 +30,9 @@ namespace Lilium.RemoteControl.LiveScene
         public const string FormatIdentifier = "jp.lilium.remotecontrol.projectsettings";
         public const int CurrentFormatVersion = 1;
 
+        // Oldest version this reader accepts (see FormatHeader for the shared policy).
+        public const int MinSupportedVersion = 1;
+
         /// <summary>
         /// Builds one JSON document per class for every object (and exposed component) that owns at
         /// least one Project-scoped member. The returned dictionary is keyed by class typeName
@@ -66,12 +69,9 @@ namespace Lilium.RemoteControl.LiveScene
             var result = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var kv in entriesByClass)
             {
-                var root = new JObject
-                {
-                    ["format"] = FormatIdentifier,
-                    ["formatVersion"] = CurrentFormatVersion,
-                    ["objects"] = kv.Value,
-                };
+                var root = new JObject();
+                FormatHeader.Write(root, FormatIdentifier, CurrentFormatVersion);
+                root["objects"] = kv.Value;
                 result[kv.Key] = root.ToString(Formatting.Indented);
             }
             return result;
@@ -98,11 +98,7 @@ namespace Lilium.RemoteControl.LiveScene
                 return;
             }
 
-            int formatVersion = root["formatVersion"]?.Value<int>() ?? CurrentFormatVersion;
-            if (formatVersion > CurrentFormatVersion)
-            {
-                Debug.LogWarning($"[RemoteControl] Project settings format version {formatVersion} is newer than supported version {CurrentFormatVersion}. Some data may not load correctly.");
-            }
+            if (!FormatHeader.TryReadVersion(root, "Project settings", CurrentFormatVersion, MinSupportedVersion, out _)) return;
 
             if (!(root["objects"] is JArray jArray)) return;
 
@@ -110,19 +106,28 @@ namespace Lilium.RemoteControl.LiveScene
             {
                 if (!(jEntry is JObject jObject)) continue;
 
+                // Component entry (@parent + @type + @componentIndex) vs top-level entry (@id).
                 var parentId = jObject["@parent"]?.Value<string>();
                 if (!string.IsNullOrEmpty(parentId))
-                {
                     _ApplyComponentEntry(jObject, parentId, resolver);
-                    continue;
-                }
-
-                var id = jObject["@id"]?.Value<string>();
-                if (string.IsNullOrEmpty(id)) continue;
-                var handle = resolver.FindById(id);
-                if (handle == null) continue;
-                ExposedPropertySerializer.FromJson(jEntry.ToString(), handle.Value, resolver, captureDefaults: false);
+                else
+                    _ApplyRootEntry(jObject, resolver);
             }
+        }
+
+        // Applies a top-level entry resolved by @id. Skips (with a warning) when the id is missing from
+        // the live scene — e.g. the owning object is not present this session.
+        private static void _ApplyRootEntry(JObject jObject, IExposedObjectResolver resolver)
+        {
+            var id = jObject["@id"]?.Value<string>();
+            if (string.IsNullOrEmpty(id)) return;
+            var handle = resolver.FindById(id);
+            if (handle == null)
+            {
+                Debug.LogWarning($"[RemoteControl] Project settings: object '{id}' not found; entry skipped.");
+                return;
+            }
+            ExposedPropertySerializer.FromJson(jObject.ToString(), handle.Value, resolver, captureDefaults: false);
         }
 
         // Walks the [ExposedClass] components of the GameObject behind an exposed object proxy and
@@ -131,7 +136,7 @@ namespace Lilium.RemoteControl.LiveScene
         private static void _CollectComponentEntries(ExposedObjectHandle obj, IExposedObjectResolver resolver, Dictionary<string, JArray> entriesByClass)
         {
             if (!obj.hasId) return; // 親 id が無いと apply 時に component を再解決できない。
-            var go = _GetGameObject(obj);
+            var go = LiveSceneObjectUtil.GetGameObject(obj);
             if (go == null) return;
 
             var comps = go.GetComponents<Component>();
@@ -166,18 +171,30 @@ namespace Lilium.RemoteControl.LiveScene
         private static void _ApplyComponentEntry(JObject jObject, string parentId, IExposedObjectResolver resolver)
         {
             var parent = resolver.FindById(parentId);
-            if (parent == null) return;
-            var go = _GetGameObject(parent.Value);
+            if (parent == null)
+            {
+                Debug.LogWarning($"[RemoteControl] Project settings: parent '{parentId}' not found; component entry skipped.");
+                return;
+            }
+            var go = LiveSceneObjectUtil.GetGameObject(parent.Value);
             if (go == null) return;
 
             var typeName = jObject["@type"]?.Value<string>();
             if (string.IsNullOrEmpty(typeName)) return;
             var compClass = ExposedClass.Find(typeName);
-            if (compClass == null || compClass.type == null) return;
+            if (compClass == null || compClass.type == null)
+            {
+                Debug.LogWarning($"[RemoteControl] Project settings: unknown component type '{typeName}' (deleted/renamed class?); entry skipped.");
+                return;
+            }
 
             int wantIdx = jObject["@componentIndex"]?.Value<int>() ?? 0;
             var matches = go.GetComponents(compClass.type);
-            if (wantIdx < 0 || wantIdx >= matches.Length) return;
+            if (wantIdx < 0 || wantIdx >= matches.Length)
+            {
+                Debug.LogWarning($"[RemoteControl] Project settings: component index {wantIdx} out of range for '{typeName}' on '{go.name}' ({matches.Length} found); entry skipped.");
+                return;
+            }
 
             var ch = ExposedObjectHandle.CreateUnregistered(compClass, matches[wantIdx]);
             ExposedPropertySerializer.FromJson(jObject.ToString(), ch, resolver, captureDefaults: false);
@@ -194,18 +211,6 @@ namespace Lilium.RemoteControl.LiveScene
             arr.Add(entry);
         }
 
-        private static GameObject _GetGameObject(ExposedObjectHandle obj)
-        {
-            var t = obj.target;
-            if (t is GameObject g) return g;
-            if (t is Component c) return c.gameObject;
-            if (t is ExposedUnityObjectBase ub)
-            {
-                if (ub.reference is GameObject gr) return gr;
-                if (ub.reference is Component cr) return cr.gameObject;
-            }
-            return null;
-        }
 
         private static bool _HasProjectScopedMember(ExposedObjectHandle obj)
         {

@@ -153,6 +153,15 @@ namespace Lilium.LiveStudio
             OnDisable();
         }
 
+        // True when _persistedAssets was just replaced by a live-scene restore (FromJson deserializes a
+        // brand-new array) rather than left untouched by an unrelated property write. OnAfterExposedDeserialize
+        // fires on EVERY exposed-property write on this manager, not only after a full restore, so without
+        // this guard a plain enabled-toggle would re-apply the persisted set and wipe the live assets (and
+        // the just-toggled selection). Reference identity is the signal: a restore brings in an array this
+        // manager did not produce, whereas a property write leaves the reference OnBeforeExposedSerialize
+        // last recorded into _lastAppliedPersisted.
+        private bool _IsFreshRestore() => !ReferenceEquals(_persistedAssets, _lastAppliedPersisted);
+
         /// <summary>
         /// Fires after a live scene is restored. The used assets were deserialized into
         /// <see cref="_persistedAssets"/>; make them the live set, schedule a diff to (un)load them, and
@@ -162,13 +171,9 @@ namespace Lilium.LiveStudio
         {
             if (!Application.isPlaying) return;
 
-            // This callback also fires after every individual exposed-property write (the owner's
-            // IExposedDeserializeCallback), not only after a full live-scene restore. Apply the
-            // persisted set to the live `assets` array ONLY when `_persistedAssets` was actually
-            // re-deserialized by a restore — detected by its reference changing to one this manager did
-            // not produce in OnBeforeExposedSerialize. Otherwise a plain enabled-toggle write would wipe
-            // the live assets (and the just-toggled selection).
-            if (ReferenceEquals(_persistedAssets, _lastAppliedPersisted)) return;
+            // Apply the persisted set to the live `assets` array ONLY on a genuine restore, not on the
+            // every-property-write firings of this callback (see _IsFreshRestore).
+            if (!_IsFreshRestore()) return;
 
             _lastAppliedPersisted = _persistedAssets;
             // A persisted entry deserializes to null when its @type is no longer registered (e.g.
@@ -176,6 +181,7 @@ namespace Lilium.LiveStudio
             // never reaches the live array or a broadcast — consumers that project the list
             // (StageManager, the remote app) would otherwise dereference null and crash.
             assets = _WithoutNulls(_persistedAssets);
+            _ResolveAssetPaths(assets);
             _dirty = true;
             _assetManagerReadyNotified = false;
         }
@@ -189,11 +195,17 @@ namespace Lilium.LiveStudio
         {
             for (int i = 0; i < _loaded.Count; i++) _loaded[i].CaptureState();
 
+            var projectPath = ProjectManager.projectPath;
             var used = new List<AssetBase>();
             for (int i = 0; i < assets.Length; i++)
             {
                 var asset = assets[i];
-                if (asset != null && (asset.enabled || asset.isLoaded)) used.Add(asset);
+                if (asset == null || (!asset.enabled && !asset.isLoaded)) continue;
+                // Persist a portable, project-relative path so a saved scene survives moving the project
+                // folder / opening it on another machine. The absolute id/filePath are not persisted
+                // (persistable=false) and are reconstructed from this on load.
+                asset.path = PropPreset.Relativize(asset.filePath, projectPath);
+                used.Add(asset);
             }
             _persistedAssets = used.ToArray();
             // We produced this reference (not a restore); record it so OnAfterExposedDeserialize does
@@ -561,7 +573,7 @@ namespace Lilium.LiveStudio
         ///
         /// Keyed on the object's exposed <c>@id</c> so the API generalizes to any object; the recreation
         /// strategy is resolved in <see cref="_ResolvePresetTarget"/>. Today only the asset strategy is
-        /// implemented: loaded props (delta state) and the active avatar (full AvatarController state).
+        /// implemented: loaded props and the active avatar (both as delta state in the unified envelope).
         /// Objects without a supported strategy are rejected.
         /// </summary>
         [ExposedFunction]
@@ -631,10 +643,10 @@ namespace Lilium.LiveStudio
             }
 
             // Avatar strategy: avatars are exposed through the shared AvatarController (not a per-asset
-            // wrapper), so capture its full state and pin the active avatar asset's source. A preset-loaded
-            // avatar is eligible too — its sourceFilePath resolves to the underlying avatar file.
+            // wrapper), so delta-capture against its GameObject and pin the active avatar asset's source.
+            // A preset-loaded avatar is eligible too — its sourceFilePath resolves to the underlying file.
             var handle = ExposedObjectRegistry.FindById(objectId);
-            if (handle.HasValue && handle.Value.target is AvatarController)
+            if (handle.HasValue && handle.Value.target is AvatarController controller)
             {
                 for (int i = 0; i < assets.Length; i++)
                 {
@@ -643,7 +655,9 @@ namespace Lilium.LiveStudio
                     {
                         kind = PropPreset.AssetKind.Avatar;
                         source = avatar.sourceFilePath;
-                        state = ExposedObjectSnapshot.Capture(handle.Value);
+                        // Object-generic delta in the same { wrapper, components } envelope as props.
+                        // Requires the baseline captured at avatar load (see AvatarAsset).
+                        state = AssetStateSnapshot.CaptureDelta(controller.gameObject);
                         return true;
                     }
                 }
@@ -895,6 +909,36 @@ namespace Lilium.LiveStudio
         private static string _MakeId(string filePath)
         {
             return filePath.Replace('\\', '/');
+        }
+
+        // Reconstructs the absolute runtime filePath/id from the persisted (project-relative) path after a
+        // live-scene restore. New-format entries persisted only the relative `path` (id/filePath are
+        // persistable=false); resolve those to absolutes. Legacy entries that persisted absolute
+        // id/filePath instead are kept as-is and back-filled with a relative `path`, so a re-save upgrades
+        // them to the portable form. PropPreset.ResolveSource returns a rooted path verbatim, so a `path`
+        // that is itself absolute (different drive / out-of-project fallback) still resolves correctly.
+        private static void _ResolveAssetPaths(AssetBase[] assets)
+        {
+            var projectPath = ProjectManager.projectPath;
+            for (int i = 0; i < assets.Length; i++)
+            {
+                var asset = assets[i];
+                if (asset == null) continue;
+
+                if (string.IsNullOrEmpty(asset.filePath) && !string.IsNullOrEmpty(asset.path))
+                {
+                    // New format: only the relative path was persisted.
+                    asset.filePath = PropPreset.ResolveSource(asset.path, projectPath);
+                    asset.id = _MakeId(asset.filePath);
+                    if (string.IsNullOrEmpty(asset.name)) asset.name = AssetTypeRegistry.DeriveName(asset.filePath);
+                }
+                else if (!string.IsNullOrEmpty(asset.filePath))
+                {
+                    // Legacy format: absolute id/filePath were persisted. Normalize id and back-fill path.
+                    if (string.IsNullOrEmpty(asset.id)) asset.id = _MakeId(asset.filePath);
+                    if (string.IsNullOrEmpty(asset.path)) asset.path = PropPreset.Relativize(asset.filePath, projectPath);
+                }
+            }
         }
 
         private AssetBase _Find(string assetId)

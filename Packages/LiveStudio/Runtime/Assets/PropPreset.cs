@@ -8,6 +8,8 @@ using UnityEngine;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
+using Lilium.RemoteControl;
+
 namespace Lilium.LiveStudio
 {
     /// <summary>
@@ -33,9 +35,15 @@ namespace Lilium.LiveStudio
     ///     "kind": "prop",              // or "avatar" — which concrete asset to recreate
     ///     "source": "Props/foo.glb"    // relative to the preset file when possible, else absolute
     ///   },
-    ///   "state": { ... AssetStateSnapshot-shaped state (prop: delta, avatar: full) ... }
+    ///   "state": { ... AssetStateSnapshot-shaped delta (wrapper + components) for any object kind ... }
     /// }
     /// </code>
+    ///
+    /// <para>Versioning is forward-tolerant: a file from a newer writer is read best-effort (unknown
+    /// fields ignored) rather than rejected, since the <c>target</c>/<c>state</c> shape is stable.
+    /// The state envelope is object-generic — a delta of <c>wrapper</c> + <c>components</c> for both
+    /// props and avatars. A bare AvatarController snapshot (no wrapper/components, from an earlier
+    /// build) is still restorable via shape detection.</para>
     /// </summary>
     public static class PropPreset
     {
@@ -51,8 +59,15 @@ namespace Lilium.LiveStudio
         /// <summary>Recreation strategy: load an external source asset (prop / avatar) and reapply state.</summary>
         public const string StrategyAsset = "asset";
 
-        /// <summary>Current file format version.</summary>
+        /// <summary>Current file format version written by <see cref="BuildJson"/>.</summary>
         public const int CurrentFormatVersion = 1;
+
+        /// <summary>
+        /// Oldest format version this reader still understands. Files below this are rejected; files at or
+        /// above <see cref="CurrentFormatVersion"/> are read best-effort (forward tolerance). Reserved as
+        /// the single knob for a future hard break — prefer a new <see cref="FormatId"/> over bumping this.
+        /// </summary>
+        public const int MinSupportedVersion = 1;
 
         /// <summary>Which concrete asset kind a preset recreates (drives PropAsset vs AvatarAsset on crawl).</summary>
         public enum AssetKind { Prop, Avatar }
@@ -118,14 +133,11 @@ namespace Lilium.LiveStudio
                 ["source"] = source ?? "",
             };
 
-            var root = new JObject
-            {
-                ["format"] = FormatId,
-                ["formatVersion"] = CurrentFormatVersion,
-                ["name"] = name ?? "",
-                ["target"] = target,
-                ["state"] = state,
-            };
+            var root = new JObject();
+            FormatHeader.Write(root, FormatId, CurrentFormatVersion);
+            root["name"] = name ?? "";
+            root["target"] = target;
+            root["state"] = state;
             return root.ToString(Formatting.Indented);
         }
 
@@ -161,12 +173,9 @@ namespace Lilium.LiveStudio
                 return false;
             }
 
-            var formatVersion = root["formatVersion"]?.Value<int>() ?? 0;
-            if (formatVersion > CurrentFormatVersion)
-            {
-                Debug.LogError($"[LiveStudio] Preset format version {formatVersion} is newer than supported ({CurrentFormatVersion}).");
-                return false;
-            }
+            // Version policy (missing => min, below min => reject, above current => best-effort) is shared
+            // across formats in FormatHeader. Incompatible breaks would use a new format id instead.
+            if (!FormatHeader.TryReadVersion(root, "Preset", CurrentFormatVersion, MinSupportedVersion, out _)) return false;
 
             var target = root["target"] as JObject;
             data.source = target?["source"]?.Value<string>() ?? "";

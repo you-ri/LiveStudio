@@ -16,7 +16,7 @@ namespace Lilium.LiveStudio
     /// <list type="bullet">
     ///   <item><c>*.prop.lsb</c> — an avatar prop: instantiated under the current avatar and wrapped
     ///   WITHOUT an exposed transform, because its pose is bone-driven every frame by
-    ///   <see cref="AvatarProp"/>'s socket constraint (the live transform is computed output, not
+    ///   <see cref="Prop"/>'s socket constraint (the live transform is computed output, not
     ///   authored state). Reloaded onto the new avatar when the avatar is swapped.</item>
     ///   <item><c>*.glb</c> / <c>*.gltf</c> — a free-standing scene prop: loaded via
     ///   <see cref="GltfModel"/> into a host object at the scene root and wrapped WITH an exposed
@@ -150,7 +150,7 @@ namespace Lilium.LiveStudio
             }
 
             // Wrap so the remote app can control the prop component. No transform is exposed: the pose
-            // is socket-driven, so the authored state lives on AvatarProp, not the GameObject transform.
+            // is socket-driven, so the authored state lives on Prop, not the GameObject transform.
             _Register(context, new ExposedGameObject(instance), instance);
         }
 

@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 
 using UnityEngine;
 
+using Newtonsoft.Json.Linq;
+
 using Lilium.RemoteControl;
 
 namespace Lilium.LiveStudio
@@ -58,6 +60,10 @@ namespace Lilium.LiveStudio
                 return Task.CompletedTask;
             }
 
+            // Capture the delta baseline once the new avatar is ready (even without a preset), so a later
+            // "save as preset" records only the user's edits — symmetric with how props baseline on load.
+            _CaptureDefaultsThenRestoreOnReady(null);
+
             // The avatar swap itself is driven by AvatarController; completion is observed by the
             // manager via IAvatarService.onAvatarChanged. Mark loaded optimistically.
             AvatarService.Load(kAvatarServiceId, filePath);
@@ -74,22 +80,10 @@ namespace Lilium.LiveStudio
 
             _resolvedSourcePath = source;
 
-            // Reapply the saved AvatarController state after the new avatar becomes ready. The
-            // AvatarController instance persists across swaps; only its driven avatar changes, so the
-            // saved override arrays apply to the freshly loaded (same source) avatar. The handler is
-            // one-shot and self-removing.
-            var service = SingletonService<IAvatarService>.subject;
-            if (service != null && !string.IsNullOrEmpty(preset.state))
-            {
-                var savedState = preset.state;
-                Action handler = null;
-                handler = () =>
-                {
-                    service.onAvatarChanged -= handler;
-                    _RestoreAvatarState(savedState);
-                };
-                service.onAvatarChanged += handler;
-            }
+            // Once the new avatar is ready: capture the delta baseline, then reapply the saved state on
+            // top. The AvatarController instance persists across swaps; only its driven avatar changes, so
+            // the saved overrides apply to the freshly loaded (same source) avatar.
+            _CaptureDefaultsThenRestoreOnReady(preset.state);
 
             AvatarService.Load(kAvatarServiceId, source);
             isLoaded = true;
@@ -121,7 +115,51 @@ namespace Lilium.LiveStudio
             return null;
         }
 
-        // Restores a captured AvatarController state snapshot onto the live controller.
+        // Registers a one-shot onAvatarChanged handler that, once the freshly loaded avatar is ready,
+        // captures the AvatarController GameObject's delta baseline BEFORE applying any saved state, so a
+        // later "save as preset" captures only the user's edits. When savedState is non-empty it is then
+        // reapplied: the unified { wrapper, components } envelope via AssetStateSnapshot, or a bare
+        // AvatarController snapshot (no wrapper/components, from an earlier build) via _RestoreAvatarState.
+        // The handler is self-removing.
+        private static void _CaptureDefaultsThenRestoreOnReady(string savedState)
+        {
+            var service = SingletonService<IAvatarService>.subject;
+            if (service == null) return;
+
+            Action handler = null;
+            handler = () =>
+            {
+                service.onAvatarChanged -= handler;
+                var controllerGO = (service as Component)?.gameObject;
+                if (controllerGO == null) return;
+
+                // Baseline = the avatar's values right after load, before any preset/user override.
+                AssetStateSnapshot.CaptureDefaults(controllerGO);
+
+                if (string.IsNullOrEmpty(savedState)) return;
+                if (_LooksLikeEnvelope(savedState))
+                    AssetStateSnapshot.Restore(savedState, controllerGO);
+                else
+                    _RestoreAvatarState(savedState); // bare AvatarController snapshot (earlier build)
+            };
+            service.onAvatarChanged += handler;
+        }
+
+        // True if savedState is the unified envelope ({ wrapper / components }); false for a bare
+        // AvatarController snapshot from an earlier build (restored via _RestoreAvatarState).
+        private static bool _LooksLikeEnvelope(string json)
+        {
+            if (string.IsNullOrEmpty(json)) return false;
+            try
+            {
+                var root = JObject.Parse(json);
+                return root["wrapper"] != null || root["components"] != null;
+            }
+            catch { return false; }
+        }
+
+        // Restores a bare AvatarController state snapshot (from an earlier build) directly onto the
+        // live controller.
         private static void _RestoreAvatarState(string stateJson)
         {
             var controller = SingletonService<IAvatarService>.subject as Component;

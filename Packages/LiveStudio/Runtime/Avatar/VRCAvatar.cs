@@ -140,7 +140,7 @@ namespace Lilium.LiveStudio
         MotionSourceBase _motionSource;
         AvatarVisibilityGate _visibilityGate;
 
-        // 子 prop (AvatarProp) のパラメータブリッジ用。controller 宣言パラメータの nameHash 集合。
+        // 子 prop (AvatarItem) のパラメータブリッジ用。controller 宣言パラメータの nameHash 集合。
         System.Collections.Generic.HashSet<int> _paramHashes;
 
         int _visemeHash;

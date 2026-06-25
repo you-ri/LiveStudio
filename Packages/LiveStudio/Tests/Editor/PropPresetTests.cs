@@ -57,11 +57,40 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
-        public void TryParse_NewerVersion_ReturnsFalse()
+        public void TryParse_NewerVersion_ReadsBestEffort()
         {
-            LogAssert.ignoreFailingMessages = true;
-            var future = "{\"format\":\"jp.lilium.remotecontrol.preset\",\"formatVersion\":999,\"target\":{}}";
-            Assert.IsFalse(PropPreset.TryParse(future, out _));
+            // Forward tolerance: a newer writer is read best-effort (warns) rather than rejected, so a
+            // user's preset is not lost when opened on an older client.
+            LogAssert.ignoreFailingMessages = true; // emits a warning, not an error
+            var future = "{\"format\":\"jp.lilium.remotecontrol.preset\",\"formatVersion\":999," +
+                "\"name\":\"f\",\"target\":{\"strategy\":\"asset\",\"kind\":\"prop\",\"source\":\"a.glb\"}}";
+            Assert.IsTrue(PropPreset.TryParse(future, out var data));
+            Assert.AreEqual("a.glb", data.source);
+            Assert.AreEqual(PropPreset.AssetKind.Prop, data.kind);
+        }
+
+        [Test]
+        public void TryParse_BareAvatarState_StillParses()
+        {
+            // An avatar preset whose `state` is a bare AvatarController snapshot (no wrapper/components,
+            // from an earlier build) still parses; the bare shape is handled at restore time (AvatarAsset).
+            var bare = "{\"format\":\"jp.lilium.remotecontrol.preset\",\"formatVersion\":1," +
+                "\"name\":\"old\",\"target\":{\"strategy\":\"asset\",\"kind\":\"avatar\",\"source\":\"a.vrm\"}," +
+                "\"state\":{\"bare\":\"controllerSnapshot\"}}";
+            Assert.IsTrue(PropPreset.TryParse(bare, out var data));
+            Assert.AreEqual(PropPreset.AssetKind.Avatar, data.kind);
+            Assert.AreEqual("a.vrm", data.source);
+            StringAssert.Contains("controllerSnapshot", data.state);
+        }
+
+        [Test]
+        public void TryParse_MissingVersion_Parses()
+        {
+            // A hand-edited / pre-format file with no formatVersion is treated as the minimum supported.
+            var noVer = "{\"format\":\"jp.lilium.remotecontrol.preset\"," +
+                "\"target\":{\"strategy\":\"asset\",\"kind\":\"prop\",\"source\":\"a.glb\"}}";
+            Assert.IsTrue(PropPreset.TryParse(noVer, out var data));
+            Assert.AreEqual("a.glb", data.source);
         }
 
         [Test]

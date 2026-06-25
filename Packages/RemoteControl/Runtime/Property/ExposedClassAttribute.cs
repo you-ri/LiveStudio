@@ -218,6 +218,21 @@ namespace Lilium.RemoteControl
         }
     }
 
+    /// <summary>
+    /// Marks a <c>string</c> [ExposedField]/[ExposedProperty] whose value is itself a JSON document.
+    /// The serializer embeds the parsed JSON inline (as an object/array) instead of writing it as an
+    /// escaped string, and re-stringifies it on read, so a JSON-in-JSON blob is stored readably and is
+    /// not double-encoded. Opt-in: untagged members are unaffected.
+    ///
+    /// Backward compatible on read: a legacy file that stored the value as a JSON string still
+    /// deserializes (the string is taken verbatim). A value that is not valid JSON falls back to plain
+    /// string serialization. Only meaningful on <c>string</c>-typed members.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
+    public class RawJsonAttribute : Attribute
+    {
+    }
+
 
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
     public class ExposedFunctionAttribute : Attribute
