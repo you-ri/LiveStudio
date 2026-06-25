@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `AvatarChair` component for a chair prop the avatar sits on. It re-parents under the `AvatarController` so avatar root motion does not drag it, then makes its parts track the avatar's pelvis (Hips socket) relative to a recorded rest pose: `swivel` / `recline` rotate a target transform about an authored local axis (hips yaw / pitch), and `lateral` / `height` / `depth` translate one along an axis (hips X / Y / Z). The rest pose is recorded via an `Activate` action. Each axis (a `ChairAxis`) has an operating range (`min`/`max`, `0/0` locks it), a deadzone that is the play/backlash between the source and the follow target (absorbs hips tremor), and damping (`SmoothDampAngle` for rotation).
+
+### Changed
+
+- **Breaking:** the avatar-prop `AvatarProp` component was split into composable siblings: a new shared `Prop` (keeps the exposed name `"Prop"`; owns the socket follow + position/rotation/scale offsets) plus a behavior component. `AvatarProp` was renamed to `AvatarItem` (the avatar→prop parameter bridge + expression driving); a `[MovedFrom]` keeps old type references resolving. Existing `*.prop.lsb` bundles carry only the old single component and therefore **must be re-exported** (a re-exported bundle root carries both `Prop` and `AvatarItem`); the live-scene `"Prop"` state key is unchanged.
+
 ## [0.23.6] - 2026-06-23
 
 ### Added
