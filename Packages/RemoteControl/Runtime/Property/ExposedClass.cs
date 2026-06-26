@@ -601,6 +601,10 @@ namespace Lilium.RemoteControl
 
         private readonly Dictionary<string, ExposedFunctionType> _functionByApiName;
 
+        // [ExposedKey] が付いた唯一のプロパティ (無ければ null)。配列要素をインデックスでなく
+        // 安定キーで引く ("expressions[Joy].weight") ための識別子。
+        private readonly ExposedPropertyType _keyProperty;
+
         // Convention-based callbacks for static-classed ExposedObjectHandle (target == null).
         // C# 9 cannot put static abstract members on an interface, so we resolve a
         // public static parameterless method by name during registration.
@@ -653,6 +657,32 @@ namespace Lilium.RemoteControl
             return dict;
         }
 
+        // propertyTypes から [ExposedKey] の付いたメンバーを1個特定する。
+        // 複数付いていた場合は宣言順で最初の1個を採用し警告する。
+        private static ExposedPropertyType _FindKeyProperty(ExposedPropertyType[] propertyTypes)
+        {
+            ExposedPropertyType found = null;
+            for (int i = 0; i < propertyTypes.Length; i++)
+            {
+                MemberInfo member = (MemberInfo)propertyTypes[i].properyInfo ?? propertyTypes[i].fieldInfo;
+                if (member == null) continue;
+                if (!Attribute.IsDefined(member, typeof(ExposedKeyAttribute))) continue;
+
+                if (found != null)
+                {
+                    Debug.LogWarning($"[RemoteControl] Multiple [ExposedKey] members found; using '{found.name}' and ignoring '{propertyTypes[i].name}'.");
+                    continue;
+                }
+                found = propertyTypes[i];
+            }
+            return found;
+        }
+
+        /// <summary>
+        /// [ExposedKey] が付いたプロパティ。配列要素を安定キーで引く際に使う。無ければ null。
+        /// </summary>
+        public ExposedPropertyType keyProperty => _keyProperty;
+
         private ExposedClass(System.Type type, string typeName,
             ExposedPropertyType[] propertyTypes = null, ExposedFunctionType[] functionTypes = null,
             string category = null, string help = null, string icon = null, bool hideInScene = false,
@@ -670,6 +700,7 @@ namespace Lilium.RemoteControl
             this.formerTypeNames = formerTypeNames ?? Array.Empty<string>();
             this._propertyByName = _BuildPropertyNameIndex(this.propertyTypes);
             this._functionByApiName = _BuildFunctionApiNameIndex(this.functionTypes);
+            this._keyProperty = _FindKeyProperty(this.propertyTypes);
 
             if (this.isStatic && type != null)
             {
@@ -811,6 +842,11 @@ namespace Lilium.RemoteControl
         /// セクション属性（NavigatePageでのセクション表示用）
         /// </summary>
         public readonly SectionAttribute sectionAttribute;
+
+        /// <summary>
+        /// [Collapsed] が付いていれば true。RemoteApp が配列・構造体を初期折りたたみで描画するヒント。
+        /// </summary>
+        public readonly bool collapsed;
 
         /// <summary>
         /// セクションに適用される最終アクセスレベル。
@@ -1119,6 +1155,9 @@ namespace Lilium.RemoteControl
             // Section属性を読み取り
             this.sectionAttribute = TypeReflectionSystem.GetCustomAttribute<SectionAttribute>(info);
 
+            // [Collapsed] を読み取り（RemoteApp の初期折りたたみヒント）
+            this.collapsed = TypeReflectionSystem.GetCustomAttribute<CollapsedAttribute>(info) != null;
+
             // 効果的なアクセスレベルを解決:
             // [Development] > [Experimental] > Section.accessLevel > Public
             if (TypeReflectionSystem.GetCustomAttribute<DevelopmentAttribute>(info) != null)
@@ -1214,6 +1253,7 @@ namespace Lilium.RemoteControl
             this.visibilityShowWhenMatch = true;
             this.sectionAttribute = null;
             this.sectionAccessLevel = AccessLevel.Public;
+            this.collapsed = false;
             this.formerNames = Array.Empty<string>();
         }
     }

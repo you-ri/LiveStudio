@@ -87,22 +87,23 @@ namespace Lilium.LiveStudio
     /// under the avatar like any prop, but on the first frame it RE-PARENTS itself under the
     /// <see cref="AvatarController"/> (the avatar service host) so that avatar root motion does NOT drag
     /// the chair around — the chair body stays put at the controller anchor (placed via the
-    /// <see cref="Prop"/> position / rotation offsets).
+    /// <see cref="attachment"/> position / rotation offsets).
     ///
-    /// Its movable parts then track the avatar's pelvis by reading the "Hips" socket (resolved via the
-    /// sibling <see cref="Prop"/>, whose <c>socketName</c> selects the bone), all measured in the anchor's
+    /// Its movable parts then track the avatar's pelvis by reading the "Hips" socket (resolved via its
+    /// <see cref="attachment"/>, whose <c>socketName</c> selects the bone), all measured in the anchor's
     /// local space relative to a rest reference captured when the avatar first becomes available:
     /// <see cref="swivel"/> follows hips yaw and <see cref="recline"/> follows hips pitch (rotation);
     /// <see cref="lateral"/> (left-right / X), <see cref="height"/> (up-down / Y) and <see cref="depth"/>
     /// (forward-back / Z) follow the hips position (translation).
     ///
-    /// Implements <see cref="IPropFollowOverride"/> so <see cref="Prop"/> does not also drive the chair's
-    /// transform. Unlike <see cref="AvatarItem"/>, a chair does not bridge avatar parameters or drive
-    /// expressions, and uses no Animator.
+    /// This is one of the mutually-exclusive prop behavior components (<see cref="IProp"/>): it drives its
+    /// own filtered follow (so there is no rigid follow to override), placing the chair body from the
+    /// <see cref="attachment"/> offsets. Unlike <see cref="AvatarItem"/>, a chair does not bridge avatar
+    /// parameters or drive expressions, and uses no Animator.
     /// </summary>
     [DefaultExecutionOrder(20)]
     [ExposedClass("Chair", Category = "Avatar", Icon = "chair")]
-    public class AvatarChair : MonoBehaviour, IPropFollowOverride
+    public class AvatarChair : MonoBehaviour, IProp
     {
         [Header("Rotation — follows hips orientation")]
         [SerializeField] public ChairAxis swivel = new ChairAxis { axis = Vector3.up };    // hips yaw
@@ -123,7 +124,12 @@ namespace Lilium.LiveStudio
         [ExposedField, Hide] public float restPitch;
         [ExposedField, Hide] public Vector3 restHipsLocal;
 
-        [NonSerialized] Prop _prop;
+        // Shared socket-attachment surface (socket name + offsets + socket resolution), exposed as a
+        // nested "PropAttachment" under this component's @type. The chair reads the hips socket and its
+        // body-placement offsets from here; for a chair the socketName selects the hips bone.
+        [SerializeField]
+        public PropAttachment attachment = new PropAttachment();
+
         [NonSerialized] bool _reparented;
 
         // Authored rest local pose per moving target, captured on first use so the tracked value offsets
@@ -135,22 +141,26 @@ namespace Lilium.LiveStudio
 
         void Start()
         {
-            _prop = GetComponent<Prop>();
+            attachment.CaptureBaseScale(transform);
         }
 
         void LateUpdate()
         {
-            // Hips socket pose, read through Prop (its socketName selects the bone). Null until the avatar
-            // is loaded; retry next frame.
-            var socket = _prop != null ? _prop.ResolveSocketTransform() : null;
+            // Scale offset applied live so runtime edits take effect (the body placement below drives only
+            // local position / rotation).
+            attachment.ApplyScale(transform);
+
+            // Hips socket pose, read through the attachment (its socketName selects the bone). Null until
+            // the avatar is loaded; retry next frame.
+            var socket = attachment.ResolveSocketTransform();
             if (socket == null) return;
 
             _EnsureReparented();
 
-            // Chair body placement (anchor-local) from the Prop offsets, applied live so runtime edits take
-            // effect. The body is NOT driven by the avatar (no root motion) — only by these offsets; scale
-            // is applied separately by Prop.
-            transform.SetLocalPositionAndRotation(_prop.positionOffset, Quaternion.Euler(_prop.rotationOffset));
+            // Chair body placement (anchor-local) from the attachment offsets, applied live so runtime
+            // edits take effect. The body is NOT driven by the avatar (no root motion) — only by these
+            // offsets; scale is applied above.
+            transform.SetLocalPositionAndRotation(attachment.positionOffset, Quaternion.Euler(attachment.rotationOffset));
 
             // Read the hips (yaw / pitch about world; position in the anchor's local space so left-right /
             // depth are relative to the avatar's facing).
@@ -180,7 +190,7 @@ namespace Lilium.LiveStudio
         [ContextMenu("Activate (record rest pose)")]
         public void Activate()
         {
-            var socket = _prop != null ? _prop.ResolveSocketTransform() : null;
+            var socket = attachment.ResolveSocketTransform();
             if (socket == null) return;
             _ReadHips(socket, out restYaw, out restPitch, out restHipsLocal);
             restRecorded = true;
@@ -204,7 +214,7 @@ namespace Lilium.LiveStudio
             if (anchor == null) return;
             transform.SetParent(anchor, worldPositionStays: false);
             _reparented = true;
-            // The chair body's local pose is set from the Prop offsets every frame (see LateUpdate).
+            // The chair body's local pose is set from the attachment offsets every frame (see LateUpdate).
         }
 
         // Composes all axis contributions per target (a target shared by several axes combines its rotation

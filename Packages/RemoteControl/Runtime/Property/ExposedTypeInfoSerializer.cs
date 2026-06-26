@@ -23,7 +23,14 @@ namespace Lilium.RemoteControl
             var jObject = new JObject
             {
                 ["type"] = type.typeName,
-                ["properties"] = new JArray(type.propertyTypes.Select(p => JsonConvert.DeserializeObject<JObject>(ToJson(p))))
+                ["properties"] = new JArray(type.propertyTypes.Select(p =>
+                {
+                    var pj = JsonConvert.DeserializeObject<JObject>(ToJson(p));
+                    // [ExposedKey] のプロパティに印を付け、RemoteApp が配列要素を index でなく
+                    // このプロパティ値で安定参照 ("arr[Joy].weight") できるようにする。
+                    if (type.keyProperty != null && ReferenceEquals(p, type.keyProperty)) pj["isKey"] = true;
+                    return pj;
+                }))
             };
 
             // カテゴリを追加（nullでない場合のみ）
@@ -264,6 +271,12 @@ namespace Lilium.RemoteControl
                     section["subtitle"] = LocalizationSystem.Translate(sectionAttr.subtitle);
                 }
                 jObject["section"] = section;
+            }
+
+            // collapsed: RemoteApp が配列・構造体を初期折りたたみで描画するヒント（true のときのみ付与）
+            if (propertyType.collapsed)
+            {
+                jObject["collapsed"] = true;
             }
 
             return JsonConvert.SerializeObject(jObject, Formatting.None);

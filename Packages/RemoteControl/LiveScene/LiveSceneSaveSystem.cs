@@ -142,61 +142,10 @@ namespace Lilium.RemoteControl.LiveScene
             return legacy;
         }
 
-        // --- Startup hook ---
-
-        /// <summary>
-        /// Runs before the first scene is loaded. If the project's startup state
-        /// (<c>{projectPath}/Settings/startup.json</c>) records a scene targeting a different
-        /// Unity scene than the one Unity is about to load, redirect to that scene up-front.
-        /// This avoids switching scenes after the HTTP server has already started, which
-        /// would race with in-flight requests and produce ObjectDisposedException noise.
-        /// All error paths are silent: fall through to the normal startup scene.
-        /// </summary>
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-        private static void _SwitchBaseSceneOnStartup()
-        {
-            if (!Application.isPlaying) return;
-
-            // Read the persisted project path directly (no dependency on the upper-layer project
-            // manager and no reliance on static-init ordering). Fall back to persistentDataPath
-            // for the project-less standalone case.
-            var projectPath = PlayerPrefs.GetString(StartupStateStore.kProjectPathKey, "");
-            var stateDir = string.IsNullOrEmpty(projectPath) ? Application.persistentDataPath : projectPath;
-
-            var fullPath = StartupStateStore.Read(stateDir);
-            if (string.IsNullOrEmpty(fullPath)) return;
-            if (!System.IO.File.Exists(fullPath)) return;
-
-            string baseSceneName;
-            try
-            {
-                var json = System.IO.File.ReadAllText(fullPath);
-                baseSceneName = LiveSceneSerializer.ExtractBaseSceneName(json);
-            }
-            catch
-            {
-                return;
-            }
-            if (string.IsNullOrEmpty(baseSceneName)) return;
-
-            int count = SceneManager.sceneCountInBuildSettings;
-            if (count == 0) return;
-
-            // Skip if the scene Unity is about to load (build index 0 among enabled scenes)
-            // already matches the saved baseSceneName.
-            var initialName = System.IO.Path.GetFileNameWithoutExtension(SceneUtility.GetScenePathByBuildIndex(0));
-            if (initialName == baseSceneName) return;
-
-            for (int i = 0; i < count; i++)
-            {
-                var path = SceneUtility.GetScenePathByBuildIndex(i);
-                if (System.IO.Path.GetFileNameWithoutExtension(path) == baseSceneName)
-                {
-                    SceneManager.LoadScene(i);
-                    return;
-                }
-            }
-        }
+        // The startup base-scene switch (a BeforeSceneLoad hook that redirects to the live scene
+        // recorded in startup.json) lives in the upper LiveStudio layer (StartupSceneSwitcher),
+        // because locating the state directory requires the project-path knowledge that this
+        // generic layer deliberately does not own.
 
         // --- Lifecycle (called by host MonoBehaviour) ---
 

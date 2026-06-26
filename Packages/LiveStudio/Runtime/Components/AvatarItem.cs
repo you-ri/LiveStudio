@@ -22,14 +22,23 @@ namespace Lilium.LiveStudio
     /// expression mapping from the avatar's expression weights. The avatar is found by walking up the
     /// parent hierarchy, since the item is its child.
     ///
-    /// The socket follow + position/rotation/scale offsets live on the sibling <see cref="Prop"/>
-    /// component; this component only drives Animator parameters.
+    /// This is one of the mutually-exclusive prop behavior components (<see cref="IProp"/>): it owns the
+    /// socket follow itself through its shared <see cref="attachment"/> (socket name + offsets), in
+    /// addition to the parameter bridge + expressions. A plain <see cref="Prop"/> or a
+    /// <see cref="AvatarChair"/> takes its place when those behaviors are needed instead.
     /// </summary>
     [DefaultExecutionOrder(20)] // after the avatar (VRCFTAvatar order 10) has written its params this frame
     [RequireComponent(typeof(Animator))]
     [MovedFrom(false, null, null, "AvatarProp")]
-    public class AvatarItem : MonoBehaviour
+    [ExposedClass("Item", Category = "Avatar", Icon = "inventory_2")]
+    public class AvatarItem : MonoBehaviour, IProp
     {
+        // Shared socket-attachment surface (socket name + offsets + follow math), exposed as a nested
+        // "PropAttachment" under this component's @type. The item follows the socket itself (an item has
+        // no sibling Prop).
+        [SerializeField]
+        public PropAttachment attachment = new PropAttachment();
+
         struct BridgedParameter
         {
             public int nameHash;
@@ -62,6 +71,7 @@ namespace Lilium.LiveStudio
         void Start()
         {
             _animator = GetComponent<Animator>();
+            attachment.CaptureBaseScale(transform);
             _CacheParameters();
             _ResolveSource();
 
@@ -112,6 +122,28 @@ namespace Lilium.LiveStudio
         public ReadOnlySpan<FacialKey> GetExpressions() => _expressionKeys;
 
         /// <summary>
+        /// Read-only list of this item's facial expressions as bindable slots, mirroring
+        /// <see cref="AvatarController.expressions"/>. Lets the remote app see which expressions this
+        /// item provides and bind/drive a weight generically via "expressions[name].weight". The
+        /// element schema is static while the count is per-item; <see cref="ExpressionEntry.weight"/>
+        /// reads/writes through <see cref="ExpressionService"/> (the active avatar that drives this item).
+        /// Collapsed by default since the list is long and only needed when binding.
+        /// </summary>
+        [ExposedProperty, Collapsed]
+        public ExpressionEntry[] expressions
+        {
+            get
+            {
+                var result = new ExpressionEntry[_expressionKeys.Length];
+                for (int i = 0; i < _expressionKeys.Length; i++)
+                {
+                    result[i] = new ExpressionEntry(_expressionKeys[i].name);
+                }
+                return result;
+            }
+        }
+
+        /// <summary>
         /// item の表情マッピングを注入する (変換ツールから呼ばれる)。VRCAvatar.ConfigureExpressions と同形式。
         /// 各 VRCExpression.name は実行時に親アバターの表情ウェイト (smoothedOutputs) を引くキーとして
         /// 参照される (FacialKey 名を前提とする)。エクスポート時に item プレハブへ焼き込む。
@@ -123,6 +155,10 @@ namespace Lilium.LiveStudio
 
         void Update()
         {
+            // Apply the scale offset every frame so runtime edits take effect immediately (the follow in
+            // LateUpdate drives position / rotation only).
+            attachment.ApplyScale(transform);
+
             // パラメータブリッジ: アバターの Animator パラメータを item へ複製する。
             // IAvatarParameterSource は VRCFTAvatar / VRCAvatar のみ実装するため、VRM/Standard 配下では
             // _source は null のまま。その場合はブリッジをスキップするだけで、表情駆動 (下) は続行する。
@@ -160,6 +196,16 @@ namespace Lilium.LiveStudio
                 {
                     _expressionDriver.Update(_expressions, _avatarExpression);
                 }
+            }
+        }
+
+        void LateUpdate()
+        {
+            // Follow the socket directly, after the avatar's bones are posed for the frame. The item owns
+            // its follow (no sibling Prop), so it drives its own transform here.
+            if (attachment.TryResolveFollowTarget(out var worldPos, out var worldRot))
+            {
+                transform.SetPositionAndRotation(worldPos, worldRot);
             }
         }
     }

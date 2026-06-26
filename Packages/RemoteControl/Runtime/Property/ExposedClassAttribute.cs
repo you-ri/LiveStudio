@@ -233,6 +233,31 @@ namespace Lilium.RemoteControl
     {
     }
 
+    /// <summary>
+    /// Marks the [ExposedProperty]/[ExposedField] of an array/list element type that serves as its
+    /// stable identity. A property path may then address an element by this key instead of by index
+    /// (e.g. "expressions[Joy].weight"), so a binding survives reordering of the collection.
+    ///
+    /// Exactly one member per element type should be tagged. The key value is compared as its
+    /// invariant-culture string form. Key addressing only resolves against reference-type elements
+    /// (writes to a value-type element would hit a boxed copy), matching the existing array-element
+    /// write rules.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
+    public class ExposedKeyAttribute : Attribute
+    {
+    }
+
+    /// <summary>
+    /// RemoteApp 側で配列・ネスト構造体を初期状態で折りたたんで表示させるヒント属性。
+    /// 展開トグル自体は残り、ユーザーが手動で開ける。controller とは独立した
+    /// メタデータ (collapsed) として emit される。
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
+    public class CollapsedAttribute : Attribute
+    {
+    }
+
 
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
     public class ExposedFunctionAttribute : Attribute

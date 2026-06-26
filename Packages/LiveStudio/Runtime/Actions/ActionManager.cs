@@ -56,6 +56,11 @@ namespace Lilium.LiveStudio
         [NonSerialized]
         private bool _initialized;
 
+        // The control path captured by the most recent StartKeyCapture (empty while waiting / on cancel /
+        // timeout). The add-action dialog polls `capturedBinding` to show the key before committing.
+        [NonSerialized]
+        private string _capturedBinding = string.Empty;
+
         public void OnEnable()
         {
             _current = this;
@@ -203,12 +208,18 @@ namespace Lilium.LiveStudio
         /// supply whatever concrete <see cref="InputSource"/> / <see cref="ActionBase"/>s they need without
         /// this manager knowing about them.</summary>
         public ActionSet AddActionSet(InputSource input, params ActionBase[] actions)
+            => _AddActionSet(input, null, actions);
+
+        // Shared creation. A null/empty name keeps the generic default; the bind-a-control flows pass the
+        // target's function/property name so the new set reads meaningfully in the remote app's list.
+        private ActionSet _AddActionSet(InputSource input, string name, ActionBase[] actions, string group = null)
         {
             var set = new ActionSet
             {
                 id = Guid.NewGuid().ToString(),
-                name = "Action Set",
+                name = string.IsNullOrEmpty(name) ? "Action Set" : name,
                 enabled = true,
+                group = string.IsNullOrEmpty(group) ? string.Empty : group,
                 input = input ?? new KeyInputSource(),
                 actions = actions != null ? new List<ActionBase>(actions) : new List<ActionBase>(),
             };
@@ -216,6 +227,91 @@ namespace Lilium.LiveStudio
             _RebuildInputMap();
             _Broadcast();
             return set;
+        }
+
+        // Builds a key input already bound to the given control path (empty = unbound). The add-action dialog
+        // captures the key first (see StartKeyCapture) and commits it here, so the set is born bound.
+        private static KeyInputSource _KeyInput(InputMode mode, string binding)
+        {
+            var input = new KeyInputSource { mode = mode };
+            if (!string.IsNullOrEmpty(binding)) input.SetInitialBinding(binding);
+            return input;
+        }
+
+        /// <summary>Creates an action set that invokes a no-argument <c>[ExposedFunction]</c> (named
+        /// <paramref name="functionName"/>) on the object with id <paramref name="targetId"/>, bound to the
+        /// momentary key <paramref name="binding"/> (a control path; empty = unbound). The set is named
+        /// <paramref name="name"/> (the function's display name; falls back to the generic default when empty).
+        /// Returns the new set's id. Drives the "bind this function button to a key" flow.</summary>
+        [ExposedFunction]
+        public string AddFunctionAction(string targetId, string functionName, string name, string binding)
+        {
+            var set = _AddActionSet(
+                _KeyInput(InputMode.Button, binding),
+                name,
+                new ActionBase[] { new InvokeFunctionAction { targetId = targetId, functionName = functionName } });
+            return set.id;
+        }
+
+        /// <summary>Creates an action set that drives the property <paramref name="propertyPath"/> on the object
+        /// with id <paramref name="targetId"/>, bound to the key <paramref name="binding"/> (a control path;
+        /// empty = unbound) in the given <paramref name="mode"/> (<see cref="InputMode"/> name, case-insensitive;
+        /// unrecognized/empty falls back to <see cref="InputMode.Toggle"/>). Toggle latches on/off per press;
+        /// Button is momentary (on while held). The set is named <paramref name="name"/> (the property's display
+        /// name; falls back to the generic default when empty). The optional <paramref name="group"/> assigns an
+        /// exclusivity group (empty = ungrouped); Toggle-mode sets sharing a non-empty group act as a radio.
+        /// Returns the new set's id. Drives the "bind this control to a key" flow.</summary>
+        [ExposedFunction]
+        public string AddPropertyAction(string targetId, string propertyPath, string mode, string name, string binding, string group)
+        {
+            var inputMode = System.Enum.TryParse<InputMode>(mode, ignoreCase: true, out var m)
+                ? m
+                : InputMode.Toggle;
+            var set = _AddActionSet(
+                _KeyInput(inputMode, binding),
+                name,
+                new ActionBase[] { new SetPropertyAction { targetId = targetId, propertyPath = propertyPath } },
+                group);
+            return set.id;
+        }
+
+        /// <summary>The control path captured by the most recent <see cref="StartKeyCapture"/> (empty while
+        /// waiting, or if it was cancelled / timed out). The remote app's add-action dialog polls this to show
+        /// the captured key before committing the new set. Runtime-only.</summary>
+        [ExposedProperty, Hide]
+        public string capturedBinding => _capturedBinding;
+
+        /// <summary>Listens for the next key/button on the Studio machine and stores it in
+        /// <see cref="capturedBinding"/>, creating no action set. Lets the add-action dialog capture an input
+        /// before the user commits (Add), so the set can be born already bound. Hidden so the generic UI does
+        /// not surface it as a bare button (it needs the dialog's key-capture feedback).</summary>
+        [ExposedFunction, Hide]
+        public void StartKeyCapture() => _StartKeyCaptureAsync();
+
+        // Captures into a throwaway map/action so no action set is created and the shared input map is left
+        // untouched. RuntimeKeyBindingSystem detects the key via the global InputSystem.onEvent, so the map
+        // does not need to be enabled.
+        private async void _StartKeyCaptureAsync()
+        {
+            _capturedBinding = string.Empty;
+
+            var map = new InputActionMap("KeyCapture");
+            const string probe = "Probe";
+            var action = map.AddAction(probe, InputActionType.Value, expectedControlLayout: "<Value>");
+            try
+            {
+                var (success, _) = await RuntimeKeyBindingSystem.StartBindingAsync(
+                    new RuntimeKeyBindingData(), map, probe, 0);
+                if (success && action.bindings.Count > 0)
+                {
+                    _capturedBinding = action.bindings[0].effectivePath;
+                    _Broadcast();
+                }
+            }
+            finally
+            {
+                map.Dispose();
+            }
         }
 
         /// <summary>Removes the action set with the given id and rebuilds the input map.</summary>

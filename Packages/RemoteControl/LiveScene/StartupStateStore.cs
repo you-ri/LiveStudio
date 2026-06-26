@@ -7,22 +7,15 @@ using Newtonsoft.Json.Linq;
 namespace Lilium.RemoteControl.LiveScene
 {
     /// <summary>
-    /// Reads and writes the per-project startup state file
-    /// (<c>{projectPath}/Settings/startup.json</c>). The file records which live scene
-    /// the project was last using, so the state belongs to the project folder rather than
-    /// to machine-global PlayerPrefs.
-    ///
-    /// Lives in the RemoteControl (lower) layer so the BeforeSceneLoad startup hook in
-    /// <see cref="LiveSceneSaveSystem"/> and the upper-layer project manager can all share it
-    /// without crossing the layer boundary.
+    /// Reads and writes a startup state file (<c>{stateDir}/Settings/startup.json</c>) that
+    /// records which live scene was last in use. The store is directory-based and carries no
+    /// notion of a "project": callers pass whichever directory owns the state (the upper-level
+    /// project manager passes the open project folder; standalone callers pass
+    /// <see cref="Application.persistentDataPath"/>). A scene inside the state directory is
+    /// stored relative to it; a scene outside is stored as an absolute path.
     /// </summary>
     public static class StartupStateStore
     {
-        // PlayerPrefs key mirroring the absolute project folder path. Owned here (the lower
-        // layer) so the startup hook can read it without depending on the project manager,
-        // while the upper-layer manager that persists it references the same constant.
-        public const string kProjectPathKey = "RemoteControl_ProjectPath";
-
         private const string kStateSubDir = "Settings";
         private const string kStartupFileName = "startup.json";
 

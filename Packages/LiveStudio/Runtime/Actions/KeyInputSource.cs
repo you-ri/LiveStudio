@@ -26,6 +26,11 @@ namespace Lilium.LiveStudio
         [ExposedProperty]
         public string binding => _controlPath;
 
+        /// <summary>Sets the initial bound control path before the source is wired into the input map, so a
+        /// set can be created already bound (e.g. the remote app's add-action dialog captures the key first,
+        /// then commits). <see cref="Setup"/>'s restore picks it up. Manager-only.</summary>
+        internal void SetInitialBinding(string controlPath) => _controlPath = controlPath ?? string.Empty;
+
         [NonSerialized] private InputAction _action;
         [NonSerialized] private InputActionMap _map;
         [NonSerialized] private string _actionName;

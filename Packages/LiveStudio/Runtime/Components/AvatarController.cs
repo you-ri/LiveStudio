@@ -57,10 +57,59 @@ namespace Lilium.LiveStudio
         [NonSerialized] public bool resolved;
     }
 
+    /// <summary>
+    /// One bindable facial-expression slot on the active avatar. The <see cref="name"/> is its stable
+    /// key ([ExposedKey]) so a property path can address it by name ("expressions[Joy].weight") and
+    /// survive reordering / avatar swaps. <see cref="weight"/> reads and writes the live weight through
+    /// <see cref="ExpressionService"/> (the active avatar), so a <see cref="SetPropertyAction"/> bound to
+    /// it (via the remote app's "bind to key" affordance) drives whichever avatar is currently loaded —
+    /// the single, data-driven way expression weights are keyed.
+    /// </summary>
+    [ExposedClass("Expression")]
+    [Serializable]
+    public class ExpressionEntry
+    {
+        // 安定キー。配列は読み取り専用で都度再生成され永続化されないため、識別子として読めれば足りる。
+        private string _name = string.Empty;
+
+        public ExpressionEntry() { }
+
+        public ExpressionEntry(string name) { _name = name ?? string.Empty; }
+
+        [ExposedProperty, ExposedKey]
+        public string name => _name;
+
+        [ExposedProperty]
+        public float weight
+        {
+            get => ExpressionService.GetExpressionWeight(FacialKey.CreateCustom(_name));
+            set => ExpressionService.SetExpressionWeight(FacialKey.CreateCustom(_name), value);
+        }
+    }
+
     [DefaultExecutionOrder(200)]
     [ExposedClass("Avatar", Category = "Avatar", Icon = "person")]
     public class AvatarController : MonoBehaviour, IAvatarService
     {
+        /// <summary>
+        /// Read-only list of the active avatar's facial expressions as bindable slots. The element count
+        /// is dynamic (per avatar) while the element schema stays static, so actions can target an
+        /// expression weight generically via "expressions[name].weight" without a bespoke action type or
+        /// runtime-added exposed members. Exposed (not hidden) so the remote app renders a weight control
+        /// per expression with a "bind to key" affordance next to it.
+        /// </summary>
+        [ExposedProperty, Collapsed]
+        public ExpressionEntry[] expressions
+        {
+            get
+            {
+                var keys = ExpressionService.GetAvailableExpressions();
+                var result = new ExpressionEntry[keys.Length];
+                for (int i = 0; i < keys.Length; i++) result[i] = new ExpressionEntry(keys[i].name);
+                return result;
+            }
+        }
+
         [ExposedProperty("name"), Hide]
         public string displayName => this.name;
 
@@ -676,29 +725,9 @@ namespace Lilium.LiveStudio
             }
         }
 
-        // Expression key bindings now live on the generic ActionManager (one ActionSet per binding,
-        // KeyInputSource -> SetExpressionAction). These thin functions just expose the expression-side bridge
-        // so the remote app keeps talking to the avatar object, while the manager stays feature-agnostic.
-
-        [Preserve]
-        [ExposedFunction, Hide]
-        ExpressionBindingInfo[] GetExpressionBindings() => ExpressionBindingSystem.GetBindings();
-
-        /// <summary>Creates a key binding for the given expression and returns its action-set id, so the remote
-        /// app can immediately start key capture for it.</summary>
-        [Preserve]
-        [ExposedFunction, Hide]
-        string AddExpressionBinding(string expressionName) => ExpressionBindingSystem.AddBinding(expressionName);
-
-        /// <summary>Starts interactive key capture for the binding's action set.</summary>
-        [Preserve]
-        [ExposedFunction, Hide]
-        void StartExpressionRebind(string setId) => ExpressionBindingSystem.StartRebind(setId);
-
-        /// <summary>Removes the binding (its action set) with the given id.</summary>
-        [Preserve]
-        [ExposedFunction, Hide]
-        void RemoveExpressionBinding(string setId) => ExpressionBindingSystem.RemoveBinding(setId);
+        // Expression key bindings live on the generic ActionManager as ordinary SetPropertyAction sets that
+        // drive expressions[name].weight (the remote app's "bind to key" affordance). No expression-specific
+        // binding functions are needed here; only the available-expression list is surfaced for the add UI.
 
         [Preserve]
         [ExposedFunction("getavailableexpressions"), Hide]

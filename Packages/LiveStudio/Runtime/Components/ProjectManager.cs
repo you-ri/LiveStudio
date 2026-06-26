@@ -20,9 +20,10 @@ namespace Lilium.LiveStudio
     public static class ProjectManager
     {
         // PlayerPrefs key mirroring the absolute project folder path (machine-global, not per-scene).
-        // The constant is owned by the lower RemoteControl layer so its startup hook can read the
-        // same key without depending on this manager.
-        private const string kProjectPathKey = StartupStateStore.kProjectPathKey;
+        // The project-path concept belongs to this LiveStudio layer; the constant is internal so the
+        // startup base-scene switch (StartupSceneSwitcher) can read the same key. The literal string
+        // is kept unchanged from earlier builds to preserve existing PlayerPrefs values.
+        internal const string kProjectPathKey = "RemoteControl_ProjectPath";
 
         private static string _projectPath = "";
 

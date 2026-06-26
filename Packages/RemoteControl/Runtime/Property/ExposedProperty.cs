@@ -130,8 +130,11 @@ namespace Lilium.RemoteControl
                         return element;
                     }
 
-                    var nameProperty = element?.GetProperty("name");
-                    if (nameProperty != null && nameProperty?.GetValue().ToString() == name)
+                    // [ExposedKey] が付いていればそのプロパティで、無ければ慣習的に "name" プロパティで照合する。
+                    // 一致した要素を返す (childPath はインデックス形なので以降の解決は index ベースのまま)。
+                    var keyPropertyName = polymorphicValueType?.keyProperty?.name ?? "name";
+                    var keyProperty = element?.GetProperty(keyPropertyName);
+                    if (keyProperty != null && keyProperty?.GetValue()?.ToString() == name)
                     {
                         return element;
                     }

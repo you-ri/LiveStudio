@@ -220,7 +220,7 @@ namespace Lilium.LiveStudio.EditorTests
         {
             var manager = new ActionManager();
             var input = new FakeInputSource();
-            var action = new SetExpressionAction { expression = "Happy" };
+            var action = new SetPropertyAction { targetId = "obj", propertyPath = "expressions/Happy/weight" };
 
             var set = manager.AddActionSet(input, action);
 
@@ -231,6 +231,89 @@ namespace Lilium.LiveStudio.EditorTests
             Assert.IsFalse(string.IsNullOrEmpty(set.id), "a fresh id is assigned");
             Assert.IsTrue(set.enabled);
             Assert.AreSame(set, manager.actionSets[manager.actionSets.Count - 1], "the set is appended");
+        }
+
+        [Test]
+        public void AddFunctionAction_CreatesButtonSetWithInvokeAction_AndReturnsId()
+        {
+            var manager = new ActionManager();
+
+            var id = manager.AddFunctionAction("obj-1", "DoThing", "Do Thing", "<Keyboard>/a");
+
+            Assert.AreEqual(1, manager.actionSets.Count);
+            var set = manager.actionSets[0];
+            Assert.AreEqual(id, set.id, "the returned id addresses the created set");
+            Assert.AreEqual("Do Thing", set.name, "the set is named after the bound function");
+            Assert.IsInstanceOf<KeyInputSource>(set.input);
+            Assert.AreEqual(InputMode.Button, set.input.mode, "a function bind is momentary");
+            Assert.AreEqual("<Keyboard>/a", ((KeyInputSource)set.input).binding,
+                "the set is born bound to the captured key");
+            Assert.AreEqual(1, set.actions.Count);
+            var action = set.actions[0] as InvokeFunctionAction;
+            Assert.IsNotNull(action);
+            Assert.AreEqual("obj-1", action.targetId);
+            Assert.AreEqual("DoThing", action.functionName);
+        }
+
+        [Test]
+        public void AddPropertyAction_CreatesSetWithSetPropertyAction_AndReturnsId()
+        {
+            var manager = new ActionManager();
+
+            var id = manager.AddPropertyAction("obj-2", "useSpout", "Toggle", "Use Spout", "", "");
+
+            Assert.AreEqual(1, manager.actionSets.Count);
+            var set = manager.actionSets[0];
+            Assert.AreEqual(id, set.id);
+            Assert.AreEqual("Use Spout", set.name, "the set is named after the bound property");
+            Assert.AreEqual(string.Empty, set.group, "an empty group leaves the set ungrouped");
+            Assert.IsInstanceOf<KeyInputSource>(set.input);
+            Assert.AreEqual(string.Empty, ((KeyInputSource)set.input).binding,
+                "an empty binding leaves the set unbound");
+            Assert.AreEqual(1, set.actions.Count);
+            var action = set.actions[0] as SetPropertyAction;
+            Assert.IsNotNull(action);
+            Assert.AreEqual("obj-2", action.targetId);
+            Assert.AreEqual("useSpout", action.propertyPath);
+        }
+
+        [Test]
+        public void AddPropertyAction_AssignsGroupWhenProvided()
+        {
+            var manager = new ActionManager();
+
+            manager.AddPropertyAction(
+                "obj", "expressions[Joy]/weight", "Toggle", "Joy", "", "Expression");
+
+            var set = manager.actionSets[manager.actionSets.Count - 1];
+            Assert.AreEqual("Expression", set.group,
+                "a non-empty group is assigned to the new set (exclusivity radio)");
+        }
+
+        [Test]
+        public void AddPropertyAction_MapsModeArgument()
+        {
+            var manager = new ActionManager();
+
+            Assert.AreEqual(InputMode.Toggle, _ModeOfAdded(manager, "Toggle"),
+                "Toggle latches on/off");
+            Assert.AreEqual(InputMode.Button, _ModeOfAdded(manager, "Button"),
+                "Button is momentary");
+            Assert.AreEqual(InputMode.Button, _ModeOfAdded(manager, "button"),
+                "mode is case-insensitive");
+            Assert.AreEqual(InputMode.Toggle, _ModeOfAdded(manager, ""),
+                "empty falls back to Toggle");
+            Assert.AreEqual(InputMode.Toggle, _ModeOfAdded(manager, "nonsense"),
+                "unrecognized falls back to Toggle");
+
+            // Local helper: adds one and returns the new set's input mode.
+            static InputMode _ModeOfAdded(ActionManager mgr, string mode)
+            {
+                var id = mgr.AddPropertyAction("obj", "prop", mode, "Prop", "", "");
+                var set = mgr.actionSets[mgr.actionSets.Count - 1];
+                Assert.AreEqual(id, set.id);
+                return set.input.mode;
+            }
         }
 
         [Test]

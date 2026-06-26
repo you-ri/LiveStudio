@@ -14,8 +14,9 @@ namespace Lilium.VRChatAvatarTransfer.Editor
     /// Builds a standalone avatar-prop prefab from a sub-hierarchy of an avatar plus the
     /// AnimatorController that drives it. The prop carries its OWN Animator + controller, so
     /// at runtime it animates independently (its generic curves are not lost the way they are when
-    /// two AnimatorControllers are layered into one PlayableGraph). A <c>Prop</c> follows the avatar
-    /// socket while an <c>AvatarItem</c> bridges the avatar's parameter values onto the prop each frame.
+    /// two AnimatorControllers are layered into one PlayableGraph). The standalone <c>AvatarItem</c>
+    /// component follows the avatar socket (via its <c>attachment</c>) and bridges the avatar's parameter
+    /// values onto the prop each frame.
     ///
     /// The controller's clips bind to paths relative to the AVATAR root (e.g.
     /// <c>"Straw/Particle System"</c>); since the prop's new root is the sub-hierarchy root
@@ -94,18 +95,16 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 // 3. 参照される各 clip を複製し binding path を rebase、複製 controller の参照を差し替える。
                 int clipCount = _RebaseControllerClips(cloned, prefix, safeName);
 
-                // 4. Animator + 複製 controller + Prop(socket追従) + AvatarItem(パラメータブリッジ/表情) を付与。
-                //    Prop の [RequireComponent] が Animator を自動付与する。
-                var prop = objRoot.GetComponent<Prop>();
-                if (prop == null) prop = objRoot.AddComponent<Prop>();
+                // 4. AvatarItem(socket追従 + パラメータブリッジ/表情) + Animator + 複製 controller を付与。
+                //    AvatarItem は排他のプロップ behavior コンポーネントで、自身の attachment で socket 追従し、
+                //    [RequireComponent] が Animator を自動付与する。よって別途 Prop は付けない。
+                var avatarItem = objRoot.GetComponent<AvatarItem>();
+                if (avatarItem == null) avatarItem = objRoot.AddComponent<AvatarItem>();
 
                 var animator = objRoot.GetComponent<Animator>();
                 if (animator == null) animator = objRoot.AddComponent<Animator>();
                 animator.runtimeAnimatorController = cloned;
                 animator.applyRootMotion = false;
-
-                var avatarItem = objRoot.GetComponent<AvatarItem>();
-                if (avatarItem == null) avatarItem = objRoot.AddComponent<AvatarItem>();
 
                 // 4b. item の表情を移植する。controller の gesture トグル (GestureExpressionBuilder) と、
                 //     アバター配下なら ExpressionsMenu (VRCExpressionsConverter) の両方を共有して構築する。

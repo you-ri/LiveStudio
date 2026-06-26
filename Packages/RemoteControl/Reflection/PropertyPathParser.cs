@@ -84,8 +84,10 @@ namespace Lilium.RemoteControl.Reflection
                 }
                 else
                 {
-                    Debug.LogWarning("[Reflection] Invalid index in path");
-                    _current = PathSegment.Error;
+                    // 非整数のブラケット内容は安定キー参照 ("expressions[Joy]") として名前セグメント扱いにする。
+                    // 配列コンテナに当たったときのみ解決側 (ExposedProperty.GetProperty) がキーとして解釈する。
+                    _current = new PathSegment(indexPart);
+                    _position += bracketEnd + 1;
                     return true;
                 }
             }
