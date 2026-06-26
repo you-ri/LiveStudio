@@ -1,14 +1,25 @@
 # Changelog
 
-## [Unreleased]
+## [0.24.0] - 2026-06-26
 
 ### Added
 
+- Action set / input binding system (`ActionManager` / `ActionSet` / `InputSource` / `ActionBase`), editable from the remote app: bind a keyboard or gamepad input to an ordered list of actions (set an expression weight, switch avatar / stage, toggle a GameObject). Polymorphic input/actions use `[SerializeReference]` + `[TypeSelector]`; input modes are Button / Toggle / Value. Wired into the `Live Studio System` prefab.
+- `InvokeFunctionAction` and `SetPropertyAction` back a generic "bind to key" affordance next to any `[ExposedFunction]` or bool/float control (addressed by stable id), replacing feature-specific bindings.
+- Mutually exclusive toggle groups for action sets: sets sharing a non-empty `group` whose input is in Toggle mode behave as a radio group (turning one on clears the others; all-off is still allowed).
+- `SwitchStageAction` performs a complete stage switch (`SwitchToSetByName` unloads the other loaded sets and loads the target on demand); the Stage page's `SetActiveSet` keeps its original non-exclusive selection behavior.
 - `AvatarChair` component for a chair prop the avatar sits on. It re-parents under the `AvatarController` so avatar root motion does not drag it, then makes its parts track the avatar's pelvis (Hips socket) relative to a recorded rest pose: `swivel` / `recline` rotate a target transform about an authored local axis (hips yaw / pitch), and `lateral` / `height` / `depth` translate one along an axis (hips X / Y / Z). The rest pose is recorded via an `Activate` action. Each axis (a `ChairAxis`) has an operating range (`min`/`max`, `0/0` locks it), a deadzone that is the play/backlash between the source and the follow target (absorbs hips tremor), and damping (`SmoothDampAngle` for rotation).
+- Per-project state and project-scoped settings: exposed members gain a persist scope (Scene / Project); project-scoped values are stored in per-class `{Class}.settings.json` (screen output size/fullscreen/Spout and live-scene quality are now Project scope). `StartupStateStore` remembers the last opened live scene per project (`Settings/startup.json`), and `StartupSceneSwitcher` redirects to it before the first scene load.
+- Two-tier (memory + file) thumbnail cache stored under a hidden `.livestudio` project folder (`ProjectPaths`).
 
 ### Changed
 
 - **Breaking:** the avatar-prop `AvatarProp` component was split into composable siblings: a new shared `Prop` (keeps the exposed name `"Prop"`; owns the socket follow + position/rotation/scale offsets) plus a behavior component. `AvatarProp` was renamed to `AvatarItem` (the avatar→prop parameter bridge + expression driving); a `[MovedFrom]` keeps old type references resolving. Existing `*.prop.lsb` bundles carry only the old single component and therefore **must be re-exported** (a re-exported bundle root carries both `Prop` and `AvatarItem`); the live-scene `"Prop"` state key is unchanged.
+- Expression key bindings are now driven generically through the action system: a `SetPropertyAction` writes `expressions[name].weight` (the data-driven expression slot), so the bespoke `SetExpressionAction` / `ExpressionBindingSystem` and the old `/api/expressions` bind routes were removed. Existing expression key bindings must be re-created.
+- Shared `FormatHeader` unifies versioning across live-scene / project-settings / preset files (raw-JSON serialization, orphan prune).
+- Object presets (`.preset.json`) now capture prop and avatar state as a delta with a lenient reader.
+- Button-mode one-shot actions (switch avatar / stage) now commit on key release instead of press (`ActionContext.triggered`).
+- The `ActionManager`, `ExternalAssetManager`, and `StageManager` singletons are now hidden from the remote app's generic scene object list (`HideInScene`); they remain reachable through their dedicated pages.
 
 ## [0.23.6] - 2026-06-23
 

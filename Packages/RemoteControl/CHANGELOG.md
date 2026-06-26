@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.24.0] - 2026-06-26
+
+### Added
+
+- `POST /exposed/batch` endpoint applies multiple object / property / function operations in a single request with per-item continue-on-error (each item's status and body are echoed back in order). The exposed REST API is now documented in `Documentation~/openapi.yml`.
+- Per-member persist scope: `[ExposedField]` / `[ExposedProperty]` gain a `persistScope` (Scene default / Project), so the serializer can split live-scene state from per-class project settings.
+- Exposed key-path addressing: a property path can target an array element by a stable `[ExposedKey]` value (e.g. `expressions[Joy].weight`), which backs the generic `SetPropertyAction` "bind to key" flow.
+- `[Collapsed]` attribute: a hint that makes the remote app render an array or nested struct collapsed by default (the expand toggle remains). Emitted as a standalone `collapsed` flag, independent of the property controller.
+- `elementTypeOptions` is emitted for polymorphic array properties so the remote app can offer "add an element of type …".
+
+### Fixed
+
+- `ExposedPropertyUtility.CreateDefaultElement` falls back to the first concrete `[ExposedClass]` subtype for abstract / interface element types, so adding an element to a polymorphic `[SerializeReference]` array no longer throws `MissingMethodException`.
+
 ## [0.23.6] - 2026-06-23
 
 ### Changed

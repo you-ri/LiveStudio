@@ -37,7 +37,7 @@ namespace Lilium.LiveStudio
     /// holds no persisted file path of its own — it is just the loader the selected avatar asset drives.
     /// </summary>
     [Serializable]
-    [ExposedClass(Icon = "deployed_code", Category = "Asset")]
+    [ExposedClass(Icon = "deployed_code", Category = "Asset", HideInScene = true)]
     public class ExternalAssetManager : IExposedObject, IExposedDeserializeCallback, IExposedSerializeCallback
     {
         const string kId = "a7d3f1e2-9c4b-4e85-b6a1-2f8c5d3e7b91";

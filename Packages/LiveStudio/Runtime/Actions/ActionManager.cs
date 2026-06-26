@@ -21,7 +21,7 @@ namespace Lilium.LiveStudio
     /// through its <c>[SerializeReference]</c> list, so the authored sets persist in the scene.
     /// </summary>
     [Serializable]
-    [ExposedClass(Icon = "bolt", Category = "Action")]
+    [ExposedClass(Icon = "bolt", Category = "Action", HideInScene = true)]
     [MovedFrom(false, null, null, "TriggerManager")]
     public class ActionManager : IExposedObject, IExposedDeserializeCallback
     {

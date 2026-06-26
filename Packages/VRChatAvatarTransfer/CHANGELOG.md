@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.24.0] - 2026-06-26
+
+### Changed
+
+- The VRChat Prop Builder follows the prop-component split: a built prop now carries the shared `Prop` (socket follow) plus the `AvatarItem` behavior component instead of the old single `AvatarProp`. Existing built props should be rebuilt.
+
 ## [0.23.6] - 2026-06-23
 
 ### Added

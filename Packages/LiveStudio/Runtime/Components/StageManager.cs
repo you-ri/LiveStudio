@@ -101,7 +101,7 @@ namespace Lilium.LiveStudio
     /// scene handle.
     /// </summary>
     [Serializable]
-    [ExposedClass(Icon = "public", Category = "Stage")]
+    [ExposedClass(Icon = "public", Category = "Stage", HideInScene = true)]
     [MovedFrom(false, null, null, "WorldManager")]
     public class StageManager : IExposedObject
     {
