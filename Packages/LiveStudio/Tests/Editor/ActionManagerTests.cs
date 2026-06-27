@@ -317,6 +317,94 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
+        public void ManualValue_OverridesInputWithThatValue()
+        {
+            // A Value-mode slider value fires with that value, taking precedence over the bound input.
+            var set = new ActionSet
+            {
+                enabled = true,
+                input = new FakeInputSource { mode = InputMode.Value, raw = 0.2f },
+            };
+            set.SetManualValue(0.6f);
+
+            bool fired = ActionManager.TryGetFiringContext(set, wasHeld: false, out var context);
+
+            Assert.IsTrue(fired);
+            Assert.AreEqual(0.6f, context.value, 1e-4f, "the manual value overrides the bound input");
+            Assert.IsTrue(context.active, "0.6 is at/above the 0.5 threshold");
+            Assert.IsFalse(context.pressed, "the slider carries no edges");
+            Assert.IsFalse(context.triggered, "the slider carries no edges");
+        }
+
+        [Test]
+        public void ManualValue_Clamps()
+        {
+            var high = new ActionSet { enabled = true, input = new FakeInputSource() };
+            high.SetManualValue(1.5f);
+            ActionManager.TryGetFiringContext(high, wasHeld: false, out var hi);
+            Assert.AreEqual(1f, hi.value, 1e-4f, "values above 1 clamp to 1");
+
+            var low = new ActionSet { enabled = true, input = new FakeInputSource() };
+            low.SetManualValue(-0.5f);
+            ActionManager.TryGetFiringContext(low, wasHeld: false, out var lo);
+            Assert.AreEqual(0f, lo.value, 1e-4f, "values below 0 clamp to 0");
+            Assert.IsFalse(lo.active, "a clamped-zero manual value is below the threshold");
+        }
+
+        [Test]
+        public void ManualValue_DefaultNaN_FallsThroughToInput()
+        {
+            // A fresh set has no manual value (NaN), so the bound input drives it as before.
+            var set = new ActionSet
+            {
+                enabled = true,
+                input = new FakeInputSource { mode = InputMode.Value, raw = 0.7f },
+            };
+
+            bool fired = ActionManager.TryGetFiringContext(set, wasHeld: false, out var context);
+
+            Assert.IsTrue(fired);
+            Assert.AreEqual(0.7f, context.value, 1e-4f, "with no manual value the input still drives the set");
+        }
+
+        [Test]
+        public void ManualValue_OverridesEvenWhenDisabled()
+        {
+            // Like the manual hold, an explicit slider value fires regardless of the enabled flag.
+            var set = new ActionSet { enabled = false, input = new FakeInputSource { raw = 0f } };
+            set.SetManualValue(0.4f);
+
+            bool fired = ActionManager.TryGetFiringContext(set, wasHeld: false, out var context);
+
+            Assert.IsTrue(fired);
+            Assert.AreEqual(0.4f, context.value, 1e-4f);
+        }
+
+        [Test]
+        public void SetActionSetValue_AppliesClampedManualValueToTargetSet()
+        {
+            var manager = new ActionManager();
+            var id = manager.AddPropertyAction("obj", "weight", "Value", "Weight", "", "");
+            var set = manager.actionSets[manager.actionSets.Count - 1];
+
+            manager.SetActionSetValue(id, 1.5f);
+
+            Assert.AreEqual(1f, set.manualValue, 1e-4f, "the manual value is set and clamped to 0..1");
+        }
+
+        [Test]
+        public void SetActionSetValue_UnknownId_IsNoOp()
+        {
+            var manager = new ActionManager();
+            var id = manager.AddPropertyAction("obj", "weight", "Value", "Weight", "", "");
+            var set = manager.actionSets[manager.actionSets.Count - 1];
+
+            manager.SetActionSetValue("does-not-exist", 0.5f);
+
+            Assert.IsTrue(float.IsNaN(set.manualValue), "an unknown id leaves every set's manual value untouched");
+        }
+
+        [Test]
         public void ActionSetValues_ReflectsLastValueInOrderWithNullsAsZero()
         {
             var a = new ActionSet { lastValue = 0.3f };

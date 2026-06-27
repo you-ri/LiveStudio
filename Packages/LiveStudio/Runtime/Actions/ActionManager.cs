@@ -142,6 +142,19 @@ namespace Lilium.LiveStudio
             // yet; other modes commit on the press edge. Mirrors InputSource.Evaluate for the manual hold.
             bool isButton = set.input != null && set.input.mode == InputMode.Button;
 
+            if (!float.IsNaN(set.manualValue))
+            {
+                // Manual value from the remote app's Value-mode slider. Takes precedence over the bound
+                // input and works even when disabled (the user dragged it explicitly), like the manual hold.
+                // Edges stay false: SetPropertyAction's float path reads only context.value, and exclusivity
+                // needs context.pressed — so a Value set never disturbs group radios. 0.5 mirrors
+                // InputSource.kThreshold (protected there, so inlined) for bool-property targets.
+                float manual = Mathf.Clamp01(set.manualValue);
+                context = new ActionContext(manual, pressed: false, released: false,
+                    active: manual >= 0.5f, triggered: false);
+                return true;
+            }
+
             if (set.held)
             {
                 // Manual hold: fire as if the input were held active. Overrides the bound input and works
@@ -360,6 +373,24 @@ namespace Lilium.LiveStudio
             set.SetHeld(held);
             if (held) ApplyExclusiveGroup(actionSets, index);
             _Broadcast();
+        }
+
+        /// <summary>Sets the manual value override (0..1, clamped) of the action set with the given id, from
+        /// the remote app's Value-mode slider card. While set the set fires from <see cref="Update"/> with
+        /// this value (sticky, overriding the bound input), independent of <see cref="ActionSet.enabled"/>.
+        /// No broadcast: <see cref="ActionSet"/>'s manual value is <c>[NonSerialized]</c> (absent from the
+        /// actionSets payload), and the slider reads its value back through the polled
+        /// <see cref="actionSetValues"/>; broadcasting per drag frame would be pure overhead.</summary>
+        [ExposedFunction]
+        public void SetActionSetValue(string actionSetId, float value)
+        {
+            int index = _IndexOf(actionSetId);
+            if (index < 0) return;
+
+            var set = actionSets[index];
+            if (set == null) return;
+
+            set.SetManualValue(Mathf.Clamp01(value));
         }
 
         // Action 要素の追加/削除/型選択は、RemoteApp の汎用配列「+」(elementTypeOptions による

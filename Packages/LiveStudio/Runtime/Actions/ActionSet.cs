@@ -67,6 +67,19 @@ namespace Lilium.LiveStudio
         /// <see cref="ActionManager.ToggleActionSet"/>.</summary>
         internal void SetHeld(bool value) => _held = value;
 
+        // Runtime-only manual value override driven by the remote app's Value-mode slider (sticky once set;
+        // NaN = no override). While set the set fires with this value, overriding the bound input, until
+        // restart — mirroring _held. Never serialized.
+        [NonSerialized]
+        private float _manualValue = float.NaN;
+
+        /// <summary>Manual value override (0..1), or NaN when none. Owned by <see cref="ActionManager"/>;
+        /// the remote app sets it via <see cref="ActionManager.SetActionSetValue"/>.</summary>
+        internal float manualValue => _manualValue;
+
+        /// <summary>Sets the manual value override. Manager-only.</summary>
+        internal void SetManualValue(float value) => _manualValue = value;
+
         /// <summary>Runtime firing output (0..1) of the last <see cref="ActionManager.Update"/>: 1 while
         /// held, otherwise the bound input's evaluated value. Written by the manager each frame and read
         /// back through <see cref="ActionManager.actionSetValues"/> so the remote app can poll it. Not
