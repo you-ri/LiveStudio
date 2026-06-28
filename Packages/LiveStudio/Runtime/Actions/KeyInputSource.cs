@@ -17,12 +17,16 @@ namespace Lilium.LiveStudio
     public class KeyInputSource : InputSource
     {
         // The bound control path, e.g. "<Keyboard>/a" or "<Gamepad>/buttonSouth". Persisted; restored
-        // into the input action on Setup. Hidden from the generic UI — it is surfaced read-only via
-        // `binding` and (re)assigned through the rebind button, not typed by hand.
+        // into the input action on Setup. This is the shadow field backing the read-only `binding`
+        // property: [FormerlyExposedAs("binding")] pairs it with that property so it persists under the
+        // `binding` name and is excluded from the exposed member list (no separate, editable
+        // `controlPath` surfaces in the remote app). (Re)assigned through the rebind button, not by hand.
         [SerializeField, ExposedField, Hide]
+        [FormerlyExposedAs("binding")]
         private string _controlPath = string.Empty;
 
-        /// <summary>The bound control path (empty when unbound), surfaced read-only to the remote app.</summary>
+        /// <summary>The bound control path (empty when unbound), surfaced read-only to the remote app.
+        /// Persisted via the <see cref="_controlPath"/> shadow field.</summary>
         [ExposedProperty]
         public string binding => _controlPath;
 
