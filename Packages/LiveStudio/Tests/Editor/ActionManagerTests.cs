@@ -63,7 +63,8 @@ namespace Lilium.LiveStudio.EditorTests
             var set = new ActionSet
             {
                 enabled = true,
-                input = new FakeInputSource { mode = InputMode.Value, raw = 0.7f },
+                control = new DeckSlider(),
+                input = new FakeInputSource { raw = 0.7f },
             };
 
             bool fired = ActionManager.TryGetFiringContext(set, wasHeld: false, out var context);
@@ -109,8 +110,8 @@ namespace Lilium.LiveStudio.EditorTests
         [Test]
         public void ApplyExclusiveGroup_ClearsHeldGroupmate()
         {
-            var winner = new ActionSet { group = "g", input = new FakeInputSource { mode = InputMode.Toggle } };
-            var loser = new ActionSet { group = "g", input = new FakeInputSource { mode = InputMode.Toggle } };
+            var winner = new ActionSet { group = "g", control = new DeckToggle(), input = new FakeInputSource() };
+            var loser = new ActionSet { group = "g", control = new DeckToggle(), input = new FakeInputSource() };
             winner.SetHeld(true);
             loser.SetHeld(true);
 
@@ -123,28 +124,29 @@ namespace Lilium.LiveStudio.EditorTests
         [Test]
         public void ApplyExclusiveGroup_ClearsLatchedKeyboardToggleOfGroupmate()
         {
-            var winner = new ActionSet { group = "g", input = new FakeInputSource { mode = InputMode.Toggle } };
+            var winner = new ActionSet { group = "g", control = new DeckToggle(), input = new FakeInputSource() };
             var loser = new ActionSet
             {
                 group = "g",
-                input = new FakeInputSource { mode = InputMode.Toggle, raw = 1f },
+                control = new DeckToggle(),
+                input = new FakeInputSource { raw = 1f },
             };
 
             // Latch the loser on with a keyboard rising edge.
-            Assert.AreEqual(1f, loser.input.Evaluate().value, 1e-4f);
+            Assert.AreEqual(1f, loser.input.Evaluate(InputMode.Toggle).value, 1e-4f);
 
             ActionManager.ApplyExclusiveGroup(new List<ActionSet> { winner, loser }, 0);
 
             // The latched toggle is cleared; the still-held key no longer reads as on (no new rising edge).
-            Assert.AreEqual(0f, loser.input.Evaluate().value, 1e-4f);
+            Assert.AreEqual(0f, loser.input.Evaluate(InputMode.Toggle).value, 1e-4f);
         }
 
         [Test]
         public void ApplyExclusiveGroup_LeavesOtherGroupsAndUngroupedUntouched()
         {
-            var winner = new ActionSet { group = "g", input = new FakeInputSource { mode = InputMode.Toggle } };
-            var otherGroup = new ActionSet { group = "h", input = new FakeInputSource { mode = InputMode.Toggle } };
-            var ungrouped = new ActionSet { group = "", input = new FakeInputSource { mode = InputMode.Toggle } };
+            var winner = new ActionSet { group = "g", control = new DeckToggle(), input = new FakeInputSource() };
+            var otherGroup = new ActionSet { group = "h", input = new FakeInputSource() };
+            var ungrouped = new ActionSet { group = "", input = new FakeInputSource() };
             otherGroup.SetHeld(true);
             ungrouped.SetHeld(true);
 
@@ -158,8 +160,8 @@ namespace Lilium.LiveStudio.EditorTests
         [Test]
         public void ApplyExclusiveGroup_UngroupedWinner_DoesNothing()
         {
-            var winner = new ActionSet { group = "", input = new FakeInputSource { mode = InputMode.Toggle } };
-            var other = new ActionSet { group = "", input = new FakeInputSource { mode = InputMode.Toggle } };
+            var winner = new ActionSet { group = "", input = new FakeInputSource() };
+            var other = new ActionSet { group = "", input = new FakeInputSource() };
             other.SetHeld(true);
 
             ActionManager.ApplyExclusiveGroup(new List<ActionSet> { winner, other }, 0);
@@ -170,8 +172,8 @@ namespace Lilium.LiveStudio.EditorTests
         [Test]
         public void ApplyExclusiveGroup_ButtonModeWinner_DoesNotClearGroupmates()
         {
-            var winner = new ActionSet { group = "g", input = new FakeInputSource { mode = InputMode.Button } };
-            var other = new ActionSet { group = "g", input = new FakeInputSource { mode = InputMode.Toggle } };
+            var winner = new ActionSet { group = "g", control = new DeckButton(), input = new FakeInputSource() };
+            var other = new ActionSet { group = "g", control = new DeckToggle(), input = new FakeInputSource() };
             other.SetHeld(true);
 
             ActionManager.ApplyExclusiveGroup(new List<ActionSet> { winner, other }, 0);
@@ -186,7 +188,8 @@ namespace Lilium.LiveStudio.EditorTests
             var set = new ActionSet
             {
                 enabled = true,
-                input = new FakeInputSource { mode = InputMode.Button },
+                control = new DeckButton(),
+                input = new FakeInputSource(),
             };
 
             set.SetHeld(true);
@@ -207,7 +210,8 @@ namespace Lilium.LiveStudio.EditorTests
             var set = new ActionSet
             {
                 enabled = true,
-                input = new FakeInputSource { mode = InputMode.Toggle },
+                control = new DeckToggle(),
+                input = new FakeInputSource(),
             };
             set.SetHeld(true);
 
@@ -245,7 +249,7 @@ namespace Lilium.LiveStudio.EditorTests
             Assert.AreEqual(id, set.id, "the returned id addresses the created set");
             Assert.AreEqual("Do Thing", set.name, "the set is named after the bound function");
             Assert.IsInstanceOf<KeyInputSource>(set.input);
-            Assert.AreEqual(InputMode.Button, set.input.mode, "a function bind is momentary");
+            Assert.AreEqual(InputMode.Button, set.control.mode, "a function bind is momentary");
             Assert.AreEqual("<Keyboard>/a", ((KeyInputSource)set.input).binding,
                 "the set is born bound to the captured key");
             Assert.AreEqual(1, set.actions.Count);
@@ -306,13 +310,13 @@ namespace Lilium.LiveStudio.EditorTests
             Assert.AreEqual(InputMode.Toggle, _ModeOfAdded(manager, "nonsense"),
                 "unrecognized falls back to Toggle");
 
-            // Local helper: adds one and returns the new set's input mode.
+            // Local helper: adds one and returns the new set's behaviour mode (carried by its control kind).
             static InputMode _ModeOfAdded(ActionManager mgr, string mode)
             {
                 var id = mgr.AddPropertyAction("obj", "prop", mode, "Prop", "", "");
                 var set = mgr.actionSets[mgr.actionSets.Count - 1];
                 Assert.AreEqual(id, set.id);
-                return set.input.mode;
+                return set.control.mode;
             }
         }
 
@@ -323,7 +327,7 @@ namespace Lilium.LiveStudio.EditorTests
             var set = new ActionSet
             {
                 enabled = true,
-                input = new FakeInputSource { mode = InputMode.Value, raw = 0.2f },
+                input = new FakeInputSource { raw = 0.2f },
             };
             set.SetManualValue(0.6f);
 
@@ -358,7 +362,8 @@ namespace Lilium.LiveStudio.EditorTests
             var set = new ActionSet
             {
                 enabled = true,
-                input = new FakeInputSource { mode = InputMode.Value, raw = 0.7f },
+                control = new DeckSlider(),
+                input = new FakeInputSource { raw = 0.7f },
             };
 
             bool fired = ActionManager.TryGetFiringContext(set, wasHeld: false, out var context);
@@ -423,53 +428,53 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
-        public void AddPanel_AppendsPanelWithUniqueNameAndReturnsIt()
+        public void AddDeck_AppendsDeckWithUniqueNameAndReturnsIt()
         {
             var manager = new ActionManager();
 
-            var name = manager.AddPanel();
+            var name = manager.AddDeck();
 
-            Assert.AreEqual(1, manager.panels.Count);
-            var panel = manager.panels[0];
-            Assert.AreEqual(name, panel.name, "the returned name addresses the created panel");
-            Assert.IsFalse(string.IsNullOrEmpty(panel.name), "a name is assigned");
+            Assert.AreEqual(1, manager.decks.Count);
+            var deck = manager.decks[0];
+            Assert.AreEqual(name, deck.name, "the returned name addresses the created deck");
+            Assert.IsFalse(string.IsNullOrEmpty(deck.name), "a name is assigned");
         }
 
         [Test]
-        public void AddPanel_AssignsUniqueNames()
+        public void AddDeck_AssignsUniqueNames()
         {
             var manager = new ActionManager();
 
-            var first = manager.AddPanel();
-            var second = manager.AddPanel();
+            var first = manager.AddDeck();
+            var second = manager.AddDeck();
 
-            Assert.AreEqual(2, manager.panels.Count);
-            Assert.AreEqual("Panel", first);
-            Assert.AreEqual("Panel 2", second, "a colliding default name is auto-suffixed");
+            Assert.AreEqual(2, manager.decks.Count);
+            Assert.AreEqual("Deck", first);
+            Assert.AreEqual("Deck 2", second, "a colliding default name is auto-suffixed");
         }
 
         [Test]
-        public void RemovePanel_RemovesMatchingPanel()
+        public void RemoveDeck_RemovesMatchingDeck()
         {
             var manager = new ActionManager();
-            var keep = manager.AddPanel();
-            var drop = manager.AddPanel();
+            var keep = manager.AddDeck();
+            var drop = manager.AddDeck();
 
-            manager.RemovePanel(drop);
+            manager.RemoveDeck(drop);
 
-            Assert.AreEqual(1, manager.panels.Count);
-            Assert.AreEqual(keep, manager.panels[0].name, "the other panel is untouched");
+            Assert.AreEqual(1, manager.decks.Count);
+            Assert.AreEqual(keep, manager.decks[0].name, "the other deck is untouched");
         }
 
         [Test]
-        public void RemovePanel_UnknownName_IsNoOp()
+        public void RemoveDeck_UnknownName_IsNoOp()
         {
             var manager = new ActionManager();
-            manager.AddPanel();
+            manager.AddDeck();
 
-            manager.RemovePanel("does-not-exist");
+            manager.RemoveDeck("does-not-exist");
 
-            Assert.AreEqual(1, manager.panels.Count, "an unknown name removes nothing");
+            Assert.AreEqual(1, manager.decks.Count, "an unknown name removes nothing");
         }
 
         [Test]
@@ -481,9 +486,9 @@ namespace Lilium.LiveStudio.EditorTests
 
             var set = manager.actionSets[manager.actionSets.Count - 1];
             Assert.AreEqual(id, set.id);
-            Assert.IsInstanceOf<PanelPush>(set.control, "a function bind defaults to a momentary push tile");
-            Assert.AreEqual(1, manager.panels.Count, "a default page is auto-created for the new control");
-            Assert.AreEqual(manager.panels[0].name, set.control.panelName,
+            Assert.IsInstanceOf<DeckButton>(set.control, "a function bind defaults to a momentary push tile");
+            Assert.AreEqual(1, manager.decks.Count, "a default page is auto-created for the new control");
+            Assert.AreEqual(manager.decks[0].name, set.control.deckName,
                 "a new control is placed on the default page (no unplaced state)");
             Assert.AreEqual(0, set.control.x);
             Assert.AreEqual(0, set.control.y);
@@ -495,48 +500,48 @@ namespace Lilium.LiveStudio.EditorTests
             var manager = new ActionManager();
 
             manager.AddPropertyAction("obj", "useSpout", "Toggle", "Spout", "", "");
-            Assert.IsInstanceOf<PanelCheckbox>(
+            Assert.IsInstanceOf<DeckToggle>(
                 manager.actionSets[manager.actionSets.Count - 1].control,
                 "a toggle property defaults to a checkbox tile");
 
             manager.AddPropertyAction("obj", "weight", "Value", "Weight", "", "");
-            Assert.IsInstanceOf<PanelSlider>(
+            Assert.IsInstanceOf<DeckSlider>(
                 manager.actionSets[manager.actionSets.Count - 1].control,
                 "a value property defaults to a slider tile");
 
             manager.AddPropertyAction("obj", "fire", "Button", "Fire", "", "");
-            Assert.IsInstanceOf<PanelPush>(
+            Assert.IsInstanceOf<DeckButton>(
                 manager.actionSets[manager.actionSets.Count - 1].control,
                 "a button property defaults to a push tile");
         }
 
         [Test]
-        public void PlaceControl_SetsPanelAndCell()
+        public void PlaceControl_SetsDeckAndCell()
         {
             var manager = new ActionManager();
             var id = manager.AddFunctionAction("obj", "DoThing", "Do Thing", "");
 
-            manager.PlaceControl(id, "panel-1", 3, 2);
+            manager.PlaceControl(id, "deck-1", 3, 2);
 
             var control = manager.actionSets[0].control;
-            Assert.AreEqual("panel-1", control.panelName);
+            Assert.AreEqual("deck-1", control.deckName);
             Assert.AreEqual(3, control.x);
             Assert.AreEqual(2, control.y);
         }
 
         [Test]
-        public void PlaceControl_EmptyPanelName_PlacesOnDefaultPage()
+        public void PlaceControl_EmptyDeckName_PlacesOnDefaultPage()
         {
             var manager = new ActionManager();
             var id = manager.AddFunctionAction("obj", "DoThing", "Do Thing", "");
             // AddFunctionAction auto-created the default page and placed the control there.
-            var defaultPanelName = manager.panels[0].name;
-            manager.PlaceControl(id, "panel-1", 1, 1);
+            var defaultDeckName = manager.decks[0].name;
+            manager.PlaceControl(id, "deck-1", 1, 1);
 
             manager.PlaceControl(id, "", 0, 0);
 
-            Assert.AreEqual(defaultPanelName, manager.actionSets[0].control.panelName,
-                "an empty panel name falls back to the default page (no unplaced state)");
+            Assert.AreEqual(defaultDeckName, manager.actionSets[0].control.deckName,
+                "an empty deck name falls back to the default page (no unplaced state)");
         }
 
         [Test]
@@ -544,13 +549,13 @@ namespace Lilium.LiveStudio.EditorTests
         {
             var manager = new ActionManager();
             var id = manager.AddFunctionAction("obj", "DoThing", "Do Thing", "");
-            manager.PlaceControl(id, "panel-1", 4, 5);
+            manager.PlaceControl(id, "deck-1", 4, 5);
 
-            manager.SetControlType(id, "PanelSlider");
+            manager.SetControlType(id, "DeckSlider");
 
             var control = manager.actionSets[0].control;
-            Assert.IsInstanceOf<PanelSlider>(control, "the kind is swapped");
-            Assert.AreEqual("panel-1", control.panelName, "placement is preserved across the swap");
+            Assert.IsInstanceOf<DeckSlider>(control, "the kind is swapped");
+            Assert.AreEqual("deck-1", control.deckName, "placement is preserved across the swap");
             Assert.AreEqual(4, control.x);
             Assert.AreEqual(5, control.y);
         }
@@ -563,29 +568,29 @@ namespace Lilium.LiveStudio.EditorTests
 
             manager.SetControlType(id, "NotAControl");
 
-            Assert.IsInstanceOf<PanelPush>(manager.actionSets[0].control,
+            Assert.IsInstanceOf<DeckButton>(manager.actionSets[0].control,
                 "an unknown type leaves the existing control untouched");
         }
 
         [Test]
-        public void RemovePanel_MovesControlsToDefaultPage()
+        public void RemoveDeck_MovesControlsToDefaultPage()
         {
             var manager = new ActionManager();
-            var keep = manager.AddPanel(); // "Panel" (becomes the default = first panel)
-            var drop = manager.AddPanel(); // "Panel 2"
+            var keep = manager.AddDeck(); // "Deck" (becomes the default = first deck)
+            var drop = manager.AddDeck(); // "Deck 2"
             var a = manager.AddFunctionAction("obj", "A", "A", "");
             var b = manager.AddFunctionAction("obj", "B", "B", "");
             manager.PlaceControl(a, drop, 0, 0);
             manager.PlaceControl(b, keep, 1, 0);
 
-            manager.RemovePanel(drop);
+            manager.RemoveDeck(drop);
 
-            // No unplaced state: the control on the removed panel moves to the default page (first remaining).
-            Assert.AreEqual(1, manager.panels.Count, "only the kept panel remains");
-            Assert.AreEqual(keep, manager.actionSets[0].control.panelName,
-                "a control on the removed panel moves to the default page");
-            Assert.AreEqual(keep, manager.actionSets[1].control.panelName,
-                "a control on the kept panel is untouched");
+            // No unplaced state: the control on the removed deck moves to the default page (first remaining).
+            Assert.AreEqual(1, manager.decks.Count, "only the kept deck remains");
+            Assert.AreEqual(keep, manager.actionSets[0].control.deckName,
+                "a control on the removed deck moves to the default page");
+            Assert.AreEqual(keep, manager.actionSets[1].control.deckName,
+                "a control on the kept deck is untouched");
         }
 
         [Test]
@@ -595,9 +600,9 @@ namespace Lilium.LiveStudio.EditorTests
 
             manager.AddActionSet(new KeyInputSource());
 
-            Assert.AreEqual(1, manager.panels.Count, "the first add auto-creates the default page");
+            Assert.AreEqual(1, manager.decks.Count, "the first add auto-creates the default page");
             var control = manager.actionSets[0].control;
-            Assert.AreEqual(manager.panels[0].name, control.panelName, "placed on the default page");
+            Assert.AreEqual(manager.decks[0].name, control.deckName, "placed on the default page");
             Assert.AreEqual(0, control.x);
             Assert.AreEqual(0, control.y);
         }
@@ -610,7 +615,7 @@ namespace Lilium.LiveStudio.EditorTests
             manager.AddActionSet(new KeyInputSource());
             manager.AddActionSet(new KeyInputSource());
 
-            Assert.AreEqual(1, manager.panels.Count, "both share the same default page");
+            Assert.AreEqual(1, manager.decks.Count, "both share the same default page");
             var first = manager.actionSets[0].control;
             var second = manager.actionSets[1].control;
             Assert.AreEqual(0, first.x);
@@ -627,7 +632,7 @@ namespace Lilium.LiveStudio.EditorTests
             manager.AddPropertyAction("obj", "weight", "Value", "Weight", "", "");
 
             var control = manager.actionSets[0].control;
-            Assert.IsInstanceOf<PanelSlider>(control, "a value property defaults to a slider tile");
+            Assert.IsInstanceOf<DeckSlider>(control, "a value property defaults to a slider tile");
             Assert.AreEqual(2, control.w, "a slider tile is fixed at 2 cells wide");
         }
 
@@ -638,10 +643,10 @@ namespace Lilium.LiveStudio.EditorTests
             var id = manager.AddFunctionAction("obj", "DoThing", "Do Thing", "");
             Assert.AreEqual(1, manager.actionSets[0].control.w, "a push tile is 1 wide");
 
-            manager.SetControlType(id, "PanelSlider");
+            manager.SetControlType(id, "DeckSlider");
             Assert.AreEqual(2, manager.actionSets[0].control.w, "swapping to slider widens to 2 cells");
 
-            manager.SetControlType(id, "PanelPush");
+            manager.SetControlType(id, "DeckButton");
             Assert.AreEqual(1, manager.actionSets[0].control.w, "swapping away from slider narrows back to 1");
         }
 
@@ -666,83 +671,83 @@ namespace Lilium.LiveStudio.EditorTests
         {
             var manager = new ActionManager();
             var id = manager.AddFunctionAction("obj", "DoThing", "Do Thing", "");
-            // Simulate a restored/older scene where the control carries no panel.
-            manager.actionSets[0].control.panelName = string.Empty;
+            // Simulate a restored/older scene where the control carries no deck.
+            manager.actionSets[0].control.deckName = string.Empty;
 
             manager.OnAfterExposedDeserialize();
 
-            Assert.IsFalse(string.IsNullOrEmpty(manager.actionSets[0].control.panelName),
-                "a control with no panel is placed on the default page after restore");
+            Assert.IsFalse(string.IsNullOrEmpty(manager.actionSets[0].control.deckName),
+                "a control with no deck is placed on the default page after restore");
         }
 
         [Test]
-        public void OnAfterExposedDeserialize_UnknownPanelName_RecreatesPanel()
+        public void OnAfterExposedDeserialize_UnknownDeckName_RecreatesDeck()
         {
             var manager = new ActionManager();
             manager.AddFunctionAction("obj", "DoThing", "Do Thing", "");
-            // Simulate pasted serialized action data referencing a panel that does not exist yet.
-            manager.actionSets[0].control.panelName = "Combat";
+            // Simulate pasted serialized action data referencing a deck that does not exist yet.
+            manager.actionSets[0].control.deckName = "Combat";
 
             manager.OnAfterExposedDeserialize();
 
-            Assert.IsTrue(manager.panels.Exists(p => p.name == "Combat"),
-                "a missing referenced panel is recreated by name so pasted data brings its panel along");
-            Assert.AreEqual("Combat", manager.actionSets[0].control.panelName,
-                "the control keeps its panel reference rather than being moved");
+            Assert.IsTrue(manager.decks.Exists(p => p.name == "Combat"),
+                "a missing referenced deck is recreated by name so pasted data brings its deck along");
+            Assert.AreEqual("Combat", manager.actionSets[0].control.deckName,
+                "the control keeps its deck reference rather than being moved");
         }
 
         [Test]
-        public void OnAfterExposedDeserialize_DuplicateUnknownName_CreatesOnePanel()
+        public void OnAfterExposedDeserialize_DuplicateUnknownName_CreatesOneDeck()
         {
             var manager = new ActionManager();
             manager.AddFunctionAction("obj", "A", "A", "");
             manager.AddFunctionAction("obj", "B", "B", "");
-            manager.actionSets[0].control.panelName = "Combat";
-            manager.actionSets[1].control.panelName = "Combat";
+            manager.actionSets[0].control.deckName = "Combat";
+            manager.actionSets[1].control.deckName = "Combat";
 
             manager.OnAfterExposedDeserialize();
 
-            Assert.AreEqual(1, manager.panels.FindAll(p => p.name == "Combat").Count,
-                "controls referencing the same missing panel create exactly one panel");
+            Assert.AreEqual(1, manager.decks.FindAll(p => p.name == "Combat").Count,
+                "controls referencing the same missing deck create exactly one deck");
         }
 
         [Test]
-        public void RenamePanel_PropagatesToControls()
+        public void RenameDeck_PropagatesToControls()
         {
             var manager = new ActionManager();
-            var name = manager.AddPanel();
+            var name = manager.AddDeck();
             var id = manager.AddFunctionAction("obj", "DoThing", "Do Thing", "");
             manager.PlaceControl(id, name, 0, 0);
 
-            manager.RenamePanel(name, "Main");
+            manager.RenameDeck(name, "Main");
 
-            Assert.AreEqual("Main", manager.panels[0].name, "the panel is renamed");
-            Assert.AreEqual("Main", manager.actionSets[0].control.panelName,
-                "a control on the renamed panel follows the rename");
+            Assert.AreEqual("Main", manager.decks[0].name, "the deck is renamed");
+            Assert.AreEqual("Main", manager.actionSets[0].control.deckName,
+                "a control on the renamed deck follows the rename");
         }
 
         [Test]
-        public void RenamePanel_CollisionAutoSuffixes()
+        public void RenameDeck_CollisionAutoSuffixes()
         {
             var manager = new ActionManager();
-            manager.AddPanel(); // "Panel"
-            var second = manager.AddPanel(); // "Panel 2"
+            manager.AddDeck(); // "Deck"
+            var second = manager.AddDeck(); // "Deck 2"
 
-            manager.RenamePanel(second, "Panel");
+            manager.RenameDeck(second, "Deck");
 
-            Assert.AreEqual("Panel 2", manager.panels[1].name,
+            Assert.AreEqual("Deck 2", manager.decks[1].name,
                 "renaming onto an existing name auto-suffixes to stay unique");
         }
 
         [Test]
-        public void RenamePanel_SameName_NoOp()
+        public void RenameDeck_SameName_NoOp()
         {
             var manager = new ActionManager();
-            var name = manager.AddPanel();
+            var name = manager.AddDeck();
 
-            manager.RenamePanel(name, name);
+            manager.RenameDeck(name, name);
 
-            Assert.AreEqual(name, manager.panels[0].name, "renaming to the same name is a no-op");
+            Assert.AreEqual(name, manager.decks[0].name, "renaming to the same name is a no-op");
         }
     }
 }

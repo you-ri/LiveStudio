@@ -48,12 +48,12 @@ namespace Lilium.LiveStudio
         [ExposedField]
         public List<ActionSet> actionSets = new List<ActionSet>();
 
-        /// <summary>The control panels: named grids of <see cref="PanelControl"/> tiles the remote app lays
+        /// <summary>The control decks: named grids of <see cref="DeckControl"/> tiles the remote app lays
         /// out, each operating an <see cref="ActionSet"/> by id. Persisted with the manager in the scene.
-        /// Tiles are added/removed/moved through the generic array REST; only whole panels need add/remove
+        /// Tiles are added/removed/moved through the generic array REST; only whole decks need add/remove
         /// functions here.</summary>
         [ExposedField]
-        public List<Panel> panels = new List<Panel>();
+        public List<Deck> decks = new List<Deck>();
 
         // The shared input map all KeyInputSources create their actions in. Rebuilt when the set of
         // inputs changes or an input's binding/type changes. Runtime-only.
@@ -145,9 +145,12 @@ namespace Lilium.LiveStudio
         /// <param name="wasHeld">The set's <see cref="ActionSet.held"/> on the previous frame.</param>
         internal static bool TryGetFiringContext(ActionSet set, bool wasHeld, out ActionContext context)
         {
-            // A button-mode set commits its one-shot trigger on release, so a held press must not trigger
-            // yet; other modes commit on the press edge. Mirrors InputSource.Evaluate for the manual hold.
-            bool isButton = set.input != null && set.input.mode == InputMode.Button;
+            // The behaviour axis is the set's control kind (the single source of truth); the bound input
+            // interprets its raw value through it. A button-mode set commits its one-shot trigger on release,
+            // so a held press must not trigger yet; other modes commit on the press edge. Mirrors
+            // InputSource.Evaluate for the manual hold.
+            InputMode mode = set.control?.mode ?? InputMode.Button;
+            bool isButton = mode == InputMode.Button;
 
             if (!float.IsNaN(set.manualValue))
             {
@@ -188,7 +191,7 @@ namespace Lilium.LiveStudio
                 return false;
             }
 
-            context = set.input.Evaluate();
+            context = set.input.Evaluate(mode);
             return true;
         }
 
@@ -217,11 +220,11 @@ namespace Lilium.LiveStudio
             // A live-scene restore replaces the action sets list; rebuild the input map so the restored
             // inputs are bound. Idempotent, so harmless if it also fires on an unrelated property write.
             _RebuildInputMap();
-            // No unplaced state: a restored / pasted scene may carry controls with no panel (→ default page) or
-            // a name no panel has yet (→ recreate that panel by name, so pasted action data brings its panel
-            // along). Idempotent once every control resolves to an existing panel.
+            // No unplaced state: a restored / pasted scene may carry controls with no deck (→ default page) or
+            // a name no deck has yet (→ recreate that deck by name, so pasted action data brings its deck
+            // along). Idempotent once every control resolves to an existing deck.
             _NormalizeControlPlacement();
-            // Enforce each tile's fixed per-kind width (PanelControl.fixedWidth) on restored/older scenes. Idempotent.
+            // Enforce each tile's fixed per-kind width (DeckControl.fixedWidth) on restored/older scenes. Idempotent.
             _EnforceControlWidths();
         }
 
@@ -238,7 +241,7 @@ namespace Lilium.LiveStudio
 
         // Shared creation. A null/empty name keeps the generic default; the bind-a-control flows pass the
         // target's function/property name so the new set reads meaningfully in the remote app's list.
-        private ActionSet _AddActionSet(InputSource input, string name, ActionBase[] actions, string group = null, PanelControl control = null)
+        private ActionSet _AddActionSet(InputSource input, string name, ActionBase[] actions, string group = null, DeckControl control = null)
         {
             var set = new ActionSet
             {
@@ -248,41 +251,43 @@ namespace Lilium.LiveStudio
                 group = string.IsNullOrEmpty(group) ? string.Empty : group,
                 input = input ?? new KeyInputSource(),
                 actions = actions != null ? new List<ActionBase>(actions) : new List<ActionBase>(),
-                control = control ?? new PanelPush(),
+                control = control ?? new DeckButton(),
             };
             // Apply the tile's fixed per-kind width before placing so the free-cell scan accounts for the span.
             _ApplyControlWidth(set.control);
             // No unplaced state: every new control is placed on the default page at a free cell.
-            _PlaceOnDefaultPanel(set.control);
+            _PlaceOnDefaultDeck(set.control);
             actionSets.Add(set);
             _RebuildInputMap();
             _Broadcast();
             return set;
         }
 
-        // The default panel control kind for a new set, derived from its input mode (changeable later from
-        // the remote app via SetControlType): Toggle→checkbox, Value→slider, otherwise momentary push.
-        private static PanelControl _DefaultControlForMode(InputMode mode)
+        // The deck control kind for a requested behaviour mode (changeable later from the remote app via
+        // SetControlType): Toggle→checkbox, Value→slider, otherwise momentary push. The control is the set's
+        // single behaviour axis, so this maps the add-action dialog's mode choice onto the control kind.
+        private static DeckControl _DefaultControlForMode(InputMode mode)
         {
-            if (mode == InputMode.Toggle) return new PanelCheckbox();
-            if (mode == InputMode.Value) return new PanelSlider();
-            return new PanelPush();
+            if (mode == InputMode.Toggle) return new DeckToggle();
+            if (mode == InputMode.Value) return new DeckSlider();
+            return new DeckButton();
         }
 
         // Creates a fresh concrete control of the named kind, or null for an unknown name.
-        private static PanelControl _CreateControl(string typeName)
+        private static DeckControl _CreateControl(string typeName)
         {
-            if (typeName == "PanelCheckbox") return new PanelCheckbox();
-            if (typeName == "PanelSlider") return new PanelSlider();
-            if (typeName == "PanelPush") return new PanelPush();
+            if (typeName == "DeckToggle") return new DeckToggle();
+            if (typeName == "DeckSlider") return new DeckSlider();
+            if (typeName == "DeckButton") return new DeckButton();
             return null;
         }
 
         // Builds a key input already bound to the given control path (empty = unbound). The add-action dialog
-        // captures the key first (see StartKeyCapture) and commits it here, so the set is born bound.
-        private static KeyInputSource _KeyInput(InputMode mode, string binding)
+        // captures the key first (see StartKeyCapture) and commits it here, so the set is born bound. The
+        // behaviour mode is no longer carried by the input; it comes from the set's control kind.
+        private static KeyInputSource _KeyInput(string binding)
         {
-            var input = new KeyInputSource { mode = mode };
+            var input = new KeyInputSource();
             if (!string.IsNullOrEmpty(binding)) input.SetInitialBinding(binding);
             return input;
         }
@@ -296,7 +301,7 @@ namespace Lilium.LiveStudio
         public string AddFunctionAction(string targetId, string functionName, string name, string binding)
         {
             var set = _AddActionSet(
-                _KeyInput(InputMode.Button, binding),
+                _KeyInput(binding),
                 name,
                 new ActionBase[] { new InvokeFunctionAction { targetId = targetId, functionName = functionName } });
             return set.id;
@@ -317,7 +322,7 @@ namespace Lilium.LiveStudio
                 ? m
                 : InputMode.Toggle;
             var set = _AddActionSet(
-                _KeyInput(inputMode, binding),
+                _KeyInput(binding),
                 name,
                 new ActionBase[] { new SetPropertyAction { targetId = targetId, propertyPath = propertyPath } },
                 group,
@@ -375,103 +380,103 @@ namespace Lilium.LiveStudio
             _Broadcast();
         }
 
-        /// <summary>Adds a new control panel with a unique auto-generated name and returns that name. The
-        /// remote app then adds tiles by placing controls' <see cref="PanelControl.panelName"/> onto it.</summary>
+        /// <summary>Adds a new control deck with a unique auto-generated name and returns that name. The
+        /// remote app then adds tiles by placing controls' <see cref="DeckControl.deckName"/> onto it.</summary>
         [ExposedFunction]
-        public string AddPanel()
+        public string AddDeck()
         {
-            var panel = new Panel { name = _UniquePanelName("Panel", null) };
-            panels.Add(panel);
-            _BroadcastPanels();
-            return panel.name;
+            var deck = new Deck { name = _UniqueDeckName("Deck", null) };
+            decks.Add(deck);
+            _BroadcastDecks();
+            return deck.name;
         }
 
-        /// <summary>Removes the panel with the given name and moves any controls that were on it to the default
-        /// page (no unplaced state; a fresh default page is created if this was the last panel). No-op if the
+        /// <summary>Removes the deck with the given name and moves any controls that were on it to the default
+        /// page (no unplaced state; a fresh default page is created if this was the last deck). No-op if the
         /// name is unknown.</summary>
         [ExposedFunction]
-        public void RemovePanel(string panelName)
+        public void RemoveDeck(string deckName)
         {
-            if (string.IsNullOrEmpty(panelName)) return;
-            int index = panels.FindIndex(p => p != null && p.name == panelName);
+            if (string.IsNullOrEmpty(deckName)) return;
+            int index = decks.FindIndex(p => p != null && p.name == deckName);
             if (index < 0) return;
-            panels.RemoveAt(index);
+            decks.RemoveAt(index);
 
             bool anyMoved = false;
             for (int i = 0; i < actionSets.Count; i++)
             {
                 var control = actionSets[i]?.control;
-                if (control != null && control.panelName == panelName)
+                if (control != null && control.deckName == deckName)
                 {
-                    _PlaceOnDefaultPanel(control);
+                    _PlaceOnDefaultDeck(control);
                     anyMoved = true;
                 }
             }
 
-            _BroadcastPanels();
+            _BroadcastDecks();
             if (anyMoved) _Broadcast();
         }
 
-        /// <summary>Renames the panel currently named <paramref name="panelName"/> to <paramref name="newName"/>,
-        /// auto-suffixing on collision so panel names stay unique, and updates every control placed on it so the
+        /// <summary>Renames the deck currently named <paramref name="deckName"/> to <paramref name="newName"/>,
+        /// auto-suffixing on collision so deck names stay unique, and updates every control placed on it so the
         /// reference follows the rename. Returns the resulting (possibly suffixed) name; returns the original
         /// name unchanged for an unknown current name, an empty new name, or a no-op rename.</summary>
         [ExposedFunction]
-        public string RenamePanel(string panelName, string newName)
+        public string RenameDeck(string deckName, string newName)
         {
-            if (string.IsNullOrEmpty(panelName) || string.IsNullOrEmpty(newName)) return panelName;
-            int index = panels.FindIndex(p => p != null && p.name == panelName);
-            if (index < 0) return panelName;
+            if (string.IsNullOrEmpty(deckName) || string.IsNullOrEmpty(newName)) return deckName;
+            int index = decks.FindIndex(p => p != null && p.name == deckName);
+            if (index < 0) return deckName;
 
-            string unique = _UniquePanelName(newName, panels[index]);
-            if (unique == panelName) return panelName; // no effective change
-            panels[index].name = unique;
+            string unique = _UniqueDeckName(newName, decks[index]);
+            if (unique == deckName) return deckName; // no effective change
+            decks[index].name = unique;
 
-            // Controls reference panels by name; follow the rename so their tiles stay on this page.
+            // Controls reference decks by name; follow the rename so their tiles stay on this page.
             bool anyMoved = false;
             for (int i = 0; i < actionSets.Count; i++)
             {
                 var control = actionSets[i]?.control;
-                if (control != null && control.panelName == panelName)
+                if (control != null && control.deckName == deckName)
                 {
-                    control.panelName = unique;
+                    control.deckName = unique;
                     anyMoved = true;
                 }
             }
 
-            _BroadcastPanels();
+            _BroadcastDecks();
             if (anyMoved) _Broadcast();
             return unique;
         }
 
-        /// <summary>Places (or moves) the control of the action set with the given id onto the panel named
-        /// <paramref name="panelName"/> at grid cell (<paramref name="x"/>, <paramref name="y"/>). An empty
-        /// <paramref name="panelName"/> falls back to the default page at a free cell (no unplaced state).
+        /// <summary>Places (or moves) the control of the action set with the given id onto the deck named
+        /// <paramref name="deckName"/> at grid cell (<paramref name="x"/>, <paramref name="y"/>). An empty
+        /// <paramref name="deckName"/> falls back to the default page at a free cell (no unplaced state).
         /// No-op for an unknown id.</summary>
         [ExposedFunction]
-        public void PlaceControl(string actionSetId, string panelName, int x, int y)
+        public void PlaceControl(string actionSetId, string deckName, int x, int y)
         {
             int index = _IndexOf(actionSetId);
             if (index < 0) return;
             var control = actionSets[index]?.control;
             if (control == null) return;
-            if (string.IsNullOrEmpty(panelName))
+            if (string.IsNullOrEmpty(deckName))
             {
-                _PlaceOnDefaultPanel(control);
+                _PlaceOnDefaultDeck(control);
             }
             else
             {
-                control.panelName = panelName;
+                control.deckName = deckName;
                 // Keep the tile on-grid for its (possibly 2-wide) span.
-                int columns = _PanelColumns(panelName);
+                int columns = _DeckColumns(deckName);
                 control.x = Mathf.Clamp(x, 0, Mathf.Max(0, columns - Mathf.Max(1, control.w)));
                 control.y = Mathf.Max(0, y);
             }
             _Broadcast();
         }
 
-        /// <summary>Swaps the control kind (<c>PanelPush</c> / <c>PanelCheckbox</c> / <c>PanelSlider</c>) of
-        /// the action set with the given id, preserving its placement (panel and grid cell/span). No-op for
+        /// <summary>Swaps the control kind (<c>DeckButton</c> / <c>DeckToggle</c> / <c>DeckSlider</c>) of
+        /// the action set with the given id, preserving its placement (deck and grid cell/span). No-op for
         /// an unknown id or type name.</summary>
         [ExposedFunction]
         public void SetControlType(string actionSetId, string typeName)
@@ -487,7 +492,7 @@ namespace Lilium.LiveStudio
             var old = set.control;
             if (old != null)
             {
-                next.panelName = old.panelName;
+                next.deckName = old.deckName;
                 next.x = old.x;
                 next.y = old.y;
                 next.w = old.w;
@@ -499,11 +504,11 @@ namespace Lilium.LiveStudio
             _Broadcast();
         }
 
-        // Returns a panel name unique among all panels except <paramref name="self"/>, auto-suffixing " 2",
+        // Returns a deck name unique among all decks except <paramref name="self"/>, auto-suffixing " 2",
         // " 3", … on collision so a name stays usable as the placement key.
-        private string _UniquePanelName(string desired, Panel self)
+        private string _UniqueDeckName(string desired, Deck self)
         {
-            string baseName = string.IsNullOrEmpty(desired) ? "Panel" : desired;
+            string baseName = string.IsNullOrEmpty(desired) ? "Deck" : desired;
             string candidate = baseName;
             int n = 2;
             while (_NameTaken(candidate, self))
@@ -514,47 +519,47 @@ namespace Lilium.LiveStudio
             return candidate;
         }
 
-        private bool _NameTaken(string name, Panel self)
+        private bool _NameTaken(string name, Deck self)
         {
-            for (int i = 0; i < panels.Count; i++)
+            for (int i = 0; i < decks.Count; i++)
             {
-                var p = panels[i];
+                var p = decks[i];
                 if (p != null && p != self && p.name == name) return true;
             }
             return false;
         }
 
-        // No unplaced state: ensure a default page exists and return its name. The first panel is the default;
+        // No unplaced state: ensure a default page exists and return its name. The first deck is the default;
         // a fresh one (with a unique name) is created when the list is empty, so a new control always has a home.
-        private string _EnsureDefaultPanelName()
+        private string _EnsureDefaultDeckName()
         {
-            for (int i = 0; i < panels.Count; i++)
+            for (int i = 0; i < decks.Count; i++)
             {
-                if (panels[i] != null && !string.IsNullOrEmpty(panels[i].name))
-                    return panels[i].name;
+                if (decks[i] != null && !string.IsNullOrEmpty(decks[i].name))
+                    return decks[i].name;
             }
-            var panel = new Panel { name = _UniquePanelName("Panel", null) };
-            panels.Add(panel);
-            _BroadcastPanels();
-            return panel.name;
+            var deck = new Deck { name = _UniqueDeckName("Deck", null) };
+            decks.Add(deck);
+            _BroadcastDecks();
+            return deck.name;
         }
 
         // Places the control on the default page at the first free grid cell (row-major scan).
-        private void _PlaceOnDefaultPanel(PanelControl control)
+        private void _PlaceOnDefaultDeck(DeckControl control)
         {
             if (control == null) return;
-            string panelName = _EnsureDefaultPanelName();
-            _FindFreeCell(panelName, control, out int x, out int y);
-            control.panelName = panelName;
+            string deckName = _EnsureDefaultDeckName();
+            _FindFreeCell(deckName, control, out int x, out int y);
+            control.deckName = deckName;
             control.x = x;
             control.y = y;
         }
 
-        // Finds the first grid cell on the panel where the control's span fits without overlapping another
+        // Finds the first grid cell on the deck where the control's span fits without overlapping another
         // tile, scanning row by row. The lowest fully-empty row is always free, so the scan is bounded there.
-        private void _FindFreeCell(string panelName, PanelControl placing, out int x, out int y)
+        private void _FindFreeCell(string deckName, DeckControl placing, out int x, out int y)
         {
-            int columns = _PanelColumns(panelName);
+            int columns = _DeckColumns(deckName);
 
             int w = Mathf.Clamp(placing != null ? placing.w : 1, 1, columns);
             int h = Mathf.Max(1, placing != null ? placing.h : 1);
@@ -564,7 +569,7 @@ namespace Lilium.LiveStudio
             for (int i = 0; i < actionSets.Count; i++)
             {
                 var c = actionSets[i]?.control;
-                if (c != null && c != placing && c.panelName == panelName)
+                if (c != null && c != placing && c.deckName == deckName)
                     maxRow = Mathf.Max(maxRow, c.y + Mathf.Max(1, c.h));
             }
 
@@ -572,20 +577,20 @@ namespace Lilium.LiveStudio
             {
                 for (int col = 0; col + w <= columns; col++)
                 {
-                    if (_IsAreaFree(panelName, placing, col, row, w, h)) { x = col; y = row; return; }
+                    if (_IsAreaFree(deckName, placing, col, row, w, h)) { x = col; y = row; return; }
                 }
             }
             x = 0;
             y = 0;
         }
 
-        // True when no other control on the panel overlaps the given grid rectangle.
-        private bool _IsAreaFree(string panelName, PanelControl placing, int x, int y, int w, int h)
+        // True when no other control on the deck overlaps the given grid rectangle.
+        private bool _IsAreaFree(string deckName, DeckControl placing, int x, int y, int w, int h)
         {
             for (int i = 0; i < actionSets.Count; i++)
             {
                 var c = actionSets[i]?.control;
-                if (c == null || c == placing || c.panelName != panelName) continue;
+                if (c == null || c == placing || c.deckName != deckName) continue;
                 int cw = Mathf.Max(1, c.w);
                 int ch = Mathf.Max(1, c.h);
                 if (x < c.x + cw && c.x < x + w && y < c.y + ch && c.y < y + h) return false;
@@ -593,20 +598,20 @@ namespace Lilium.LiveStudio
             return true;
         }
 
-        // The logical column count of the panel with the given name (default 8 for an unknown name).
-        private int _PanelColumns(string panelName)
+        // The logical column count of the deck with the given name (default 8 for an unknown name).
+        private int _DeckColumns(string deckName)
         {
-            var panel = panels.Find(p => p != null && p.name == panelName);
-            return panel != null && panel.columns > 0 ? panel.columns : 8;
+            var deck = decks.Find(p => p != null && p.name == deckName);
+            return deck != null && deck.columns > 0 ? deck.columns : 8;
         }
 
-        // Enforces a control's fixed per-kind width (see PanelControl.fixedWidth) and re-clamps x so the tile
-        // stays within the panel's columns after the width changes. No type switch — each kind declares its span.
-        private void _ApplyControlWidth(PanelControl control)
+        // Enforces a control's fixed per-kind width (see DeckControl.fixedWidth) and re-clamps x so the tile
+        // stays within the deck's columns after the width changes. No type switch — each kind declares its span.
+        private void _ApplyControlWidth(DeckControl control)
         {
             if (control == null) return;
             control.w = control.fixedWidth;
-            int columns = _PanelColumns(control.panelName);
+            int columns = _DeckColumns(control.deckName);
             if (control.x + control.w > columns) control.x = Mathf.Max(0, columns - control.w);
         }
 
@@ -627,10 +632,10 @@ namespace Lilium.LiveStudio
             if (any) _Broadcast();
         }
 
-        // No unplaced state: make sure every control resolves to an existing panel.
+        // No unplaced state: make sure every control resolves to an existing deck.
         //  - empty name        → place on the default page at a free cell (genuinely unplaced).
-        //  - non-empty unknown  → recreate a panel with that name and keep the control where it is, so pasting
-        //                         serialized action data automatically reconstructs the panel it referenced.
+        //  - non-empty unknown  → recreate a deck with that name and keep the control where it is, so pasting
+        //                         serialized action data automatically reconstructs the deck it referenced.
         //  - known name         → leave as is.
         private void _NormalizeControlPlacement()
         {
@@ -640,20 +645,20 @@ namespace Lilium.LiveStudio
                 var control = actionSets[i]?.control;
                 if (control == null) continue;
 
-                if (string.IsNullOrEmpty(control.panelName))
+                if (string.IsNullOrEmpty(control.deckName))
                 {
-                    _PlaceOnDefaultPanel(control);
+                    _PlaceOnDefaultDeck(control);
                     changed = true;
                 }
-                else if (!panels.Exists(p => p != null && p.name == control.panelName))
+                else if (!decks.Exists(p => p != null && p.name == control.deckName))
                 {
-                    panels.Add(new Panel { name = control.panelName });
+                    decks.Add(new Deck { name = control.deckName });
                     changed = true;
                 }
             }
             if (changed)
             {
-                _BroadcastPanels();
+                _BroadcastDecks();
                 _Broadcast();
             }
         }
@@ -779,12 +784,12 @@ namespace Lilium.LiveStudio
         }
 
         // A set participates in group exclusivity only when it has a non-empty group and a Toggle-mode
-        // input: the radio behavior is meaningful only for latched (on/off) sets, not momentary buttons.
+        // control: the radio behavior is meaningful only for latched (on/off) sets, not momentary buttons.
         private static bool _IsExclusiveSet(ActionSet set)
             => set != null
                && !string.IsNullOrEmpty(set.group)
-               && set.input != null
-               && set.input.mode == InputMode.Toggle;
+               && set.control != null
+               && set.control.mode == InputMode.Toggle;
 
         private int _IndexOf(string actionSetId)
         {
@@ -798,6 +803,6 @@ namespace Lilium.LiveStudio
 
         private void _Broadcast() => ExposedPropertyBroadcast.BroadcastProperty(this, "actionSets");
 
-        private void _BroadcastPanels() => ExposedPropertyBroadcast.BroadcastProperty(this, "panels");
+        private void _BroadcastDecks() => ExposedPropertyBroadcast.BroadcastProperty(this, "decks");
     }
 }

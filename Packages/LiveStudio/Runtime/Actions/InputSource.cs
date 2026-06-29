@@ -11,7 +11,9 @@ namespace Lilium.LiveStudio
     /// <summary>
     /// Base of an action set's firing side: produces a 0..1 value each frame that the set's actions read.
     /// Concrete kinds (e.g. <see cref="KeyInputSource"/>) supply the raw input; this base applies the
-    /// <see cref="mode"/> and derives the rising/falling edges into an <see cref="ActionContext"/>.
+    /// <see cref="InputMode"/> (supplied by the owning set's <see cref="DeckControl"/>) and derives the
+    /// rising/falling edges into an <see cref="ActionContext"/>. The mode is not stored here: the control
+    /// kind is the single behaviour axis (see <see cref="DeckControl.mode"/>), passed in to <see cref="Evaluate"/>.
     ///
     /// Marked <c>[ExposedClass]</c> on the abstract base (like <see cref="ICameraController"/>) so the
     /// <c>[TypeSelector]</c> on the owning field can enumerate the concrete kinds; the base itself is
@@ -22,9 +24,6 @@ namespace Lilium.LiveStudio
     public abstract class InputSource
     {
         protected const float kThreshold = 0.5f;
-
-        [ExposedField]
-        public InputMode mode = InputMode.Button;
 
         [NonSerialized] private bool _toggleState;
         [NonSerialized] private bool _prevActive;
@@ -43,10 +42,11 @@ namespace Lilium.LiveStudio
         protected abstract float ReadRawValue();
 
         /// <summary>
-        /// Reads the raw input and folds in <see cref="mode"/> and edge detection. Allocation-free; safe
+        /// Reads the raw input and folds in <paramref name="mode"/> and edge detection. Allocation-free; safe
         /// to call every frame. Edges track the raw input so a press fires on key-down regardless of mode.
+        /// The mode comes from the owning set's <see cref="DeckControl.mode"/>, not stored on the source.
         /// </summary>
-        public ActionContext Evaluate()
+        public ActionContext Evaluate(InputMode mode)
         {
             float raw = ReadRawValue();
             bool rawActive = raw > kThreshold;
