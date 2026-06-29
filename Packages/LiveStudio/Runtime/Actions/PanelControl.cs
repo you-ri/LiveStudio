@@ -45,6 +45,11 @@ namespace Lilium.LiveStudio
         /// <summary>Row span (cells).</summary>
         [ExposedField]
         public int h = 1;
+
+        /// <summary>The fixed column span this tile kind occupies. <see cref="ActionManager"/> enforces
+        /// <see cref="w"/> to this value, so a new tile size is declared here (override per kind) rather than
+        /// switched on by the manager. Defaults to 1.</summary>
+        public virtual int fixedWidth => 1;
     }
 
     /// <summary>Momentary tile: held on while pressed, released on pointer-up
@@ -69,5 +74,7 @@ namespace Lilium.LiveStudio
     [ExposedClass(Category = "Action", Icon = "sliders")]
     public class PanelSlider : PanelControl
     {
+        /// <summary>Sliders span 2 cells so the gauge stays legible.</summary>
+        public override int fixedWidth => 2;
     }
 }

@@ -676,18 +676,34 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
-        public void OnAfterExposedDeserialize_UnknownPanelName_MovesToDefault()
+        public void OnAfterExposedDeserialize_UnknownPanelName_RecreatesPanel()
         {
             var manager = new ActionManager();
             manager.AddFunctionAction("obj", "DoThing", "Do Thing", "");
-            var defaultName = manager.panels[0].name;
-            // Simulate an older scene that still carried a GUID (a name no panel has).
-            manager.actionSets[0].control.panelName = "c4e8b2d6-7a91-4f53-8e0c-1d9a6b3f2e74";
+            // Simulate pasted serialized action data referencing a panel that does not exist yet.
+            manager.actionSets[0].control.panelName = "Combat";
 
             manager.OnAfterExposedDeserialize();
 
-            Assert.AreEqual(defaultName, manager.actionSets[0].control.panelName,
-                "a control whose panel name no panel has is moved to the default page");
+            Assert.IsTrue(manager.panels.Exists(p => p.name == "Combat"),
+                "a missing referenced panel is recreated by name so pasted data brings its panel along");
+            Assert.AreEqual("Combat", manager.actionSets[0].control.panelName,
+                "the control keeps its panel reference rather than being moved");
+        }
+
+        [Test]
+        public void OnAfterExposedDeserialize_DuplicateUnknownName_CreatesOnePanel()
+        {
+            var manager = new ActionManager();
+            manager.AddFunctionAction("obj", "A", "A", "");
+            manager.AddFunctionAction("obj", "B", "B", "");
+            manager.actionSets[0].control.panelName = "Combat";
+            manager.actionSets[1].control.panelName = "Combat";
+
+            manager.OnAfterExposedDeserialize();
+
+            Assert.AreEqual(1, manager.panels.FindAll(p => p.name == "Combat").Count,
+                "controls referencing the same missing panel create exactly one panel");
         }
 
         [Test]

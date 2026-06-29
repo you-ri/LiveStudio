@@ -217,11 +217,11 @@ namespace Lilium.LiveStudio
             // A live-scene restore replaces the action sets list; rebuild the input map so the restored
             // inputs are bound. Idempotent, so harmless if it also fires on an unrelated property write.
             _RebuildInputMap();
-            // No unplaced state: a restored (or older) scene may carry controls with no panel; place them on
-            // the default page so they stay reachable now that the unplaced tray is gone. Idempotent (no-op
-            // once everything is placed).
-            _PlaceUnplacedControls();
-            // PanelSlider tiles are fixed at 2 cells wide; enforce on restored/older scenes. Idempotent.
+            // No unplaced state: a restored / pasted scene may carry controls with no panel (→ default page) or
+            // a name no panel has yet (→ recreate that panel by name, so pasted action data brings its panel
+            // along). Idempotent once every control resolves to an existing panel.
+            _NormalizeControlPlacement();
+            // Enforce each tile's fixed per-kind width (PanelControl.fixedWidth) on restored/older scenes. Idempotent.
             _EnforceControlWidths();
         }
 
@@ -250,7 +250,7 @@ namespace Lilium.LiveStudio
                 actions = actions != null ? new List<ActionBase>(actions) : new List<ActionBase>(),
                 control = control ?? new PanelPush(),
             };
-            // PanelSlider tiles are fixed at 2 cells wide; size before placing so the free cell fits.
+            // Apply the tile's fixed per-kind width before placing so the free-cell scan accounts for the span.
             _ApplyControlWidth(set.control);
             // No unplaced state: every new control is placed on the default page at a free cell.
             _PlaceOnDefaultPanel(set.control);
@@ -494,7 +494,7 @@ namespace Lilium.LiveStudio
                 next.h = old.h;
             }
             set.control = next;
-            // PanelSlider tiles are fixed at 2 cells wide; enforce after the kind swap (keeps it on-grid).
+            // Enforce the new kind's fixed width after the swap (keeps it on-grid).
             _ApplyControlWidth(next);
             _Broadcast();
         }
@@ -600,17 +600,17 @@ namespace Lilium.LiveStudio
             return panel != null && panel.columns > 0 ? panel.columns : 8;
         }
 
-        // PanelSlider tiles are fixed at 2 cells wide; every other kind is 1 wide. Re-clamps x so the tile
-        // stays within the panel's columns after the width changes.
+        // Enforces a control's fixed per-kind width (see PanelControl.fixedWidth) and re-clamps x so the tile
+        // stays within the panel's columns after the width changes. No type switch — each kind declares its span.
         private void _ApplyControlWidth(PanelControl control)
         {
             if (control == null) return;
-            control.w = control is PanelSlider ? 2 : 1;
+            control.w = control.fixedWidth;
             int columns = _PanelColumns(control.panelName);
             if (control.x + control.w > columns) control.x = Mathf.Max(0, columns - control.w);
         }
 
-        // Enforces the fixed per-kind tile width across all controls (slider = 2, others = 1). Idempotent.
+        // Enforces the fixed per-kind tile width across all controls. Idempotent.
         private void _EnforceControlWidths()
         {
             bool any = false;
@@ -618,8 +618,7 @@ namespace Lilium.LiveStudio
             {
                 var c = actionSets[i]?.control;
                 if (c == null) continue;
-                int desired = c is PanelSlider ? 2 : 1;
-                if (c.w != desired)
+                if (c.w != c.fixedWidth)
                 {
                     _ApplyControlWidth(c);
                     any = true;
@@ -628,24 +627,35 @@ namespace Lilium.LiveStudio
             if (any) _Broadcast();
         }
 
-        // No unplaced state: place any control with no panel — or one whose name no panel has (e.g. an older
-        // scene that still carried a GUID) — onto the default page.
-        private void _PlaceUnplacedControls()
+        // No unplaced state: make sure every control resolves to an existing panel.
+        //  - empty name        → place on the default page at a free cell (genuinely unplaced).
+        //  - non-empty unknown  → recreate a panel with that name and keep the control where it is, so pasting
+        //                         serialized action data automatically reconstructs the panel it referenced.
+        //  - known name         → leave as is.
+        private void _NormalizeControlPlacement()
         {
-            bool anyPlaced = false;
+            bool changed = false;
             for (int i = 0; i < actionSets.Count; i++)
             {
                 var control = actionSets[i]?.control;
                 if (control == null) continue;
-                bool placed = !string.IsNullOrEmpty(control.panelName)
-                    && panels.Exists(p => p != null && p.name == control.panelName);
-                if (!placed)
+
+                if (string.IsNullOrEmpty(control.panelName))
                 {
                     _PlaceOnDefaultPanel(control);
-                    anyPlaced = true;
+                    changed = true;
+                }
+                else if (!panels.Exists(p => p != null && p.name == control.panelName))
+                {
+                    panels.Add(new Panel { name = control.panelName });
+                    changed = true;
                 }
             }
-            if (anyPlaced) _Broadcast();
+            if (changed)
+            {
+                _BroadcastPanels();
+                _Broadcast();
+            }
         }
 
         /// <summary>Toggles the manual hold of the action set with the given id. While held the set fires
