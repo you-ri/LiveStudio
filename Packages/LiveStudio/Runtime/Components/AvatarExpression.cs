@@ -20,12 +20,15 @@ namespace Lilium.LiveStudio
             _avatarService = GetComponent<IAvatarService>();
         }
 
-        void OnEnable()
+        // 非アクティブ状態でも表情を読み取れるよう、登録は enabled/active 状態に依存させず
+        // Awake/OnDestroy のライフサイクルに紐付ける (OnEnable/OnDisable だと GameObject 無効化で
+        // Unregister され、AvatarController.expressions 読み取り時に警告が出てしまう)。
+        void Awake()
         {
             Service<IAvatarExpression>.Register(this);
         }
 
-        void OnDisable()
+        void OnDestroy()
         {
             Service<IAvatarExpression>.Unregister(this);
         }

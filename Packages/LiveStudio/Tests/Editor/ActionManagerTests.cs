@@ -421,5 +421,312 @@ namespace Lilium.LiveStudio.EditorTests
             Assert.AreEqual(0f, values[1], 1e-4f, "null entries report 0");
             Assert.AreEqual(1f, values[2], 1e-4f);
         }
+
+        [Test]
+        public void AddPanel_AppendsPanelWithUniqueNameAndReturnsIt()
+        {
+            var manager = new ActionManager();
+
+            var name = manager.AddPanel();
+
+            Assert.AreEqual(1, manager.panels.Count);
+            var panel = manager.panels[0];
+            Assert.AreEqual(name, panel.name, "the returned name addresses the created panel");
+            Assert.IsFalse(string.IsNullOrEmpty(panel.name), "a name is assigned");
+        }
+
+        [Test]
+        public void AddPanel_AssignsUniqueNames()
+        {
+            var manager = new ActionManager();
+
+            var first = manager.AddPanel();
+            var second = manager.AddPanel();
+
+            Assert.AreEqual(2, manager.panels.Count);
+            Assert.AreEqual("Panel", first);
+            Assert.AreEqual("Panel 2", second, "a colliding default name is auto-suffixed");
+        }
+
+        [Test]
+        public void RemovePanel_RemovesMatchingPanel()
+        {
+            var manager = new ActionManager();
+            var keep = manager.AddPanel();
+            var drop = manager.AddPanel();
+
+            manager.RemovePanel(drop);
+
+            Assert.AreEqual(1, manager.panels.Count);
+            Assert.AreEqual(keep, manager.panels[0].name, "the other panel is untouched");
+        }
+
+        [Test]
+        public void RemovePanel_UnknownName_IsNoOp()
+        {
+            var manager = new ActionManager();
+            manager.AddPanel();
+
+            manager.RemovePanel("does-not-exist");
+
+            Assert.AreEqual(1, manager.panels.Count, "an unknown name removes nothing");
+        }
+
+        [Test]
+        public void AddFunctionAction_DefaultsControlToPush()
+        {
+            var manager = new ActionManager();
+
+            var id = manager.AddFunctionAction("obj", "DoThing", "Do Thing", "");
+
+            var set = manager.actionSets[manager.actionSets.Count - 1];
+            Assert.AreEqual(id, set.id);
+            Assert.IsInstanceOf<PanelPush>(set.control, "a function bind defaults to a momentary push tile");
+            Assert.AreEqual(1, manager.panels.Count, "a default page is auto-created for the new control");
+            Assert.AreEqual(manager.panels[0].name, set.control.panelName,
+                "a new control is placed on the default page (no unplaced state)");
+            Assert.AreEqual(0, set.control.x);
+            Assert.AreEqual(0, set.control.y);
+        }
+
+        [Test]
+        public void AddPropertyAction_DefaultsControlKindFromMode()
+        {
+            var manager = new ActionManager();
+
+            manager.AddPropertyAction("obj", "useSpout", "Toggle", "Spout", "", "");
+            Assert.IsInstanceOf<PanelCheckbox>(
+                manager.actionSets[manager.actionSets.Count - 1].control,
+                "a toggle property defaults to a checkbox tile");
+
+            manager.AddPropertyAction("obj", "weight", "Value", "Weight", "", "");
+            Assert.IsInstanceOf<PanelSlider>(
+                manager.actionSets[manager.actionSets.Count - 1].control,
+                "a value property defaults to a slider tile");
+
+            manager.AddPropertyAction("obj", "fire", "Button", "Fire", "", "");
+            Assert.IsInstanceOf<PanelPush>(
+                manager.actionSets[manager.actionSets.Count - 1].control,
+                "a button property defaults to a push tile");
+        }
+
+        [Test]
+        public void PlaceControl_SetsPanelAndCell()
+        {
+            var manager = new ActionManager();
+            var id = manager.AddFunctionAction("obj", "DoThing", "Do Thing", "");
+
+            manager.PlaceControl(id, "panel-1", 3, 2);
+
+            var control = manager.actionSets[0].control;
+            Assert.AreEqual("panel-1", control.panelName);
+            Assert.AreEqual(3, control.x);
+            Assert.AreEqual(2, control.y);
+        }
+
+        [Test]
+        public void PlaceControl_EmptyPanelName_PlacesOnDefaultPage()
+        {
+            var manager = new ActionManager();
+            var id = manager.AddFunctionAction("obj", "DoThing", "Do Thing", "");
+            // AddFunctionAction auto-created the default page and placed the control there.
+            var defaultPanelName = manager.panels[0].name;
+            manager.PlaceControl(id, "panel-1", 1, 1);
+
+            manager.PlaceControl(id, "", 0, 0);
+
+            Assert.AreEqual(defaultPanelName, manager.actionSets[0].control.panelName,
+                "an empty panel name falls back to the default page (no unplaced state)");
+        }
+
+        [Test]
+        public void SetControlType_SwapsKindPreservingPlacement()
+        {
+            var manager = new ActionManager();
+            var id = manager.AddFunctionAction("obj", "DoThing", "Do Thing", "");
+            manager.PlaceControl(id, "panel-1", 4, 5);
+
+            manager.SetControlType(id, "PanelSlider");
+
+            var control = manager.actionSets[0].control;
+            Assert.IsInstanceOf<PanelSlider>(control, "the kind is swapped");
+            Assert.AreEqual("panel-1", control.panelName, "placement is preserved across the swap");
+            Assert.AreEqual(4, control.x);
+            Assert.AreEqual(5, control.y);
+        }
+
+        [Test]
+        public void SetControlType_UnknownType_IsNoOp()
+        {
+            var manager = new ActionManager();
+            var id = manager.AddFunctionAction("obj", "DoThing", "Do Thing", "");
+
+            manager.SetControlType(id, "NotAControl");
+
+            Assert.IsInstanceOf<PanelPush>(manager.actionSets[0].control,
+                "an unknown type leaves the existing control untouched");
+        }
+
+        [Test]
+        public void RemovePanel_MovesControlsToDefaultPage()
+        {
+            var manager = new ActionManager();
+            var keep = manager.AddPanel(); // "Panel" (becomes the default = first panel)
+            var drop = manager.AddPanel(); // "Panel 2"
+            var a = manager.AddFunctionAction("obj", "A", "A", "");
+            var b = manager.AddFunctionAction("obj", "B", "B", "");
+            manager.PlaceControl(a, drop, 0, 0);
+            manager.PlaceControl(b, keep, 1, 0);
+
+            manager.RemovePanel(drop);
+
+            // No unplaced state: the control on the removed panel moves to the default page (first remaining).
+            Assert.AreEqual(1, manager.panels.Count, "only the kept panel remains");
+            Assert.AreEqual(keep, manager.actionSets[0].control.panelName,
+                "a control on the removed panel moves to the default page");
+            Assert.AreEqual(keep, manager.actionSets[1].control.panelName,
+                "a control on the kept panel is untouched");
+        }
+
+        [Test]
+        public void AddActionSet_AutoCreatesDefaultPageAndPlacesAtFirstCell()
+        {
+            var manager = new ActionManager();
+
+            manager.AddActionSet(new KeyInputSource());
+
+            Assert.AreEqual(1, manager.panels.Count, "the first add auto-creates the default page");
+            var control = manager.actionSets[0].control;
+            Assert.AreEqual(manager.panels[0].name, control.panelName, "placed on the default page");
+            Assert.AreEqual(0, control.x);
+            Assert.AreEqual(0, control.y);
+        }
+
+        [Test]
+        public void AddActionSet_SecondControl_GoesToNextFreeCell()
+        {
+            var manager = new ActionManager();
+
+            manager.AddActionSet(new KeyInputSource());
+            manager.AddActionSet(new KeyInputSource());
+
+            Assert.AreEqual(1, manager.panels.Count, "both share the same default page");
+            var first = manager.actionSets[0].control;
+            var second = manager.actionSets[1].control;
+            Assert.AreEqual(0, first.x);
+            Assert.AreEqual(0, first.y);
+            Assert.AreEqual(1, second.x, "the second tile takes the next free cell");
+            Assert.AreEqual(0, second.y);
+        }
+
+        [Test]
+        public void AddPropertyAction_SliderTileIsTwoCellsWide()
+        {
+            var manager = new ActionManager();
+
+            manager.AddPropertyAction("obj", "weight", "Value", "Weight", "", "");
+
+            var control = manager.actionSets[0].control;
+            Assert.IsInstanceOf<PanelSlider>(control, "a value property defaults to a slider tile");
+            Assert.AreEqual(2, control.w, "a slider tile is fixed at 2 cells wide");
+        }
+
+        [Test]
+        public void SetControlType_SliderWidthIsTwo_OtherKindsOne()
+        {
+            var manager = new ActionManager();
+            var id = manager.AddFunctionAction("obj", "DoThing", "Do Thing", "");
+            Assert.AreEqual(1, manager.actionSets[0].control.w, "a push tile is 1 wide");
+
+            manager.SetControlType(id, "PanelSlider");
+            Assert.AreEqual(2, manager.actionSets[0].control.w, "swapping to slider widens to 2 cells");
+
+            manager.SetControlType(id, "PanelPush");
+            Assert.AreEqual(1, manager.actionSets[0].control.w, "swapping away from slider narrows back to 1");
+        }
+
+        [Test]
+        public void AddActionSet_SliderTakesTwoCells_NextTileSkipsThem()
+        {
+            var manager = new ActionManager();
+            // First a slider (2 wide at 0,0), then a push: the push must skip the slider's two cells.
+            manager.AddPropertyAction("obj", "weight", "Value", "Weight", "", "");
+            manager.AddActionSet(new KeyInputSource());
+
+            var slider = manager.actionSets[0].control;
+            var push = manager.actionSets[1].control;
+            Assert.AreEqual(0, slider.x);
+            Assert.AreEqual(2, slider.w);
+            Assert.AreEqual(2, push.x, "the next tile starts after the 2-wide slider");
+            Assert.AreEqual(0, push.y);
+        }
+
+        [Test]
+        public void OnAfterExposedDeserialize_PlacesUnplacedControls()
+        {
+            var manager = new ActionManager();
+            var id = manager.AddFunctionAction("obj", "DoThing", "Do Thing", "");
+            // Simulate a restored/older scene where the control carries no panel.
+            manager.actionSets[0].control.panelName = string.Empty;
+
+            manager.OnAfterExposedDeserialize();
+
+            Assert.IsFalse(string.IsNullOrEmpty(manager.actionSets[0].control.panelName),
+                "a control with no panel is placed on the default page after restore");
+        }
+
+        [Test]
+        public void OnAfterExposedDeserialize_UnknownPanelName_MovesToDefault()
+        {
+            var manager = new ActionManager();
+            manager.AddFunctionAction("obj", "DoThing", "Do Thing", "");
+            var defaultName = manager.panels[0].name;
+            // Simulate an older scene that still carried a GUID (a name no panel has).
+            manager.actionSets[0].control.panelName = "c4e8b2d6-7a91-4f53-8e0c-1d9a6b3f2e74";
+
+            manager.OnAfterExposedDeserialize();
+
+            Assert.AreEqual(defaultName, manager.actionSets[0].control.panelName,
+                "a control whose panel name no panel has is moved to the default page");
+        }
+
+        [Test]
+        public void RenamePanel_PropagatesToControls()
+        {
+            var manager = new ActionManager();
+            var name = manager.AddPanel();
+            var id = manager.AddFunctionAction("obj", "DoThing", "Do Thing", "");
+            manager.PlaceControl(id, name, 0, 0);
+
+            manager.RenamePanel(name, "Main");
+
+            Assert.AreEqual("Main", manager.panels[0].name, "the panel is renamed");
+            Assert.AreEqual("Main", manager.actionSets[0].control.panelName,
+                "a control on the renamed panel follows the rename");
+        }
+
+        [Test]
+        public void RenamePanel_CollisionAutoSuffixes()
+        {
+            var manager = new ActionManager();
+            manager.AddPanel(); // "Panel"
+            var second = manager.AddPanel(); // "Panel 2"
+
+            manager.RenamePanel(second, "Panel");
+
+            Assert.AreEqual("Panel 2", manager.panels[1].name,
+                "renaming onto an existing name auto-suffixes to stay unique");
+        }
+
+        [Test]
+        public void RenamePanel_SameName_NoOp()
+        {
+            var manager = new ActionManager();
+            var name = manager.AddPanel();
+
+            manager.RenamePanel(name, name);
+
+            Assert.AreEqual(name, manager.panels[0].name, "renaming to the same name is a no-op");
+        }
     }
 }

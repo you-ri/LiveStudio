@@ -47,6 +47,15 @@ namespace Lilium.LiveStudio
         [SerializeReference, Select]
         public List<ActionBase> actions = new List<ActionBase>();
 
+        /// <summary>The panel representation of this set, embedded 1:1 so the action and its panel tile are
+        /// one object (adding/removing the action adds/removes the control). The concrete kind
+        /// (<see cref="PanelPush"/> / <see cref="PanelCheckbox"/> / <see cref="PanelSlider"/>) decides the
+        /// touch behaviour and <see cref="PanelControl.panelId"/> where it is placed (empty = unplaced).
+        /// Polymorphic like <see cref="input"/>; the remote app swaps the type via the manager.</summary>
+        [ExposedField, TypeSelector]
+        [SerializeReference, Select]
+        public PanelControl control = new PanelPush();
+
         // Runtime-only manual hold driven by the remote app's trigger toggle (never serialized). While
         // held the set fires as if its input were held active; toggling off produces one release edge.
         [NonSerialized]
