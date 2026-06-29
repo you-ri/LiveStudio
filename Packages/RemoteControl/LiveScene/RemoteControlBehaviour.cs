@@ -218,6 +218,14 @@ namespace Lilium.RemoteControl.LiveScene
 
             _sceneSave.OnEnable();
 
+            // The project-directory override that selects the startup-state directory is set by the
+            // upper layer only at runtime (BeforeSceneLoad), so an instance built in edit mode (which
+            // happens under [ExecuteAlways] when Domain Reload is disabled) resolved its current scene
+            // path against the wrong directory. Re-resolve it now that the override is authoritative,
+            // before Start() runs the load — otherwise the load falls back to the default and
+            // overwrites the project's startup.json, losing the scene to reopen next launch.
+            _sceneSave.RefreshCurrentFilePathFromStartupState();
+
             // A persistent host owns the load flow across base-scene switches: there is no new host in
             // the reloaded scene to re-enter LoadCurrentData, so we re-run it ourselves once the new
             // scene has finished loading (see _OnSceneLoaded).

@@ -114,6 +114,23 @@ namespace Lilium.RemoteControl.LiveScene
                 ?? _defaultFileName;
         }
 
+        /// <summary>
+        /// Re-resolves <see cref="currentFilePath"/> from the project's startup state, mirroring the
+        /// constructor's resolution. Called by the host at play start.
+        ///
+        /// The state directory is selected by <see cref="_stateProjectDirectoryOverride"/>, which the
+        /// upper layer sets only at runtime (a RuntimeInitializeOnLoadMethod that never runs in edit
+        /// mode). With "Enter Play Mode Options" disabling Domain Reload, the [ExecuteAlways] host
+        /// builds this instance in edit mode, where the override is still unset, so the constructor
+        /// read the wrong directory and defaulted the path. That stale instance survives into play, so
+        /// without this refresh <see cref="LoadCurrentData"/> would fall back to the default and
+        /// overwrite the project's startup.json — losing the scene to reopen on the next launch.
+        /// </summary>
+        public void RefreshCurrentFilePathFromStartupState()
+        {
+            _currentFilePath = StartupStateStore.Read(_StateDir()) ?? _defaultFileName;
+        }
+
         // One-time migration of the pre-startup.json PlayerPrefs state. Earlier builds stored the
         // current scene under "RemoteControl_ScenePath_<defaultFileName>" (relative) and mirrored
         // the absolute path to "RemoteControl_LastScenePath". If startup.json has no scene yet but a
