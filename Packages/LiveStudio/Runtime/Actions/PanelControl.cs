@@ -30,20 +30,21 @@ namespace Lilium.LiveStudio
         [ExposedField]
         public string panelName = string.Empty;
 
-        /// <summary>Grid column of the tile's top-left cell (0-based).</summary>
-        [ExposedField]
+        /// <summary>Grid column of the tile's top-left cell (0-based). Driven by the panel's drag layout,
+        /// not hand-edited, so it is hidden from the generic editor.</summary>
+        [ExposedField, Hide]
         public int x;
 
-        /// <summary>Grid row of the tile's top-left cell (0-based).</summary>
-        [ExposedField]
+        /// <summary>Grid row of the tile's top-left cell (0-based). Hidden from the generic editor.</summary>
+        [ExposedField, Hide]
         public int y;
 
-        /// <summary>Column span (cells).</summary>
-        [ExposedField]
+        /// <summary>Column span (cells). Hidden from the generic editor.</summary>
+        [ExposedField, Hide]
         public int w = 1;
 
-        /// <summary>Row span (cells).</summary>
-        [ExposedField]
+        /// <summary>Row span (cells). Hidden from the generic editor.</summary>
+        [ExposedField, Hide]
         public int h = 1;
 
         /// <summary>The fixed column span this tile kind occupies. <see cref="ActionManager"/> enforces
