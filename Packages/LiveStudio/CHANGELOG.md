@@ -1,15 +1,17 @@
 # Changelog
 
 ## [0.24.1] - 2026-06-30
+<!-- changelog-sha: 7c999a055f01c038e5793031dd7b3efcabf17d16 -->
 
 ### Added
 
-- Action sets can now be arranged on a **Deck**: a grid of push-button / toggle / slider controls, freely placed and editable from the remote app. The control type is chosen when a control is placed and is independent of the action set's input mode.
-- Value-mode action sets gain a manual value override, so a slider control can drive a 0..1 value directly (throttled to the studio).
+- Operation sets can now be arranged on a **Deck**: a grid of push-button / toggle / slider controls, freely placed and editable from the remote app. The control type is chosen when a control is placed and is independent of the operation set's input mode.
+- Value-mode operation sets gain a manual value override, so a slider control can drive a 0..1 value directly (throttled to the studio).
 
 ### Changed
 
-- The action "panel" concept was renamed to **Deck** throughout, and an action set's behaviour is now driven by a single control axis. Deck tile width is declared per control kind, missing deck panels are recreated automatically, and tile-layout fields are hidden from the generic remote editor.
+- The action system was renamed to **Operation** throughout (`ActionManager` → `OperationManager`, `ActionSet` → `OperationSet`, `ActionBase` → `OperationBase`, and the concrete `*Action` types to `*Operation`); the remote app's "Actions" page is now "Operation". Existing live scenes and key bindings keep loading via compatibility aliases.
+- The operation "panel" concept was renamed to **Deck** throughout, and an operation set's behaviour is now driven by a single control axis. Deck tile width is declared per control kind, missing deck panels are recreated automatically, and tile-layout fields are hidden from the generic remote editor.
 
 ### Fixed
 
