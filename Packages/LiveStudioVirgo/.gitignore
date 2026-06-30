@@ -1,3 +1,6 @@
 # Tools~ ships built runtime apps (VirgoMotionFusion) with the package.
 # Override parent ignores (e.g. *.pdb, *.tmp, *.lock) so the full runtime is tracked.
 !Tools~/**
+
+# ...but never the Burst debug artifacts regenerated next to the player build.
+Tools~/**/*_BurstDebugInformation_DoNotShip/
