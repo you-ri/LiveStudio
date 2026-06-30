@@ -52,6 +52,9 @@ crashlytics-build.properties
 # Lock files
 *.lock
 
+# Unity Burst debug artifacts (regenerated next to player builds, never shipped)
+*_BurstDebugInformation_DoNotShip/
+
 # OS
 .DS_Store
 Thumbs.db
