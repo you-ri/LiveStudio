@@ -27,16 +27,60 @@ namespace Lilium.LiveStudio
         public int width;
         public int height;
 
-        public bool TryGetTargetTransform(out Transform target, out Transform parent)
+        /// <summary>
+        /// Resolves the manipulator state for this session: the parent world TRS, the current edited local TRS,
+        /// and a world pivot. Objects implementing <see cref="IManipulatorTarget"/> describe their own
+        /// (possibly socket-relative) state; otherwise the object's own GameObject transform is edited.
+        /// </summary>
+        public bool TryGetManipulatorState(out TransformValue parentWorld, out TransformValue targetLocal, out Vector3 pivotWorld)
         {
-            target = null;
-            parent = null;
+            parentWorld = TransformValue.identity;
+            targetLocal = TransformValue.identity;
+            pivotWorld = Vector3.zero;
             if (!ExposedObjectRegistry.TryFindById(objectId, out var exposed)) return false;
 
+            // 1) Property-relative target: the edited property at propertyPath IS the manipulated TransformValue
+            //    (e.g. PropAttachment.offset, reached as a nested path like "attachment/offset" on the owning
+            //    component). A by-value nested object has no id of its own, so it is never the resolved
+            //    `exposed.target`; resolve it through the property instead. The property's value is the actual
+            //    edited value (so target == offset), and its owner (`obj`) supplies the socket-relative parent
+            //    frame via IManipulatorTarget.
+            if (!string.IsNullOrEmpty(propertyPath))
+            {
+                // propertyPath はクライアント由来のスラッシュ形式 ("components/0/attachment/offset")。
+                // ExposedObjectHandle.FindProperty は DotBracket 形式を期待するため、REST ハンドラと同じ
+                // PropertyPath.FromSlash 変換をかける (これを忘れると配列添字を解決できず NULL → GameObject
+                // フォールバックに落ちる)。
+                var dotBracketPath = Lilium.RemoteControl.Reflection.PropertyPath.FromSlash(propertyPath).Value;
+                var property = exposed.FindProperty(dotBracketPath);
+                if (property.HasValue
+                    && property.Value.obj is IManipulatorTarget mt
+                    && property.Value.GetValue() is TransformValue offset)
+                {
+                    targetLocal = offset;
+                    if (mt.TryGetManipulatorState(out var parentTrs, out _, out var pivot))
+                    {
+                        parentWorld = parentTrs;
+                        pivotWorld = pivot;
+                    }
+                    else
+                    {
+                        pivotWorld = offset.position;
+                    }
+                    return true;
+                }
+            }
+
+            // 2) Default: edit the object's own GameObject transform (local TRS relative to its hierarchy parent).
+            //    Used by ExposedLight / ExposedUnityObject whose `transform` property is the GameObject's transform.
             var go = _ResolveGameObject(exposed);
             if (go == null) return false;
-            target = go.transform;
-            parent = target.parent;
+            var t = go.transform;
+            targetLocal = TransformValue.FromTransform(t);
+            parentWorld = t.parent != null
+                ? new TransformValue(t.parent.position, t.parent.rotation, t.parent.lossyScale)
+                : TransformValue.identity;
+            pivotWorld = t.position;
             return true;
         }
 
@@ -115,10 +159,13 @@ namespace Lilium.LiveStudio
                 height = kHeight,
             };
 
-            if (session.TryGetTargetTransform(out var t, out _))
+            if (session.TryGetManipulatorState(out var parentWorld, out var targetLocal, out var pivotWorld))
             {
-                session.pivot = t.position;
-                var maxScale = Mathf.Max(t.lossyScale.x, t.lossyScale.y, t.lossyScale.z);
+                session.pivot = pivotWorld;
+                // World scale of the edited target = parent scale ∘ local scale (equals lossyScale in
+                // GameObject mode), used to frame the camera distance to the target size.
+                var lossy = Vector3.Scale(parentWorld.scale, targetLocal.scale);
+                var maxScale = Mathf.Max(lossy.x, lossy.y, lossy.z);
                 if (maxScale > 0f)
                 {
                     session.distance = Mathf.Max(kDefaultDistance, maxScale * 4f);
@@ -194,9 +241,9 @@ namespace Lilium.LiveStudio
         public static void Focus(Guid id)
         {
             if (!_sessions.TryGetValue(id, out var s)) return;
-            if (s.TryGetTargetTransform(out var t, out _))
+            if (s.TryGetManipulatorState(out _, out _, out var pivotWorld))
             {
-                s.pivot = t.position;
+                s.pivot = pivotWorld;
                 _ApplyCameraPose(s);
             }
         }
@@ -239,19 +286,18 @@ namespace Lilium.LiveStudio
         public static TransformValue GetParentWorldTransform(ManipulatorSession s)
         {
             if (s == null) return TransformValue.identity;
-            if (!s.TryGetTargetTransform(out _, out var parent)) return TransformValue.identity;
-            if (parent == null) return TransformValue.identity;
-            return new TransformValue(parent.position, parent.rotation, parent.lossyScale);
+            if (!s.TryGetManipulatorState(out var parentWorld, out _, out _)) return TransformValue.identity;
+            return parentWorld;
         }
 
         /// <summary>
-        /// 編集対象 Transform の現在のローカル TRS。
+        /// 編集対象の現在のローカル TRS。
         /// </summary>
         public static TransformValue GetTargetLocalTransform(ManipulatorSession s)
         {
             if (s == null) return TransformValue.identity;
-            if (!s.TryGetTargetTransform(out var t, out _)) return TransformValue.identity;
-            return TransformValue.FromTransform(t);
+            if (!s.TryGetManipulatorState(out _, out var targetLocal, out _)) return TransformValue.identity;
+            return targetLocal;
         }
 
         private static void _ApplyCameraPose(ManipulatorSession s)

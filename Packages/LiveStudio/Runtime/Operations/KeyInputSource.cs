@@ -13,7 +13,7 @@ namespace Lilium.LiveStudio
     /// (the remote app cannot capture the host's keys) and persisted as <see cref="binding"/>.
     /// </summary>
     [Serializable]
-    [ExposedClass(Category = "Action", Icon = "keyboard")]
+    [ExposedClass(Category = "Operation", Icon = "keyboard")]
     public class KeyInputSource : InputSource
     {
         // The bound control path, e.g. "<Keyboard>/a" or "<Gamepad>/buttonSouth". Persisted; restored

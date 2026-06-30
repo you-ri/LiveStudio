@@ -1,6 +1,7 @@
 // Copyright (c) You-Ri, 2026
 
 using System;
+using UnityEngine.Scripting.APIUpdating;
 using Lilium.RemoteControl;
 using Lilium.RemoteControl.Reflection;
 
@@ -9,23 +10,25 @@ namespace Lilium.LiveStudio
     /// <summary>
     /// Drives an exposed property of a target object (addressed by its stable
     /// <see cref="ExposedObjectRegistry"/> id) from the input — the generic counterpart of
-    /// <see cref="SetActiveAction"/>, which is hard-wired to <c>GameObject.activeSelf</c>. Created from the
+    /// <see cref="SetActiveOperation"/>, which is hard-wired to <c>GameObject.activeSelf</c>. Created from the
     /// remote app's "bind to key" affordance next to a control, so the control's owning object
     /// (<see cref="targetId"/>) and member (<see cref="propertyPath"/>) are known at creation.
     ///
     /// Handles <c>bool</c> properties (bound to <see cref="InputMode.Toggle"/> by the manager so a key
-    /// press flips the latched on/off, written from <see cref="ActionContext.active"/>) and <c>float</c>
+    /// press flips the latched on/off, written from <see cref="OperationContext.active"/>) and <c>float</c>
     /// properties (bound to <see cref="InputMode.Value"/>, written from the continuous 0..1
-    /// <see cref="ActionContext.value"/> — e.g. an avatar expression weight via
+    /// <see cref="OperationContext.value"/> — e.g. an avatar expression weight via
     /// <c>expressions[name].weight</c>). Both write only when the value differs, so there is no
-    /// per-frame write/broadcast, like <see cref="SetActiveAction"/>.
+    /// per-frame write/broadcast, like <see cref="SetActiveOperation"/>.
     ///
     /// When the id no longer resolves (object gone after a reload) <see cref="valid"/> is false and
-    /// <see cref="Apply"/> is a no-op — distinct from <see cref="ActionSet.enabled"/>.
+    /// <see cref="Apply"/> is a no-op — distinct from <see cref="OperationSet.enabled"/>.
     /// </summary>
     [Serializable]
-    [ExposedClass(Category = "Action", Icon = "toggle_on")]
-    public class SetPropertyAction : ActionBase
+    [ExposedClass(Category = "Operation", Icon = "toggle_on")]
+    [MovedFrom(false, null, null, "SetPropertyAction")]
+    [FormerlyExposedAs("SetPropertyAction")]
+    public class SetPropertyOperation : OperationBase
     {
         /// <summary>Stable id of the exposed object that owns the property.</summary>
         [ExposedField]
@@ -43,7 +46,7 @@ namespace Lilium.LiveStudio
         private string _ResolvePath() => PropertyPath.FromSlash(propertyPath).Value;
 
         /// <summary>True while the target id resolves and still exposes the property. Read-only and computed
-        /// (never serialized); separate from <see cref="ActionSet.enabled"/>.</summary>
+        /// (never serialized); separate from <see cref="OperationSet.enabled"/>.</summary>
         [ExposedProperty]
         public bool valid
         {
@@ -54,7 +57,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        public override void Apply(in ActionContext context)
+        public override void Apply(in OperationContext context)
         {
             var handle = ExposedObjectRegistry.FindById(targetId);
             if (handle == null) return;

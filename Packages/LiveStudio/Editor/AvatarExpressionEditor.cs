@@ -49,10 +49,10 @@ namespace Lilium.LiveStudio.Editor
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Expression Preview", EditorStyles.boldLabel);
 
-            // キー割り当ては ActionManager (ActionSet -> SetPropertyAction で expressions[name].weight を駆動) で管理する。
+            // キー割り当ては OperationManager (OperationSet -> SetPropertyOperation で expressions[name].weight を駆動) で管理する。
             // このインスペクターは利用可能な表情の確認とウェイトのプレビューのみを行う。
             EditorGUILayout.HelpBox(
-                "Key bindings are managed by the Action system (Actions page / ActionManager).",
+                "Key bindings are managed by the Operation system (Operations page / OperationManager).",
                 MessageType.Info);
 
             if (_target == null) return;

@@ -24,26 +24,32 @@ namespace Lilium.LiveStudio
     /// </summary>
     [Serializable]
     [ExposedClass("PropAttachment", Icon = "link")]
-    public class PropAttachment
+    public class PropAttachment : IManipulatorTarget
     {
         // Target socket name. The prop attaches to the avatar socket with this name.
         [ExposedField]
         [StringSelector(nameof(availableSocketNames))]
         public string socketName = "WristRight";
 
-        // bone ローカルの位置オフセット。
-        [ExposedField]
-        public Vector3 positionOffset = Vector3.zero;
+        // socket からの装着オフセット (位置 / 回転 / 拡縮) を 1 つにまとめた値。socket を親とした
+        // ローカル TRS と数学的に等価で、RemoteApp 側は TransformValue 用ウィジェット (数値 + 3D ギズモ) で
+        // 編集できる。position は bone ローカル、rotation は bone ローカル回転、scale はプレハブ本来の
+        // localScale への乗算 (1 で等倍)。socket 追従は位置・回転だけを駆動し scale には触れないので、prop の
+        // サイズは ApplyScale で毎フレーム適用する。アバターのスケールは親 (avatarRoot) を通じて lossyScale に
+        // 伝播するため、ここでは socket スケールで補正しない。
+        //
+        // ExposedLight.transform と同じ「隠し ExposedField + 公開 ExposedProperty」パターン。値は Unity
+        // シリアライズ用の _offset に保持し、RemoteApp には offset プロパティを TransformValue として見せる。
+        [SerializeField, Hide, ExposedField]
+        [FormerlyExposedAs("offset")]
+        TransformValue _offset = TransformValue.identity;
 
-        // bone ローカルの回転オフセット (euler 度)。
-        [ExposedField]
-        public Vector3 rotationOffset = Vector3.zero;
-
-        // 拡縮オフセット。プレハブ本来の localScale への乗算 (1 で等倍)。socket 追従は位置・回転だけを
-        // 駆動し scale には触れないので、prop のサイズはここで毎フレーム適用する。アバターのスケールは
-        // 親 (avatarRoot) を通じて lossyScale に伝播するため、ここでは socket スケールで補正しない。
-        [ExposedField]
-        public Vector3 scaleOffset = Vector3.one;
+        [ExposedProperty]
+        public TransformValue offset
+        {
+            get => _offset;
+            set => _offset = value;
+        }
 
         // Socket names available on the parent avatar, surfaced to the RemoteApp dropdown. Resolved
         // through the avatar service, so it does not depend on the owning component.
@@ -70,7 +76,7 @@ namespace Lilium.LiveStudio
         // re-resolved only when the socket name changes or the socket is destroyed (avatar swap).
         [NonSerialized] Socket _resolvedSocket;
 
-        // プレハブ本来の localScale。scaleOffset はこれへの乗算として適用する。CaptureBaseScale で一度だけ取得。
+        // プレハブ本来の localScale。offset.scale はこれへの乗算として適用する。CaptureBaseScale で一度だけ取得。
         [NonSerialized] Vector3 _baseScale = Vector3.one;
 
         /// <summary>
@@ -89,7 +95,7 @@ namespace Lilium.LiveStudio
         /// </summary>
         public void ApplyScale(Transform t)
         {
-            t.localScale = Vector3.Scale(_baseScale, scaleOffset);
+            t.localScale = Vector3.Scale(_baseScale, offset.scale);
         }
 
         /// <summary>
@@ -106,10 +112,11 @@ namespace Lilium.LiveStudio
             if (socket == null) return false;
 
             var st = socket.transform;
-            // Rotation offset in normalized bone-local space; translation offset pre-scaled by the socket's
-            // lossyScale so it tracks the avatar size (the socket carries the avatar scale).
-            worldRot = st.rotation * Quaternion.Euler(rotationOffset);
-            worldPos = st.position + st.rotation * Vector3.Scale(positionOffset, st.lossyScale);
+            // Compose the socket pose with the authored offset, treating the socket as the parent and the
+            // offset as the child-local TRS: rotation in normalized bone-local space; translation pre-scaled by
+            // the socket's lossyScale so it tracks the avatar size (the socket carries the avatar scale).
+            worldRot = st.rotation * offset.rotation;
+            worldPos = st.position + st.rotation * Vector3.Scale(offset.position, st.lossyScale);
             return true;
         }
 
@@ -122,6 +129,27 @@ namespace Lilium.LiveStudio
         {
             var socket = _EnsureSocket();
             return socket != null ? socket.transform : null;
+        }
+
+        /// <summary>
+        /// Describes the offset to the Transform manipulator as a socket-relative local TRS: the socket is the
+        /// parent world transform (with its lossyScale, matching the follow pre-scaling) and <see cref="offset"/>
+        /// is the edited child-local value. This lets the RemoteApp 3D gizmo edit the offset directly. Returns
+        /// false until the avatar and socket are available.
+        /// </summary>
+        public bool TryGetManipulatorState(out TransformValue parentWorld, out TransformValue targetLocal, out Vector3 pivotWorld)
+        {
+            parentWorld = TransformValue.identity;
+            targetLocal = offset;
+            pivotWorld = Vector3.zero;
+
+            var socket = ResolveSocketTransform();
+            if (socket == null) return false;
+
+            parentWorld = new TransformValue(socket.position, socket.rotation, socket.lossyScale);
+            // Prop world position = socket ∘ offset (matches TryResolveFollowTarget), used to frame the camera.
+            pivotWorld = socket.position + socket.rotation * Vector3.Scale(offset.position, socket.lossyScale);
+            return true;
         }
 
         // Resolves and caches the target socket. Allocates only when the socket name changes or the cached

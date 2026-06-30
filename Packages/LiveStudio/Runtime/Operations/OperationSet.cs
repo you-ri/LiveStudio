@@ -3,27 +3,32 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Scripting.APIUpdating;
+using UnityEngine.Serialization;
 using Lilium.RemoteControl;
 
 namespace Lilium.LiveStudio
 {
     /// <summary>
-    /// One entry in <see cref="ActionManager.actionSets"/>: a single firing <see cref="input"/> and the
-    /// ordered <see cref="actions"/> run from it. The polymorphic <see cref="input"/> / <see cref="actions"/>
+    /// One entry in <see cref="OperationManager.operationSets"/>: a single firing <see cref="input"/> and the
+    /// ordered <see cref="operations"/> run from it. The polymorphic <see cref="input"/> / <see cref="operations"/>
     /// use <c>[SerializeReference]</c> (Unity-native scene serialization) plus the RemoteControl
     /// <c>@type</c> discriminator, exactly like <see cref="ExposedCamera.controller"/>.
     /// </summary>
     [Serializable]
-    [ExposedClass(Category = "Action", Icon = "bolt")]
-    public class ActionSet
+    [ExposedClass(Category = "Operation", Icon = "bolt")]
+    // Renamed from ActionSet: MovedFrom restores old [SerializeReference] YAML, FormerlyExposedAs the @type.
+    [MovedFrom(false, null, null, "ActionSet")]
+    [FormerlyExposedAs("ActionSet")]
+    public class OperationSet
     {
-        /// <summary>Stable id, assigned by <see cref="ActionManager"/> on creation. Used to address the
+        /// <summary>Stable id, assigned by <see cref="OperationManager"/> on creation. Used to address the
         /// set from the remote app's add/remove functions. Hidden from the generic UI.</summary>
         [ExposedField, Hide]
         public string id = string.Empty;
 
         [ExposedField]
-        public string name = "Action Set";
+        public string name = "Operation Set";
 
         [ExposedField]
         public bool enabled = true;
@@ -37,7 +42,7 @@ namespace Lilium.LiveStudio
 
         /// <summary>The firing side. A single polymorphic field — the remote app swaps its concrete type
         /// through the <c>[TypeSelector]</c> dropdown (<c>FindDerivedTypes</c> only resolves derived types
-        /// for a single field, not a list, so the actions list is edited through explicit add/remove).</summary>
+        /// for a single field, not a list, so the operations list is edited through explicit add/remove).</summary>
         [ExposedField, TypeSelector]
         [SerializeReference, Select]
         public InputSource input = new KeyInputSource();
@@ -45,10 +50,12 @@ namespace Lilium.LiveStudio
         /// <summary>The receiving side, run in order when the set fires.</summary>
         [ExposedField]
         [SerializeReference, Select]
-        public List<ActionBase> actions = new List<ActionBase>();
+        [FormerlyExposedAs("actions")]
+        [FormerlySerializedAs("actions")]
+        public List<OperationBase> operations = new List<OperationBase>();
 
-        /// <summary>The deck representation of this set, embedded 1:1 so the action and its deck tile are
-        /// one object (adding/removing the action adds/removes the control). The concrete kind
+        /// <summary>The deck representation of this set, embedded 1:1 so the operation and its deck tile are
+        /// one object (adding/removing the operation adds/removes the control). The concrete kind
         /// (<see cref="DeckButton"/> / <see cref="DeckToggle"/> / <see cref="DeckSlider"/>) decides the
         /// touch behaviour and <see cref="DeckControl.deckId"/> where it is placed (empty = unplaced).
         /// Polymorphic like <see cref="input"/>; the remote app swaps the type via the manager.</summary>
@@ -62,18 +69,18 @@ namespace Lilium.LiveStudio
         private bool _held;
 
         /// <summary>Manual-hold state, read-only over the wire so the remote app's trigger button reflects
-        /// it. Flipped only through <see cref="ActionManager.ToggleActionSet"/>. Hidden from the generic
+        /// it. Flipped only through <see cref="OperationManager.ToggleOperationSet"/>. Hidden from the generic
         /// editor; runtime-only so it resets to false on restart.</summary>
         [ExposedProperty, Hide]
         public bool held => _held;
 
-        /// <summary>Previous frame's <see cref="held"/>, owned by <see cref="ActionManager"/> for edge
+        /// <summary>Previous frame's <see cref="held"/>, owned by <see cref="OperationManager"/> for edge
         /// detection (rising on toggle-on, falling on toggle-off).</summary>
         [NonSerialized]
         internal bool heldPrev;
 
         /// <summary>Sets the manual hold. Manager-only; the remote app flips it via
-        /// <see cref="ActionManager.ToggleActionSet"/>.</summary>
+        /// <see cref="OperationManager.ToggleOperationSet"/>.</summary>
         internal void SetHeld(bool value) => _held = value;
 
         // Runtime-only manual value override driven by the remote app's Value-mode slider (sticky once set;
@@ -82,16 +89,16 @@ namespace Lilium.LiveStudio
         [NonSerialized]
         private float _manualValue = float.NaN;
 
-        /// <summary>Manual value override (0..1), or NaN when none. Owned by <see cref="ActionManager"/>;
-        /// the remote app sets it via <see cref="ActionManager.SetActionSetValue"/>.</summary>
+        /// <summary>Manual value override (0..1), or NaN when none. Owned by <see cref="OperationManager"/>;
+        /// the remote app sets it via <see cref="OperationManager.SetOperationSetValue"/>.</summary>
         internal float manualValue => _manualValue;
 
         /// <summary>Sets the manual value override. Manager-only.</summary>
         internal void SetManualValue(float value) => _manualValue = value;
 
-        /// <summary>Runtime firing output (0..1) of the last <see cref="ActionManager.Update"/>: 1 while
+        /// <summary>Runtime firing output (0..1) of the last <see cref="OperationManager.Update"/>: 1 while
         /// held, otherwise the bound input's evaluated value. Written by the manager each frame and read
-        /// back through <see cref="ActionManager.actionSetValues"/> so the remote app can poll it. Not
+        /// back through <see cref="OperationManager.operationSetValues"/> so the remote app can poll it. Not
         /// serialized and not individually exposed; resets to 0 on restart.</summary>
         [NonSerialized]
         internal float lastValue;

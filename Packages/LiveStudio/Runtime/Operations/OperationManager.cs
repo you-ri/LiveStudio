@@ -5,15 +5,16 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Scripting.APIUpdating;
+using UnityEngine.Serialization;
 
 using Lilium.RemoteControl;
 
 namespace Lilium.LiveStudio
 {
     /// <summary>
-    /// The general "fire and act" base feature of LiveStudio: a list of <see cref="ActionSet"/>s the user
+    /// The general "fire and act" base feature of LiveStudio: a list of <see cref="OperationSet"/>s the user
     /// authors from the remote app, each binding one input <see cref="InputSource"/> to an ordered set of
-    /// <see cref="ActionBase"/>s. Each frame every enabled set evaluates its input and runs its actions in
+    /// <see cref="OperationBase"/>s. Each frame every enabled set evaluates its input and runs its operations in
     /// order.
     ///
     /// A plain serializable <see cref="IExposedObject"/> (like <see cref="StageManager"/> /
@@ -21,41 +22,49 @@ namespace Lilium.LiveStudio
     /// through its <c>[SerializeReference]</c> list, so the authored sets persist in the scene.
     /// </summary>
     [Serializable]
-    [ExposedClass(Icon = "bolt", Category = "Action", HideInScene = true)]
-    [MovedFrom(false, null, null, "TriggerManager")]
-    public class ActionManager : IExposedObject, IExposedDeserializeCallback
+    [ExposedClass(Icon = "bolt", Category = "Operation", HideInScene = true)]
+    // Renamed from ActionManager (and earlier TriggerManager). MovedFrom restores the
+    // [SerializeReference] managed type in old scene/prefab YAML; FormerlyExposedAs restores the
+    // RemoteControl @type discriminator from old *.live.json. MovedFrom allows only one source, so it
+    // names the most recent prior type (ActionManager); the @type history keeps both old names.
+    [MovedFrom(false, null, null, "ActionManager")]
+    [FormerlyExposedAs("ActionManager")]
+    [FormerlyExposedAs("TriggerManager")]
+    public class OperationManager : IExposedObject, IExposedDeserializeCallback
     {
         const string kId = "c4e8b2d6-7a91-4f53-8e0c-1d9a6b3f2e74";
 
-        // The active manager, so actions / sources can reach it. Set in OnEnable, cleared in OnDisable.
+        // The active manager, so operations / sources can reach it. Set in OnEnable, cleared in OnDisable.
         // Reset on subsystem registration for safety when Domain Reload is disabled.
         [NonSerialized]
-        private static ActionManager _current;
+        private static OperationManager _current;
 
-        public static ActionManager current => _current;
+        public static OperationManager current => _current;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void _InitializeCurrent() => _current = null;
 
-        public string name { get; set; } = "Action Manager";
+        public string name { get; set; } = "Operation Manager";
 
         public ExposedObjectHandle? exposedObject => ExposedObjectRegistry.FindByTarget(this);
 
         public string id => kId;
 
-        /// <summary>The authored action sets. Polymorphic input/actions serialize via SerializeReference.</summary>
+        /// <summary>The authored operation sets. Polymorphic input/operations serialize via SerializeReference.</summary>
         [SerializeReference, Select]
         [ExposedField]
-        public List<ActionSet> actionSets = new List<ActionSet>();
+        [FormerlyExposedAs("actionSets")]
+        [FormerlySerializedAs("actionSets")]
+        public List<OperationSet> operationSets = new List<OperationSet>();
 
         /// <summary>The control decks: named grids of <see cref="DeckControl"/> tiles the remote app lays
-        /// out, each operating an <see cref="ActionSet"/> by id. Persisted with the manager in the scene.
+        /// out, each operating an <see cref="OperationSet"/> by id. Persisted with the manager in the scene.
         /// Tiles are added/removed/moved through the generic array REST; only whole decks need add/remove
         /// functions here.</summary>
         [ExposedField]
         public List<Deck> decks = new List<Deck>();
 
-        // The shared input map all KeyInputSources create their actions in. Rebuilt when the set of
+        // The shared input map all KeyInputSources create their input actions in. Rebuilt when the set of
         // inputs changes or an input's binding/type changes. Runtime-only.
         [NonSerialized]
         private InputActionMap _map;
@@ -64,7 +73,7 @@ namespace Lilium.LiveStudio
         private bool _initialized;
 
         // The control path captured by the most recent StartKeyCapture (empty while waiting / on cancel /
-        // timeout). The add-action dialog polls `capturedBinding` to show the key before committing.
+        // timeout). The add-operation dialog polls `capturedBinding` to show the key before committing.
         [NonSerialized]
         private string _capturedBinding = string.Empty;
 
@@ -72,8 +81,8 @@ namespace Lilium.LiveStudio
         {
             _current = this;
 
-            ExposedObjectRegistry.Create<ActionManager>(this, kId);
-            ExposedClass.Get<ActionManager>().onPropertyChanged += _OnPropertyChanged;
+            ExposedObjectRegistry.Create<OperationManager>(this, kId);
+            ExposedClass.Get<OperationManager>().onPropertyChanged += _OnPropertyChanged;
 
             _RebuildInputMap();
 
@@ -84,7 +93,7 @@ namespace Lilium.LiveStudio
         {
             _initialized = false;
 
-            ExposedClass.Get<ActionManager>().onPropertyChanged -= _OnPropertyChanged;
+            ExposedClass.Get<OperationManager>().onPropertyChanged -= _OnPropertyChanged;
 
             _TeardownInputMap();
 
@@ -100,9 +109,9 @@ namespace Lilium.LiveStudio
             if (!_initialized) return;
             if (!Application.isPlaying) return;
 
-            for (int i = 0; i < actionSets.Count; i++)
+            for (int i = 0; i < operationSets.Count; i++)
             {
-                var set = actionSets[i];
+                var set = operationSets[i];
                 if (set == null) continue;
 
                 // Snapshot the previous frame's hold before overwriting it, so the helper can detect the
@@ -116,7 +125,7 @@ namespace Lilium.LiveStudio
                     continue;
                 }
 
-                // Record this frame's firing output so the remote app can poll it (actionSetValues).
+                // Record this frame's firing output so the remote app can poll it (operationSetValues).
                 set.lastValue = context.value;
 
                 // A set that just latched on (rising active edge) clears its groupmates so only one set in a
@@ -124,14 +133,14 @@ namespace Lilium.LiveStudio
                 // so this is cheap for the common case.
                 if (context.pressed && context.active)
                 {
-                    ApplyExclusiveGroup(actionSets, i);
+                    ApplyExclusiveGroup(operationSets, i);
                 }
 
-                var actions = set.actions;
-                if (actions == null) continue;
-                for (int j = 0; j < actions.Count; j++)
+                var operations = set.operations;
+                if (operations == null) continue;
+                for (int j = 0; j < operations.Count; j++)
                 {
-                    actions[j]?.Apply(in context);
+                    operations[j]?.Apply(in context);
                 }
             }
         }
@@ -141,9 +150,9 @@ namespace Lilium.LiveStudio
         /// false (skip, value 0) when the set is disabled or has no input and is not held. Pure aside from
         /// advancing the input source's edge state, so it is unit-testable without play mode.
         /// </summary>
-        /// <param name="set">The action set to evaluate. Must not be null.</param>
-        /// <param name="wasHeld">The set's <see cref="ActionSet.held"/> on the previous frame.</param>
-        internal static bool TryGetFiringContext(ActionSet set, bool wasHeld, out ActionContext context)
+        /// <param name="set">The operation set to evaluate. Must not be null.</param>
+        /// <param name="wasHeld">The set's <see cref="OperationSet.held"/> on the previous frame.</param>
+        internal static bool TryGetFiringContext(OperationSet set, bool wasHeld, out OperationContext context)
         {
             // The behaviour axis is the set's control kind (the single source of truth); the bound input
             // interprets its raw value through it. A button-mode set commits its one-shot trigger on release,
@@ -156,11 +165,11 @@ namespace Lilium.LiveStudio
             {
                 // Manual value from the remote app's Value-mode slider. Takes precedence over the bound
                 // input and works even when disabled (the user dragged it explicitly), like the manual hold.
-                // Edges stay false: SetPropertyAction's float path reads only context.value, and exclusivity
+                // Edges stay false: SetPropertyOperation's float path reads only context.value, and exclusivity
                 // needs context.pressed — so a Value set never disturbs group radios. 0.5 mirrors
                 // InputSource.kThreshold (protected there, so inlined) for bool-property targets.
                 float manual = Mathf.Clamp01(set.manualValue);
-                context = new ActionContext(manual, pressed: false, released: false,
+                context = new OperationContext(manual, pressed: false, released: false,
                     active: manual >= 0.5f, triggered: false);
                 return true;
             }
@@ -171,7 +180,7 @@ namespace Lilium.LiveStudio
                 // even when the set is disabled, since the user triggered it explicitly. Rising edge on the
                 // first held frame; button defers its trigger to the release frame.
                 bool rising = !wasHeld;
-                context = new ActionContext(1f, pressed: rising, released: false, active: true,
+                context = new OperationContext(1f, pressed: rising, released: false, active: true,
                     triggered: isButton ? false : rising);
                 return true;
             }
@@ -180,7 +189,7 @@ namespace Lilium.LiveStudio
             {
                 // Hold released this frame: a single falling edge, then back to normal next frame. Button
                 // commits its one-shot trigger here.
-                context = new ActionContext(0f, pressed: false, released: true, active: false,
+                context = new OperationContext(0f, pressed: false, released: true, active: false,
                     triggered: isButton);
                 return true;
             }
@@ -195,19 +204,19 @@ namespace Lilium.LiveStudio
             return true;
         }
 
-        /// <summary>Per-set firing output (0..1) in <see cref="actionSets"/> order, for the remote app to
+        /// <summary>Per-set firing output (0..1) in <see cref="operationSets"/> order, for the remote app to
         /// poll and light its cards while an input (or the manual hold) is firing. Read-only and hidden;
         /// reflects the value recorded by the most recent <see cref="Update"/>. Polled rather than pushed
-        /// over SSE so it costs nothing while the Actions page is not open.</summary>
+        /// over SSE so it costs nothing while the Operations page is not open.</summary>
         [ExposedProperty, Hide]
-        public float[] actionSetValues
+        public float[] operationSetValues
         {
             get
             {
-                var values = new float[actionSets.Count];
-                for (int i = 0; i < actionSets.Count; i++)
+                var values = new float[operationSets.Count];
+                for (int i = 0; i < operationSets.Count; i++)
                 {
-                    values[i] = actionSets[i]?.lastValue ?? 0f;
+                    values[i] = operationSets[i]?.lastValue ?? 0f;
                 }
                 return values;
             }
@@ -217,47 +226,47 @@ namespace Lilium.LiveStudio
 
         public void OnAfterExposedDeserialize()
         {
-            // A live-scene restore replaces the action sets list; rebuild the input map so the restored
+            // A live-scene restore replaces the operation sets list; rebuild the input map so the restored
             // inputs are bound. Idempotent, so harmless if it also fires on an unrelated property write.
             _RebuildInputMap();
             // No unplaced state: a restored / pasted scene may carry controls with no deck (→ default page) or
-            // a name no deck has yet (→ recreate that deck by name, so pasted action data brings its deck
+            // a name no deck has yet (→ recreate that deck by name, so pasted operation data brings its deck
             // along). Idempotent once every control resolves to an existing deck.
             _NormalizeControlPlacement();
             // Enforce each tile's fixed per-kind width (DeckControl.fixedWidth) on restored/older scenes. Idempotent.
             _EnforceControlWidths();
         }
 
-        /// <summary>Adds a new action set (default key input, no actions) and rebuilds the input map.</summary>
+        /// <summary>Adds a new operation set (default key input, no operations) and rebuilds the input map.</summary>
         [ExposedFunction]
-        public void AddActionSet() => AddActionSet(new KeyInputSource());
+        public void AddOperationSet() => AddOperationSet(new KeyInputSource());
 
-        /// <summary>Adds a pre-built action set from the given input and actions, rebuilds the input map and
+        /// <summary>Adds a pre-built operation set from the given input and operations, rebuilds the input map and
         /// returns the created set. Generic and feature-agnostic: callers (e.g. the expression binding bridge)
-        /// supply whatever concrete <see cref="InputSource"/> / <see cref="ActionBase"/>s they need without
+        /// supply whatever concrete <see cref="InputSource"/> / <see cref="OperationBase"/>s they need without
         /// this manager knowing about them.</summary>
-        public ActionSet AddActionSet(InputSource input, params ActionBase[] actions)
-            => _AddActionSet(input, null, actions);
+        public OperationSet AddOperationSet(InputSource input, params OperationBase[] operations)
+            => _AddOperationSet(input, null, operations);
 
         // Shared creation. A null/empty name keeps the generic default; the bind-a-control flows pass the
         // target's function/property name so the new set reads meaningfully in the remote app's list.
-        private ActionSet _AddActionSet(InputSource input, string name, ActionBase[] actions, string group = null, DeckControl control = null)
+        private OperationSet _AddOperationSet(InputSource input, string name, OperationBase[] operations, string group = null, DeckControl control = null)
         {
-            var set = new ActionSet
+            var set = new OperationSet
             {
                 id = Guid.NewGuid().ToString(),
-                name = string.IsNullOrEmpty(name) ? "Action Set" : name,
+                name = string.IsNullOrEmpty(name) ? "Operation Set" : name,
                 enabled = true,
                 group = string.IsNullOrEmpty(group) ? string.Empty : group,
                 input = input ?? new KeyInputSource(),
-                actions = actions != null ? new List<ActionBase>(actions) : new List<ActionBase>(),
+                operations = operations != null ? new List<OperationBase>(operations) : new List<OperationBase>(),
                 control = control ?? new DeckButton(),
             };
             // Apply the tile's fixed per-kind width before placing so the free-cell scan accounts for the span.
             _ApplyControlWidth(set.control);
             // No unplaced state: every new control is placed on the default page at a free cell.
             _PlaceOnDefaultDeck(set.control);
-            actionSets.Add(set);
+            operationSets.Add(set);
             _RebuildInputMap();
             _Broadcast();
             return set;
@@ -265,7 +274,7 @@ namespace Lilium.LiveStudio
 
         // The deck control kind for a requested behaviour mode (changeable later from the remote app via
         // SetControlType): Toggle→checkbox, Value→slider, otherwise momentary push. The control is the set's
-        // single behaviour axis, so this maps the add-action dialog's mode choice onto the control kind.
+        // single behaviour axis, so this maps the add-operation dialog's mode choice onto the control kind.
         private static DeckControl _DefaultControlForMode(InputMode mode)
         {
             if (mode == InputMode.Toggle) return new DeckToggle();
@@ -282,7 +291,7 @@ namespace Lilium.LiveStudio
             return null;
         }
 
-        // Builds a key input already bound to the given control path (empty = unbound). The add-action dialog
+        // Builds a key input already bound to the given control path (empty = unbound). The add-operation dialog
         // captures the key first (see StartKeyCapture) and commits it here, so the set is born bound. The
         // behaviour mode is no longer carried by the input; it comes from the set's control kind.
         private static KeyInputSource _KeyInput(string binding)
@@ -292,22 +301,22 @@ namespace Lilium.LiveStudio
             return input;
         }
 
-        /// <summary>Creates an action set that invokes a no-argument <c>[ExposedFunction]</c> (named
+        /// <summary>Creates an operation set that invokes a no-argument <c>[ExposedFunction]</c> (named
         /// <paramref name="functionName"/>) on the object with id <paramref name="targetId"/>, bound to the
         /// momentary key <paramref name="binding"/> (a control path; empty = unbound). The set is named
         /// <paramref name="name"/> (the function's display name; falls back to the generic default when empty).
         /// Returns the new set's id. Drives the "bind this function button to a key" flow.</summary>
         [ExposedFunction]
-        public string AddFunctionAction(string targetId, string functionName, string name, string binding)
+        public string AddFunctionOperation(string targetId, string functionName, string name, string binding)
         {
-            var set = _AddActionSet(
+            var set = _AddOperationSet(
                 _KeyInput(binding),
                 name,
-                new ActionBase[] { new InvokeFunctionAction { targetId = targetId, functionName = functionName } });
+                new OperationBase[] { new InvokeFunctionOperation { targetId = targetId, functionName = functionName } });
             return set.id;
         }
 
-        /// <summary>Creates an action set that drives the property <paramref name="propertyPath"/> on the object
+        /// <summary>Creates an operation set that drives the property <paramref name="propertyPath"/> on the object
         /// with id <paramref name="targetId"/>, bound to the key <paramref name="binding"/> (a control path;
         /// empty = unbound) in the given <paramref name="mode"/> (<see cref="InputMode"/> name, case-insensitive;
         /// unrecognized/empty falls back to <see cref="InputMode.Toggle"/>). Toggle latches on/off per press;
@@ -316,34 +325,34 @@ namespace Lilium.LiveStudio
         /// exclusivity group (empty = ungrouped); Toggle-mode sets sharing a non-empty group act as a radio.
         /// Returns the new set's id. Drives the "bind this control to a key" flow.</summary>
         [ExposedFunction]
-        public string AddPropertyAction(string targetId, string propertyPath, string mode, string name, string binding, string group)
+        public string AddPropertyOperation(string targetId, string propertyPath, string mode, string name, string binding, string group)
         {
             var inputMode = System.Enum.TryParse<InputMode>(mode, ignoreCase: true, out var m)
                 ? m
                 : InputMode.Toggle;
-            var set = _AddActionSet(
+            var set = _AddOperationSet(
                 _KeyInput(binding),
                 name,
-                new ActionBase[] { new SetPropertyAction { targetId = targetId, propertyPath = propertyPath } },
+                new OperationBase[] { new SetPropertyOperation { targetId = targetId, propertyPath = propertyPath } },
                 group,
                 _DefaultControlForMode(inputMode));
             return set.id;
         }
 
         /// <summary>The control path captured by the most recent <see cref="StartKeyCapture"/> (empty while
-        /// waiting, or if it was cancelled / timed out). The remote app's add-action dialog polls this to show
+        /// waiting, or if it was cancelled / timed out). The remote app's add-operation dialog polls this to show
         /// the captured key before committing the new set. Runtime-only.</summary>
         [ExposedProperty, Hide]
         public string capturedBinding => _capturedBinding;
 
         /// <summary>Listens for the next key/button on the Studio machine and stores it in
-        /// <see cref="capturedBinding"/>, creating no action set. Lets the add-action dialog capture an input
+        /// <see cref="capturedBinding"/>, creating no operation set. Lets the add-operation dialog capture an input
         /// before the user commits (Add), so the set can be born already bound. Hidden so the generic UI does
         /// not surface it as a bare button (it needs the dialog's key-capture feedback).</summary>
         [ExposedFunction, Hide]
         public void StartKeyCapture() => _StartKeyCaptureAsync();
 
-        // Captures into a throwaway map/action so no action set is created and the shared input map is left
+        // Captures into a throwaway map/action so no operation set is created and the shared input map is left
         // untouched. RuntimeKeyBindingSystem detects the key via the global InputSystem.onEvent, so the map
         // does not need to be enabled.
         private async void _StartKeyCaptureAsync()
@@ -369,13 +378,13 @@ namespace Lilium.LiveStudio
             }
         }
 
-        /// <summary>Removes the action set with the given id and rebuilds the input map.</summary>
+        /// <summary>Removes the operation set with the given id and rebuilds the input map.</summary>
         [ExposedFunction]
-        public void RemoveActionSet(string actionSetId)
+        public void RemoveOperationSet(string operationSetId)
         {
-            int index = _IndexOf(actionSetId);
+            int index = _IndexOf(operationSetId);
             if (index < 0) return;
-            actionSets.RemoveAt(index);
+            operationSets.RemoveAt(index);
             _RebuildInputMap();
             _Broadcast();
         }
@@ -403,9 +412,9 @@ namespace Lilium.LiveStudio
             decks.RemoveAt(index);
 
             bool anyMoved = false;
-            for (int i = 0; i < actionSets.Count; i++)
+            for (int i = 0; i < operationSets.Count; i++)
             {
-                var control = actionSets[i]?.control;
+                var control = operationSets[i]?.control;
                 if (control != null && control.deckName == deckName)
                 {
                     _PlaceOnDefaultDeck(control);
@@ -434,9 +443,9 @@ namespace Lilium.LiveStudio
 
             // Controls reference decks by name; follow the rename so their tiles stay on this page.
             bool anyMoved = false;
-            for (int i = 0; i < actionSets.Count; i++)
+            for (int i = 0; i < operationSets.Count; i++)
             {
-                var control = actionSets[i]?.control;
+                var control = operationSets[i]?.control;
                 if (control != null && control.deckName == deckName)
                 {
                     control.deckName = unique;
@@ -449,16 +458,16 @@ namespace Lilium.LiveStudio
             return unique;
         }
 
-        /// <summary>Places (or moves) the control of the action set with the given id onto the deck named
+        /// <summary>Places (or moves) the control of the operation set with the given id onto the deck named
         /// <paramref name="deckName"/> at grid cell (<paramref name="x"/>, <paramref name="y"/>). An empty
         /// <paramref name="deckName"/> falls back to the default page at a free cell (no unplaced state).
         /// No-op for an unknown id.</summary>
         [ExposedFunction]
-        public void PlaceControl(string actionSetId, string deckName, int x, int y)
+        public void PlaceControl(string operationSetId, string deckName, int x, int y)
         {
-            int index = _IndexOf(actionSetId);
+            int index = _IndexOf(operationSetId);
             if (index < 0) return;
-            var control = actionSets[index]?.control;
+            var control = operationSets[index]?.control;
             if (control == null) return;
             if (string.IsNullOrEmpty(deckName))
             {
@@ -476,14 +485,14 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>Swaps the control kind (<c>DeckButton</c> / <c>DeckToggle</c> / <c>DeckSlider</c>) of
-        /// the action set with the given id, preserving its placement (deck and grid cell/span). No-op for
+        /// the operation set with the given id, preserving its placement (deck and grid cell/span). No-op for
         /// an unknown id or type name.</summary>
         [ExposedFunction]
-        public void SetControlType(string actionSetId, string typeName)
+        public void SetControlType(string operationSetId, string typeName)
         {
-            int index = _IndexOf(actionSetId);
+            int index = _IndexOf(operationSetId);
             if (index < 0) return;
-            var set = actionSets[index];
+            var set = operationSets[index];
             if (set == null) return;
 
             var next = _CreateControl(typeName);
@@ -566,9 +575,9 @@ namespace Lilium.LiveStudio
 
             // The lowest fully-empty row is always free, so bound the scan there.
             int maxRow = 0;
-            for (int i = 0; i < actionSets.Count; i++)
+            for (int i = 0; i < operationSets.Count; i++)
             {
-                var c = actionSets[i]?.control;
+                var c = operationSets[i]?.control;
                 if (c != null && c != placing && c.deckName == deckName)
                     maxRow = Mathf.Max(maxRow, c.y + Mathf.Max(1, c.h));
             }
@@ -587,9 +596,9 @@ namespace Lilium.LiveStudio
         // True when no other control on the deck overlaps the given grid rectangle.
         private bool _IsAreaFree(string deckName, DeckControl placing, int x, int y, int w, int h)
         {
-            for (int i = 0; i < actionSets.Count; i++)
+            for (int i = 0; i < operationSets.Count; i++)
             {
-                var c = actionSets[i]?.control;
+                var c = operationSets[i]?.control;
                 if (c == null || c == placing || c.deckName != deckName) continue;
                 int cw = Mathf.Max(1, c.w);
                 int ch = Mathf.Max(1, c.h);
@@ -619,9 +628,9 @@ namespace Lilium.LiveStudio
         private void _EnforceControlWidths()
         {
             bool any = false;
-            for (int i = 0; i < actionSets.Count; i++)
+            for (int i = 0; i < operationSets.Count; i++)
             {
-                var c = actionSets[i]?.control;
+                var c = operationSets[i]?.control;
                 if (c == null) continue;
                 if (c.w != c.fixedWidth)
                 {
@@ -635,14 +644,14 @@ namespace Lilium.LiveStudio
         // No unplaced state: make sure every control resolves to an existing deck.
         //  - empty name        → place on the default page at a free cell (genuinely unplaced).
         //  - non-empty unknown  → recreate a deck with that name and keep the control where it is, so pasting
-        //                         serialized action data automatically reconstructs the deck it referenced.
+        //                         serialized operation data automatically reconstructs the deck it referenced.
         //  - known name         → leave as is.
         private void _NormalizeControlPlacement()
         {
             bool changed = false;
-            for (int i = 0; i < actionSets.Count; i++)
+            for (int i = 0; i < operationSets.Count; i++)
             {
-                var control = actionSets[i]?.control;
+                var control = operationSets[i]?.control;
                 if (control == null) continue;
 
                 if (string.IsNullOrEmpty(control.deckName))
@@ -663,66 +672,66 @@ namespace Lilium.LiveStudio
             }
         }
 
-        /// <summary>Toggles the manual hold of the action set with the given id. While held the set fires
+        /// <summary>Toggles the manual hold of the operation set with the given id. While held the set fires
         /// from <see cref="Update"/> as if its input were held active (independent of
-        /// <see cref="ActionSet.enabled"/>); toggling off releases it. Lets the remote app fire a set from
+        /// <see cref="OperationSet.enabled"/>); toggling off releases it. Lets the remote app fire a set from
         /// its card without a bound input. The broadcast lets the card reflect the new hold state.</summary>
         [ExposedFunction]
-        public void ToggleActionSet(string actionSetId)
+        public void ToggleOperationSet(string operationSetId)
         {
-            int index = _IndexOf(actionSetId);
+            int index = _IndexOf(operationSetId);
             if (index < 0) return;
 
-            var set = actionSets[index];
+            var set = operationSets[index];
             if (set == null) return;
 
             set.SetHeld(!set.held);
             // Turning a grouped toggle on clears its groupmates (toggle-style radio); no-op otherwise.
-            if (set.held) ApplyExclusiveGroup(actionSets, index);
+            if (set.held) ApplyExclusiveGroup(operationSets, index);
             _Broadcast();
         }
 
-        /// <summary>Sets the manual hold of the action set with the given id to an explicit state. Used by the
+        /// <summary>Sets the manual hold of the operation set with the given id to an explicit state. Used by the
         /// remote app's momentary (Button-mode) card, which holds on press and releases on pointer-up: an
-        /// idempotent set avoids the desync a flip (<see cref="ToggleActionSet"/>) would suffer if a press
+        /// idempotent set avoids the desync a flip (<see cref="ToggleOperationSet"/>) would suffer if a press
         /// or release event were missed. No-op (and no broadcast) when already in the requested state.</summary>
         [ExposedFunction]
-        public void SetActionSetHeld(string actionSetId, bool held)
+        public void SetOperationSetHeld(string operationSetId, bool held)
         {
-            int index = _IndexOf(actionSetId);
+            int index = _IndexOf(operationSetId);
             if (index < 0) return;
 
-            var set = actionSets[index];
+            var set = operationSets[index];
             if (set == null || set.held == held) return;
 
             set.SetHeld(held);
-            if (held) ApplyExclusiveGroup(actionSets, index);
+            if (held) ApplyExclusiveGroup(operationSets, index);
             _Broadcast();
         }
 
-        /// <summary>Sets the manual value override (0..1, clamped) of the action set with the given id, from
+        /// <summary>Sets the manual value override (0..1, clamped) of the operation set with the given id, from
         /// the remote app's Value-mode slider card. While set the set fires from <see cref="Update"/> with
-        /// this value (sticky, overriding the bound input), independent of <see cref="ActionSet.enabled"/>.
-        /// No broadcast: <see cref="ActionSet"/>'s manual value is <c>[NonSerialized]</c> (absent from the
-        /// actionSets payload), and the slider reads its value back through the polled
-        /// <see cref="actionSetValues"/>; broadcasting per drag frame would be pure overhead.</summary>
+        /// this value (sticky, overriding the bound input), independent of <see cref="OperationSet.enabled"/>.
+        /// No broadcast: <see cref="OperationSet"/>'s manual value is <c>[NonSerialized]</c> (absent from the
+        /// operationSets payload), and the slider reads its value back through the polled
+        /// <see cref="operationSetValues"/>; broadcasting per drag frame would be pure overhead.</summary>
         [ExposedFunction]
-        public void SetActionSetValue(string actionSetId, float value)
+        public void SetOperationSetValue(string operationSetId, float value)
         {
-            int index = _IndexOf(actionSetId);
+            int index = _IndexOf(operationSetId);
             if (index < 0) return;
 
-            var set = actionSets[index];
+            var set = operationSets[index];
             if (set == null) return;
 
             set.SetManualValue(Mathf.Clamp01(value));
         }
 
-        // Action 要素の追加/削除/型選択は、RemoteApp の汎用配列「+」(elementTypeOptions による
-        // 型選択メニュー) と汎用削除でまかなう。専用の Add/RemoveAction 関数は持たない。
+        // Operation 要素の追加/削除/型選択は、RemoteApp の汎用配列「+」(elementTypeOptions による
+        // 型選択メニュー) と汎用削除でまかなう。専用の Add/RemoveOperation 関数は持たない。
 
         // Rebuilds enabled-set property edits that change input wiring (input type / binding) into a
-        // fresh input map. Action edits do not affect input, so they are ignored here.
+        // fresh input map. Operation edits do not affect input, so they are ignored here.
         private void _OnPropertyChanged(ExposedProperty property, object oldValue)
         {
             if (!_initialized) return;
@@ -731,17 +740,17 @@ namespace Lilium.LiveStudio
         }
 
         // Tears down the previous map and binds every current input into a fresh one. Building a new map
-        // discards stale actions in one step; inputs re-create their actions in Setup.
+        // discards stale operations in one step; inputs re-create their operations in Setup.
         private void _RebuildInputMap()
         {
             _TeardownInputMap();
 
-            _map = new InputActionMap("Actions");
-            for (int i = 0; i < actionSets.Count; i++)
+            _map = new InputActionMap("Operations");
+            for (int i = 0; i < operationSets.Count; i++)
             {
-                var set = actionSets[i];
+                var set = operationSets[i];
                 if (set?.input == null || string.IsNullOrEmpty(set.id)) continue;
-                set.input.Setup(_map, _ActionName(set.id));
+                set.input.Setup(_map, _OperationName(set.id));
             }
             _map.Enable();
         }
@@ -754,7 +763,7 @@ namespace Lilium.LiveStudio
             _map = null;
         }
 
-        private static string _ActionName(string actionSetId) => "ActionSet." + actionSetId;
+        private static string _OperationName(string operationSetId) => "OperationSet." + operationSetId;
 
         /// <summary>
         /// Enforces toggle-style exclusivity within a named group: clears every other set sharing the
@@ -764,7 +773,7 @@ namespace Lilium.LiveStudio
         /// is idempotent on sets that are already off. Static and list-based so it is unit-testable without
         /// play mode.
         /// </summary>
-        internal static void ApplyExclusiveGroup(List<ActionSet> sets, int winnerIndex)
+        internal static void ApplyExclusiveGroup(List<OperationSet> sets, int winnerIndex)
         {
             if (sets == null || winnerIndex < 0 || winnerIndex >= sets.Count) return;
 
@@ -785,23 +794,23 @@ namespace Lilium.LiveStudio
 
         // A set participates in group exclusivity only when it has a non-empty group and a Toggle-mode
         // control: the radio behavior is meaningful only for latched (on/off) sets, not momentary buttons.
-        private static bool _IsExclusiveSet(ActionSet set)
+        private static bool _IsExclusiveSet(OperationSet set)
             => set != null
                && !string.IsNullOrEmpty(set.group)
                && set.control != null
                && set.control.mode == InputMode.Toggle;
 
-        private int _IndexOf(string actionSetId)
+        private int _IndexOf(string operationSetId)
         {
-            if (string.IsNullOrEmpty(actionSetId)) return -1;
-            for (int i = 0; i < actionSets.Count; i++)
+            if (string.IsNullOrEmpty(operationSetId)) return -1;
+            for (int i = 0; i < operationSets.Count; i++)
             {
-                if (actionSets[i] != null && actionSets[i].id == actionSetId) return i;
+                if (operationSets[i] != null && operationSets[i].id == operationSetId) return i;
             }
             return -1;
         }
 
-        private void _Broadcast() => ExposedPropertyBroadcast.BroadcastProperty(this, "actionSets");
+        private void _Broadcast() => ExposedPropertyBroadcast.BroadcastProperty(this, "operationSets");
 
         private void _BroadcastDecks() => ExposedPropertyBroadcast.BroadcastProperty(this, "decks");
     }

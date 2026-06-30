@@ -296,7 +296,7 @@ namespace Lilium.LiveStudio
         /// Makes the loaded set with the given id the active set (lighting/instantiation target). Only
         /// loaded sets can be activated; this does not load or unload any set. Drives the Stage page's set
         /// selection — loading is controlled independently through each entry's enabled flag, so multiple
-        /// sets stay loaded and only the active one changes here. (A stage-switch action wanting a complete
+        /// sets stay loaded and only the active one changes here. (A stage-switch operation wanting a complete
         /// replace uses <see cref="SwitchToSetByName"/> instead.)
         /// </summary>
         [ExposedFunction]
@@ -334,7 +334,7 @@ namespace Lilium.LiveStudio
 
         /// <summary>
         /// Names of the known sets (the bootstrap set plus each added set bundle), in display order.
-        /// The option source for a stage selector such as a trigger's switch-stage action.
+        /// The option source for a stage selector such as a trigger's switch-stage operation.
         /// </summary>
         public string[] GetSetNames()
         {
@@ -346,7 +346,7 @@ namespace Lilium.LiveStudio
         /// <summary>
         /// Switches the active stage to the set with the given display name as a complete switch: every
         /// other loaded set is unloaded and the named set is loaded on demand, leaving only the persistent
-        /// bootstrap scene and the named set loaded. Used by <see cref="SwitchStageAction"/>. A no-op when
+        /// bootstrap scene and the named set loaded. Used by <see cref="SwitchStageOperation"/>. A no-op when
         /// no set matches. Distinct from <see cref="SetActiveSet"/>, which only re-flags the active set
         /// among already-loaded sets and never unloads (the Stage page's selection).
         /// </summary>

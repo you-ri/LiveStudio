@@ -61,7 +61,7 @@ namespace Lilium.LiveStudio
     /// One bindable facial-expression slot on the active avatar. The <see cref="name"/> is its stable
     /// key ([ExposedKey]) so a property path can address it by name ("expressions[Joy].weight") and
     /// survive reordering / avatar swaps. <see cref="weight"/> reads and writes the live weight through
-    /// <see cref="ExpressionService"/> (the active avatar), so a <see cref="SetPropertyAction"/> bound to
+    /// <see cref="ExpressionService"/> (the active avatar), so a <see cref="SetPropertyOperation"/> bound to
     /// it (via the remote app's "bind to key" affordance) drives whichever avatar is currently loaded —
     /// the single, data-driven way expression weights are keyed.
     /// </summary>
@@ -93,8 +93,8 @@ namespace Lilium.LiveStudio
     {
         /// <summary>
         /// Read-only list of the active avatar's facial expressions as bindable slots. The element count
-        /// is dynamic (per avatar) while the element schema stays static, so actions can target an
-        /// expression weight generically via "expressions[name].weight" without a bespoke action type or
+        /// is dynamic (per avatar) while the element schema stays static, so operations can target an
+        /// expression weight generically via "expressions[name].weight" without a bespoke operation type or
         /// runtime-added exposed members. Exposed (not hidden) so the remote app renders a weight control
         /// per expression with a "bind to key" affordance next to it.
         /// </summary>
@@ -725,7 +725,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        // Expression key bindings live on the generic ActionManager as ordinary SetPropertyAction sets that
+        // Expression key bindings live on the generic OperationManager as ordinary SetPropertyOperation sets that
         // drive expressions[name].weight (the remote app's "bind to key" affordance). No expression-specific
         // binding functions are needed here; only the available-expression list is surfaced for the add UI.
 

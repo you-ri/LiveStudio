@@ -1,6 +1,7 @@
 // Copyright (c) You-Ri, 2026
 
 using System;
+using UnityEngine.Scripting.APIUpdating;
 using Lilium.RemoteControl;
 
 namespace Lilium.LiveStudio
@@ -11,8 +12,10 @@ namespace Lilium.LiveStudio
     /// via <see cref="ExternalAssetManager"/>.
     /// </summary>
     [Serializable]
-    [ExposedClass(Category = "Action", Icon = "face")]
-    public class SwitchAvatarAction : ActionBase
+    [ExposedClass(Category = "Operation", Icon = "face")]
+    [MovedFrom(false, null, null, "SwitchAvatarAction")]
+    [FormerlyExposedAs("SwitchAvatarAction")]
+    public class SwitchAvatarOperation : OperationBase
     {
         [ExposedField, StringSelector(nameof(avatarNames))]
         public string avatar = string.Empty;
@@ -22,7 +25,7 @@ namespace Lilium.LiveStudio
         public string[] avatarNames
             => ExternalAssetManager.current?.GetAvatarNames() ?? Array.Empty<string>();
 
-        public override void Apply(in ActionContext context)
+        public override void Apply(in OperationContext context)
         {
             if (!context.triggered) return;
             ExternalAssetManager.current?.SelectAvatarByName(avatar);

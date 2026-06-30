@@ -6,19 +6,19 @@ using Lilium.RemoteControl;
 namespace Lilium.LiveStudio
 {
     /// <summary>
-    /// The deck representation of an <see cref="ActionSet"/>: embedded 1:1 as <see cref="ActionSet.control"/>,
-    /// so an action and its deck control are the same object (adding/removing the action adds/removes the
+    /// The deck representation of an <see cref="OperationSet"/>: embedded 1:1 as <see cref="OperationSet.control"/>,
+    /// so an operation and its deck control are the same object (adding/removing the operation adds/removes the
     /// control — no separate tile list to keep in sync). The concrete kind (<see cref="DeckButton"/> /
     /// <see cref="DeckToggle"/> / <see cref="DeckSlider"/>) decides which of the manager's operate
-    /// functions the tile drives (momentary hold / toggle / value) — independent of the action set's input
+    /// functions the tile drives (momentary hold / toggle / value) — independent of the operation set's input
     /// <see cref="InputMode"/> (the physical key binding). The control is pure data; the actual firing runs
-    /// through <see cref="ActionManager"/>'s existing remote functions.
+    /// through <see cref="OperationManager"/>'s existing remote functions.
     ///
     /// <see cref="deckName"/> says which <see cref="Deck"/> it is placed on (matched by the deck's unique
     /// name; empty/unknown = treated as unplaced and re-placed on the default page). The remote
-    /// app draws a deck's tiles as the action sets whose control points at that deck. Polymorphic via
+    /// app draws a deck's tiles as the operation sets whose control points at that deck. Polymorphic via
     /// <c>[SerializeReference]</c> + the RemoteControl <c>@type</c> discriminator, exactly like
-    /// <see cref="ActionBase"/>. <c>[ExposedClass]</c> on the abstract base lets the owning field's
+    /// <see cref="OperationBase"/>. <c>[ExposedClass]</c> on the abstract base lets the owning field's
     /// derived-type enumeration surface the concrete kinds; the base itself is never instantiated.
     /// </summary>
     [Serializable]
@@ -47,12 +47,12 @@ namespace Lilium.LiveStudio
         [ExposedField, Hide]
         public int h = 1;
 
-        /// <summary>The fixed column span this tile kind occupies. <see cref="ActionManager"/> enforces
+        /// <summary>The fixed column span this tile kind occupies. <see cref="OperationManager"/> enforces
         /// <see cref="w"/> to this value, so a new tile size is declared here (override per kind) rather than
         /// switched on by the manager. Defaults to 1.</summary>
         public virtual int fixedWidth => 1;
 
-        /// <summary>The single behaviour axis of the action set: the control kind decides both how its deck
+        /// <summary>The single behaviour axis of the operation set: the control kind decides both how its deck
         /// tile operates and how its bound <see cref="InputSource"/> interprets the raw input (momentary /
         /// latching / continuous). Declared per kind here so the tile type is the one source of truth — there
         /// is no separate input mode to keep in sync. Defaults to <see cref="InputMode.Button"/>.</summary>
@@ -60,17 +60,17 @@ namespace Lilium.LiveStudio
     }
 
     /// <summary>Momentary tile: held on while pressed, released on pointer-up
-    /// (<see cref="ActionManager.SetActionSetHeld"/>). Drives its input in <see cref="InputMode.Button"/>.</summary>
+    /// (<see cref="OperationManager.SetOperationSetHeld"/>). Drives its input in <see cref="InputMode.Button"/>.</summary>
     [Serializable]
-    [ExposedClass(Category = "Action", Icon = "bolt")]
+    [ExposedClass(Category = "Operation", Icon = "bolt")]
     public class DeckButton : DeckControl
     {
     }
 
-    /// <summary>Latching tile: each tap flips the action set on/off
-    /// (<see cref="ActionManager.ToggleActionSet"/>). Drives its input in <see cref="InputMode.Toggle"/>.</summary>
+    /// <summary>Latching tile: each tap flips the operation set on/off
+    /// (<see cref="OperationManager.ToggleOperationSet"/>). Drives its input in <see cref="InputMode.Toggle"/>.</summary>
     [Serializable]
-    [ExposedClass(Category = "Action", Icon = "check_box")]
+    [ExposedClass(Category = "Operation", Icon = "check_box")]
     public class DeckToggle : DeckControl
     {
         /// <summary>Each tap latches on/off.</summary>
@@ -78,9 +78,9 @@ namespace Lilium.LiveStudio
     }
 
     /// <summary>Continuous tile: drag sets a 0..1 manual value
-    /// (<see cref="ActionManager.SetActionSetValue"/>). Drives its input in <see cref="InputMode.Value"/>.</summary>
+    /// (<see cref="OperationManager.SetOperationSetValue"/>). Drives its input in <see cref="InputMode.Value"/>.</summary>
     [Serializable]
-    [ExposedClass(Category = "Action", Icon = "sliders")]
+    [ExposedClass(Category = "Operation", Icon = "sliders")]
     public class DeckSlider : DeckControl
     {
         /// <summary>Sliders span 2 cells so the gauge stays legible.</summary>

@@ -53,8 +53,8 @@ namespace Lilium.LiveStudio
 
     /// <summary>
     /// Broadcasts active expression weights over SSE (for the remote app's expression cards) and exposes a
-    /// direct weight setter. Key bindings are no longer handled here — they live on the generic ActionManager
-    /// as ordinary SetPropertyAction sets driving expressions[name].weight (the remote app's "bind to key").
+    /// direct weight setter. Key bindings are no longer handled here — they live on the generic OperationManager
+    /// as ordinary SetPropertyOperation sets driving expressions[name].weight (the remote app's "bind to key").
     /// </summary>
     public class ExpressionsApiHandler : BaseRemoteControlApiHandler
     {

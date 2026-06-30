@@ -6,11 +6,11 @@ using Lilium.RemoteControl;
 namespace Lilium.LiveStudio.EditorTests
 {
     /// <summary>
-    /// Tests the generic actions that drive an arbitrary exposed object addressed by its registry id
-    /// (<see cref="InvokeFunctionAction"/> / <see cref="SetPropertyAction"/>), created from the remote app's
+    /// Tests the generic operations that drive an arbitrary exposed object addressed by its registry id
+    /// (<see cref="InvokeFunctionOperation"/> / <see cref="SetPropertyOperation"/>), created from the remote app's
     /// "bind to key" affordance. A fake exposed object stands in for a real control so no scene is needed.
     /// </summary>
-    public class TargetReferencingActionTests
+    public class TargetReferencingOperationTests
     {
         const string kTargetId = "target-1";
 
@@ -63,13 +63,13 @@ namespace Lilium.LiveStudio.EditorTests
             ExposedObjectRegistry.ClearAll();
         }
 
-        static ActionContext Triggered(bool active)
-            => new ActionContext(active ? 1f : 0f, pressed: active, released: !active, active: active, triggered: true);
+        static OperationContext Triggered(bool active)
+            => new OperationContext(active ? 1f : 0f, pressed: active, released: !active, active: active, triggered: true);
 
         [Test]
-        public void InvokeFunctionAction_OnTrigger_InvokesTargetFunction()
+        public void InvokeFunctionOperation_OnTrigger_InvokesTargetFunction()
         {
-            var action = new InvokeFunctionAction { targetId = kTargetId, functionName = "DoThing" };
+            var action = new InvokeFunctionOperation { targetId = kTargetId, functionName = "DoThing" };
 
             action.Apply(Triggered(active: true));
 
@@ -77,10 +77,10 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
-        public void InvokeFunctionAction_NotTriggered_DoesNothing()
+        public void InvokeFunctionOperation_NotTriggered_DoesNothing()
         {
-            var action = new InvokeFunctionAction { targetId = kTargetId, functionName = "DoThing" };
-            var context = new ActionContext(0f, pressed: false, released: false, active: false, triggered: false);
+            var action = new InvokeFunctionOperation { targetId = kTargetId, functionName = "DoThing" };
+            var context = new OperationContext(0f, pressed: false, released: false, active: false, triggered: false);
 
             action.Apply(context);
 
@@ -88,31 +88,31 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
-        public void InvokeFunctionAction_Valid_TracksTargetResolution()
+        public void InvokeFunctionOperation_Valid_TracksTargetResolution()
         {
-            var resolves = new InvokeFunctionAction { targetId = kTargetId, functionName = "DoThing" };
+            var resolves = new InvokeFunctionOperation { targetId = kTargetId, functionName = "DoThing" };
             Assert.IsTrue(resolves.valid, "id resolves and the function exists");
 
-            var missingId = new InvokeFunctionAction { targetId = "nope", functionName = "DoThing" };
+            var missingId = new InvokeFunctionOperation { targetId = "nope", functionName = "DoThing" };
             Assert.IsFalse(missingId.valid, "an unresolved id is invalid");
 
-            var missingFn = new InvokeFunctionAction { targetId = kTargetId, functionName = "Ghost" };
+            var missingFn = new InvokeFunctionOperation { targetId = kTargetId, functionName = "Ghost" };
             Assert.IsFalse(missingFn.valid, "a missing function is invalid even when the id resolves");
         }
 
         [Test]
-        public void InvokeFunctionAction_DanglingId_OnTrigger_IsNoOp()
+        public void InvokeFunctionOperation_DanglingId_OnTrigger_IsNoOp()
         {
-            var action = new InvokeFunctionAction { targetId = "nope", functionName = "DoThing" };
+            var action = new InvokeFunctionOperation { targetId = "nope", functionName = "DoThing" };
 
             Assert.DoesNotThrow(() => action.Apply(Triggered(active: true)));
             Assert.AreEqual(0, _target.invokeCount);
         }
 
         [Test]
-        public void SetPropertyAction_DrivesBoolFromActive()
+        public void SetPropertyOperation_DrivesBoolFromActive()
         {
-            var action = new SetPropertyAction { targetId = kTargetId, propertyPath = "flag" };
+            var action = new SetPropertyOperation { targetId = kTargetId, propertyPath = "flag" };
 
             action.Apply(Triggered(active: true));
             Assert.IsTrue(_target.flag, "active writes the bool on");
@@ -122,34 +122,34 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
-        public void SetPropertyAction_Valid_TracksTargetResolution()
+        public void SetPropertyOperation_Valid_TracksTargetResolution()
         {
-            var resolves = new SetPropertyAction { targetId = kTargetId, propertyPath = "flag" };
+            var resolves = new SetPropertyOperation { targetId = kTargetId, propertyPath = "flag" };
             Assert.IsTrue(resolves.valid);
 
-            var missingId = new SetPropertyAction { targetId = "nope", propertyPath = "flag" };
+            var missingId = new SetPropertyOperation { targetId = "nope", propertyPath = "flag" };
             Assert.IsFalse(missingId.valid, "an unresolved id is invalid");
 
-            var missingProp = new SetPropertyAction { targetId = kTargetId, propertyPath = "ghost" };
+            var missingProp = new SetPropertyOperation { targetId = kTargetId, propertyPath = "ghost" };
             Assert.IsFalse(missingProp.valid, "a missing property is invalid even when the id resolves");
         }
 
         [Test]
-        public void SetPropertyAction_DanglingId_IsNoOp()
+        public void SetPropertyOperation_DanglingId_IsNoOp()
         {
-            var action = new SetPropertyAction { targetId = "nope", propertyPath = "flag" };
+            var action = new SetPropertyOperation { targetId = "nope", propertyPath = "flag" };
 
             Assert.DoesNotThrow(() => action.Apply(Triggered(active: true)));
             Assert.IsFalse(_target.flag);
         }
 
-        static ActionContext Value(float v)
-            => new ActionContext(v, pressed: false, released: false, active: v > 0f, triggered: false);
+        static OperationContext Value(float v)
+            => new OperationContext(v, pressed: false, released: false, active: v > 0f, triggered: false);
 
         [Test]
-        public void SetPropertyAction_DrivesFloatByKey_FromContinuousValue()
+        public void SetPropertyOperation_DrivesFloatByKey_FromContinuousValue()
         {
-            var action = new SetPropertyAction { targetId = kTargetId, propertyPath = "weights[Beta].weight" };
+            var action = new SetPropertyOperation { targetId = kTargetId, propertyPath = "weights[Beta].weight" };
 
             action.Apply(Value(0.5f));
 
@@ -158,10 +158,10 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
-        public void SetPropertyAction_FloatKeyPath_SurvivesReorder()
+        public void SetPropertyOperation_FloatKeyPath_SurvivesReorder()
         {
             var beta = _target.weights[1];
-            var action = new SetPropertyAction { targetId = kTargetId, propertyPath = "weights[Beta].weight" };
+            var action = new SetPropertyOperation { targetId = kTargetId, propertyPath = "weights[Beta].weight" };
 
             action.Apply(Value(0.3f));
             Assert.AreEqual(0.3f, beta.weight);
@@ -174,11 +174,11 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
-        public void SetPropertyAction_SlashKeyPath_ResolvesViaNormalization()
+        public void SetPropertyOperation_SlashKeyPath_ResolvesViaNormalization()
         {
-            // The remote app sends the transport (slash) form; SetPropertyAction normalizes it to
+            // The remote app sends the transport (slash) form; SetPropertyOperation normalizes it to
             // DotBracket before lookup, so "weights/Beta/weight" drives the same entry as the bracket form.
-            var action = new SetPropertyAction { targetId = kTargetId, propertyPath = "weights/Beta/weight" };
+            var action = new SetPropertyOperation { targetId = kTargetId, propertyPath = "weights/Beta/weight" };
 
             action.Apply(Value(0.7f));
 
@@ -187,12 +187,12 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
-        public void SetPropertyAction_KeyPath_TracksValidResolution()
+        public void SetPropertyOperation_KeyPath_TracksValidResolution()
         {
-            var resolves = new SetPropertyAction { targetId = kTargetId, propertyPath = "weights[Beta].weight" };
+            var resolves = new SetPropertyOperation { targetId = kTargetId, propertyPath = "weights[Beta].weight" };
             Assert.IsTrue(resolves.valid);
 
-            var missingKey = new SetPropertyAction { targetId = kTargetId, propertyPath = "weights[Zzz].weight" };
+            var missingKey = new SetPropertyOperation { targetId = kTargetId, propertyPath = "weights[Zzz].weight" };
             Assert.IsFalse(missingKey.valid, "an unknown key is invalid even when the id resolves");
         }
     }

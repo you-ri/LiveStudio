@@ -116,6 +116,6 @@ MonoBehaviour:
       type: {class: StageManager, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
       data: 
     - rid: 4217817297473503388
-      type: {class: ActionManager, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      type: {class: OperationManager, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
       data:
-        actionSets: []
+        operationSets: []

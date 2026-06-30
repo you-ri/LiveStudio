@@ -2,6 +2,7 @@
 
 using System;
 using UnityEngine;
+using UnityEngine.Scripting.APIUpdating;
 using Lilium.RemoteControl;
 
 namespace Lilium.LiveStudio
@@ -12,13 +13,15 @@ namespace Lilium.LiveStudio
     /// <c>[ObjectSelector]</c> dropdown.
     /// </summary>
     [Serializable]
-    [ExposedClass(Category = "Action", Icon = "visibility")]
-    public class SetActiveAction : ActionBase
+    [ExposedClass(Category = "Operation", Icon = "visibility")]
+    [MovedFrom(false, null, null, "SetActiveAction")]
+    [FormerlyExposedAs("SetActiveAction")]
+    public class SetActiveOperation : OperationBase
     {
         [ExposedField, ObjectSelector]
         public GameObject target;
 
-        public override void Apply(in ActionContext context)
+        public override void Apply(in OperationContext context)
         {
             if (target == null) return;
             bool desired = context.active;

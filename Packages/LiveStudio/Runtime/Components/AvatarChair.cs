@@ -127,7 +127,7 @@ namespace Lilium.LiveStudio
         // Shared socket-attachment surface (socket name + offsets + socket resolution), exposed as a
         // nested "PropAttachment" under this component's @type. The chair reads the hips socket and its
         // body-placement offsets from here; for a chair the socketName selects the hips bone.
-        [SerializeField]
+        [SerializeField, ExposedField]
         public PropAttachment attachment = new PropAttachment();
 
         [NonSerialized] bool _reparented;
@@ -160,7 +160,7 @@ namespace Lilium.LiveStudio
             // Chair body placement (anchor-local) from the attachment offsets, applied live so runtime
             // edits take effect. The body is NOT driven by the avatar (no root motion) — only by these
             // offsets; scale is applied above.
-            transform.SetLocalPositionAndRotation(attachment.positionOffset, Quaternion.Euler(attachment.rotationOffset));
+            transform.SetLocalPositionAndRotation(attachment.offset.position, attachment.offset.rotation);
 
             // Read the hips (yaw / pitch about world; position in the anchor's local space so left-right /
             // depth are relative to the avatar's facing).

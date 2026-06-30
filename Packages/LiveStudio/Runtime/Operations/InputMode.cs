@@ -5,7 +5,7 @@ using Lilium.RemoteControl;
 namespace Lilium.LiveStudio
 {
     /// <summary>
-    /// How an <see cref="InputSource"/> turns its raw input into the output value its actions read.
+    /// How an <see cref="InputSource"/> turns its raw input into the output value its operations read.
     /// </summary>
     [ExposedEnum]
     public enum InputMode

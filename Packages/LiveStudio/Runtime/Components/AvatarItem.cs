@@ -36,7 +36,7 @@ namespace Lilium.LiveStudio
         // Shared socket-attachment surface (socket name + offsets + follow math), exposed as a nested
         // "PropAttachment" under this component's @type. The item follows the socket itself (an item has
         // no sibling Prop).
-        [SerializeField]
+        [SerializeField, ExposedField]
         public PropAttachment attachment = new PropAttachment();
 
         struct BridgedParameter

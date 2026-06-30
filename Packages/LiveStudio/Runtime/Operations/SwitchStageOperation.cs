@@ -1,6 +1,7 @@
 // Copyright (c) You-Ri, 2026
 
 using System;
+using UnityEngine.Scripting.APIUpdating;
 using Lilium.RemoteControl;
 
 namespace Lilium.LiveStudio
@@ -11,8 +12,10 @@ namespace Lilium.LiveStudio
     /// unloaded, and the named set is loaded on demand and activated once its scene is ready.
     /// </summary>
     [Serializable]
-    [ExposedClass(Category = "Action", Icon = "public")]
-    public class SwitchStageAction : ActionBase
+    [ExposedClass(Category = "Operation", Icon = "public")]
+    [MovedFrom(false, null, null, "SwitchStageAction")]
+    [FormerlyExposedAs("SwitchStageAction")]
+    public class SwitchStageOperation : OperationBase
     {
         [ExposedField, StringSelector(nameof(stageNames))]
         public string stage = string.Empty;
@@ -22,7 +25,7 @@ namespace Lilium.LiveStudio
         public string[] stageNames
             => StageManager.current?.GetSetNames() ?? Array.Empty<string>();
 
-        public override void Apply(in ActionContext context)
+        public override void Apply(in OperationContext context)
         {
             if (!context.triggered) return;
             StageManager.current?.SwitchToSetByName(stage);

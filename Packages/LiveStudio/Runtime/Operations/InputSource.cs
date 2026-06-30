@@ -9,10 +9,10 @@ using Lilium.RemoteControl;
 namespace Lilium.LiveStudio
 {
     /// <summary>
-    /// Base of an action set's firing side: produces a 0..1 value each frame that the set's actions read.
+    /// Base of an operation set's firing side: produces a 0..1 value each frame that the set's operations read.
     /// Concrete kinds (e.g. <see cref="KeyInputSource"/>) supply the raw input; this base applies the
     /// <see cref="InputMode"/> (supplied by the owning set's <see cref="DeckControl"/>) and derives the
-    /// rising/falling edges into an <see cref="ActionContext"/>. The mode is not stored here: the control
+    /// rising/falling edges into an <see cref="OperationContext"/>. The mode is not stored here: the control
     /// kind is the single behaviour axis (see <see cref="DeckControl.mode"/>), passed in to <see cref="Evaluate"/>.
     ///
     /// Marked <c>[ExposedClass]</c> on the abstract base (like <see cref="ICameraController"/>) so the
@@ -30,8 +30,8 @@ namespace Lilium.LiveStudio
 
         /// <summary>
         /// Builds whatever runtime input the source needs into the shared map. Called by
-        /// <see cref="ActionManager"/> when the source is bound (and rebuilt on a type swap), mirroring
-        /// <see cref="ICameraController.Setup"/>. <paramref name="actionName"/> is unique per action set.
+        /// <see cref="OperationManager"/> when the source is bound (and rebuilt on a type swap), mirroring
+        /// <see cref="ICameraController.Setup"/>. <paramref name="actionName"/> is unique per operation set.
         /// </summary>
         public virtual void Setup(InputActionMap map, string actionName) { }
 
@@ -46,7 +46,7 @@ namespace Lilium.LiveStudio
         /// to call every frame. Edges track the raw input so a press fires on key-down regardless of mode.
         /// The mode comes from the owning set's <see cref="DeckControl.mode"/>, not stored on the source.
         /// </summary>
-        public ActionContext Evaluate(InputMode mode)
+        public OperationContext Evaluate(InputMode mode)
         {
             float raw = ReadRawValue();
             bool rawActive = raw > kThreshold;
@@ -72,7 +72,7 @@ namespace Lilium.LiveStudio
             // Button commits on release (key-up); every other mode commits on press.
             bool triggered = mode == InputMode.Button ? released : pressed;
 
-            return new ActionContext(output, pressed, released, output > kThreshold, triggered);
+            return new OperationContext(output, pressed, released, output > kThreshold, triggered);
         }
 
         /// <summary>Resets latched runtime state (toggle / edge), e.g. when (re)bound.</summary>
@@ -84,7 +84,7 @@ namespace Lilium.LiveStudio
 
         /// <summary>Forces the latched toggle state without touching edge tracking, so a still-held raw
         /// input does not immediately re-latch and the next genuine press still flips correctly. Used by
-        /// <see cref="ActionManager"/> to clear a set when another set in its exclusive group turns on.</summary>
+        /// <see cref="OperationManager"/> to clear a set when another set in its exclusive group turns on.</summary>
         public void SetToggleState(bool value) => _toggleState = value;
     }
 }
