@@ -86,7 +86,7 @@ namespace Lilium.RemoteControl.Reflection
         /// <returns>属性を持つ型のコレクション</returns>
         public static IEnumerable<Type> FindTypesWithAttribute<T>() where T : Attribute
         {
-            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            var assemblies = AssemblyUtility.GetLoadedAssemblies();
             foreach (var assembly in assemblies)
             {
                 Type[] types;
@@ -320,7 +320,7 @@ namespace Lilium.RemoteControl.Reflection
             }
 
             var result = new List<Type>();
-            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            var assemblies = AssemblyUtility.GetLoadedAssemblies();
             foreach (var assembly in assemblies)
             {
                 Type[] types;

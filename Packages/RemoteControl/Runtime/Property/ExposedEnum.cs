@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using UnityEngine;
+using Lilium.RemoteControl.Reflection;
 
 namespace Lilium.RemoteControl
 {
@@ -78,7 +79,7 @@ namespace Lilium.RemoteControl
 
         private static void RegisterAllFromAttributes()
         {
-            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            var assemblies = AssemblyUtility.GetLoadedAssemblies();
             foreach (var assembly in assemblies)
             {
                 try

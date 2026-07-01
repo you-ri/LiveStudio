@@ -3,6 +3,7 @@ using System.Linq;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
+using Lilium.RemoteControl.Reflection;
 
 namespace Lilium.RemoteControl
 {
@@ -130,7 +131,7 @@ namespace Lilium.RemoteControl
             var assemblyName = parts[0];
             var fullTypeName = parts[1];
 
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in AssemblyUtility.GetLoadedAssemblies())
             {
                 if (assembly.GetName().Name == assemblyName)
                 {
@@ -149,7 +150,7 @@ namespace Lilium.RemoteControl
         {
             var types = new List<Type>();
 
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in AssemblyUtility.GetLoadedAssemblies())
             {
                 try
                 {

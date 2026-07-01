@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
+using Lilium.RemoteControl.Reflection;
 
 namespace Lilium.RemoteControl
 {
@@ -191,7 +192,7 @@ namespace Lilium.RemoteControl
 
         private static void _AutoRegisterDerivedTypes(Type openGenericBase)
         {
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in AssemblyUtility.GetLoadedAssemblies())
             {
                 Type[] types;
                 try { types = assembly.GetTypes(); }
