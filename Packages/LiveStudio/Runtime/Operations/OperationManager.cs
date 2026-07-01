@@ -84,6 +84,7 @@ namespace Lilium.LiveStudio
             ExposedObjectRegistry.Create<OperationManager>(this, kId);
             ExposedClass.Get<OperationManager>().onPropertyChanged += _OnPropertyChanged;
 
+            _EnsureOperationSetIds();
             _RebuildInputMap();
 
             _initialized = true;
@@ -226,8 +227,11 @@ namespace Lilium.LiveStudio
 
         public void OnAfterExposedDeserialize()
         {
-            // A live-scene restore replaces the operation sets list; rebuild the input map so the restored
-            // inputs are bound. Idempotent, so harmless if it also fires on an unrelated property write.
+            // A live-scene restore replaces the operation sets list; make sure every set is addressable
+            // before anything reads it by id (see _EnsureOperationSetIds).
+            _EnsureOperationSetIds();
+            // Rebuild the input map so the restored inputs are bound. Idempotent, so harmless if it also
+            // fires on an unrelated property write.
             _RebuildInputMap();
             // No unplaced state: a restored / pasted scene may carry controls with no deck (→ default page) or
             // a name no deck has yet (→ recreate that deck by name, so pasted operation data brings its deck
@@ -737,6 +741,22 @@ namespace Lilium.LiveStudio
             if (!_initialized) return;
             if (!property.PathContains("input")) return;
             _RebuildInputMap();
+        }
+
+        // Only AddOperationSet assigns an id; sets authored directly in a scene / prop bundle load with the
+        // default empty id. An empty id makes every id-addressed function (RemoveOperationSet /
+        // ToggleOperationSet / SetOperationSetHeld / ...) a silent no-op via _IndexOf, and _RebuildInputMap
+        // skips the set entirely. Assign a stable id to any set missing one so it is fully addressable.
+        private void _EnsureOperationSetIds()
+        {
+            for (int i = 0; i < operationSets.Count; i++)
+            {
+                var set = operationSets[i];
+                if (set != null && string.IsNullOrEmpty(set.id))
+                {
+                    set.id = System.Guid.NewGuid().ToString();
+                }
+            }
         }
 
         // Tears down the previous map and binds every current input into a fresh one. Building a new map

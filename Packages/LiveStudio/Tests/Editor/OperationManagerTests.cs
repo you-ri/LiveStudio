@@ -238,6 +238,37 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
+        public void OnAfterExposedDeserialize_BackfillsIdOnSetAuthoredWithoutOne()
+        {
+            // A set authored directly in a scene / prop bundle (not via AddOperationSet) loads with the
+            // default empty id, which makes every id-addressed function a silent no-op. Restore must
+            // backfill a stable id so the set is addressable.
+            var manager = new OperationManager();
+            var set = new OperationSet { enabled = true, control = new DeckToggle() };
+            Assert.AreEqual(string.Empty, set.id, "an authored set starts with the default empty id");
+            manager.operationSets.Add(set);
+
+            manager.OnAfterExposedDeserialize();
+
+            Assert.IsFalse(string.IsNullOrEmpty(set.id), "restore assigns a stable id to the set");
+        }
+
+        [Test]
+        public void RemoveOperationSet_RemovesSetAuthoredWithoutId_AfterBackfill()
+        {
+            // Regression: a DeckToggle set authored without an id could not be removed because the empty
+            // id never matched in _IndexOf. After the id backfill, deleting by the assigned id works.
+            var manager = new OperationManager();
+            manager.operationSets.Add(new OperationSet { enabled = true, control = new DeckToggle() });
+            manager.OnAfterExposedDeserialize();
+
+            var id = manager.operationSets[0].id;
+            manager.RemoveOperationSet(id);
+
+            Assert.AreEqual(0, manager.operationSets.Count, "the backfilled id addresses the set for removal");
+        }
+
+        [Test]
         public void AddFunctionOperation_CreatesButtonSetWithInvokeAction_AndReturnsId()
         {
             var manager = new OperationManager();

@@ -6,6 +6,7 @@ using Lilium.LiveStudio;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
+using UnityEngine.Animations;
 using VRC.SDK3.Avatars.Components;
 
 namespace Lilium.VRChatAvatarTransfer.Editor
@@ -75,6 +76,14 @@ namespace Lilium.VRChatAvatarTransfer.Editor
             objRoot.transform.localPosition = Vector3.zero;
             objRoot.transform.localRotation = Quaternion.identity;
             objRoot.transform.localScale = subRoot.localScale;
+
+            // 1b. アバターへ追従していた constraint を除去する。VRChat の手持ちプロップは
+            //     VRCParentConstraint 等でアバターのボーンへ追従しており、アバター変換時に Unity の
+            //     各 Constraint (Parent/Position/Rotation/Scale/Aim/LookAt) へ変換されて残る。だが
+            //     独立プロップの socket 追従は AvatarItem の attachment (PropAttachment) が担うため、
+            //     これらは不要かつ競合する (追従先だった元アバター階層も切り離し済で解決不能)。
+            //     アバターを source に持つ constraint だけを剥がし、プロップ内部の拘束は残す。
+            _StripAvatarFollowConstraints(objRoot);
 
             try
             {
@@ -339,6 +348,46 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 if (resolves) return string.Join("/", segs, 0, cut);
             }
             return null;
+        }
+
+        // 複製したプロップ階層から「アバターへ追従していた」constraint を取り除く。socket 追従は
+        // AvatarItem の attachment が担うため不要であり、切り離したアバターを指す残存 constraint は
+        // 競合を招く。Unity の全 Constraint 型 (IConstraint) を対象に、source がプロップ階層の外
+        // (= アバター) を指すものだけを剥がし、プロップ内部の部品どうしの拘束は温存する。
+        static void _StripAvatarFollowConstraints(GameObject root)
+        {
+            var constraints = root.GetComponentsInChildren<IConstraint>(includeInactive: true);
+            var sources = new List<ConstraintSource>();
+            int removed = 0;
+            foreach (var c in constraints)
+            {
+                if (!_FollowsOutside(c, root.transform, sources)) continue;
+                Object.DestroyImmediate(c as Object);
+                removed++;
+            }
+            if (removed > 0)
+            {
+                VRChatAvatarTransferLog.Info(
+                    $"Prop build: removed {removed} avatar-follow constraint(s) (socket follow is driven by AvatarItem).");
+            }
+        }
+
+        // constraint の source のいずれかがプロップ階層 (root) の外を指すなら「アバター追従」とみなす。
+        // Instantiate 時、プロップ内を指す source は複製先へ再マップされ、アバター側を指す source は
+        // 元アバターの Transform を指したまま (階層外) 残る。切り離しで解決不能になった null source や
+        // source を 1 つも持たない拘束も、追従先を失ったものとして除去対象にする。
+        static bool _FollowsOutside(IConstraint constraint, Transform root, List<ConstraintSource> sources)
+        {
+            sources.Clear();
+            constraint.GetSources(sources);
+            if (sources.Count == 0) return true; // 追従先を失った拘束
+            foreach (var s in sources)
+            {
+                var t = s.sourceTransform;
+                if (t == null) return true;          // 切り離しで解決不能
+                if (!t.IsChildOf(root)) return true; // プロップ外 (= アバター) を指す
+            }
+            return false; // 全 source がプロップ内 = 内部拘束なので残す
         }
 
         static void _EnsureFolder(string folder)
