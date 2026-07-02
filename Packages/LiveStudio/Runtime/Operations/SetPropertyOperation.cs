@@ -73,8 +73,10 @@ namespace Lilium.LiveStudio
                     if (currentBool != desired) property.Value.SetValue(desired);
                     break;
                 case float currentFloat:
-                    // Value モード想定: 入力の連続値 (0..1) をそのまま書く。範囲マッピングは将来。
-                    if (currentFloat != context.value) property.Value.SetValue(context.value);
+                    // Value モード想定: 入力の連続値 (0..1) を制御の範囲 [min, max] へマッピングして書く
+                    // (DeckSlider が min/max を持つ。既定 0..1 では恒等なので素の値を書くのと同じ)。
+                    float mapped = context.MappedValue;
+                    if (currentFloat != mapped) property.Value.SetValue(mapped);
                     break;
             }
         }

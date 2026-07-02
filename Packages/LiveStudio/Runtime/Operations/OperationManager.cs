@@ -155,6 +155,18 @@ namespace Lilium.LiveStudio
         /// <param name="wasHeld">The set's <see cref="OperationSet.held"/> on the previous frame.</param>
         internal static bool TryGetFiringContext(OperationSet set, bool wasHeld, out OperationContext context)
         {
+            if (!TryEvaluateContext(set, wasHeld, out context)) return false;
+            // A DeckSlider maps its normalized 0..1 output onto [min, max] so value operations write real-range
+            // values; every other control keeps the identity 0..1 range. Applied once here (regardless of manual
+            // vs bound input) so the range is honored uniformly. value itself stays normalized (see MappedValue).
+            if (set.control is DeckSlider slider) context = context.WithRange(slider.min, slider.max);
+            return true;
+        }
+
+        // The raw evaluation (normalized 0..1, no value-range awareness). Split out so TryGetFiringContext can
+        // apply the control's value range in one place instead of at every OperationContext construction site.
+        private static bool TryEvaluateContext(OperationSet set, bool wasHeld, out OperationContext context)
+        {
             // The behaviour axis is the set's control kind (the single source of truth); the bound input
             // interprets its raw value through it. A button-mode set commits its one-shot trigger on release,
             // so a held press must not trigger yet; other modes commit on the press edge. Mirrors
@@ -166,8 +178,9 @@ namespace Lilium.LiveStudio
             {
                 // Manual value from the remote app's Value-mode slider. Takes precedence over the bound
                 // input and works even when disabled (the user dragged it explicitly), like the manual hold.
-                // Edges stay false: SetPropertyOperation's float path reads only context.value, and exclusivity
-                // needs context.pressed — so a Value set never disturbs group radios. 0.5 mirrors
+                // Edges stay false: SetPropertyOperation's float path reads only the value (mapped through the
+                // control's range), and exclusivity needs context.pressed — so a Value set never disturbs group
+                // radios. 0.5 mirrors
                 // InputSource.kThreshold (protected there, so inlined) for bool-property targets.
                 float manual = Mathf.Clamp01(set.manualValue);
                 context = new OperationContext(manual, pressed: false, released: false,
@@ -327,19 +340,28 @@ namespace Lilium.LiveStudio
         /// Button is momentary (on while held). The set is named <paramref name="name"/> (the property's display
         /// name; falls back to the generic default when empty). The optional <paramref name="group"/> assigns an
         /// exclusivity group (empty = ungrouped); Toggle-mode sets sharing a non-empty group act as a radio.
-        /// Returns the new set's id. Drives the "bind this control to a key" flow.</summary>
+        /// For a Value-mode (slider) control, <paramref name="min"/> and <paramref name="max"/> are inherited
+        /// from the source slider so the drag maps its 0..1 onto that range; they are ignored for non-slider
+        /// kinds. Returns the new set's id. Drives the "bind this control to a key" flow.</summary>
         [ExposedFunction]
-        public string AddPropertyOperation(string targetId, string propertyPath, string mode, string name, string binding, string group)
+        public string AddPropertyOperation(string targetId, string propertyPath, string mode, string name, string binding, string group, float min = 0f, float max = 1f)
         {
             var inputMode = System.Enum.TryParse<InputMode>(mode, ignoreCase: true, out var m)
                 ? m
                 : InputMode.Toggle;
+            var control = _DefaultControlForMode(inputMode);
+            // Only a slider carries a value range; the mode maps to DeckSlider for Value inputs.
+            if (control is DeckSlider slider)
+            {
+                slider.min = min;
+                slider.max = max;
+            }
             var set = _AddOperationSet(
                 _KeyInput(binding),
                 name,
                 new OperationBase[] { new SetPropertyOperation { targetId = targetId, propertyPath = propertyPath } },
                 group,
-                _DefaultControlForMode(inputMode));
+                control);
             return set.id;
         }
 

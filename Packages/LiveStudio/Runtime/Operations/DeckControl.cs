@@ -88,5 +88,17 @@ namespace Lilium.LiveStudio
 
         /// <summary>Drag sets a continuous 0..1 value.</summary>
         public override InputMode mode => InputMode.Value;
+
+        /// <summary>Low end of the value range the drag maps onto. Inherited from the source slider control's
+        /// min when the tile is created from the remote app's "bind to key" affordance. Defaults to 0, which
+        /// (with <see cref="max"/> = 1) is the identity range, so the raw 0..1 value is written unchanged.</summary>
+        [ExposedField]
+        public float min = 0f;
+
+        /// <summary>High end of the value range. Inherited from the source slider control's max. Defaults to 1.
+        /// The normalized 0..1 drag is written to the target property as <c>min + (max - min) * value</c>
+        /// (see <see cref="OperationContext.MappedValue"/>).</summary>
+        [ExposedField]
+        public float max = 1f;
     }
 }

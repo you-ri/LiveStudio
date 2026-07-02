@@ -547,6 +547,78 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
+        public void AddPropertyOperation_ValueMode_InheritsSliderMinMax()
+        {
+            var manager = new OperationManager();
+
+            manager.AddPropertyOperation("obj", "weight", "Value", "Weight", "", "", 10f, 90f);
+
+            var slider = manager.operationSets[manager.operationSets.Count - 1].control as DeckSlider;
+            Assert.IsNotNull(slider, "a value property defaults to a slider tile");
+            Assert.AreEqual(10f, slider.min, 1e-4f, "the source slider's min is inherited");
+            Assert.AreEqual(90f, slider.max, 1e-4f, "the source slider's max is inherited");
+        }
+
+        [Test]
+        public void AddPropertyOperation_ValueMode_DefaultsToIdentityRange()
+        {
+            var manager = new OperationManager();
+
+            manager.AddPropertyOperation("obj", "weight", "Value", "Weight", "", "");
+
+            var slider = manager.operationSets[manager.operationSets.Count - 1].control as DeckSlider;
+            Assert.IsNotNull(slider);
+            Assert.AreEqual(0f, slider.min, 1e-4f, "without a source range the tile keeps the identity 0..1 range");
+            Assert.AreEqual(1f, slider.max, 1e-4f);
+        }
+
+        [Test]
+        public void AddPropertyOperation_NonSliderMode_IgnoresMinMax()
+        {
+            var manager = new OperationManager();
+
+            // A toggle property maps to a DeckToggle, which carries no value range; min/max are simply ignored.
+            manager.AddPropertyOperation("obj", "useSpout", "Toggle", "Spout", "", "", 10f, 90f);
+
+            Assert.IsInstanceOf<DeckToggle>(manager.operationSets[manager.operationSets.Count - 1].control);
+        }
+
+        [Test]
+        public void TryGetFiringContext_DeckSliderMapsValueOntoRange()
+        {
+            // A slider with a [10, 90] range maps its normalized 0.25 manual value onto 10 + 0.25*80 = 30.
+            var set = new OperationSet
+            {
+                enabled = true,
+                control = new DeckSlider { min = 10f, max = 90f },
+                input = new FakeInputSource(),
+            };
+            set.SetManualValue(0.25f);
+
+            bool fired = OperationManager.TryGetFiringContext(set, wasHeld: false, out var context);
+
+            Assert.IsTrue(fired);
+            Assert.AreEqual(0.25f, context.value, 1e-4f, "value stays normalized so gauges are unaffected");
+            Assert.AreEqual(10f, context.valueMin, 1e-4f);
+            Assert.AreEqual(90f, context.valueMax, 1e-4f);
+            Assert.AreEqual(30f, context.MappedValue, 1e-4f, "MappedValue maps the 0..1 value onto [min, max]");
+        }
+
+        [Test]
+        public void TryGetFiringContext_NonSliderControl_KeepsIdentityRange()
+        {
+            // A non-slider control (default DeckButton) keeps the identity 0..1 range, so MappedValue == value.
+            var set = new OperationSet { enabled = true, input = new FakeInputSource { raw = 0.7f } };
+
+            bool fired = OperationManager.TryGetFiringContext(set, wasHeld: false, out var context);
+
+            Assert.IsTrue(fired);
+            Assert.AreEqual(0f, context.valueMin, 1e-4f);
+            Assert.AreEqual(1f, context.valueMax, 1e-4f);
+            Assert.AreEqual(context.value, context.MappedValue, 1e-4f, "the identity range leaves the value unchanged");
+        }
+
+        [Test]
         public void PlaceControl_SetsDeckAndCell()
         {
             var manager = new OperationManager();
