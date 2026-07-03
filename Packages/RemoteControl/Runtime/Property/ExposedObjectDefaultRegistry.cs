@@ -289,7 +289,7 @@ namespace Lilium.RemoteControl
 
             var value = ExposedPropertyUtility.GetValueRaw(obj.target, propertyType);
             var currentToken = _SerializeWithControlAttribute(resolver, value, propertyType);
-            userBaseline[rootName] = currentToken?.DeepClone();
+            userBaseline[rootName] = _AdoptToken(currentToken);
         }
 
         /// <summary>
@@ -517,6 +517,18 @@ namespace Lilium.RemoteControl
                 return ObjectSelectorSerializer.SerializeObjectSelectorValue(value, forPersistence: true);
             }
             return ExposedPropertySerializer.SerializeUnityType(resolver, value, propertyType.forceValue, forPersistence: true);
+        }
+
+        /// <summary>
+        /// Stores a freshly-serialized token into a baseline JObject. Tokens produced by
+        /// <see cref="_SerializeWithControlAttribute"/> have no parent, so they can be assigned
+        /// directly without a defensive copy; only clone when a token is already attached
+        /// elsewhere (Newtonsoft would otherwise reparent it out of its current container).
+        /// </summary>
+        private static JToken _AdoptToken(JToken token)
+        {
+            if (token == null || token.Parent == null) return token;
+            return token.DeepClone();
         }
     }
 }
