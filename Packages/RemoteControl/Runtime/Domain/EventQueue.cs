@@ -107,6 +107,21 @@ namespace Lilium.RemoteControl
 
             var clientQueue = _clientQueues.GetOrAdd(clientId, id => new ClientEventQueue(id, _maxEventsPerClient));
 
+            // Fast path: when events are already queued, drain them immediately without allocating
+            // the timeout / linked CancellationTokenSources below. Under load (e.g. a slider drag
+            // streaming many events) this keeps the poll loop allocation-free; only a genuinely
+            // idle poll pays for the long-poll wait primitives. DrainInto leaves the buffer
+            // untouched and returns 0 when there is nothing new.
+            int immediate = clientQueue.DrainInto(lastEventId, buffer);
+            if (immediate > 0)
+            {
+                return immediate;
+            }
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return 0;
+            }
+
             // 外部の CancellationToken と内部のタイムアウトを組み合わせる
             var actualTimeout = timeout ?? TimeSpan.FromSeconds(30);
             using var timeoutCts = new CancellationTokenSource(actualTimeout);
@@ -603,6 +618,13 @@ namespace Lilium.RemoteControl
         public DateTimeOffset Timestamp { get; set; }
         public string Type { get; set; }
         public string EventType { get; set; }
+
+        // Cached unified SSE JSON payload. The same EventItem instance is fanned out to every
+        // subscribed client (see EventQueue.AddEvent), and its payload is client-independent, so
+        // the serialization is built once on first send and reused for all further clients.
+        // Racing builders are harmless: they produce identical strings and a reference assignment
+        // is atomic, so no lock is needed.
+        internal string cachedSseJson;
     }
 
     /// <summary>

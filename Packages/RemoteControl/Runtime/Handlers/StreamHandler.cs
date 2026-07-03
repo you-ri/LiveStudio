@@ -221,7 +221,15 @@ namespace Lilium.RemoteControl.RestApi.Controllers
                             for (int i = 0; i < eventCount; i++)
                             {
                                 var eventItem = buffer[i];
-                                SendSseEvent(writer, eventItem.EventType, eventItem.Data, eventItem.Id);
+                                // The unified JSON payload is client-independent; build it once per
+                                // event and reuse the cached string for every subsequent client.
+                                var jsonData = eventItem.cachedSseJson;
+                                if (jsonData == null)
+                                {
+                                    jsonData = _BuildUnifiedSseJson(eventItem.EventType, eventItem.Data);
+                                    eventItem.cachedSseJson = jsonData;
+                                }
+                                _WriteSseFrame(writer, jsonData, eventItem.Id);
                                 lastEventId = eventItem.Id;
                                 lastKeepAlive = DateTime.UtcNow;
                             }
@@ -244,8 +252,8 @@ namespace Lilium.RemoteControl.RestApi.Controllers
                     // クライアントアクティビティを更新
                     this._context.connectionManager.UpdateClientActivity(clientId);
 
-                    // 短い待機 (約0.01秒)
-                    await Task.Delay(10, cancellationToken);
+                    // GetEventsAsync は新着が来るまで (最大 500ms) ブロックするロングポーリングのため、
+                    // 追加のスピン待機は不要。イベント到着で即座に起床し、レイテンシも下がる。
                 }
             }
             catch (OperationCanceledException)
@@ -266,13 +274,15 @@ namespace Lilium.RemoteControl.RestApi.Controllers
         
         private void SendSseEvent(StreamWriter writer, string eventType, object data, long? eventId = null)
         {
-            if (eventId.HasValue)
-            {
-                // 文字列補間 ($"id: {eventId}") の中間文字列確保を避けて分割書き込みする。
-                writer.Write("id: ");
-                writer.WriteLine(eventId.Value);
-            }
+            _WriteSseFrame(writer, _BuildUnifiedSseJson(eventType, data), eventId);
+        }
 
+        /// <summary>
+        /// イベントを統一形式 JSON 文字列に変換する。"data" 種別はそのまま、その他は
+        /// {type:"data", data:{...}} でラップする。クライアント非依存なので結果はキャッシュ可能。
+        /// </summary>
+        private string _BuildUnifiedSseJson(string eventType, object data)
+        {
             // 統一形式への変換。送信される event 種別は常に "data"。
             object unifiedData;
             using (s_ConvertToUnifiedFormatMarker.Auto())
@@ -300,14 +310,25 @@ namespace Lilium.RemoteControl.RestApi.Controllers
                 }
             }
 
-            writer.WriteLine("event: data");
-
-            string jsonData;
             using (s_JsonSerializeMarker.Auto())
             {
-                jsonData = JsonConvert.SerializeObject(unifiedData);
+                return JsonConvert.SerializeObject(unifiedData);
             }
-            //Debug.Log($"[RemoteControl] Send SSE {jsonData}");
+        }
+
+        /// <summary>
+        /// シリアライズ済み JSON ペイロードを 1 件の SSE フレーム (id/event/data 行) として書き込み、flush する。
+        /// </summary>
+        private void _WriteSseFrame(StreamWriter writer, string jsonData, long? eventId)
+        {
+            if (eventId.HasValue)
+            {
+                // 文字列補間 ($"id: {eventId}") の中間文字列確保を避けて分割書き込みする。
+                writer.Write("id: ");
+                writer.WriteLine(eventId.Value);
+            }
+
+            writer.WriteLine("event: data");
 
             // データを SSE の data: 行へ。改行を含む場合のみ分割し、Split による配列確保を避ける。
             using (s_WriteDataMarker.Auto())
