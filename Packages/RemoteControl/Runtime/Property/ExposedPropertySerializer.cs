@@ -194,12 +194,19 @@ namespace Lilium.RemoteControl
             if (valueType == typeof(TransformValue)) return UnityScalarSerializer.SerializeTransformValue((TransformValue)value);
             if (valueType == typeof(Texture2D)) return UnityScalarSerializer.SerializeTexture2D((Texture2D)value);
 
-            // プリミティブ型とEnum
-            if (value is string or int or float or bool or double)
-                return JToken.FromObject(value);
+            // プリミティブ型とEnum: JToken.FromObject の JsonSerializer 経由を避け、型付き JValue を
+            // 直接生成する (出力 JSON は同一。値ごとの一時アロケーションを削減)。
+            switch (value)
+            {
+                case string s: return new JValue(s);
+                case int i: return new JValue(i);
+                case float f: return new JValue(f);
+                case bool b: return new JValue(b);
+                case double d: return new JValue(d);
+            }
 
             if (value is System.Enum)
-                return JToken.FromObject(value.ToString());
+                return new JValue(value.ToString());
 
             if (value is System.Collections.IEnumerable collection && !(value is string))
                 return _SerializeArray(resolver, collection, forPersistence);
