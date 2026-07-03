@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.2] - 2026-07-03
+<!-- changelog-sha: 378d90c48c438183219cce60ea3f6e38536979f4 -->
+
+### Fixed
+
+- The Prop Builder now strips avatar-follow constraints from a built prop. A hand-held VRChat prop follows the avatar through VRC constraints, which the transfer converts to Unity constraints; on a standalone prop the socket follow is driven by `AvatarItem`'s attachment, so those leftover constraints are redundant and fight it (their avatar-side targets are detached too). Only constraints whose sources point outside the prop hierarchy (i.e. the avatar) are removed; internal part-to-part constraints are kept.
+
 ## [0.24.0] - 2026-06-26
 
 ### Changed

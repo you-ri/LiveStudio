@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.2] - 2026-07-03
+<!-- changelog-sha: 378d90c48c438183219cce60ea3f6e38536979f4 -->
+
+### Fixed
+
+- Incoming pose frames are now sampled with gap tolerance: the interpolation buffer searches nearby frames instead of requiring exact frame numbers, absorbing the periodic dropped frame caused by wall-clock quantization as well as occasional UDP drops. This removes the recurring motion spikes / stutter seen on the Capture→Fusion→Studio path.
+
 ## [0.23.5] - 2026-06-22
 
 ### Added

@@ -10,6 +10,6 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// Package version from package.json.
         /// </summary>
-        public const string PackageVersion = "0.24.1-exp.1";
+        public const string PackageVersion = "0.24.2-exp.1";
     }
 }

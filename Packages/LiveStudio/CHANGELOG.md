@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.24.2] - 2026-07-03
+<!-- changelog-sha: 378d90c48c438183219cce60ea3f6e38536979f4 -->
+
+### Added
+
+- The editor gains a toolbar button to launch and close the Remote app, matching the runtime RemoteAppHost (same configured path / args and child-process handling).
+
+### Changed
+
+- Value-mode Deck sliders now map their drag onto the source property's min/max range instead of always writing the raw normalized 0..1 value, so a slider bound to a property spanning e.g. 0..100 can drive the full range. The normalized value is retained internally so gauges and edge detection are unaffected.
+- Loaded prop / avatar objects are now persisted through the live scene's top-level diff as the single source of truth. State whose owning asset has not finished loading is queued and bound once the asset arrives, and any entry that never binds during a session is preserved verbatim across a load→save cycle instead of being warned about and dropped.
+
+### Fixed
+
+- Operation sets authored directly in a scene or prop bundle now have a stable id backfilled on init and restore. Previously they kept the default empty id, so every id-addressed function was a silent no-op and the set was skipped when rebuilding the input map.
+
 ## [0.24.1] - 2026-06-30
 <!-- changelog-sha: 7c999a055f01c038e5793031dd7b3efcabf17d16 -->
 
