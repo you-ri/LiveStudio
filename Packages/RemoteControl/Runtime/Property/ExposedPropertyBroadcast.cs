@@ -10,12 +10,29 @@ namespace Lilium.RemoteControl
     public static class ExposedPropertyBroadcast
     {
         /// <summary>
+        /// True when at least one SSE client is connected to any running server. Property
+        /// broadcasts serialize the changed value into JSON before fan-out; when nobody is
+        /// listening (headless run, or no RemoteApp connected) that work is pure waste, so the
+        /// broadcast entry points bail out early. Cheap: reads an int per server (usually one).
+        /// </summary>
+        private static bool _HasConnectedClients()
+        {
+            foreach (var instance in RemoteControlServerManager.servers.Values)
+            {
+                if (instance.server != null && instance.server.GetConnectionCount() > 0)
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
         /// ターゲットオブジェクトの指定プロパティをSSEでブロードキャストする。
         /// <paramref name="propertyPath"/> にはトップレベル名 (例: "meshPaths") だけでなく、
         /// DotBracket 形式のネストパス (例: "animationParameterOverrides[0].type") も指定できる。
         /// </summary>
         public static void BroadcastProperty(object target, string propertyPath)
         {
+            if (!_HasConnectedClients()) return;
             if (!ExposedObjectRegistry.TryFindByTarget(target, out var exposedObj)) return;
             BroadcastProperty(exposedObj, propertyPath);
         }
@@ -29,6 +46,7 @@ namespace Lilium.RemoteControl
         public static void BroadcastProperty(UnityEngine.Object target, string propertyPath)
         {
             if (target == null || string.IsNullOrEmpty(propertyPath)) return;
+            if (!_HasConnectedClients()) return;
 
             var exposedClass = ExposedClass.Find(target.GetType());
             if (exposedClass == null) return;
@@ -57,6 +75,7 @@ namespace Lilium.RemoteControl
         public static void BroadcastProperty(ExposedObjectHandle exposedObj, string propertyPath)
         {
             if (exposedObj == null) return;
+            if (!_HasConnectedClients()) return;
 
             var property = exposedObj.FindProperty(propertyPath);
             if (property == null) return;
