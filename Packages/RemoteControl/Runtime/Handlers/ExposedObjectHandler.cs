@@ -110,9 +110,6 @@ namespace Lilium.RemoteControl
         protected override bool SupportsPatch() => true;
 
         // 各 HTTP メソッドの内側ディスパッチはコンストラクタで構築した宣言表に委譲する。
-        // GET の旧実装は AbsolutePath を .ToLower() してから CompareTo/StartsWith して
-        // いたが、対象が ASCII リテラル (/exposed/...) と URL 由来パスのみのため
-        // MatchPattern の OrdinalIgnoreCase 判定と完全に等価。
         protected override Task HandleGetRequest(HttpListenerContext context)
             => DispatchEndpoints(context, _getRoutes, "Invalid request format");
 
