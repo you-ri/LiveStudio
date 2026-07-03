@@ -37,14 +37,22 @@ All endpoints are served by `HttpServerCore` under the configured base URL (defa
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/exposed/objects` | List all exposed objects. |
+| `GET` | `/exposed/objects` | List all exposed objects (depth 1; add `?nested` for full expansion). |
 | `GET` | `/exposed/objects?type={typeName}` | Filter exposed objects by type. |
-| `GET` | `/exposed/object/{id}` | Fetch a single exposed object by id. |
-| `GET` | `/exposed/object/{id}/{path}` | Read a property value. |
+| `GET` | `/exposed/object/{id}` | Fetch a single exposed object by id (depth 1; add `?nested` for full expansion). |
+| `GET` | `/exposed/object/{id}/{path}` | Read a property value (always fully expanded). |
 | `PUT` | `/exposed/object/{id}/{path}` | Write a property value. |
 | `POST` | `/exposed/object/{id}/{path}` | Append an array element. |
 | `DELETE` | `/exposed/object/{id}/{path}` | Remove an array element. |
 | `POST` | `/exposed/object/{id}/{path}/reset` | Reset a property to its default. |
+
+By default an object is returned at **depth 1**: its own property values are serialized, but a nested
+inline (unregistered) composite child is replaced by a truncation stub
+`{ "@type": ..., "@truncated": true }` so the list stays small and scalable — fetch the child on demand
+via `GET /exposed/object/{id}/{path}`. Arrays do not consume depth (element count and type stay
+visible), and registered children keep their `@ref` form. Pass `?nested` (or `?nested=true`) to restore
+full unbounded expansion. Property reads, SSE broadcasts, PUT responses and persistence are always fully
+expanded.
 
 ### Type definitions
 

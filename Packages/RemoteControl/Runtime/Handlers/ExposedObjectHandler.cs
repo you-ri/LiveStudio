@@ -129,10 +129,48 @@ namespace Lilium.RemoteControl
         {
             var typeName = context.Request.QueryString["type"];
             var category = context.Request.QueryString["category"];
+            var maxDepth = ResolveNestedMaxDepth(context.Request.QueryString);
 
             var exposedObjects = await ExecuteOnMainThread(() => _CollectExposedObjects(typeName, category));
-            var json = await ExecuteOnMainThread(() => ExposedPropertySerializer.ToJson(exposedObjects, GetResolver()));
+            var json = await ExecuteOnMainThread(() => ExposedPropertySerializer.ToJson(exposedObjects, GetResolver(), maxDepth));
             await WriteResponse(200, context.Response, json);
+        }
+
+        /// <summary>
+        /// Resolves the nested-expansion depth for a GET request from the <c>nested</c> query flag.
+        /// Absent (default) yields a shallow depth-1 response where nested inline composites are emitted
+        /// as truncation stubs so the payload stays small and scalable; the client fetches deeper levels
+        /// on demand. <c>?nested</c>, <c>?nested=true</c> and <c>?nested=1</c> request the legacy
+        /// unbounded expansion. A bare <c>?nested</c> (no '=') is stored by .NET under a null key, so
+        /// both forms are checked. Only <c>/exposed/objects</c> and <c>/exposed/object/{id}</c> use this;
+        /// property GET (<c>/exposed/object/{id}/{path}</c>) is always fully expanded by design.
+        /// Takes the parsed query collection (not the request) so it is unit-testable without a live server.
+        /// </summary>
+        internal static int ResolveNestedMaxDepth(System.Collections.Specialized.NameValueCollection query)
+        {
+            return _IsNestedRequested(query) ? int.MaxValue : 1;
+        }
+
+        private static bool _IsNestedRequested(System.Collections.Specialized.NameValueCollection query)
+        {
+            if (query == null) return false;
+            var value = query["nested"];
+            if (value != null)
+            {
+                return value.Length == 0
+                    || value.Equals("true", StringComparison.OrdinalIgnoreCase)
+                    || value == "1";
+            }
+            // Bare `?nested` — value-less keys land under the null key as a comma-joined list.
+            var bareKeys = query[null];
+            if (!string.IsNullOrEmpty(bareKeys))
+            {
+                foreach (var part in bareKeys.Split(','))
+                {
+                    if (part.Equals("nested", StringComparison.OrdinalIgnoreCase)) return true;
+                }
+            }
+            return false;
         }
 
         /// <summary>
@@ -223,6 +261,7 @@ namespace Lilium.RemoteControl
         {
             var path = context.Request.Url.AbsolutePath;
             var id = PathParser.GetPathSegment(path, 2);
+            var maxDepth = ResolveNestedMaxDepth(context.Request.QueryString);
 
             var exposedObject = await ExecuteOnMainThread(() =>
             {
@@ -233,7 +272,7 @@ namespace Lilium.RemoteControl
 
             if (exposedObject != null)
             {
-                var json = await ExecuteOnMainThread(() => ExposedPropertySerializer.ToJson(exposedObject.Value, GetResolver()));
+                var json = await ExecuteOnMainThread(() => ExposedPropertySerializer.ToJson(exposedObject.Value, GetResolver(), maxDepth: maxDepth));
 
                 await WriteResponse(200, context.Response, json);
                 return;

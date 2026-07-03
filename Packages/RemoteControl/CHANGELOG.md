@@ -1,6 +1,10 @@
 # Changelog
 
-## [0.24.0] - 2026-06-26
+## [Unreleased]
+
+### Changed
+
+- **Breaking:** `GET /exposed/objects` and `GET /exposed/object/{id}` now return objects at **depth 1** by default. A nested inline (unregistered) composite child is emitted as a truncation stub `{ "@type": ..., "@truncated": true }` instead of being fully expanded, keeping the payload small and scalable as the object graph grows. Arrays do not consume depth, so element count and per-element type stay visible, and registered children keep their `@ref` form. Pass `?nested` (or `?nested=true`) to restore the previous unbounded expansion. Property reads (`GET /exposed/object/{id}/{path}`), SSE broadcasts, PUT responses and persistence (scene / project / preset) are unchanged — always fully expanded, so saved files stay byte-identical. Clients that walked nested values from the object list must either pass `?nested` or lazily fetch each truncated child via the property GET.
 
 ### Added
 

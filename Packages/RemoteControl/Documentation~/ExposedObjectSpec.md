@@ -113,6 +113,16 @@ ExposedObject周りの仕様の要約や方向性を記述する。機能実装�
 - primary key は従来通り `@id` / selector 合成キー。RemoteApp は受信 id で直引きが失敗したときだけ instanceID で翻訳する
 - 永続化 JSON には含めない (セッション依存のため)。再接続後は RemoteApp 側の再フェッチで整合する
 
+### `@truncated` メタデータ と ネスト深度
+
+- REST の `GET /exposed/objects` / `GET /exposed/object/{id}` は既定で **深さ1** で返す。すなわち対象オブジェクト自身のプロパティ値は直列化するが、値がネストした inline（未登録・`hasId=false`）の複合オブジェクトの場合は、その中身を展開せず **打ち切りスタブ** `{ "@type": <typeName>, "@truncated": true }` に置換する（`@name` / `@instanceID` は従来条件で付与）。
+  - 目的: 全件×全ネストの展開を避け、レスポンスをスケーラブルに保つ。クライアントは「ここに子がいる」ことと型を知り、必要時に `GET /exposed/object/{id}/{path}` で遅延取得する。
+- **配列は深度を消費しない**。配列プロパティの要素は配列と同じ深さで直列化されるため、要素数と各要素の型はスタブでも残る（UI が個数・順序を描画できる）。プリミティブ / string / enum / Vector 等の値型リーフは深さに関係なく常に値を出す。
+- **登録済み子** (`hasId=true`) は従来どおり `@ref` で表現され、深度の影響を受けない（もともと深さ1相当）。`@truncated` が付くのは inline 子のみ。
+- `?nested`（または `?nested=true` / `?nested=1`）を付けると従来どおり **無限展開**で返る。`?nested=false` / `?nested=0` は既定（深さ1）。
+- **`@truncated` は読み取り専用マーカー**。デシリアライズ (`FromJson` / PUT) 側ではプロパティ名でないため無視され、書き戻しても子を消さない。
+- **`GET /exposed/object/{id}/{path}`（property GET）は `nested` に非対応で常にフル展開**。パス指定でレスポンスが既に1ブランチに限定されており、深さ1にすると正当な「ブランチ全量取得」が要素ごとの追加リクエストに分解されるため。SSE 配信・PUT 応答・永続化 (scene/project/preset) も従来どおりフル展開（深度は `forPersistence` 時に無限へ強制される）。
+
 ## 通信
 
 ### REST API

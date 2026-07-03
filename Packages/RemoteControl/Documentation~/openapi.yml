@@ -42,13 +42,27 @@ paths:
             type: string
           example: "Light"
           description: "Optional: Filter objects by type. If omitted, returns all objects."
+        - in: query
+          name: nested
+          required: false
+          schema:
+            type: boolean
+          example: true
+          description: >
+            Optional flag. When absent (default) each object is returned at depth 1: its own
+            property values are serialized but nested inline (unregistered) composite children are
+            replaced by a truncation stub ({ "@type": ..., "@truncated": true }) so the payload stays
+            small and scalable. Arrays do not consume depth, so element count and per-element type
+            stay visible. Fetch a stubbed child on demand via GET /exposed/object/{id}/{path}.
+            Pass `?nested` (or `?nested=true`) to restore full unbounded expansion.
+            (The depth is 1 vs. unbounded today; a future `?nested=<N>` numeric form may expose it.)
       responses:
         '200':
           description: Successful response with the current status
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ObjectsGettingResponse"  
+                $ref: "#/components/schemas/ObjectsGettingResponse"
 
   /exposed/object/{id}:
     get:
@@ -59,6 +73,15 @@ paths:
           schema:
             type: string
           example: "3470a41c-f079-4d30-a002-3468fda088f7"
+        - in: query
+          name: nested
+          required: false
+          schema:
+            type: boolean
+          example: true
+          description: >
+            Optional flag, same semantics as on /exposed/objects. Absent (default) returns the object
+            at depth 1 with nested inline composites truncated; `?nested` returns full expansion.
       responses:
         '200':
           description: Successful response with the current status
@@ -70,7 +93,10 @@ paths:
 
   /exposed/object/{id}/{property}:
     get:
-      summary: Get the property of the exposed object.
+      summary: >
+        Get the property of the exposed object. Always fully (unbounded) expanded — the `nested`
+        flag does not apply here, because the path already scopes the response to a single branch.
+        The client uses this to lazily fetch a child that /exposed/objects truncated.
       parameters:
         - in: path
           name: id

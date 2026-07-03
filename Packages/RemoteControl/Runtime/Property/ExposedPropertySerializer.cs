@@ -26,6 +26,12 @@ namespace Lilium.RemoteControl
         /// <item><c>skipPropertyRef</c>: exclude <see cref="ExposedPropertyType.isExposedPropertyReference"/>
         /// fields (baseline / dirty comparison does not want the referenced value inlined).</item>
         /// <item><c>scopeFilter</c>: when persisting, only members whose persistScope matches are written.</item>
+        /// <item><c>maxDepth</c>: how many levels of composite (ExposedClass) object expansion the top
+        /// object is serialized with. <c>int.MaxValue</c> = unbounded (the default, and the only value
+        /// used by persistence / SSE / dirty detection). REST reads may pass a finite depth so nested
+        /// inline children beyond the limit are emitted as truncation stubs. Arrays do not consume depth
+        /// (their elements sit at the array's depth) so element count and type stay visible. Ignored
+        /// (forced unbounded) when <c>forPersistence</c> is true — see <see cref="SerializeFullToJObject"/>.</item>
         /// </list>
         /// </summary>
         internal readonly struct SerializeOptions
@@ -33,12 +39,14 @@ namespace Lilium.RemoteControl
             public readonly bool forPersistence;
             public readonly bool skipPropertyRef;
             public readonly PersistScope scopeFilter;
+            public readonly int maxDepth;
 
-            public SerializeOptions(bool forPersistence, bool skipPropertyRef, PersistScope scopeFilter)
+            public SerializeOptions(bool forPersistence, bool skipPropertyRef, PersistScope scopeFilter, int maxDepth = int.MaxValue)
             {
                 this.forPersistence = forPersistence;
                 this.skipPropertyRef = skipPropertyRef;
                 this.scopeFilter = scopeFilter;
+                this.maxDepth = maxDepth;
             }
         }
 
@@ -176,7 +184,9 @@ namespace Lilium.RemoteControl
         // -------------------------------------------------------
 
         // Unity型をJTokenにシリアライズする共通メソッド
-        internal static JToken SerializeUnityType(IExposedObjectResolver resolver, object value, bool forceValue = false, bool forPersistence = false)
+        // depth: remaining composite-expansion budget (int.MaxValue = unbounded). Only the REST read path
+        // passes a finite value; every other caller keeps the default so behavior is byte-identical.
+        internal static JToken SerializeUnityType(IExposedObjectResolver resolver, object value, bool forceValue = false, bool forPersistence = false, int depth = int.MaxValue)
         {
             Debug.Assert(resolver != null, "Resolver cannot be null");
 
@@ -235,13 +245,15 @@ namespace Lilium.RemoteControl
                 return new JValue(value.ToString());
 
             if (value is System.Collections.IEnumerable collection && !(value is string))
-                return _SerializeArray(resolver, collection, forPersistence);
+                return _SerializeArray(resolver, collection, forPersistence, depth);
 
-            return SerializeExposedObject(resolver, value, forceValue, forPersistence);
+            return SerializeExposedObject(resolver, value, forceValue, forPersistence, depth);
         }
 
         // コレクションをJArrayにシリアライズ
-        private static JToken _SerializeArray(IExposedObjectResolver resolver, System.Collections.IEnumerable collection, bool forPersistence = false)
+        // Arrays do not consume depth budget: elements are serialized at the same depth as the array so
+        // element count and per-element type stay visible even at a shallow depth.
+        private static JToken _SerializeArray(IExposedObjectResolver resolver, System.Collections.IEnumerable collection, bool forPersistence = false, int depth = int.MaxValue)
         {
             Debug.Assert(resolver != null, "Resolver cannot be null");
 
@@ -257,7 +269,7 @@ namespace Lilium.RemoteControl
                 }
                 else
                 {
-                    var serializedItem = SerializeUnityType(resolver, item, forPersistence: forPersistence);
+                    var serializedItem = SerializeUnityType(resolver, item, forPersistence: forPersistence, depth: depth);
                     jArray.Add(serializedItem ?? JValue.CreateNull());
                 }
                 fileResolver?.PopPath();
@@ -266,7 +278,9 @@ namespace Lilium.RemoteControl
             return jArray;
         }
 
-        public static JToken SerializeExposedObject(IExposedObjectResolver resolver, object value, bool forceValue, bool forPersistence = false)
+        // depth: remaining composite-expansion budget (int.MaxValue = unbounded). When it reaches 0 an
+        // inline (unregistered) child is emitted as a truncation stub instead of expanding its properties.
+        public static JToken SerializeExposedObject(IExposedObjectResolver resolver, object value, bool forceValue, bool forPersistence = false, int depth = int.MaxValue)
         {
             Debug.Assert(resolver != null, "Resolver cannot be null");
             Debug.Assert(value != null, "Value cannot be null");
@@ -292,6 +306,29 @@ namespace Lilium.RemoteControl
                         if (value is UnityEngine.Object refUnityObj && refUnityObj != null)
                         {
                             jObject["@instanceID"] = refUnityObj.GetInstanceID().ToString();
+                        }
+                    }
+                    return jObject;
+                }
+
+                // Depth limit reached: emit a truncation stub for this inline (unregistered) child
+                // instead of expanding its properties. @truncated marks that a child exists here so the
+                // client can lazily fetch it via GET /exposed/object/{id}/{path}; @type/@name/@instanceID
+                // keep the collapsed view labeled and SSE-routable. Registered children are handled by the
+                // @ref branch above and are unaffected. forPersistence never reaches here with a finite
+                // depth (SerializeFullToJObject forces unbounded), so scene/project files are byte-stable.
+                if (depth <= 0)
+                {
+                    jObject["@truncated"] = true;
+                    if (!forPersistence)
+                    {
+                        if (valueExposedObject != null)
+                        {
+                            jObject["@name"] = valueExposedObject.Value.name;
+                        }
+                        if (value is UnityEngine.Object truncatedUnityObj && truncatedUnityObj != null)
+                        {
+                            jObject["@instanceID"] = truncatedUnityObj.GetInstanceID().ToString();
                         }
                     }
                     return jObject;
@@ -326,7 +363,7 @@ namespace Lilium.RemoteControl
                             var resolved = pr.Resolve();
                             var resolvedValue = resolved?.GetValue();
                             fileResolver?.PushPath(propType.name);
-                            var serializedRef = SerializeUnityType(resolver, resolvedValue, propType.forceValue, forPersistence);
+                            var serializedRef = SerializeUnityType(resolver, resolvedValue, propType.forceValue, forPersistence, depth - 1);
                             fileResolver?.PopPath();
                             if (serializedRef != null)
                             {
@@ -339,7 +376,7 @@ namespace Lilium.RemoteControl
                     var propValue = ExposedPropertyUtility.GetValueRaw(value, propType);
                     fileResolver?.PushPath(propType.name);
                     var serializedValue = TrySerializeRawJson(propType, propValue)
-                        ?? SerializeUnityType(resolver, propValue, propType.forceValue, forPersistence);
+                        ?? SerializeUnityType(resolver, propValue, propType.forceValue, forPersistence, depth - 1);
                     fileResolver?.PopPath();
 
                     if (serializedValue != null)
@@ -995,6 +1032,13 @@ namespace Lilium.RemoteControl
 
             var fileResolver = resolver as IFileScopedResolver;
 
+            // The requested (top) object is always fully serialized; its property VALUES are serialized
+            // one level down. maxDepth == 1 therefore yields childDepth 0 so nested inline composites are
+            // stubbed. Persistence forces unbounded depth so scene / project files stay byte-identical.
+            int childDepth = options.forPersistence || options.maxDepth == int.MaxValue
+                ? int.MaxValue
+                : options.maxDepth - 1;
+
             foreach (var propertyType in properties)
             {
                 if (_ShouldSkipProperty(propertyType, options.forPersistence, options.scopeFilter)) continue;
@@ -1010,7 +1054,7 @@ namespace Lilium.RemoteControl
                         var resolved = pr.Resolve();
                         var resolvedValue = resolved?.GetValue();
                         fileResolver?.PushPath(propertyType.name);
-                        var serializedRef = SerializeUnityType(resolver, resolvedValue, propertyType.forceValue, options.forPersistence);
+                        var serializedRef = SerializeUnityType(resolver, resolvedValue, propertyType.forceValue, options.forPersistence, childDepth);
                         fileResolver?.PopPath();
                         jObject[propertyType.name] = serializedRef ?? JValue.CreateNull();
                     }
@@ -1037,7 +1081,7 @@ namespace Lilium.RemoteControl
 
                 fileResolver?.PushPath(propertyType.name);
                 var serializedValue = TrySerializeRawJson(propertyType, value)
-                    ?? SerializeUnityType(resolver, value, propertyType.forceValue, options.forPersistence);
+                    ?? SerializeUnityType(resolver, value, propertyType.forceValue, options.forPersistence, childDepth);
                 fileResolver?.PopPath();
 
                 if (serializedValue != null)
@@ -1309,11 +1353,11 @@ namespace Lilium.RemoteControl
         // ToJson (string JSON API)
         // -------------------------------------------------------
 
-        internal static string ToJson(ExposedObjectHandle exposedObject, IExposedObjectResolver resolver, bool isDirtyOnly = false, bool forPersistence = false, PersistScope scopeFilter = PersistScope.Scene)
+        internal static string ToJson(ExposedObjectHandle exposedObject, IExposedObjectResolver resolver, bool isDirtyOnly = false, bool forPersistence = false, PersistScope scopeFilter = PersistScope.Scene, int maxDepth = int.MaxValue)
         {
             if (exposedObject == null) return "{}";
 
-            var options = new SerializeOptions(forPersistence, skipPropertyRef: forPersistence, scopeFilter);
+            var options = new SerializeOptions(forPersistence, skipPropertyRef: forPersistence, scopeFilter, maxDepth);
 
             // Delta mode: フルシリアライズ + JsonDiff方式
             if (isDirtyOnly)
@@ -1459,7 +1503,7 @@ namespace Lilium.RemoteControl
             return JsonConvert.SerializeObject(jObject, Formatting.None);
         }
 
-        internal static string ToJson(IEnumerable<ExposedObjectHandle> exposedObjects, IExposedObjectResolver resolver)
+        internal static string ToJson(IEnumerable<ExposedObjectHandle> exposedObjects, IExposedObjectResolver resolver, int maxDepth = int.MaxValue)
         {
             if (exposedObjects == null || !exposedObjects.Any()) return "[]";
 
@@ -1471,7 +1515,7 @@ namespace Lilium.RemoteControl
                 if (exposedObj.propertyTypes == null) continue;
 
                 // 既存のToJsonを使用してプロパティをシリアライズ
-                var jsonString = ToJson(exposedObj, resolver);
+                var jsonString = ToJson(exposedObj, resolver, maxDepth: maxDepth);
                 var jObject = JsonConvert.DeserializeObject<JObject>(jsonString);
                 jArray.Add(jObject);
             }
