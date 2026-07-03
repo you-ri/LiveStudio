@@ -104,11 +104,14 @@ namespace Lilium.LiveStudio
 
         /// <summary>
         /// Serialized snapshot of this asset's exposed parameter values, captured before unload and
-        /// reapplied after reload so edits survive an unload/reload cycle. Hidden from the editor.
-        /// The value is itself a JSON document, so [RawJson] embeds it inline in the live scene instead
-        /// of as an escaped string (legacy files that stored it as a string still load).
+        /// reapplied after reload so edits survive an unload/reload cycle (and an avatar swap, for
+        /// avatar-attached props). A runtime carrier only — NOT persisted to the live scene
+        /// (<c>persistable=false</c>): a loaded object's persisted state now lives as top-level object
+        /// entries in the live scene, applied through the deferred-bind pending store once the asset has
+        /// loaded. Legacy scenes that stored <c>state</c> still read it harmlessly (the top-level diff
+        /// supersedes it). Hidden from the editor; [RawJson] keeps the (JSON) value inline.
         /// </summary>
-        [ExposedField, Hide, RawJson]
+        [ExposedField(persistable = false), Hide, RawJson]
         public string state;
 
         /// <summary>True while a load/unload is in flight; the manager skips re-entrant requests.</summary>

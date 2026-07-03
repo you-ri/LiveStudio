@@ -141,6 +141,8 @@ namespace Lilium.RemoteControl
 
             // 登録済み ExposedObjectHandle がある場合はその id を source-key として再利用する
             string sourceKey;
+            var rootId = overrideRootId ?? _currentRoot?.id;
+            var path = overridePath ?? GetCurrentPath();
             var registered = _inner.FindByTarget(obj);
             if (registered != null && registered.Value.hasId)
             {
@@ -148,8 +150,11 @@ namespace Lilium.RemoteControl
             }
             else
             {
-                var rootId = overrideRootId ?? _currentRoot?.id;
-                var path = overridePath ?? GetCurrentPath();
+                // Rename an index-based component element ("components[0]") to an exposed-type-name-based
+                // key ("components[Chair]") so the source key survives bundle re-export / component
+                // reordering (a numeric index would silently drift to another component). Both the source
+                // key and the pending path use the renamed form so nested references stay consistent.
+                path = _NameComponentPath(path, obj);
                 sourceKey = _ComposeSourceKey(rootId, path);
             }
             ExposedObjectFileRegistry.Register(sourceKey, obj);
@@ -162,8 +167,8 @@ namespace Lilium.RemoteControl
                     sourceKey = sourceKey,
                     target = obj,
                     typeName = obj.GetType().Name,
-                    rootId = overrideRootId ?? _currentRoot?.id,
-                    path = overridePath ?? GetCurrentPath(),
+                    rootId = rootId,
+                    path = path,
                 });
             }
 
@@ -193,6 +198,36 @@ namespace Lilium.RemoteControl
         {
             if (string.IsNullOrEmpty(path)) return rootId;
             return path[0] == '[' ? rootId + path : rootId + "." + path;
+        }
+
+        // The exposed property name of the GameObject wrapper's component list (see ExposedGameObject).
+        private const string kComponentsPrefix = "components[";
+
+        /// <summary>
+        /// If <paramref name="path"/> is a single top-level component element ("components[&lt;digits&gt;]")
+        /// and <paramref name="obj"/> is a <see cref="Component"/> with a registered <see cref="ExposedClass"/>,
+        /// replaces the numeric index with the exposed type name ("components[Chair]"). This keeps the
+        /// composed source key stable when a bundle is re-exported and its component order changes — an
+        /// index would then point at a different component. Any other path shape, non-component target, or
+        /// unregistered type is returned unchanged so the generic serialization path is untouched.
+        /// </summary>
+        private static string _NameComponentPath(string path, UnityEngine.Object obj)
+        {
+            if (string.IsNullOrEmpty(path)) return path;
+            if (!(obj is Component)) return path;
+            if (!path.StartsWith(kComponentsPrefix, StringComparison.Ordinal)) return path;
+            if (!path.EndsWith("]", StringComparison.Ordinal)) return path;
+
+            var inner = path.Substring(kComponentsPrefix.Length, path.Length - kComponentsPrefix.Length - 1);
+            if (inner.Length == 0) return path;
+            for (int i = 0; i < inner.Length; i++)
+            {
+                if (inner[i] < '0' || inner[i] > '9') return path; // already named, or not a bare index
+            }
+
+            var exposedClass = ExposedClass.Find(obj.GetType());
+            if (exposedClass == null || string.IsNullOrEmpty(exposedClass.typeName)) return path;
+            return kComponentsPrefix + exposedClass.typeName + "]";
         }
     }
 }

@@ -17,6 +17,32 @@ namespace Lilium.RemoteControl
     public static class ExposedPropertySerializer
     {
         /// <summary>
+        /// Object-level serialization options threaded through the full / delta / persistence path.
+        /// Replaces the (forPersistence, skipPropertyRef, scopeFilter) flag triple that used to be
+        /// passed around individually.
+        /// <list type="bullet">
+        /// <item><c>forPersistence</c>: writing to a file (scene / project settings) rather than a
+        /// REST / SSE / dirty-detection read.</item>
+        /// <item><c>skipPropertyRef</c>: exclude <see cref="ExposedPropertyType.isExposedPropertyReference"/>
+        /// fields (baseline / dirty comparison does not want the referenced value inlined).</item>
+        /// <item><c>scopeFilter</c>: when persisting, only members whose persistScope matches are written.</item>
+        /// </list>
+        /// </summary>
+        internal readonly struct SerializeOptions
+        {
+            public readonly bool forPersistence;
+            public readonly bool skipPropertyRef;
+            public readonly PersistScope scopeFilter;
+
+            public SerializeOptions(bool forPersistence, bool skipPropertyRef, PersistScope scopeFilter)
+            {
+                this.forPersistence = forPersistence;
+                this.skipPropertyRef = skipPropertyRef;
+                this.scopeFilter = scopeFilter;
+            }
+        }
+
+        /// <summary>
         /// JObject から propType に対応する値 JToken を取得する。現在の name で見つからない場合は
         /// [FormerlyExposedAs] で宣言された旧名も順に試す。リネーム後の旧シーンファイル読み込みに使用。
         /// </summary>
@@ -558,7 +584,7 @@ namespace Lilium.RemoteControl
             int newCount = 0;
             foreach (var element in jArray)
             {
-                if (element is JObject obj && obj["@op"]?.ToString() == "new")
+                if (_IsNewArrayElement(element))
                     newCount++;
             }
 
@@ -613,7 +639,7 @@ namespace Lilium.RemoteControl
             for (int i = 0; i < jArray.Count; i++)
             {
                 var element = jArray[i];
-                if (element is JObject obj && obj["@op"]?.ToString() == "new")
+                if (_IsNewArrayElement(element))
                 {
                     if (isArray)
                     {
@@ -880,6 +906,12 @@ namespace Lilium.RemoteControl
 
 
         /// <summary>
+        /// デルタ配列の要素が「新規追加」マーカー (@op:"new") かどうかを判定する。
+        /// </summary>
+        private static bool _IsNewArrayElement(JToken element)
+            => element is JObject obj && obj["@op"]?.ToString() == "new";
+
+        /// <summary>
         /// JObjectが空か、@ref/@nameのみのメタデータオブジェクト（デルタ形式の未変更マーカー）かを判定
         /// </summary>
         internal static bool IsEmptyOrRefOnly(JObject obj)
@@ -916,7 +948,8 @@ namespace Lilium.RemoteControl
         /// </summary>
         internal static JObject SerializeFullToJObject(ExposedObjectHandle exposedObject, IExposedObjectResolver resolver, bool forPersistence = false, PersistScope scopeFilter = PersistScope.Scene)
         {
-            return SerializeFullToJObject(exposedObject, resolver, forPersistence, skipPropertyRef: forPersistence, scopeFilter);
+            return SerializeFullToJObject(exposedObject, resolver,
+                new SerializeOptions(forPersistence, skipPropertyRef: forPersistence, scopeFilter));
         }
 
         /// <summary>
@@ -925,6 +958,12 @@ namespace Lilium.RemoteControl
         /// のフィールドを出力から除外する。baseline/dirty比較用など、参照先の値を含めたくない用途に使う。
         /// </summary>
         internal static JObject SerializeFullToJObject(ExposedObjectHandle exposedObject, IExposedObjectResolver resolver, bool forPersistence, bool skipPropertyRef, PersistScope scopeFilter = PersistScope.Scene)
+        {
+            return SerializeFullToJObject(exposedObject, resolver,
+                new SerializeOptions(forPersistence, skipPropertyRef, scopeFilter));
+        }
+
+        internal static JObject SerializeFullToJObject(ExposedObjectHandle exposedObject, IExposedObjectResolver resolver, in SerializeOptions options)
         {
             if (exposedObject == null) return new JObject();
 
@@ -935,7 +974,7 @@ namespace Lilium.RemoteControl
             // (dirty detection, SSE broadcasts, API responses) because property
             // setters keep the shadow in sync with user-driven changes and the
             // refresh itself can be expensive (CreateSettingsFromAvatarInput).
-            if (forPersistence)
+            if (options.forPersistence)
             {
                 (exposedObject.target as IExposedSerializeCallback)?.OnBeforeExposedSerialize();
                 if (exposedObject.target == null)
@@ -945,10 +984,10 @@ namespace Lilium.RemoteControl
             }
 
             var properties = exposedObject.propertyTypes;
-            var jObject = _CreateMetadataJObject(exposedObject, forPersistence);
+            var jObject = _CreateMetadataJObject(exposedObject, options.forPersistence);
 
             // persistentオブジェクトのマーク（永続化JSONには含めない）
-            if (!forPersistence && resolver is ExposedObjectContainer container
+            if (!options.forPersistence && resolver is ExposedObjectContainer container
                 && exposedObject.hasId && container.IsPersistent(exposedObject.id))
             {
                 jObject["@persistent"] = true;
@@ -958,20 +997,20 @@ namespace Lilium.RemoteControl
 
             foreach (var propertyType in properties)
             {
-                if (_ShouldSkipProperty(propertyType, forPersistence, scopeFilter)) continue;
+                if (_ShouldSkipProperty(propertyType, options.forPersistence, options.scopeFilter)) continue;
 
                 // ExposedPropertyRef: 値は参照先の実プロパティから取る。
                 // baseline / dirty比較 では含めない — 参照先が baseline を持つため。
                 if (propertyType.isExposedPropertyReference)
                 {
-                    if (skipPropertyRef) continue;
+                    if (options.skipPropertyRef) continue;
                     var refRaw = ExposedPropertyUtility.GetValueRaw(exposedObject.target, propertyType);
                     if (refRaw is ExposedPropertyRef pr)
                     {
                         var resolved = pr.Resolve();
                         var resolvedValue = resolved?.GetValue();
                         fileResolver?.PushPath(propertyType.name);
-                        var serializedRef = SerializeUnityType(resolver, resolvedValue, propertyType.forceValue, forPersistence);
+                        var serializedRef = SerializeUnityType(resolver, resolvedValue, propertyType.forceValue, options.forPersistence);
                         fileResolver?.PopPath();
                         jObject[propertyType.name] = serializedRef ?? JValue.CreateNull();
                     }
@@ -992,13 +1031,13 @@ namespace Lilium.RemoteControl
                 // ObjectSelector: GameObject 側の ExposedObjectHandle を @ref として出力する
                 if (propertyType.controlAttribute is ObjectSelectorAttribute)
                 {
-                    jObject[propertyType.name] = ObjectSelectorSerializer.SerializeObjectSelectorValue(value, forPersistence);
+                    jObject[propertyType.name] = ObjectSelectorSerializer.SerializeObjectSelectorValue(value, options.forPersistence);
                     continue;
                 }
 
                 fileResolver?.PushPath(propertyType.name);
                 var serializedValue = TrySerializeRawJson(propertyType, value)
-                    ?? SerializeUnityType(resolver, value, propertyType.forceValue, forPersistence);
+                    ?? SerializeUnityType(resolver, value, propertyType.forceValue, options.forPersistence);
                 fileResolver?.PopPath();
 
                 if (serializedValue != null)
@@ -1274,23 +1313,25 @@ namespace Lilium.RemoteControl
         {
             if (exposedObject == null) return "{}";
 
+            var options = new SerializeOptions(forPersistence, skipPropertyRef: forPersistence, scopeFilter);
+
             // Delta mode: フルシリアライズ + JsonDiff方式
             if (isDirtyOnly)
             {
-                return _ToJsonDelta(exposedObject, resolver, forPersistence, scopeFilter);
+                return _ToJsonDelta(exposedObject, resolver, options);
             }
 
             // Snapshot mode: 従来のフルシリアライズ
-            return _ToJsonFull(exposedObject, resolver, forPersistence, scopeFilter);
+            return _ToJsonFull(exposedObject, resolver, options);
         }
 
         /// <summary>
         /// Delta mode: デフォルトJSONとcurrentJSONを比較し、差分のみを出力する。
         /// </summary>
-        private static string _ToJsonDelta(ExposedObjectHandle exposedObject, IExposedObjectResolver resolver, bool forPersistence, PersistScope scopeFilter = PersistScope.Scene)
+        private static string _ToJsonDelta(ExposedObjectHandle exposedObject, IExposedObjectResolver resolver, in SerializeOptions options)
         {
             // 1. currentのフルシリアライズ
-            var currentJson = SerializeFullToJObject(exposedObject, resolver, forPersistence, scopeFilter);
+            var currentJson = SerializeFullToJObject(exposedObject, resolver, options);
 
             // 2. デフォルトJSONの取得（ExposedObjectDefaultRegistryから）
             // デフォルトがない場合は差分なし（currentをデフォルトとみなす）。
@@ -1301,21 +1342,21 @@ namespace Lilium.RemoteControl
             }
 
             // 3. JSON差分（forPersistence時は配列の末尾省略を行わない）
-            var deltaToken = JsonDiff(defaultJson, currentJson, forPersistence);
+            var deltaToken = JsonDiff(defaultJson, currentJson, options.forPersistence);
 
             // 4. dirty追跡外の参照型プロパティ（非ExposedClass）は
             //    getter が動的にインスタンスを生成するケースで JSON Diff をすり抜ける可能性があるため、
             //    current と default を直接比較して差分があれば強制的にデルタに含める
-            deltaToken = _ForceIncludeUntrackedProperties(exposedObject, currentJson, defaultJson, deltaToken, forPersistence, scopeFilter);
+            deltaToken = _ForceIncludeUntrackedProperties(exposedObject, currentJson, defaultJson, deltaToken, options);
             if (deltaToken == null || (deltaToken is JObject deltaCheck && !HasNonMetaProperties(deltaCheck)))
             {
                 // 差分なし: メタデータのみ出力
-                return JsonConvert.SerializeObject(_CreateMetadataJObject(exposedObject, forPersistence), Formatting.None);
+                return JsonConvert.SerializeObject(_CreateMetadataJObject(exposedObject, options.forPersistence), Formatting.None);
             }
 
             // 4. メタデータを確保（JsonDiffが@typeなどを保持しているはずだが念のため）
             var deltaJson = deltaToken as JObject ?? new JObject();
-            var metaTemplate = _CreateMetadataJObject(exposedObject, forPersistence);
+            var metaTemplate = _CreateMetadataJObject(exposedObject, options.forPersistence);
             foreach (var metaProp in metaTemplate.Properties())
             {
                 if (deltaJson[metaProp.Name] == null)
@@ -1333,7 +1374,7 @@ namespace Lilium.RemoteControl
         /// readOnlyプロパティは除外する。差分が無ければデルタには含めない
         /// （未操作の再生終了で objects[] が空になるようにするため）。
         /// </summary>
-        private static JToken _ForceIncludeUntrackedProperties(ExposedObjectHandle exposedObject, JObject currentJson, JObject defaultJson, JToken deltaToken, bool forPersistence, PersistScope scopeFilter = PersistScope.Scene)
+        private static JToken _ForceIncludeUntrackedProperties(ExposedObjectHandle exposedObject, JObject currentJson, JObject defaultJson, JToken deltaToken, in SerializeOptions options)
         {
             var properties = exposedObject.propertyTypes;
             JObject deltaObj = null;
@@ -1342,9 +1383,9 @@ namespace Lilium.RemoteControl
             {
                 if (!propertyType.isValid) continue;
                 if (propertyType.isReadOnly) continue;
-                if (forPersistence && !propertyType.isPersistable) continue;
+                if (options.forPersistence && !propertyType.isPersistable) continue;
                 // Project-scoped 参照プロパティを Scene delta に強制混入させない (逆も同様)。
-                if (forPersistence && propertyType.persistScope != scopeFilter) continue;
+                if (options.forPersistence && propertyType.persistScope != options.scopeFilter) continue;
 
                 var value = ExposedPropertyUtility.GetValueRaw(exposedObject.target, propertyType);
                 if (value == null) continue;
@@ -1412,9 +1453,9 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// Snapshot mode: 全プロパティをシリアライズする（dirty判定なし）。
         /// </summary>
-        private static string _ToJsonFull(ExposedObjectHandle exposedObject, IExposedObjectResolver resolver, bool forPersistence, PersistScope scopeFilter = PersistScope.Scene)
+        private static string _ToJsonFull(ExposedObjectHandle exposedObject, IExposedObjectResolver resolver, in SerializeOptions options)
         {
-            var jObject = SerializeFullToJObject(exposedObject, resolver, forPersistence, scopeFilter);
+            var jObject = SerializeFullToJObject(exposedObject, resolver, options);
             return JsonConvert.SerializeObject(jObject, Formatting.None);
         }
 
@@ -1837,7 +1878,7 @@ namespace Lilium.RemoteControl
             int newCount = 0;
             foreach (var element in jArray)
             {
-                if (element is JObject obj && obj["@op"]?.ToString() == "new")
+                if (_IsNewArrayElement(element))
                     newCount++;
             }
 
@@ -1884,7 +1925,7 @@ namespace Lilium.RemoteControl
             for (int i = 0; i < jArray.Count; i++)
             {
                 var element = jArray[i];
-                if (element is JObject obj && obj["@op"]?.ToString() == "new")
+                if (_IsNewArrayElement(element))
                 {
                     // 追加要素: 全プロパティを適用
                     if (addedIndex < property.arrayLength)

@@ -8,6 +8,7 @@ using UnityEngine;
 using Newtonsoft.Json.Linq;
 
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.LiveScene;
 
 namespace Lilium.LiveStudio
 {
@@ -136,11 +137,21 @@ namespace Lilium.LiveStudio
                 // Baseline = the avatar's values right after load, before any preset/user override.
                 AssetStateSnapshot.CaptureDefaults(controllerGO);
 
-                if (string.IsNullOrEmpty(savedState)) return;
-                if (_LooksLikeEnvelope(savedState))
-                    AssetStateSnapshot.Restore(savedState, controllerGO);
-                else
-                    _RestoreAvatarState(savedState); // bare AvatarController snapshot (earlier build)
+                if (!string.IsNullOrEmpty(savedState))
+                {
+                    if (_LooksLikeEnvelope(savedState))
+                        AssetStateSnapshot.Restore(savedState, controllerGO);
+                    else
+                        _RestoreAvatarState(savedState); // bare AvatarController snapshot (earlier build)
+                }
+
+                // Finally, apply any deferred live-scene entries for the avatar wrapper (queued during the
+                // restore if the wrapper was not registered yet). Ordered LAST so persisted overrides land
+                // on top of the defaults/preset without polluting the delta baseline. Usually a no-op — the
+                // AvatarController's GameObject is a persistent scene object already bound in the restore.
+                var wrapperId = _ResolveControllerObjectId();
+                if (!string.IsNullOrEmpty(wrapperId))
+                    LiveScenePendingStore.ApplyFor(wrapperId, DefaultExposedObjectResolver.Instance);
             };
             service.onAvatarChanged += handler;
         }

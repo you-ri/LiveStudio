@@ -212,6 +212,13 @@ namespace Lilium.LiveStudio
             // BEFORE reapplying saved state, so a later "save as preset" captures only the user's edits.
             AssetStateSnapshot.CaptureDefaults(_exposed, _instance);
             AssetStateSnapshot.Restore(state, _exposed, _instance);
+
+            // Finally, apply this prop's deferred live-scene entries (its top-level diff, queued during
+            // the scene restore because the prop had not loaded yet). Ordered LAST — after CaptureDefaults
+            // and the state carrier — so the persisted overrides land on top without polluting the delta
+            // baseline used by "save as preset". Keyed by objectId, the id the wrapper was just re-keyed to.
+            if (!string.IsNullOrEmpty(objectId))
+                LiveScenePendingStore.ApplyFor(objectId, DefaultExposedObjectResolver.Instance);
         }
 
         // Unregisters the exposed wrapper from its container and destroys the prop instance, dropping

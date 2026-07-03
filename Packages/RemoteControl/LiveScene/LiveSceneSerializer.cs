@@ -169,10 +169,40 @@ namespace Lilium.RemoteControl.LiveScene
                 jArray.Add(entry);
             }
 
+            // Re-emit any pending-store entries that were NOT bound this session (their owning prop /
+            // avatar never finished loading), so a load→save cycle does not drop their saved state.
+            // Bound entries were removed from the store on ApplyFor, and a loaded object re-emits its own
+            // diff above, so an entry already present here is never re-added.
+            _AppendUnconsumedPendingEntries(jArray);
+
             fileResolver.SetCurrentRoot(null);
             jRoot["objects"] = jArray;
 
             return jRoot.ToString(Formatting.Indented);
+        }
+
+        // Appends pending-store entries whose @source is not already output. Their @source is preserved
+        // verbatim so the next load re-queues them identically. Cloned because a JObject cannot be
+        // attached to two parents (the store keeps its copy for a later save).
+        private static void _AppendUnconsumedPendingEntries(JArray jArray)
+        {
+            HashSet<string> emitted = null;
+            foreach (var pendingEntry in LiveScenePendingStore.UnconsumedEntries)
+            {
+                var source = pendingEntry["@source"]?.Value<string>();
+                if (string.IsNullOrEmpty(source)) continue;
+
+                if (emitted == null)
+                {
+                    emitted = new HashSet<string>();
+                    foreach (var item in jArray)
+                    {
+                        if (item is JObject o && o["@source"]?.Value<string>() is string s) emitted.Add(s);
+                    }
+                }
+                if (!emitted.Add(source)) continue;
+                jArray.Add(pendingEntry.DeepClone());
+            }
         }
 
         /// <summary>
@@ -262,6 +292,9 @@ namespace Lilium.RemoteControl.LiveScene
             // ファイル読み込みの起点では FileRegistry を初期化する。
             // 以降のエントリ走査で source-key ベースに再登録される。
             ExposedObjectFileRegistry.Clear();
+            // 同じく、未解決エントリの遅延バインドキューも読み込みごとに初期化する。
+            // 解決できなかったエントリは以降のパスで再登録される。
+            LiveScenePendingStore.Clear();
 
             // 復元は 4 パスで行う（各パスは jArray を順走査する。詳細は各メソッド参照）。
             _InstantiatePrefabs(jArray, resolver);   // Pass 1: @prefab からインスタンス化
@@ -434,7 +467,12 @@ namespace Lilium.RemoteControl.LiveScene
                 }
                 else if (_IsPendingEntry(jObject))
                 {
-                    Debug.LogWarning($"[RemoteControl] Failed to resolve pending entry '@source={sourceKey}' to UnityEngine.Object.");
+                    // Target not in the scene yet: the owning prop / avatar loads asynchronously after
+                    // this restore. Queue for a deferred bind (see LiveScenePendingStore) rather than
+                    // warn — the entry is applied once its asset finishes loading, or round-trips on the
+                    // next save if it never does.
+                    _ParseSourceKey(sourceKey, out var pendingRootId, out _);
+                    LiveScenePendingStore.Add(sourceKey, pendingRootId, jObject);
                 }
             }
         }
@@ -456,26 +494,11 @@ namespace Lilium.RemoteControl.LiveScene
 
                 if (_IsPendingEntry(jObject))
                 {
-                    if (!ExposedObjectFileRegistry.TryGetObject(entryKey, out var pendingTarget) || pendingTarget == null)
-                    {
-                        Debug.LogWarning($"[RemoteControl] Pending entry '@source={entryKey}' not resolved at Pass 3.");
-                        continue;
-                    }
-
-                    var pendingClass = ExposedClass.Find(entryTypeName);
-                    if (pendingClass == null) continue;
-
-                    var tempExposed = ExposedObjectHandle.CreateUnregistered(pendingClass, pendingTarget);
-
-                    // FromJson で値を書き換える前に、現在の（プレハブ初期値相当の）状態を
-                    // defaults として登録する。Container.Initialize 時点で存在しなかった
-                    // プレハブ経由生成コンポーネントは defaults が未登録のため、保存時
-                    // _ToJsonDelta で default==current フォールバックとなり pending エントリ全体が
-                    // metadata-only 扱いで破棄されてしまう。ここで target 参照キーで登録しておけば
-                    // 保存時 BFS で別 tempExposed が作られても同じ defaults が引け、delta が正しく計算される。
-                    ExposedObjectDefaultRegistry.EnsureDefaultsCaptured(tempExposed, resolver);
-
-                    ExposedPropertySerializer.FromJson(propertyJson, tempExposed, resolver, captureDefaults: false);
+                    // Child reference (e.g. a loaded prop's component). Apply now if its target is already
+                    // in the scene; if it isn't, the entry was queued in the pending store (Pass 2.5) for
+                    // a deferred bind once its owning asset loads. ApplyPendingEntry carries the same
+                    // defaults-then-apply handling the inline logic used before, shared with ApplyFor.
+                    ApplyPendingEntry(entryKey, jObject, resolver);
                     continue;
                 }
 
@@ -490,7 +513,11 @@ namespace Lilium.RemoteControl.LiveScene
                 }
                 else
                 {
-                    Debug.LogWarning($"[RemoteControl] ExposedObjectHandle with key '{entryKey}@{entryTypeName}' not found in the scene.");
+                    // Root object not in the scene yet: an asset-backed wrapper (prop / avatar) whose
+                    // GameObject loads asynchronously after this restore, or a stale reference. Queue for a
+                    // deferred bind — ApplyFor applies it when the asset loads, and an entry that never
+                    // binds round-trips on the next save rather than being dropped.
+                    LiveScenePendingStore.Add(entryKey, entryKey, jObject);
                 }
             }
         }
@@ -570,6 +597,50 @@ namespace Lilium.RemoteControl.LiveScene
         }
 
         /// <summary>
+        /// Applies one live-scene entry onto its (now resolvable) target, and returns false when the
+        /// target still cannot be resolved so the caller can keep the entry queued. Shared by Pass 3 of
+        /// the restore and by <see cref="LiveScenePendingStore.ApplyFor"/> (deferred bind once a prop /
+        /// avatar has loaded).
+        ///
+        /// A root entry (<c>@source</c> is a bare id) is applied directly onto the registered object. A
+        /// child entry (<c>@source</c> carries a path) resolves its target via
+        /// <see cref="_ResolveObjectBySource"/> and applies the JSON on an unregistered temp handle — the
+        /// per-load id is not persisted — capturing the target's current values as the delta baseline
+        /// first (mirrors the original Pass 3 pending handling).
+        /// </summary>
+        internal static bool ApplyPendingEntry(string sourceKey, JObject entry, IExposedObjectResolver resolver)
+        {
+            if (entry == null || resolver == null) return false;
+
+            var typeName = entry["@type"]?.Value<string>();
+            if (string.IsNullOrEmpty(typeName)) return false;
+
+            _ParseSourceKey(sourceKey, out var rootId, out var path);
+            if (string.IsNullOrEmpty(rootId)) return false;
+
+            var entryJson = entry.ToString();
+
+            if (string.IsNullOrEmpty(path))
+            {
+                var handle = resolver.FindById(rootId);
+                if (handle == null) return false;
+                ExposedPropertySerializer.FromJson(entryJson, handle.Value, resolver, captureDefaults: false);
+                return true;
+            }
+
+            var target = _ResolveObjectBySource(sourceKey, resolver);
+            if (target == null) return false;
+
+            var pendingClass = ExposedClass.Find(typeName);
+            if (pendingClass == null) return false;
+
+            var tempExposed = ExposedObjectHandle.CreateUnregistered(pendingClass, target);
+            ExposedObjectDefaultRegistry.EnsureDefaultsCaptured(tempExposed, resolver);
+            ExposedPropertySerializer.FromJson(entryJson, tempExposed, resolver, captureDefaults: false);
+            return true;
+        }
+
+        /// <summary>
         /// @source (rootId と path を "." で結合した文字列) から UnityEngine.Object を引き当てる。
         /// 登録済み ExposedObjectHandle を起点に PropertyPath で辿る。
         /// </summary>
@@ -588,10 +659,73 @@ namespace Lilium.RemoteControl.LiveScene
                 return rootExposedObj.target as UnityEngine.Object;
             }
 
+            // Named component element ("components[Chair]"): resolve by exposed type name rather than array
+            // index, so a source key survives bundle re-export / component reordering. Numeric keys
+            // ("components[0]", legacy files) and any other path shape fall through to index-based
+            // FindProperty below.
+            if (_TryResolveNamedComponent(rootExposedObj, path, out var namedComponent))
+            {
+                return namedComponent;
+            }
+
             var property = rootExposedObj.FindProperty(path);
             if (!property.HasValue) return null;
 
             return property.Value.GetValue() as UnityEngine.Object;
+        }
+
+        // The exposed property name of the GameObject wrapper's component list (see ExposedGameObject).
+        private const string kComponentsPrefix = "components[";
+
+        /// <summary>
+        /// Resolves a single named component element path ("components[&lt;TypeName&gt;]") against the root's
+        /// GameObject by matching each component's exposed type name (then its [FormerlyExposedAs] former
+        /// names, mirroring AssetStateSnapshot). Returns false — so the caller falls back to index-based
+        /// resolution — for numeric keys (legacy "components[0]"), multi-segment paths, or non-GameObject
+        /// roots. First match wins when several components share a type (same constraint as the state
+        /// snapshot envelope).
+        /// </summary>
+        private static bool _TryResolveNamedComponent(ExposedObjectHandle root, string path, out UnityEngine.Object result)
+        {
+            result = null;
+            if (!path.StartsWith(kComponentsPrefix, StringComparison.Ordinal)) return false;
+            if (!path.EndsWith("]", StringComparison.Ordinal)) return false;
+
+            var key = path.Substring(kComponentsPrefix.Length, path.Length - kComponentsPrefix.Length - 1);
+            if (key.Length == 0) return false;
+            // Numeric key → let index-based FindProperty handle it (legacy compatibility).
+            for (int i = 0; i < key.Length; i++)
+            {
+                if (key[i] >= '0' && key[i] <= '9') continue;
+                goto named; // contains a non-digit → treat as a type name
+            }
+            return false;
+
+        named:
+            var go = LiveSceneObjectUtil.GetGameObject(root);
+            if (go == null) return false;
+
+            var components = go.GetComponents<Component>();
+            for (int i = 0; i < components.Length; i++)
+            {
+                var comp = components[i];
+                if (comp == null) continue;
+                var exposedClass = ExposedClass.Find(comp.GetType());
+                if (exposedClass != null && exposedClass.typeName == key) { result = comp; return true; }
+            }
+            // Former type names fallback (component type renamed via [FormerlyExposedAs]).
+            for (int i = 0; i < components.Length; i++)
+            {
+                var comp = components[i];
+                if (comp == null) continue;
+                var formers = ExposedClass.Find(comp.GetType())?.formerTypeNames;
+                if (formers == null) continue;
+                for (int f = 0; f < formers.Length; f++)
+                {
+                    if (formers[f] == key) { result = comp; return true; }
+                }
+            }
+            return false;
         }
 
         /// <summary>
