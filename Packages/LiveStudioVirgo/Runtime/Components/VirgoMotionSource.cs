@@ -96,6 +96,11 @@ namespace Lilium.LiveStudio.Virgo
         // バックグラウンドスレッドで ++、メインスレッド(エディタ)で読むため volatile で可視性を担保する。
         private volatile int _receivedFrameCount = 0;
 
+        // Last received frame number, used to detect discontinuities in the sender's
+        // frame numbering (gaps from real hitches / packet loss, or going backwards).
+        // Written on the receive thread only.
+        long _lastReceivedFrames = -1;
+
         void OnEnable()
         {
             Lilium.RemoteControl.Service<IAvatarBuildObserver>.Register(this);
@@ -155,25 +160,52 @@ namespace Lilium.LiveStudio.Virgo
             double delayFrames = Mathf.Max(0f, _delaySeconds) * _frameRate.AsDecimal();
             double playbackPos = localFrame + _frameOffset - delayFrames;
             long i0 = (long)System.Math.Floor(playbackPos);
-            float t = (float)(playbackPos - i0);
 
-            if (_animationFrameBuffer.TryGet(i0, out AvatarAnimationData prev)
-                && _animationFrameBuffer.TryGet(i0 + 1, out AvatarAnimationData next))
+            // Gap-tolerant sampling: the frame numbering from Fusion is wall-clock
+            // quantized, so a beat against its update phase periodically skips one
+            // number (duplicate then a +2 jump). UDP loss also leaves holes. Instead
+            // of requiring i0/i0+1 to exist, search nearby frames and interpolate
+            // across the hole with the ratio recomputed for the actual span.
+            const int kNeighborSearchFrames = 4;
+
+            long prevNo = -1, nextNo = -1;
+            AvatarAnimationData prev = default, next = default;
+            for (long f = i0; f > i0 - kNeighborSearchFrames; f--)
             {
-                AvatarAnimationSystem.Lerp(prev, next, t, out AvatarAnimationData sampled);
+                if (_animationFrameBuffer.TryGet(f, out prev)) { prevNo = f; break; }
+            }
+            for (long f = i0 + 1; f <= i0 + kNeighborSearchFrames; f++)
+            {
+                if (_animationFrameBuffer.TryGet(f, out next)) { nextNo = f; break; }
+            }
+
+            if (prevNo >= 0 && nextNo >= 0)
+            {
+                float spanT = (float)((playbackPos - prevNo) / (nextNo - prevNo));
+                AvatarAnimationSystem.Lerp(prev, next, spanT, out AvatarAnimationData sampled);
                 frameData = sampled;
             }
-            else if (_animationFrameBuffer.TryGet(i0, out prev))
+            else if (prevNo >= 0)
             {
-                // 最新端まで追いついた等で次フレーム未着なら hold する。
+                // Caught up with the newest frame (or a short overrun past it):
+                // hold the last available pose instead of resyncing, which would
+                // jump the playback position backwards.
                 frameData = prev;
             }
             else
             {
-                // バッファ範囲外 (起動直後 / 大きなギャップ / クロックドリフト) はオフセットを
-                // 最新受信フレームに再同期する。frameCount は lock 保護されメインスレッドから安全。
+                // No frames anywhere near the playback position (startup, a large gap
+                // or clock drift): resync the offset to the newest received frame.
+                // frameCount is lock-protected and safe to read from the main thread.
                 long latest = _animationFrameBuffer.frameCount - 1;
-                if (latest >= 0) _frameOffset = (int)(latest - (long)localFrame);
+                if (latest >= 0)
+                {
+                    // A resync jumps the playback position, which is visible as a hitch —
+                    // warn every time so it can be correlated with on-screen motion.
+                    int newOffset = (int)(latest - (long)localFrame);
+                    Debug.LogWarning($"[Studio] Resync playback position: playbackPos={playbackPos:F2} latest={latest} offsetJump={newOffset - _frameOffset}");
+                    _frameOffset = newOffset;
+                }
             }
         }
 
@@ -201,6 +233,24 @@ namespace Lilium.LiveStudio.Virgo
 
                 AvatarAnimationSystem.Transform(in receivedFrameData, Matrix4x4.TRS(_rotation * _offsetPosition + _position + Vector3.up * _cameraHeight, _rotation * Quaternion.Euler(_offsetRotation), Vector3.one), out var transformedFrameData);
                 _animationFrameBuffer.Set(receivedFrameData.frames, in transformedFrameData);
+
+                // Warn on discontinuities in the received frame numbering. delta==1 is
+                // normal; delta==0 (duplicate, overwritten in place) is expected from the
+                // sender's wall-clock quantization and stays silent. Gaps and backwards
+                // jumps indicate real hitches, packet loss or a sender clock problem.
+                if (_lastReceivedFrames >= 0)
+                {
+                    long delta = receivedFrameData.frames - _lastReceivedFrames;
+                    if (delta < 0)
+                    {
+                        Debug.LogWarning($"[Studio] Received frame went backwards: prev={_lastReceivedFrames} curr={receivedFrameData.frames}");
+                    }
+                    else if (delta >= 2)
+                    {
+                        Debug.LogWarning($"[Studio] Received frame gap: prev={_lastReceivedFrames} curr={receivedFrameData.frames} delta={delta}");
+                    }
+                }
+                _lastReceivedFrames = receivedFrameData.frames;
 
                 _receivedFrameCount ++;
             }
