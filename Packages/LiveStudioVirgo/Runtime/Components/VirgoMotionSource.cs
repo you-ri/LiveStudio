@@ -71,12 +71,20 @@ namespace Lilium.LiveStudio.Virgo
         [ExposedField]
         private float _delaySeconds = 0.0167f; // 約1フレーム (60fps)
 
-        // Height (meters) above the anchor for the placed output. Reset zeroes the capture camera
-        // position to the anchor, which would otherwise drop the virtual camera to the ground; lift
-        // it to eye level so the avatar lands on the floor for a typical hand-held capture height.
+        // Height (meters) the capture camera sits above the subject (the warp mark). With cameraDistance it
+        // places VirgoMotionSource (= _position, the point the captured camera is pinned to in ResetCamera)
+        // at the assumed real camera location. When both match the real rig, the avatar — placed at its
+        // captured offset from the camera — lands on the mark.
         [SerializeField]
         [ExposedField]
         private float _cameraHeight = 1.6f;
+
+        // Horizontal distance (meters) from the subject anchor to the capture camera, along the anchor's
+        // forward (+Z) axis. With cameraHeight this fully specifies the capture-camera origin
+        // geometrically, so this GameObject's position is determined even before/without capture pose data.
+        [SerializeField]
+        [ExposedField]
+        private float _cameraDistance = 0f;
 
         [SerializeField]
         private Vector3 _offsetPosition = Vector3.zero;
@@ -154,10 +162,21 @@ namespace Lilium.LiveStudio.Virgo
 
         void Update()
         {
-            // anchor 未設定時は従来通り自身の transform を配置基準にする。
-            var anchorTransform = anchor != null ? anchor : this.transform;
-            _position = anchorTransform.position;
-            _rotation = anchorTransform.rotation;
+            // VirgoMotionSource（この GameObject）はキャプチャカメラの基準点: anchor(= AvatarController,
+            // WarpTo の移動先 mark = 被写体) の cameraHeight 上・cameraDistance 前方(+forward) に置く。
+            // アバターは ResetCamera で mark の正面(+Z = source.forward)を向くよう揃えられ、撮影カメラは
+            // その正面側に居る。マーカーは被写体を見返すよう Y180° 反転（+Z が AvatarController を向く）。
+            // standalone（anchor 未設定）時は自身の transform を基準点にする。
+            var source = anchor != null ? anchor : this.transform;
+            if (source != this.transform)
+            {
+                var cameraOrigin = source.position + Vector3.up * _cameraHeight + source.forward * _cameraDistance;
+                transform.SetPositionAndRotation(cameraOrigin, source.rotation * Quaternion.Euler(0f, 180f, 0f));
+            }
+            // 配置行列原点 _position = VirgoMotionSource.transform（ResetCamera で撮影カメラ(cam0)が固定される
+            // 基準点）。_rotation はマーカーの反転回転ではなく被写体(mark)の回転を使う（matrix の従来挙動を維持）。
+            _position = transform.position;
+            _rotation = source.rotation;
 
             // 受信は 60fps 固定だが render は可変 fps。受信フレームをそのまま hold すると
             // フレーム間で姿勢が据え置きになり、揺れ物 (SpringBone) がその上で震える。
@@ -246,7 +265,8 @@ namespace Lilium.LiveStudio.Virgo
                     _validFrameCount++;
                 }
 
-                AvatarAnimationSystem.Transform(in receivedFrameData, Matrix4x4.TRS(_rotation * _offsetPosition + _position + Vector3.up * _cameraHeight, _rotation * Quaternion.Euler(_offsetRotation), Vector3.one), out var transformedFrameData);
+                // height/distance は _position（= transform.position）に既に含まれるため、ここでは加算しない。
+                AvatarAnimationSystem.Transform(in receivedFrameData, Matrix4x4.TRS(_rotation * _offsetPosition + _position, _rotation * Quaternion.Euler(_offsetRotation), Vector3.one), out var transformedFrameData);
                 _animationFrameBuffer.Set(receivedFrameData.frames, in transformedFrameData);
 
                 // Warn on discontinuities in the received frame numbering. delta==1 is
@@ -278,20 +298,23 @@ namespace Lilium.LiveStudio.Virgo
         [ExposedFunction]
         public override void ResetCamera()
         {
-            // The Fusion side drives the avatar root transform from the body pose (IK), so reading
-            // root.* latches onto a jittery pose snapshot and every reset lands slightly differently.
-            // The capture camera channel carries the device/ARKit camera orientation instead, which is
-            // independent of the avatar pose and is the yaw that actually drifts over time — cancel that.
-            // (ref var avoids naming CameraData: in this Lilium.LiveStudio.Virgo namespace the wire-side
-            //  Lilium.LiveStudio.Virgo.CameraData would shadow the Lilium.LiveStudio.CameraData returned here.)
+            // Pin the capture camera (cam0) to the placement origin (_position = VirgoMotionSource, the camera
+            // reference at cameraHeight/cameraDistance from the mark) — camera-anchored position. But cancel
+            // the ROOT (body) Y, not the camera Y, so the avatar faces the mark's front (+Z = mark.forward);
+            // cancelling the camera Y instead leaves the avatar facing its captured orientation relative to the
+            // camera (it ends up backwards). The avatar then falls out at its captured offset, landing on the
+            // mark when cameraHeight/cameraDistance match the real capture rig.
+            // (ref var avoids naming CameraData: the wire-side Lilium.LiveStudio.Virgo.CameraData would shadow
+            //  the Lilium.LiveStudio.CameraData returned here.)
             ref var camera = ref _lastReceivedFrameData.AsCamera(0);
+            ref var root = ref _lastReceivedFrameData.root;
 
-            // Cancel the captured camera Y so that the target's world Y rotation stays at the anchor's Y rotation.
-            _offsetRotation = new Vector3(0, -camera.rotation.eulerAngles.y, 0);
+            // 体(root)の world Y を打ち消し、アバターの正面を anchor(mark)の +Z(=mark.forward)へ揃える。
+            _offsetRotation = new Vector3(0, -root.rotation.eulerAngles.y, 0);
 
-            // オフセット適用後のカメラワールド位置を原点に合わせる。キャラクターも同じ行列で変換されるため、撮影時のカメラ-キャラクター相対位置は保たれる。
+            // オフセット適用後のカメラワールド位置を原点 (_position = VirgoMotionSource) に合わせる（cam.pos≈0）。
             var rotation = Quaternion.Euler(_offsetRotation);
-            _offsetPosition = -(rotation * camera.position) / _lastReceivedFrameData.root.scale.x; // スケールの影響を受けないようにする
+            _offsetPosition = -(rotation * camera.position) / _lastReceivedFrameData.root.scale.x;
         }
     }
 }
