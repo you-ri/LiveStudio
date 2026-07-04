@@ -55,11 +55,15 @@ namespace Lilium.LiveStudio.Editor
             // Unity derives the bundle's internal serialized-file id ("CAB-...") from the bundle NAME in a
             // deterministic build. Every prop is exported under the same constant name ("prop"), so all
             // prop bundles used to share one CAB — loading two at once fails with "another AssetBundle with
-            // the same files is already loaded". Salt the internal name with a stable hash of the primary
-            // source asset so each source gets a distinct CAB (same asset re-exported → same CAB, so the
-            // output stays reproducible). The on-disk file name (destPath) is unaffected; loaders open by
-            // path and never reference the internal name.
-            var uniqueBundleName = bundleName + "_" + _StableToken(assetNames[0]);
+            // the same files is already loaded". Salt the internal name with the primary source asset's
+            // GUID so each source gets a distinct CAB. The GUID is the asset's stable identity: it survives
+            // rename/move (unlike the path) and is unique per asset, so the same prefab always maps to the
+            // same CAB (reproducible) while two different props never collide. The on-disk file name
+            // (destPath) is unaffected; loaders open by path and never reference the internal name.
+            // Fall back to a hash of the path only if the GUID cannot be resolved.
+            var sourceGuid = AssetDatabase.AssetPathToGUID(assetNames[0]);
+            var bundleToken = string.IsNullOrEmpty(sourceGuid) ? _StableToken(assetNames[0]) : sourceGuid;
+            var uniqueBundleName = bundleName + "_" + bundleToken;
 
             // Explicit map overload so the importer's assetBundleName is left untouched.
             var build = new AssetBundleBuild
