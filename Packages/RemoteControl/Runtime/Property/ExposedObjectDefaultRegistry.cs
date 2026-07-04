@@ -67,6 +67,40 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
+        /// Re-captures the current state as the default JSON like <see cref="CaptureDefaults"/>, but
+        /// keeps the OLD default for every root property whose current value differs from it, so
+        /// already-overridden properties stay dirty.
+        ///
+        /// For an asset's load-complete re-baseline: a persistent scene object (e.g. the avatar's
+        /// wrapper GameObject) receives its saved live-scene diff BEFORE the asset's async load
+        /// finishes. An unconditional <see cref="CaptureDefaults"/> would adopt those applied values
+        /// as defaults and silently drop them from the next delta save (the root cause of the
+        /// transform.position loss on a load→save cycle). This variant keeps overridden properties
+        /// dirty while adopting the freshly loaded values as defaults for everything else.
+        /// </summary>
+        public static void CaptureDefaultsPreservingOverrides(ExposedObjectHandle obj, IExposedObjectResolver resolver)
+        {
+            var key = _GetKey(obj);
+            var fresh = ExposedPropertySerializer.SerializeFullToJObject(obj, resolver, forPersistence: true);
+            if (_serializationBaseline.TryGetValue(key, out var old) && old != null)
+            {
+                foreach (var property in old.Properties())
+                {
+                    if (property.Name.Length > 0 && property.Name[0] == '@') continue; // metadata keys
+                    var current = fresh[property.Name];
+                    if (current == null) continue; // no longer serialized → adopt the fresh shape
+                    if (!JToken.DeepEquals(property.Value, current))
+                    {
+                        // Overridden (dirty) → keep the pre-override default so delta saves retain it.
+                        fresh[property.Name] = property.Value.DeepClone();
+                    }
+                }
+            }
+            _serializationBaseline[key] = fresh;
+            _userChangeBaseline.Remove(key);
+        }
+
+        /// <summary>
         /// 指定ExposedObjectのデフォルトを削除する。
         /// </summary>
         public static void Remove(ExposedObjectHandle obj)

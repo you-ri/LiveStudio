@@ -196,6 +196,67 @@ namespace Lilium.RemoteControl.Tests
                 "an unbound entry should round-trip verbatim on the next save");
         }
 
+        // --- Load-complete re-baseline must not swallow restore-applied overrides ---
+
+        [Test]
+        public void RecaptureAfterRestore_PreservesAppliedOverridesInDeltaSave()
+        {
+            // Save an edited prop, tear it down.
+            _BuildProp("avatar-1", restYaw: 7, offset: 0f);
+            var saved = _Save();
+            foreach (var obj in ExposedObjectRegistry.instances.ToList()) obj.Unregister();
+            foreach (var go in _spawned) Object.DestroyImmediate(go);
+            _spawned.Clear();
+
+            // Avatar-like: the wrapper EXISTS at restore time (persistent scene object), so the saved
+            // component diff is applied immediately during LiveSceneFromJson, not deferred.
+            var (_, comp) = _BuildProp("avatar-1", restYaw: 0, offset: 0f);
+            LiveSceneSerializer.LiveSceneFromJson(saved, _resolver);
+            Assert.AreEqual(7, comp.restYaw, "sanity: entry applies immediately when the target already exists");
+
+            // The asset's load-complete re-baseline (AssetStateSnapshot.CaptureDefaults) runs AFTER the
+            // restore. With a blind CaptureDefaults the just-applied 7 became the default and vanished
+            // from the next delta save; the preserving variant must keep it dirty.
+            var handle = ExposedObjectHandle.CreateUnregistered(ExposedClass.Find(typeof(TestChairComponent)), comp);
+            ExposedObjectDefaultRegistry.CaptureDefaultsPreservingOverrides(handle, _resolver);
+
+            var delta = LiveSceneSerializer.LiveSceneToJson(
+                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+            var entry = _FindEntry(delta, "avatar-1.components[TestChair]");
+            Assert.IsNotNull(entry, "the restore-applied override must survive the load-complete re-baseline");
+            Assert.AreEqual(7, entry["restYaw"]?.Value<int>());
+        }
+
+        [Test]
+        public void CaptureDefaultsPreservingOverrides_KeepsDirtyDefaults_RebaselinesCleanOnes()
+        {
+            var (_, comp) = _BuildProp("prop-1", restYaw: 0, offset: 1f);
+            var handle = ExposedObjectHandle.CreateUnregistered(ExposedClass.Find(typeof(TestChairComponent)), comp);
+            ExposedObjectDefaultRegistry.CaptureDefaults(handle, _resolver); // baseline: restYaw=0, offset=1
+
+            comp.restYaw = 7; // overridden since the baseline (dirty)
+
+            ExposedObjectDefaultRegistry.CaptureDefaultsPreservingOverrides(handle, _resolver);
+
+            Assert.AreEqual(0, ExposedObjectDefaultRegistry.GetDefaultToken(handle, "restYaw")?.Value<int>(),
+                "an overridden property must keep its pre-override default");
+            Assert.AreEqual(1f, ExposedObjectDefaultRegistry.GetDefaultToken(handle, "offset")?.Value<float>() ?? -1f, 1e-4f,
+                "an unchanged property keeps (re-adopts) its current value as the default");
+        }
+
+        [Test]
+        public void CaptureDefaultsPreservingOverrides_NoPriorBaseline_BehavesLikeCaptureDefaults()
+        {
+            var (_, comp) = _BuildProp("prop-1", restYaw: 3, offset: 0.5f);
+            var handle = ExposedObjectHandle.CreateUnregistered(ExposedClass.Find(typeof(TestChairComponent)), comp);
+
+            // Freshly instantiated object (prop load path): no previous baseline exists.
+            ExposedObjectDefaultRegistry.CaptureDefaultsPreservingOverrides(handle, _resolver);
+
+            Assert.AreEqual(3, ExposedObjectDefaultRegistry.GetDefaultToken(handle, "restYaw")?.Value<int>(),
+                "without a prior baseline the current values become the defaults, like CaptureDefaults");
+        }
+
         [Test]
         public void ApplyFor_DoesNotPolluteDeltaBaseline()
         {

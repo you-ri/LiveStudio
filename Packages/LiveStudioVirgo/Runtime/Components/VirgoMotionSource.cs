@@ -47,6 +47,9 @@ namespace Lilium.LiveStudio.Virgo
         /// <summary>これまでに受信したフレーム数。受信検知のインジケータ用。</summary>
         public int receivedFrameCount => _receivedFrameCount;
 
+        /// <summary>これまでに受信した valid な AvatarAnimationData のフレーム数。カメラリセットの基準に使う。</summary>
+        public int validFrameCount => _validFrameCount;
+
         /// <summary>UDP 受信ソケットが開いているか。</summary>
         public bool isOpened => _udpConnection.isOpened;
 
@@ -95,6 +98,11 @@ namespace Lilium.LiveStudio.Virgo
 
         // バックグラウンドスレッドで ++、メインスレッド(エディタ)で読むため volatile で可視性を担保する。
         private volatile int _receivedFrameCount = 0;
+
+        // valid な AvatarAnimationData を受信した数。カメラリセットの遅延基準に使う。
+        // 無効フレーム (isValid=false) はカメラの基準姿勢が不安定なため数えない。
+        // バックグラウンドスレッドで ++、メインスレッドで読むため volatile。
+        private volatile int _validFrameCount = 0;
 
         // Last received frame number, used to detect discontinuities in the sender's
         // frame numbering (gaps from real hitches / packet loss, or going backwards).
@@ -225,10 +233,17 @@ namespace Lilium.LiveStudio.Virgo
                 AnimationFrameBridge.ToLiveStudio(in wireFrame, out receivedFrameData);
                 _lastReceivedFrameData = receivedFrameData;
 
-                // 0フレーム目はまだ受信した情報が安定していないため、カメラリセットしない。
-                if (_receivedFrameCount == kResetCameraDelayCount && resetCameraAtReceived)
+                // カメラリセットは valid なフレームだけを数えて遅延させる。無効フレームでは
+                // リセットの基準となるカメラ姿勢が安定しないため、valid カウントで測る。
+                if (receivedFrameData.isValid)
                 {
-                    ResetCamera();
+                    // 0フレーム目はまだ受信した情報が安定していないため、カメラリセットしない。
+                    if (_validFrameCount == kResetCameraDelayCount && resetCameraAtReceived)
+                    {
+                        ResetCamera();
+                    }
+
+                    _validFrameCount++;
                 }
 
                 AvatarAnimationSystem.Transform(in receivedFrameData, Matrix4x4.TRS(_rotation * _offsetPosition + _position + Vector3.up * _cameraHeight, _rotation * Quaternion.Euler(_offsetRotation), Vector3.one), out var transformedFrameData);

@@ -254,7 +254,13 @@ namespace Lilium.LiveStudio
         {
             foreach (var entry in _EnumerateHandles(wrapperHandle, instance))
             {
-                ExposedObjectDefaultRegistry.CaptureDefaults(entry.handle, DefaultExposedObjectResolver.Instance);
+                // Preserving variant: the avatar's wrapper (and its components) is a persistent scene
+                // object, so the live-scene restore applies its saved top-level diff BEFORE the avatar's
+                // async load completes and this re-baseline runs. A blind capture would adopt those
+                // applied values as defaults and silently drop them from the next save. Overridden
+                // properties keep their previous default and stay dirty; freshly instantiated objects
+                // (props) have no previous baseline, so this behaves exactly like CaptureDefaults.
+                ExposedObjectDefaultRegistry.CaptureDefaultsPreservingOverrides(entry.handle, DefaultExposedObjectResolver.Instance);
             }
         }
 
