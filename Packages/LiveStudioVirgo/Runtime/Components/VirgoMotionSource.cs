@@ -77,14 +77,14 @@ namespace Lilium.LiveStudio.Virgo
         // captured offset from the camera — lands on the mark.
         [SerializeField]
         [ExposedField]
-        private float _cameraHeight = 1.6f;
+        private float _cameraHeight = 1.3f;
 
         // Horizontal distance (meters) from the subject anchor to the capture camera, along the anchor's
         // forward (+Z) axis. With cameraHeight this fully specifies the capture-camera origin
         // geometrically, so this GameObject's position is determined even before/without capture pose data.
         [SerializeField]
         [ExposedField]
-        private float _cameraDistance = 0f;
+        private float _cameraDistance = 0.7f;
 
         [SerializeField]
         private Vector3 _offsetPosition = Vector3.zero;
