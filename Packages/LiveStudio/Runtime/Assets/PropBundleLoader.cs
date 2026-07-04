@@ -78,51 +78,57 @@ namespace Lilium.LiveStudio
         {
             try
             {
-                var bundleRequest = AssetBundle.LoadFromFileAsync(filePath);
-                await _AwaitOperation(bundleRequest);
-
-                var bundle = bundleRequest.assetBundle;
-                if (bundle == null)
+                // Gate the open→read→unload window: LiveStudio prop bundles built individually share an
+                // internal id (CAB-...), so two of them open at once fail with "another AssetBundle with
+                // the same files is already loaded". Serializing lets them load one after another.
+                return await BundleLoadGate.RunExclusiveAsync(async () =>
                 {
-                    Debug.LogError($"[LiveStudio] Failed to load prop bundle: {filePath}");
-                    return null;
-                }
+                    var bundleRequest = AssetBundle.LoadFromFileAsync(filePath);
+                    await _AwaitOperation(bundleRequest);
 
-                try
-                {
-                    var assetNames = bundle.GetAllAssetNames();
-                    if (assetNames == null || assetNames.Length == 0)
+                    var bundle = bundleRequest.assetBundle;
+                    if (bundle == null)
                     {
-                        Debug.LogError($"[LiveStudio] Prop bundle has no assets: {filePath}");
+                        Debug.LogError($"[LiveStudio] Failed to load prop bundle: {filePath}");
                         return null;
                     }
 
-                    // The bundle may also contain a BundleThumbnail (a ScriptableObject), so load the
-                    // GameObject explicitly instead of assuming assetNames[0] is the root prefab.
-                    var assetRequest = bundle.LoadAllAssetsAsync<GameObject>();
-                    await _AwaitOperation(assetRequest);
-
-                    var allAssets = assetRequest.allAssets;
-                    var prefab = (allAssets != null && allAssets.Length > 0) ? allAssets[0] as GameObject : null;
-                    if (prefab == null)
+                    try
                     {
-                        Debug.LogError($"[LiveStudio] Prop bundle root is not a GameObject: {filePath}");
-                        return null;
+                        var assetNames = bundle.GetAllAssetNames();
+                        if (assetNames == null || assetNames.Length == 0)
+                        {
+                            Debug.LogError($"[LiveStudio] Prop bundle has no assets: {filePath}");
+                            return null;
+                        }
+
+                        // The bundle may also contain a BundleThumbnail (a ScriptableObject), so load the
+                        // GameObject explicitly instead of assuming assetNames[0] is the root prefab.
+                        var assetRequest = bundle.LoadAllAssetsAsync<GameObject>();
+                        await _AwaitOperation(assetRequest);
+
+                        var allAssets = assetRequest.allAssets;
+                        var prefab = (allAssets != null && allAssets.Length > 0) ? allAssets[0] as GameObject : null;
+                        if (prefab == null)
+                        {
+                            Debug.LogError($"[LiveStudio] Prop bundle root is not a GameObject: {filePath}");
+                            return null;
+                        }
+
+                        // Cache the packed BundleThumbnail while the bundle is open so the REST handler can
+                        // serve it without re-opening the bundle (the remote app shows it as the prop preview).
+                        _CacheBundleThumbnail(bundle, filePath);
+
+                        _prefabCache[filePath] = prefab;
+                        return prefab;
                     }
-
-                    // Cache the packed BundleThumbnail while the bundle is open so the REST handler can
-                    // serve it without re-opening the bundle (the remote app shows it as the prop preview).
-                    _CacheBundleThumbnail(bundle, filePath);
-
-                    _prefabCache[filePath] = prefab;
-                    return prefab;
-                }
-                finally
-                {
-                    // false = keep the cached prefab and instantiated assets alive,
-                    // free only the bundle container so the same file can be reloaded.
-                    bundle.Unload(false);
-                }
+                    finally
+                    {
+                        // false = keep the cached prefab and instantiated assets alive,
+                        // free only the bundle container so the same file can be reloaded.
+                        bundle.Unload(false);
+                    }
+                });
             }
             finally
             {

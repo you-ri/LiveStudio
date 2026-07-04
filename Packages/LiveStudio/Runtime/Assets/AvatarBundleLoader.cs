@@ -22,53 +22,59 @@ namespace Lilium.LiveStudio
                 return null;
             }
 
-            var bundleRequest = AssetBundle.LoadFromFileAsync(filePath);
-            await _AwaitOperation(bundleRequest);
-
-            var bundle = bundleRequest.assetBundle;
-            if (bundle == null)
+            // Gate the open→read→unload window: LiveStudio bundles built individually can share an
+            // internal id (CAB-...), so two of them open at once fail with "another AssetBundle with the
+            // same files is already loaded". Serializing lets them load one after another.
+            return await BundleLoadGate.RunExclusiveAsync(async () =>
             {
-                Debug.LogError($"[LiveStudio] Failed to load AssetBundle: {filePath}");
-                return null;
-            }
+                var bundleRequest = AssetBundle.LoadFromFileAsync(filePath);
+                await _AwaitOperation(bundleRequest);
 
-            // バンドルは finally で確実に解放する。Unload(false) なので生成済みアセットは生存する。
-            try
-            {
-                var assetNames = bundle.GetAllAssetNames();
-                if (assetNames == null || assetNames.Length == 0)
+                var bundle = bundleRequest.assetBundle;
+                if (bundle == null)
                 {
-                    Debug.LogError($"[LiveStudio] .lsavatar contains no assets: {filePath}");
+                    Debug.LogError($"[LiveStudio] Failed to load AssetBundle: {filePath}");
                     return null;
                 }
 
-                // The bundle may also contain a BundleThumbnail (a ScriptableObject), so load the
-                // GameObject explicitly instead of assuming assetNames[0] is the root prefab.
-                var assetRequest = bundle.LoadAllAssetsAsync<GameObject>();
-                await _AwaitOperation(assetRequest);
-
-                var allAssets = assetRequest.allAssets;
-                var prefab = (allAssets != null && allAssets.Length > 0) ? allAssets[0] as GameObject : null;
-                if (prefab == null)
+                // バンドルは finally で確実に解放する。Unload(false) なので生成済みアセットは生存する。
+                try
                 {
-                    Debug.LogError($"[LiveStudio] .lsavatar root asset is not a GameObject: {filePath}");
-                    return null;
+                    var assetNames = bundle.GetAllAssetNames();
+                    if (assetNames == null || assetNames.Length == 0)
+                    {
+                        Debug.LogError($"[LiveStudio] .lsavatar contains no assets: {filePath}");
+                        return null;
+                    }
+
+                    // The bundle may also contain a BundleThumbnail (a ScriptableObject), so load the
+                    // GameObject explicitly instead of assuming assetNames[0] is the root prefab.
+                    var assetRequest = bundle.LoadAllAssetsAsync<GameObject>();
+                    await _AwaitOperation(assetRequest);
+
+                    var allAssets = assetRequest.allAssets;
+                    var prefab = (allAssets != null && allAssets.Length > 0) ? allAssets[0] as GameObject : null;
+                    if (prefab == null)
+                    {
+                        Debug.LogError($"[LiveStudio] .lsavatar root asset is not a GameObject: {filePath}");
+                        return null;
+                    }
+
+                    // Cache the packed BundleThumbnail while the bundle is open so the REST handler can serve
+                    // it without re-opening the bundle (the remote app shows it as the avatar's preview).
+                    _CacheBundleThumbnail(bundle, filePath);
+
+                    var instance = Object.Instantiate(prefab, parent, worldPositionStays: false);
+                    instance.name = prefab.name;
+                    return instance;
                 }
-
-                // Cache the packed BundleThumbnail while the bundle is open so the REST handler can serve
-                // it without re-opening the bundle (the remote app shows it as the avatar's preview).
-                _CacheBundleThumbnail(bundle, filePath);
-
-                var instance = Object.Instantiate(prefab, parent, worldPositionStays: false);
-                instance.name = prefab.name;
-                return instance;
-            }
-            finally
-            {
-                // false: ロード済みアセット（メッシュ/マテリアル/プレハブ）は維持し、バンドルコンテナのみ解放。
-                // これにより同一 .lsavatar の再ロード時に "already loaded" にならない。
-                bundle.Unload(false);
-            }
+                finally
+                {
+                    // false: ロード済みアセット（メッシュ/マテリアル/プレハブ）は維持し、バンドルコンテナのみ解放。
+                    // これにより同一 .lsavatar の再ロード時に "already loaded" にならない。
+                    bundle.Unload(false);
+                }
+            });
         }
 
         public void Dispose()
