@@ -23,6 +23,8 @@
     "PROJECT_OPEN_DEST_FOLDER": "Open Save Folder",
     "PROJECT_RECRAWL": "Rescan",
     "PROJECT_OPEN_SCENE": "Open Scene",
+    "PROJECT_SELECTEDCAMERAPREVIEWINTERVAL": "Refresh interval (ms) for the selected camera's preview on the remote app's camera page. Lower is smoother but increases load.",
+    "PROJECT_UNSELECTEDCAMERAPREVIEWINTERVAL": "Interval (ms) between updates of the other cameras' previews. They are refreshed one at a time in turn, so a lower value speeds up the rotation but increases load.",
     "AVATAR_VRMMODELFILEPATH_HELP": "For VRM, a model with Perfect Sync support is recommended. Without it, mouth movements will fall back to the 'aa' blend shape.",
     "AVATAR_RESETPHYSICS_HELP": "Resets physics bones that are stuck or in an unnatural position.",
     "AVATAR_RESETPHYSICS": "Reset Physics",

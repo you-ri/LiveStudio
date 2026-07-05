@@ -27,6 +27,35 @@ namespace Lilium.LiveStudio
 
         private static string _projectPath = "";
 
+        // Camera preview polling intervals (milliseconds) consumed by the remote app's camera page.
+        // The remote app fetches previews one camera at a time to avoid periodic load spikes: the
+        // selected camera is refreshed every _selectedCameraPreviewIntervalMs, while the other cameras
+        // are cycled one-by-one every _unselectedCameraPreviewIntervalMs. Kept per project (any scene of
+        // the same project shares the same polling cadence), so they use Project persist scope.
+        [ExposedField(persistScope = PersistScope.Project), Hide]
+        private static int _selectedCameraPreviewIntervalMs = 100;
+
+        [ExposedProperty]
+        [Slider(16, 1000, 1)]
+        [ExposedHelp("PROJECT_SELECTEDCAMERAPREVIEWINTERVAL")]
+        public static int selectedCameraPreviewIntervalMs
+        {
+            get => _selectedCameraPreviewIntervalMs;
+            set => _selectedCameraPreviewIntervalMs = Mathf.Max(1, value);
+        }
+
+        [ExposedField(persistScope = PersistScope.Project), Hide]
+        private static int _unselectedCameraPreviewIntervalMs = 50;
+
+        [ExposedProperty]
+        [Slider(16, 1000, 1)]
+        [ExposedHelp("PROJECT_UNSELECTEDCAMERAPREVIEWINTERVAL")]
+        public static int unselectedCameraPreviewIntervalMs
+        {
+            get => _unselectedCameraPreviewIntervalMs;
+            set => _unselectedCameraPreviewIntervalMs = Mathf.Max(1, value);
+        }
+
         /// <summary>Absolute path of the currently open project folder, or empty if none.</summary>
         [ExposedProperty, Hide]
         public static string projectPath => _projectPath;
@@ -58,6 +87,11 @@ namespace Lilium.LiveStudio
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void _Initialize()
         {
+            // Re-establish defaults with Domain Reload disabled; a persisted value (if any) is applied
+            // afterwards on project load by ProjectSettingsStore.ApplyAll.
+            _selectedCameraPreviewIntervalMs = 100;
+            _unselectedCameraPreviewIntervalMs = 50;
+
             _projectPath = PlayerPrefs.GetString(kProjectPathKey, "");
             if (string.IsNullOrEmpty(_projectPath))
             {

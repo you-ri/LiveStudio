@@ -23,6 +23,8 @@
     "PROJECT_OPEN_DEST_FOLDER": "打开保存文件夹",
     "PROJECT_RECRAWL": "重新扫描",
     "PROJECT_OPEN_SCENE": "打开场景",
+    "PROJECT_SELECTEDCAMERAPREVIEWINTERVAL": "远程应用摄像机页面中，所选摄像机预览的刷新间隔(毫秒)。数值越小越流畅，但负载越高。",
+    "PROJECT_UNSELECTEDCAMERAPREVIEWINTERVAL": "其他摄像机预览的更新间隔(毫秒)。逐台轮流更新，数值越小轮询越快，但负载越高。",
     "AVATAR_VRMMODELFILEPATH_HELP": "VRM时，建议使用支持Perfect Sync的VRM模型。不支持时，嘴部开合将使用aa混合形状。",
     "AVATAR_RESETPHYSICS_HELP": "重置卡住或处于不自然位置的物理骨骼。",
     "AVATAR_RESETPHYSICS": "重置物理骨骼",
