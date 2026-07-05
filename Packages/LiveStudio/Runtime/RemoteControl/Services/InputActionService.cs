@@ -4,11 +4,6 @@ using Lilium.RemoteControl;
 
 namespace Lilium.LiveStudio
 {
-    public interface IInputActionProvider
-    {
-        public InputActionMap inputActionMap { get; }
-    }
-
     public static class InputActionService
     {
         public static InputActionMap[] inputActionMaps => Service<IInputActionProvider>.subjects.Select(s => s.inputActionMap).ToArray();

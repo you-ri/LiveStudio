@@ -13,7 +13,6 @@ namespace Lilium.LiveStudio
     {
         const string kId = "d9714ab0-e81b-44c8-9e76-22f177864ebe";
 
-        // TODO: [Farm] was a brainstorm placeholder for FormerlyExposedAs. Replace with the actual former name or remove.
         public string name { get; set; } = "Environment Light";
 
         public ExposedObjectHandle? exposedObject => ExposedObjectRegistry.FindByTarget(this);

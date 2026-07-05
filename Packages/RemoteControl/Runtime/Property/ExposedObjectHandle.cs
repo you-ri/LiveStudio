@@ -61,9 +61,17 @@ namespace Lilium.RemoteControl
             // デフォルト値を自動キャプチャ（dirty検出のベースライン）
             // インスタンス型: ターゲットの型がExposedClassの型と互換性がある場合のみ実行
             // static型: target=nullだがstaticプロパティを直接読み取れるため実行
+            //
+            // EnsureDefaultsCaptured（未登録なら捕捉、既存があれば保持）を使う。無条件の
+            // SetDefault だと、既にこの target 用の baseline が存在する（例: ライブシーン復元の
+            // ApplyPendingEntry が未登録ハンドルで捕捉した「上書き前の既定値」）ケースで、生成時の
+            // 現在値（＝適用済みの上書き値）を baseline に焼き込んでしまい、直後の
+            // AssetStateSnapshot.CaptureDefaults(=preserving 再ベースライン) が差分を検出できず
+            // ライブシーン保存で上書きが失われる。Unregister は baseline を Remove するので、
+            // 正規の register→unregister→register サイクルでは従来どおり再捕捉される。
             if (type != null && (type.isStatic || (target != null && type.type != null && type.type.IsInstanceOfType(target))))
             {
-                ExposedPropertyUtility.SetDefault(this);
+                ExposedObjectDefaultRegistry.EnsureDefaultsCaptured(this, DefaultExposedObjectResolver.Instance);
             }
         }
 

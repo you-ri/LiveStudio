@@ -67,7 +67,7 @@ namespace Lilium.LiveStudio
             var resolved = _ResolvePath(rawPath);
             if (!File.Exists(resolved))
             {
-                Debug.LogError($"[LiveStudio] GltfModelLoader: file not found at '{resolved}'.");
+                Debug.LogError($"[LiveStudio] GltfModel: file not found at '{resolved}'.");
                 return;
             }
 
@@ -86,7 +86,7 @@ namespace Lilium.LiveStudio
                 if (ct.IsCancellationRequested || this == null) return;
                 if (!loaded)
                 {
-                    Debug.LogError($"[LiveStudio] GltfModelLoader: failed to load glTF '{resolved}'.");
+                    Debug.LogError($"[LiveStudio] GltfModel: failed to load glTF '{resolved}'.");
                     _gltf.Dispose();
                     _gltf = null;
                     return;
@@ -99,7 +99,7 @@ namespace Lilium.LiveStudio
                 if (ct.IsCancellationRequested || this == null) return;
                 if (!instantiated)
                 {
-                    Debug.LogError($"[LiveStudio] GltfModelLoader: failed to instantiate scene from '{resolved}'.");
+                    Debug.LogError($"[LiveStudio] GltfModel: failed to instantiate scene from '{resolved}'.");
                     Destroy(_instance);
                     _instance = null;
                     return;

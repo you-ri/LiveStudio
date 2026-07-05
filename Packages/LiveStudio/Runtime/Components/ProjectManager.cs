@@ -33,6 +33,7 @@ namespace Lilium.LiveStudio
         // are cycled one-by-one every _unselectedCameraPreviewIntervalMs. Kept per project (any scene of
         // the same project shares the same polling cadence), so they use Project persist scope.
         [ExposedField(persistScope = PersistScope.Project), Hide]
+        [FormerlyExposedAs("selectedCameraPreviewIntervalMs")]
         private static int _selectedCameraPreviewIntervalMs = 100;
 
         [ExposedProperty]
@@ -45,6 +46,7 @@ namespace Lilium.LiveStudio
         }
 
         [ExposedField(persistScope = PersistScope.Project), Hide]
+        [FormerlyExposedAs("unselectedCameraPreviewIntervalMs")]
         private static int _unselectedCameraPreviewIntervalMs = 50;
 
         [ExposedProperty]

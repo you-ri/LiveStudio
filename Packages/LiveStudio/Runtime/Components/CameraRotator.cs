@@ -16,7 +16,7 @@ namespace Lilium.LiveStudio
 
     [RequireComponent(typeof(Camera))]
     [DefaultExecutionOrder(200)]
-    public class CameraRotater : MonoBehaviour
+    public class CameraRotator : MonoBehaviour
     {
         [SerializeField]
         CameraRotationType _rotationType = CameraRotationType.Default;
