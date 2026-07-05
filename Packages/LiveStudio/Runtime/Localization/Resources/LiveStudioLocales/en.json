@@ -33,6 +33,7 @@
     "AVATAR_SELECTEDPREFAB_HELP": "Select an avatar from the registered prefab list. Selecting will replace the current avatar.",
     "GLTF_MODELFILEPATH": "glTF Model File",
     "GLTF_MODELFILEPATH_HELP": "Path to a .gltf or .glb file to load. Changes take effect immediately.",
+    "AVATAR_LAYER": "Avatar Layer",
     "AVATAR_MESHSTATEOVERRIDES": "Mesh State Override",
     "AVATAR_ANIMATIONPARAMETEROVERRIDES": "Animation Parameter Override",
     "AVATAR_RECEIVER": "Receiver",

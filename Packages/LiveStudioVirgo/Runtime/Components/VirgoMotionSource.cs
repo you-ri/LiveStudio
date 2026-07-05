@@ -299,18 +299,19 @@ namespace Lilium.LiveStudio.Virgo
         public override void ResetCamera()
         {
             // Pin the capture camera (cam0) to the placement origin (_position = VirgoMotionSource, the camera
-            // reference at cameraHeight/cameraDistance from the mark) — camera-anchored position. But cancel
-            // the ROOT (body) Y, not the camera Y, so the avatar faces the mark's front (+Z = mark.forward);
-            // cancelling the camera Y instead leaves the avatar facing its captured orientation relative to the
-            // camera (it ends up backwards). The avatar then falls out at its captured offset, landing on the
-            // mark when cameraHeight/cameraDistance match the real capture rig.
+            // reference at cameraHeight/cameraDistance from the mark) — camera-anchored position.
             // (ref var avoids naming CameraData: the wire-side Lilium.LiveStudio.Virgo.CameraData would shadow
             //  the Lilium.LiveStudio.CameraData returned here.)
             ref var camera = ref _lastReceivedFrameData.AsCamera(0);
-            ref var root = ref _lastReceivedFrameData.root;
 
-            // 体(root)の world Y を打ち消し、アバターの正面を anchor(mark)の +Z(=mark.forward)へ揃える。
-            _offsetRotation = new Vector3(0, -root.rotation.eulerAngles.y, 0);
+            // Align the capture camera (cam0) so its +Z faces the mark, matching this GameObject's own
+            // placement orientation (source.rotation * 180°, which points back at the mark). The avatar then
+            // keeps its captured orientation *relative to the camera* and lands laterally on the mark.
+            // Cancel the CAMERA yaw, NOT the ROOT (body) yaw: aligning the body yaw leaves the camera off-axis,
+            // which swings the avatar sideways off the mark (the reported symptom). The +180 is required because
+            // the placement itself is flipped to face back at the mark — dropping it (using -cameraYaw) points
+            // the camera away and flips the avatar backwards.
+            _offsetRotation = new Vector3(0, 180f - camera.rotation.eulerAngles.y, 0);
 
             // オフセット適用後のカメラワールド位置を原点 (_position = VirgoMotionSource) に合わせる（cam.pos≈0）。
             var rotation = Quaternion.Euler(_offsetRotation);

@@ -158,6 +158,34 @@ namespace Lilium.LiveStudio
             }
         }
 
+        // アバターモデルに設定可能なレイヤー名の一覧。先頭の空文字は「変更しない」を表す。
+        // StringSelector の選択肢として RemoteApp / Inspector に提供する。
+        [ExposedProperty, Hide]
+        public string[] layerNames
+        {
+            get
+            {
+                var names = new List<string> { string.Empty };
+                for (int i = 0; i < 32; i++)
+                {
+                    var layerName = LayerMask.LayerToName(i);
+                    if (!string.IsNullOrEmpty(layerName)) names.Add(layerName);
+                }
+                return names.ToArray();
+            }
+        }
+
+        // アバターモデル（ターゲットの子孫すべて）に適用するレイヤー。
+        // 空文字＝「変更しない」で、その場合は Prefab 元のレイヤーを維持する。
+        [SerializeField]
+        [ExposedField(label="AVATAR_LAYER"), StringSelector(nameof(layerNames))]
+        private string _avatarLayer = string.Empty;
+
+        // _ApplyAvatarLayer で元レイヤーへ戻せるよう、ターゲット差し替え時に一度だけ捕捉する
+        // 子孫 Transform → 元レイヤーのスナップショット。
+        private GameObject _layerSnapshotTarget;
+        private readonly Dictionary<Transform, int> _originalLayers = new Dictionary<Transform, int>();
+
         [SerializeField]
         [ExposedField(label="AVATAR_MESHSTATEOVERRIDES")]
         private MeshState[] meshStateOverrides = new MeshState[0];
@@ -386,6 +414,9 @@ namespace Lilium.LiveStudio
 
             _ApplyAnimationParameterOverrides(avatar);
 
+            _CaptureOriginalLayersIfNeeded(avatar);
+            _ApplyAvatarLayer();
+
             // Notify TransformRef subscribers that the hierarchy under this GameObject may have
             // changed (avatar swap, BuildAvatar, etc.). Single notification point unifies the
             // Start path and _ReplaceAvatar path since both flow through here. The argument is
@@ -495,6 +526,40 @@ namespace Lilium.LiveStudio
                         animator.SetBool(param.nameHash, paramOverride.boolValue);
                         break;
                 }
+            }
+        }
+
+        // アバターターゲットが差し替わった時だけ、子孫の元レイヤーを控えておく。
+        // _ApplyAvatarLayer が「変更しない」/レイヤー切替時に元へ戻すための土台。
+        private void _CaptureOriginalLayersIfNeeded(GameObject avatar)
+        {
+            if (avatar == null || avatar == _layerSnapshotTarget) return;
+            _originalLayers.Clear();
+            foreach (var t in avatar.GetComponentsInChildren<Transform>(includeInactive: true))
+            {
+                _originalLayers[t] = t.gameObject.layer;
+            }
+            _layerSnapshotTarget = avatar;
+        }
+
+        // まず全子孫を元レイヤーへ戻し、レイヤーが選択されていればモデル全体へ上書きする。
+        // 冪等なので OnPropertyChanged 経由の再適用や「変更しない」への切替でも破綻しない。
+        private void _ApplyAvatarLayer()
+        {
+            foreach (var kv in _originalLayers)
+            {
+                if (kv.Key != null) kv.Key.gameObject.layer = kv.Value;
+            }
+
+            if (string.IsNullOrEmpty(_avatarLayer)) return;
+
+            int layer = LayerMask.NameToLayer(_avatarLayer);
+            if (layer < 0) return; // 存在しないレイヤー名は無視
+            if (_target == null) return;
+
+            foreach (var t in _target.GetComponentsInChildren<Transform>(includeInactive: true))
+            {
+                t.gameObject.layer = layer;
             }
         }
 

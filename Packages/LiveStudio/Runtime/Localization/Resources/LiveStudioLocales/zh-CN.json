@@ -33,6 +33,7 @@
     "AVATAR_SELECTEDPREFAB_HELP": "从已注册的预制体列表中选择一个角色。选择后会替换当前角色。",
     "GLTF_MODELFILEPATH": "glTF模型文件",
     "GLTF_MODELFILEPATH_HELP": "要加载的 .gltf / .glb 文件路径。更改会立即生效。",
+    "AVATAR_LAYER": "角色层级",
     "AVATAR_MESHSTATEOVERRIDES": "网格状态更改",
     "AVATAR_ANIMATIONPARAMETEROVERRIDES": "动画参数设置",
     "AVATAR_RECEIVER": "接收器",

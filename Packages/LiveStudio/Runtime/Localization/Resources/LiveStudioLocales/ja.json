@@ -33,6 +33,7 @@
     "AVATAR_SELECTEDPREFAB_HELP": "登録されたプレハブリストからアバターを選択します。選択すると現在のアバターと置き換わります。",
     "GLTF_MODELFILEPATH": "glTFモデルファイル",
     "GLTF_MODELFILEPATH_HELP": "読み込む .gltf / .glb ファイルのパスを指定します。変更は即座に反映されます。",
+    "AVATAR_LAYER": "アバターのレイヤー",
     "AVATAR_MESHSTATEOVERRIDES": "メッシュ状態変更",
     "AVATAR_ANIMATIONPARAMETEROVERRIDES": "アニメーションパラメータ変更",
     "AVATAR_RECEIVER": "レシーバー",
