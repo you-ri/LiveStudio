@@ -17,6 +17,7 @@ namespace Lilium.RemoteControl.Server
         private StreamHandler _streamHandler;
         private ExposedObjectHandler _exposedObjectHandler;
         private StatusHandler _statusHandler;
+        private PerformanceHandler _performanceHandler;
         private LanguageHandler _languageHandler;
 
         public event Action<RestApiClient> onClientConnected;
@@ -49,6 +50,8 @@ namespace Lilium.RemoteControl.Server
             RegisterRoute(_exposedObjectHandler);
             _statusHandler = new StatusHandler(this);
             RegisterRoute(_statusHandler);
+            _performanceHandler = new PerformanceHandler(this);
+            RegisterRoute(_performanceHandler);
             _languageHandler = new LanguageHandler(this);
             RegisterRoute(_languageHandler);
         }
@@ -62,6 +65,8 @@ namespace Lilium.RemoteControl.Server
             _exposedObjectHandler = null;
             UnregisterRoute(_statusHandler);
             _statusHandler = null;
+            UnregisterRoute(_performanceHandler);
+            _performanceHandler = null;
             UnregisterRoute(_languageHandler);
             _languageHandler = null;
         }
