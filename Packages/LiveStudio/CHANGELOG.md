@@ -1,11 +1,15 @@
 # Changelog
 
-## [0.24.2] - 2026-07-03
-<!-- changelog-sha: 378d90c48c438183219cce60ea3f6e38536979f4 -->
+## [0.24.2] - 2026-07-05
+<!-- changelog-sha: 7a8804f7770e1b90b74b7719ca9885f2926f8d1f -->
 
 ### Added
 
 - The editor gains a toolbar button to launch and close the Remote app, matching the runtime RemoteAppHost (same configured path / args and child-process handling).
+- `LookAtCameraController` (`ICameraController`) assigns a bone — resolved from a `TransformRef` (target owner name + bone name / path) — to a camera's `LookAt` target, re-resolving only when the reference changes or the avatar is swapped, so a look-at bone survives avatar reloads. Only `LookAt` is touched, leaving the `Tracking` target and any Aim component intact.
+- `BoneFollower` component drives its own transform to follow a bone resolved from a `TransformRef`, re-resolving on avatar swap. It bridges a swappable avatar bone to a Cinemachine camera authored in a separate stage / set bundle (outside the LiveStudio camera pipeline), where a direct cross-scene reference to the bone cannot survive the swap.
+- `AvatarController` gains an avatar animation layer override, letting a loaded avatar's layer be overridden per scene.
+- `ProjectManager` exposes selected / unselected camera-preview polling interval settings (per-project persist scope), controlling how often camera previews are refreshed.
 
 ### Changed
 
@@ -15,6 +19,8 @@
 ### Fixed
 
 - Operation sets authored directly in a scene or prop bundle now have a stable id backfilled on init and restore. Previously they kept the default empty id, so every id-addressed function was a silent no-op and the set was skipped when rebuilding the input map.
+- Multiple single-prefab props that shared the same internal AssetBundle CAB could collide when loaded concurrently ("same files already loaded"). Bundle opens are now serialized, and each built bundle is given a unique internal CAB seeded from its source asset GUID so props no longer share one.
+- Loaded prop / avatar overrides (e.g. a prop moved from its authored position) are no longer lost when the live scene reloads. The load-complete re-baseline now preserves restore-applied overrides instead of folding the applied value back into the dirty-detection baseline.
 
 ## [0.24.1] - 2026-06-30
 <!-- changelog-sha: 7c999a055f01c038e5793031dd7b3efcabf17d16 -->

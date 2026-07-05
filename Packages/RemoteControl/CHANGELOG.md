@@ -1,7 +1,7 @@
 # Changelog
 
-## [0.24.2] - 2026-07-03
-<!-- changelog-sha: 378d90c48c438183219cce60ea3f6e38536979f4 -->
+## [0.24.2] - 2026-07-05
+<!-- changelog-sha: 7a8804f7770e1b90b74b7719ca9885f2926f8d1f -->
 
 ### Changed
 
@@ -14,10 +14,12 @@
 - Exposed key-path addressing: a property path can target an array element by a stable `[ExposedKey]` value (e.g. `expressions[Joy].weight`), which backs the generic `SetPropertyAction` "bind to key" flow.
 - `[Collapsed]` attribute: a hint that makes the remote app render an array or nested struct collapsed by default (the expand toggle remains). Emitted as a standalone `collapsed` flag, independent of the property controller.
 - `elementTypeOptions` is emitted for polymorphic array properties so the remote app can offer "add an element of type …".
+- A dedicated `GET /api/performance` endpoint reports the app's current FPS and process memory (sampled from the player loop via `PerformanceMonitor`; memory is read through the native `ProcessMemoryReader` on Windows), so the remote app can poll it only while an overlay is showing instead of piggybacking on other requests.
 
 ### Fixed
 
 - `ExposedPropertyUtility.CreateDefaultElement` falls back to the first concrete `[ExposedClass]` subtype for abstract / interface element types, so adding an element to a polymorphic `[SerializeReference]` array no longer throws `MissingMethodException`.
+- Constructing an `ExposedObjectHandle` no longer bakes an already-applied override value into its dirty-detection baseline. The constructor now uses `EnsureDefaultsCaptured` (capture only when unset, preserve an existing baseline) instead of an unconditional `SetDefault`, so an override captured by live-scene restore before the handle was registered is no longer overwritten with the current (applied) value and then lost on save.
 
 ## [0.23.6] - 2026-06-23
 
