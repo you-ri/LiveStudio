@@ -23,9 +23,20 @@ namespace Lilium.LiveStudio.Virgo
         // (channel0 / channel1 = clients[0] / clients[1])。
         public const int kCameraChannelCount = 2;
 
+        // valid はトラッキング状態のビットマスク。bit0 = body (MediaPipe) 追跡中、
+        // bit1 = face (ARKit) 追跡中。0 以外なら「いずれか追跡中」(従来の 0/1 フラグ互換)。
+        public const byte kBodyValidFlag = 1 << 0;
+        public const byte kFaceValidFlag = 1 << 1;
+
         public bool isValid => valid!= 0 && Mathf.Approximately(AsCamera(0).fieldOfView, 0f) == false;
 
         public byte valid;
+
+        /// <summary>body (MediaPipe) が追跡中か。</summary>
+        public bool bodyValid => (valid & kBodyValidFlag) != 0;
+
+        /// <summary>face (ARKit) が追跡中か。</summary>
+        public bool faceValid => (valid & kFaceValidFlag) != 0;
 
         public fixed byte cameras[kCameraChannelCount * CameraData.Size];
 

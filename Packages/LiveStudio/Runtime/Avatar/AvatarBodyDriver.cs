@@ -115,6 +115,9 @@ namespace Lilium.LiveStudio
         bool _isGraphPlaying;
         bool _isTracking;
 
+        // Previous face-tracking state for the show rising-edge detection in Tick().
+        bool _prevFaceValid;
+
         /// <summary>Source of the per-frame avatar pose. Set by the owning component.</summary>
         public MotionSourceBase motionSource { get; set; }
 
@@ -217,35 +220,54 @@ namespace Lilium.LiveStudio
         /// <summary>
         /// Per-frame body update. Handles tracking transitions and mesh visibility,
         /// writes the root transform directly, and hands the pose to the job.
-        /// Returns true while tracking (the owning component should then apply its
+        /// Returns true while visible (the owning component should then apply its
         /// own facial/look-at processing).
+        /// Visibility conditions (matching <see cref="AvatarVisibilityGate"/>): hide the
+        /// moment BOTH body (MediaPipe) and face (ARKit) tracking are lost, show on the
+        /// rising edge of face tracking. The body signal flickers frame-to-frame (its
+        /// validity beats against the receive phase) so a per-frame isValid toggle would
+        /// blink; the face signal is stable and anchors both transitions.
         /// </summary>
         public bool Tick()
         {
-            if (motionSource == null || !motionSource.frameData.isValid)
+            bool bodyValid = motionSource != null && motionSource.frameData.bodyTracked;
+            bool faceValid = motionSource != null && motionSource.frameData.faceTracked;
+
+            if (_isTracking)
             {
-                if (_isTracking)
+                // Hide the moment both body (MediaPipe) and face (ARKit) tracking are lost.
+                if (!bodyValid && !faceValid)
                 {
                     SetShowMeshes(false);
                     SetPoseEnabled(false);
                     // No controller to fall back to: freeze the last pose by stopping
                     // the graph (an empty stream would otherwise reset to T-pose).
                     if (!hasControllerPlayable) StopGraph();
+                    _isTracking = false;
                 }
-                _isTracking = false;
-                return false;
             }
-
-            if (!_isTracking)
+            else
             {
-                SetShowMeshes(true);
-                if (!_isGraphPlaying) PlayGraph();
+                // Show the moment face (ARKit) tracking becomes valid.
+                if (!_prevFaceValid && faceValid)
+                {
+                    SetShowMeshes(true);
+                    if (!_isGraphPlaying) PlayGraph();
+                    _isTracking = true;
+                }
             }
-            _isTracking = true;
+            _prevFaceValid = faceValid;
 
-            ref AvatarAnimationData frameData = ref motionSource.frameData;
-            AvatarAnimationSystem.UpdateRoot(_animator.transform, in frameData.root);
-            _poseInput.Value = new HumanoidPoseInput { enabled = 1, pose = frameData.pose };
+            if (!_isTracking) return false;
+
+            // While visible, only consume the frame when it is valid; on a momentary
+            // invalid (body-blip) frame keep the last pose instead of writing stale data.
+            if (motionSource.frameData.isValid)
+            {
+                ref AvatarAnimationData frameData = ref motionSource.frameData;
+                AvatarAnimationSystem.UpdateRoot(_animator.transform, in frameData.root);
+                _poseInput.Value = new HumanoidPoseInput { enabled = 1, pose = frameData.pose };
+            }
             return true;
         }
 

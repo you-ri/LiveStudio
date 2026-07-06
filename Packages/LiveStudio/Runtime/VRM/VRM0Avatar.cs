@@ -103,8 +103,9 @@ namespace Lilium.LiveStudio
 
         void Update()
         {
-            bool isValid = _motionSource != null && _motionSource.frameData.isValid;
-            if (!_visibilityGate.Update(isValid)) return;
+            bool bodyValid = _motionSource != null && _motionSource.frameData.bodyTracked;
+            bool faceValid = _motionSource != null && _motionSource.frameData.faceTracked;
+            if (!_visibilityGate.Update(bodyValid, faceValid)) return;
 
             if (_animator != null)
             {

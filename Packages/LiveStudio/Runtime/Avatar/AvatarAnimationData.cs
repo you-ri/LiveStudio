@@ -34,7 +34,15 @@ namespace Lilium.LiveStudio
             return ref UnsafeUtility.AsRef<CameraData>(UnsafeUtility.AddressOf(ref cameras[index * CameraData.Size]));
         }
 
-        public bool isValid => root.valid != 0
-                            && Mathf.Approximately(AsCamera(0).fieldOfView, 0f) == false;
+        /// <summary>True while the capture camera carries a meaningful pose (non-zero FOV).</summary>
+        public bool cameraValid => Mathf.Approximately(AsCamera(0).fieldOfView, 0f) == false;
+
+        public bool isValid => root.valid != 0 && cameraValid;
+
+        /// <summary>True while body (pose) tracking is valid within a meaningful frame.</summary>
+        public bool bodyTracked => root.bodyValid && cameraValid;
+
+        /// <summary>True while face (expression) tracking is valid within a meaningful frame.</summary>
+        public bool faceTracked => root.faceValid && cameraValid;
     }
 }

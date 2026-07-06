@@ -263,8 +263,9 @@ namespace Lilium.LiveStudio
 
         void Update()
         {
-            bool isValid = _motionSource != null && _motionSource.frameData.isValid;
-            if (!_visibilityGate.Update(isValid)) return;
+            bool bodyValid = _motionSource != null && _motionSource.frameData.bodyTracked;
+            bool faceValid = _motionSource != null && _motionSource.frameData.faceTracked;
+            if (!_visibilityGate.Update(bodyValid, faceValid)) return;
 
             // ARKit 52 weight を resolver で reshape (neutral 表情の差分 + 各表情ウェイト合成 + スムージング)。
             // 以降のロジックは resolver の arkitWeightData / smoothedOutputs を参照する。

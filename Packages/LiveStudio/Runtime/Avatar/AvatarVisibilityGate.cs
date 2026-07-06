@@ -6,44 +6,64 @@ namespace Lilium.LiveStudio
 {
     /// <summary>
     /// Shared tracking-visibility gate for avatar components that toggle their meshes
-    /// with the motion source (StandardAvatar / VRCAvatar / VRM0Avatar). Tracks the
-    /// on/off transition, hiding the renderers on tracking loss and showing them on
-    /// recovery — flipping visibility only at the transition, not every frame.
-    /// Behaviour matches the per-avatar implementations it replaces: renderers are
+    /// with the motion source (StandardAvatar / VRCAvatar / VRM0Avatar). Visibility uses
+    /// asymmetric conditions:
+    /// the avatar is hidden the moment BOTH body (MediaPipe) and face (ARKit) tracking are
+    /// lost, and shown again on the rising edge of face (ARKit) tracking — the moment face
+    /// tracking becomes valid. The body signal may flicker frame-to-frame (its validity
+    /// beats against the receive phase), but the face signal is stable, so requiring both
+    /// to drop before hiding keeps the visible state solid while tracked, and the face
+    /// rising edge shows the avatar the instant tracking is (re)acquired. Renderers are
     /// looked up from the avatar root on each toggle.
     /// </summary>
     public struct AvatarVisibilityGate
     {
         Transform _root;
-        bool _isTracking;
+        bool _isVisible;
+        bool _prevFaceValid;
 
-        /// <summary>True while the motion source is providing valid frames.</summary>
-        public bool isTracking => _isTracking;
+        /// <summary>True while the avatar meshes are currently shown.</summary>
+        public bool isTracking => _isVisible;
 
-        /// <summary>Binds the avatar root used to find renderers and clears the tracking state.</summary>
+        /// <summary>Binds the avatar root used to find renderers and clears the gate state.</summary>
         public void Initialize(Transform root)
         {
             _root = root;
-            _isTracking = false;
+            _isVisible = false;
+            _prevFaceValid = false;
         }
 
         /// <summary>
-        /// Advances the gate for the frame. Returns true while tracking (the caller should
-        /// then run its pose/expression update); returns false on an invalid frame after
-        /// hiding the meshes. Mesh visibility flips only on the tracking transition.
+        /// Advances the gate for the frame. Hides the meshes the instant BOTH
+        /// <paramref name="bodyValid"/> and <paramref name="faceValid"/> are lost, and shows
+        /// them on the rising edge of <paramref name="faceValid"/>. Returns true while the
+        /// avatar is visible (the caller should then run its pose/expression update). Because
+        /// visibility is baselined to hidden in <see cref="Initialize"/>, a face signal that
+        /// is already valid on the first frame still counts as a rising edge and shows it.
         /// </summary>
-        public bool Update(bool isValid)
+        public bool Update(bool bodyValid, bool faceValid)
         {
-            if (!isValid)
+            if (_isVisible)
             {
-                if (_isTracking) SetVisible(false);
-                _isTracking = false;
-                return false;
+                // Hide the moment both body (MediaPipe) and face (ARKit) tracking are lost.
+                if (!bodyValid && !faceValid)
+                {
+                    SetVisible(false);
+                    _isVisible = false;
+                }
+            }
+            else
+            {
+                // Show the moment face (ARKit) tracking becomes valid.
+                if (!_prevFaceValid && faceValid)
+                {
+                    SetVisible(true);
+                    _isVisible = true;
+                }
             }
 
-            if (!_isTracking) SetVisible(true);
-            _isTracking = true;
-            return true;
+            _prevFaceValid = faceValid;
+            return _isVisible;
         }
 
         /// <summary>Enables/disables every renderer under the avatar root.</summary>

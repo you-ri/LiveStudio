@@ -47,7 +47,9 @@ namespace Lilium.LiveStudio
         {
             dst = b;
 
-            dst.root.valid = (byte)((a.root.valid != 0 && b.root.valid != 0) ? 1 : 0);
+            // Combine tracking bitmasks per-bit: a body/face bit stays set only while both
+            // interpolation endpoints have it (the former AND semantics, now per-flag).
+            dst.root.valid = (byte)(a.root.valid & b.root.valid);
             dst.root.position = Vector3.Lerp(a.root.position, b.root.position, t);
             dst.root.rotation = Quaternion.Slerp(a.root.rotation, b.root.rotation, t);
             dst.root.scale = Vector3.Lerp(a.root.scale, b.root.scale, t);
@@ -105,7 +107,8 @@ namespace Lilium.LiveStudio
             Debug.Assert(transform != null);
             dst = new AvatarRootData
             {
-                valid = 1,
+                // Locally-built frame is fully tracked (body + face).
+                valid = AvatarRootData.kBodyValidFlag | AvatarRootData.kFaceValidFlag,
                 position = transform.localPosition,
                 rotation = transform.localRotation,
                 scale = transform.localScale,
