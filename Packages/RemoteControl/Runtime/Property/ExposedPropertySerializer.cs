@@ -1079,6 +1079,13 @@ namespace Lilium.RemoteControl
                     continue;
                 }
 
+                // AssetSelector: アセット参照を @guid として出力する
+                if (propertyType.controlAttribute is AssetSelectorAttribute)
+                {
+                    jObject[propertyType.name] = AssetSelectorSerializer.SerializeAssetSelectorValue(value, options.forPersistence);
+                    continue;
+                }
+
                 fileResolver?.PushPath(propertyType.name);
                 var serializedValue = TrySerializeRawJson(propertyType, value)
                     ?? SerializeUnityType(resolver, value, propertyType.forceValue, options.forPersistence, childDepth);
@@ -1553,6 +1560,10 @@ namespace Lilium.RemoteControl
             {
                 valueToken = ObjectSelectorSerializer.SerializeObjectSelectorValue(property.GetValue(), forPersistence: false);
             }
+            else if (property.type.controlAttribute is AssetSelectorAttribute)
+            {
+                valueToken = AssetSelectorSerializer.SerializeAssetSelectorValue(property.GetValue(), forPersistence: false);
+            }
             else
             {
                 valueToken = SerializeUnityType(resolver, property.GetValue());
@@ -1744,6 +1755,16 @@ namespace Lilium.RemoteControl
             {
                 var resolvedValue = ObjectSelectorSerializer.DeserializeObjectSelectorValue(resolver, token, valueType);
                 property.SetValue(resolvedValue, captureDefault: captureDefaults);
+                return true;
+            }
+
+            // ④a' AssetSelector: @guid (または素の guid 文字列) を AssetRegistry で解決して代入する。
+            if (property.type.controlAttribute is AssetSelectorAttribute
+                && valueType != null
+                && typeof(UnityEngine.Object).IsAssignableFrom(valueType))
+            {
+                var resolvedAsset = AssetSelectorSerializer.DeserializeAssetSelectorValue(token, valueType);
+                property.SetValue(resolvedAsset, captureDefault: captureDefaults);
                 return true;
             }
 

@@ -38,6 +38,7 @@
     "AVATAR_LAYER": "アバターのレイヤー",
     "AVATAR_MESHSTATEOVERRIDES": "メッシュ状態変更",
     "AVATAR_ANIMATIONPARAMETEROVERRIDES": "アニメーションパラメータ変更",
+    "AVATAR_BODYOVERRIDECLIP": "未トラッキング部位の上書きアニメ",
     "AVATAR_RECEIVER": "レシーバー",
     "CAMERATRACKER_MOTIONSOURCE": "モーションソース",
     "NOTIFY_PRESET_SAVED": "プリセットを保存しました"

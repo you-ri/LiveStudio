@@ -68,6 +68,10 @@ namespace Lilium.LiveStudio
         [SerializeField]
         private ExpressionMode _expressionMode = ExpressionMode.Preset;
 
+        [SerializeField]
+        [Tooltip("トラッキングされていない部位の姿勢を上書きするアニメーションクリップ（待機/基本ポーズ等）")]
+        private AnimationClip _bodyOverrideClip;
+
         // VRM1.0のExpression用のキー
         private UniVRM10.ExpressionKey? _lookRightKey;
         private UniVRM10.ExpressionKey? _lookLeftKey;
@@ -99,6 +103,10 @@ namespace Lilium.LiveStudio
         void OnValidate()
         {
             _Initialize();
+
+            // 再生中に Inspector からクリップを差し替えた場合も driver へ反映する。
+            // (driver 未初期化 / 編集モードでは値の保持のみで何もしない)
+            _bodyDriver.SetOverrideClip(_bodyOverrideClip);
         }
 
         void Start()
@@ -115,7 +123,9 @@ namespace Lilium.LiveStudio
             //ResetPhysics();
 
             // Runtime プロパティ取得 (Transform 再構成) の後に PlayableGraph を構築する。
-            _bodyDriver.Initialize(_animator);
+            // 調査用ログ
+            Debug.Log($"[VRM1Avatar] Start: bodyOverrideClip={(_bodyOverrideClip != null ? _bodyOverrideClip.name : "null")}", this);
+            _bodyDriver.Initialize(_animator, _bodyOverrideClip);
 
             ((IAvatar)this).BuildAvatar();
         }
@@ -361,6 +371,14 @@ namespace Lilium.LiveStudio
         void IAvatar.SetMotionSource(MotionSourceBase motionSource)
         {
             _bodyDriver.motionSource = motionSource;
+        }
+
+        void IAvatar.SetBodyOverrideClip(AnimationClip clip)
+        {
+            // 調査用ログ
+            Debug.Log($"[VRM1Avatar] SetBodyOverrideClip: {(clip != null ? clip.name : "null")}", this);
+            _bodyOverrideClip = clip;
+            _bodyDriver.SetOverrideClip(clip);
         }
 
         bool IExpressionAvatar.SetWeight(FacialKey key, float weight)

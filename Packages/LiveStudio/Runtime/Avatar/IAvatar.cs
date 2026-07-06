@@ -1,5 +1,7 @@
 // Copyright (c) You-Ri, 2026
 
+using UnityEngine;
+
 namespace Lilium.LiveStudio
 {
     public enum ExpressionMode
@@ -17,5 +19,12 @@ namespace Lilium.LiveStudio
         public void ResetPhysics();
 
         public void SetMotionSource(MotionSourceBase motionSource);
+
+        /// <summary>
+        /// トラッキングされていない部位の姿勢を上書きするアニメーションクリップを設定する。
+        /// AvatarBodyDriver を使うアバター (VRM1Avatar / VRCFTAvatar) は未トラッキング部位へ
+        /// このクリップの姿勢を流し込む。対応しないアバターは無視してよい。null で解除。
+        /// </summary>
+        public void SetBodyOverrideClip(AnimationClip clip);
     }
 }

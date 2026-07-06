@@ -678,6 +678,11 @@ namespace Lilium.LiveStudio
             _bodyDriver.motionSource = motionSource;
         }
 
+        void IAvatar.SetBodyOverrideClip(AnimationClip clip)
+        {
+            _bodyDriver.SetOverrideClip(clip);
+        }
+
         bool IExpressionAvatar.SetWeight(FacialKey key, float weight)
         {
             if (string.IsNullOrEmpty(key.name)) return false;

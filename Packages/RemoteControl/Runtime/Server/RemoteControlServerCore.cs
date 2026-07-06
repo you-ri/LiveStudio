@@ -19,6 +19,7 @@ namespace Lilium.RemoteControl.Server
         private StatusHandler _statusHandler;
         private PerformanceHandler _performanceHandler;
         private LanguageHandler _languageHandler;
+        private AssetHandler _assetHandler;
 
         public event Action<RestApiClient> onClientConnected;
         public event Action<RestApiClient> onClientDisconnected;
@@ -54,6 +55,8 @@ namespace Lilium.RemoteControl.Server
             RegisterRoute(_performanceHandler);
             _languageHandler = new LanguageHandler(this);
             RegisterRoute(_languageHandler);
+            _assetHandler = new AssetHandler(this);
+            RegisterRoute(_assetHandler);
         }
 
         public void UnregisterDefaultRoutes()
@@ -69,6 +72,8 @@ namespace Lilium.RemoteControl.Server
             _performanceHandler = null;
             UnregisterRoute(_languageHandler);
             _languageHandler = null;
+            UnregisterRoute(_assetHandler);
+            _assetHandler = null;
         }
         
         public override void StartServer()

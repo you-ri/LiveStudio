@@ -462,6 +462,35 @@ namespace Lilium.RemoteControl
     }
 
     /// <summary>
+    /// アセット参照フィールド (AnimationClip 等の UnityEngine.Object 派生) 用のセレクタ属性。
+    /// 値はアセット GUID (<see cref="AssetRegistry"/> 経由) でシリアライズされるため、
+    /// 対象アセットは AssetRegistry に登録されている必要がある。
+    /// sourcePropertyName には候補 GUID の string[] を返すプロパティ名を指定する
+    /// (先頭の空文字は「未選択」を表す)。クライアントは各 GUID の表示名と型を
+    /// <c>GET /api/asset?guid=...</c> で解決して表示する。
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
+    public class AssetSelectorAttribute : ControlAttribute
+    {
+        public string sourcePropertyName { get; }
+
+        public AssetSelectorAttribute(string sourcePropertyName)
+            : base("AssetSelector")
+        {
+            this.sourcePropertyName = sourcePropertyName;
+        }
+
+        public override JObject ToJObject()
+        {
+            return new JObject
+            {
+                ["type"] = controlName,
+                ["sourceProperty"] = sourcePropertyName,
+            };
+        }
+    }
+
+    /// <summary>
     /// UnityEngine.Object 派生フィールド用のセレクタ属性。
     /// フィールド型から自動的にシーン内の同型オブジェクトを列挙して RemoteApp にドロップダウンとして表示する。
     /// 候補名 (string[]) と現在値のインデックスを送出し、RemoteApp からはインデックス (int) を受け取って再列挙→代入する。

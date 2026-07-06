@@ -543,6 +543,10 @@ namespace Lilium.LiveStudio
             _motionSource = motionSource;
         }
 
+        // 体は AvatarAnimationSystem で全ボーンを毎フレーム上書きするため、未トラッキング部位への
+        // クリップ流し込みには非対応 (AvatarBodyDriver を使う VRM1Avatar / VRCFTAvatar のみ対応)。
+        void IAvatar.SetBodyOverrideClip(AnimationClip clip) { }
+
         bool IExpressionAvatar.SetWeight(FacialKey key, float weight)
         {
             // viseme (口形状) - 既存経路

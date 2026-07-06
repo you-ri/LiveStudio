@@ -375,6 +375,13 @@ namespace Lilium.RemoteControl
                 defaultValue = ObjectSelectorSerializer.DeserializeObjectSelectorValue(
                     resolver, defaultToken, valueType);
             }
+            else if (property.Value.type.controlAttribute is AssetSelectorAttribute
+                && valueType != null
+                && typeof(UnityEngine.Object).IsAssignableFrom(valueType))
+            {
+                defaultValue = AssetSelectorSerializer.DeserializeAssetSelectorValue(
+                    defaultToken, valueType);
+            }
             else
             {
                 defaultValue = ExposedPropertySerializer.DeserializeUnityType(
@@ -549,6 +556,10 @@ namespace Lilium.RemoteControl
             if (propertyType.controlAttribute is ObjectSelectorAttribute)
             {
                 return ObjectSelectorSerializer.SerializeObjectSelectorValue(value, forPersistence: true);
+            }
+            if (propertyType.controlAttribute is AssetSelectorAttribute)
+            {
+                return AssetSelectorSerializer.SerializeAssetSelectorValue(value, forPersistence: true);
             }
             return ExposedPropertySerializer.SerializeUnityType(resolver, value, propertyType.forceValue, forPersistence: true);
         }
