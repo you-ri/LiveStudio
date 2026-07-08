@@ -101,5 +101,64 @@ namespace Lilium.RemoteControl.LiveScene
                 for (int i = 0; i < _entries.Count; i++) yield return _entries[i].json;
             }
         }
+
+        /// <summary>
+        /// A queued entry whose whole target object is absent this session — surfaced to the remote app
+        /// as a deletable "missing" live-scene item. Only bare-id root entries qualify (their
+        /// <c>sourceKey</c> carries no path): they mean an entire top-level object the saved scene
+        /// referenced does not exist here. Path-carrying child entries (an async asset's component
+        /// overrides) are excluded — those bind once their owning prop / avatar loads.
+        /// </summary>
+        public readonly struct OrphanEntry
+        {
+            public readonly string sourceKey;
+            public readonly string type;
+            public OrphanEntry(string sourceKey, string type)
+            {
+                this.sourceKey = sourceKey;
+                this.type = type;
+            }
+        }
+
+        /// <summary>
+        /// The current bare-id root orphans (see <see cref="OrphanEntry"/>). Recomputed from the live
+        /// queue on each call, so an entry that has since bound (its asset loaded, drained by
+        /// <see cref="ApplyFor"/>) or been removed no longer appears.
+        /// </summary>
+        public static List<OrphanEntry> GetOrphans()
+        {
+            var result = new List<OrphanEntry>();
+            for (int i = 0; i < _entries.Count; i++)
+            {
+                var key = _entries[i].sourceKey;
+                if (string.IsNullOrEmpty(key)) continue;
+                // A path ('.' / '[') marks a child override of an async asset, not a missing root.
+                if (key.IndexOf('.') >= 0 || key.IndexOf('[') >= 0) continue;
+                var type = _entries[i].json?["@type"]?.Value<string>();
+                result.Add(new OrphanEntry(key, type));
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Drops every queued entry rooted at <paramref name="rootId"/> (a missing object's id): its
+        /// root override plus any child/component overrides of the same absent object. The next scene
+        /// save then no longer re-emits them, so an explicit delete + save resolves the orphan. Returns
+        /// true when at least one entry was removed.
+        /// </summary>
+        public static bool RemoveOrphan(string rootId)
+        {
+            if (string.IsNullOrEmpty(rootId)) return false;
+            bool removed = false;
+            for (int i = _entries.Count - 1; i >= 0; i--)
+            {
+                if (_entries[i].rootId == rootId)
+                {
+                    _entries.RemoveAt(i);
+                    removed = true;
+                }
+            }
+            return removed;
+        }
     }
 }

@@ -30,17 +30,31 @@ namespace Lilium.RemoteControl.LiveScene
             public string path;
         }
 
+        [System.Serializable]
+        struct RemoveOrphanRequest
+        {
+            public string sourceKey;
+        }
+
         private readonly EndpointRoute[] _postRoutes;
+        private readonly EndpointRoute[] _getRoutes;
 
         public LiveSceneIoHandler(RemoteControlServerCore server)
             : base(server,
                 new RouteRule("/exposed/export", RouteMatch.Exact),
-                new RouteRule("/exposed/import", RouteMatch.Exact))
+                new RouteRule("/exposed/import", RouteMatch.Exact),
+                new RouteRule("/exposed/orphans", RouteMatch.Exact),
+                new RouteRule("/exposed/orphans/remove", RouteMatch.Exact))
         {
             _postRoutes = new[]
             {
                 new EndpointRoute("/exposed/export", RouteMatch.Exact, HandleExport),
                 new EndpointRoute("/exposed/import", RouteMatch.Exact, HandleImport),
+                new EndpointRoute("/exposed/orphans/remove", RouteMatch.Exact, HandleRemoveOrphan),
+            };
+            _getRoutes = new[]
+            {
+                new EndpointRoute("/exposed/orphans", RouteMatch.Exact, HandleGetOrphans),
             };
         }
 
@@ -48,6 +62,11 @@ namespace Lilium.RemoteControl.LiveScene
 
         protected override Task HandlePostRequest(HttpListenerContext context)
             => DispatchEndpoints(context, _postRoutes, "Invalid request format");
+
+        protected override bool SupportsGet() => true;
+
+        protected override Task HandleGetRequest(HttpListenerContext context)
+            => DispatchEndpoints(context, _getRoutes, "Unknown endpoint");
 
         private async Task HandleExport(HttpListenerContext context)
         {
@@ -151,6 +170,45 @@ namespace Lilium.RemoteControl.LiveScene
                 return;
             }
             await WriteResponse(200, context.Response, "{\"success\":true}");
+        }
+
+        // GET /exposed/orphans — 現在のライブシーンが参照するが実体が存在しない (未解決の) ルート
+        // オブジェクトの一覧を返す。RemoteApp のシーンページが "Missing" として提示する。
+        private async Task HandleGetOrphans(HttpListenerContext context)
+        {
+            var orphans = await ExecuteOnMainThread(() =>
+            {
+                var list = LiveScenePendingStore.GetOrphans();
+                var dto = new List<object>(list.Count);
+                for (int i = 0; i < list.Count; i++)
+                {
+                    dto.Add(new { sourceKey = list[i].sourceKey, type = list[i].type });
+                }
+                return dto;
+            });
+            await WriteJson(context, new { orphans });
+        }
+
+        // POST /exposed/orphans/remove — 指定 sourceKey の孤児エントリを pending store から除去する。
+        // 以降シーンを保存すればファイルから消える (明示削除で解決)。
+        private async Task HandleRemoveOrphan(HttpListenerContext context)
+        {
+            var body = await ReadRequestBody(context.Request);
+            if (string.IsNullOrEmpty(body))
+            {
+                await WriteError(context, 400, "Empty request body");
+                return;
+            }
+
+            var request = JsonConvert.DeserializeObject<RemoveOrphanRequest>(body);
+            if (string.IsNullOrEmpty(request.sourceKey))
+            {
+                await WriteError(context, 400, "sourceKey is required");
+                return;
+            }
+
+            var removed = await ExecuteOnMainThread(() => LiveScenePendingStore.RemoveOrphan(request.sourceKey));
+            await WriteResponse(200, context.Response, $"{{\"success\":true,\"removed\":{(removed ? "true" : "false")}}}");
         }
     }
 }

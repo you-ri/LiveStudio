@@ -800,9 +800,12 @@ namespace Lilium.RemoteControl.LiveScene
                     ExposedObjectRegistry.ReplaceId(match.Value, savedId);
                 }
             }
-            else if (matchCount > 1)
+            else if (matchCount > 1 && !string.IsNullOrEmpty(objectName))
             {
                 // 曖昧 (同型・同名が複数) なため安全側でスキップするが、復元漏れになり得るので可視化する。
+                // ただし @name を持つ live/API 経路の曖昧のみ警告する。永続ファイルのエントリは @name を
+                // 持たず型だけでは特定できないため、警告は出さず未解決のまま残し、RemoteApp 側で削除可能な
+                // "missing" シーンアイテムとして提示する (LiveScenePendingStore.GetOrphans 参照)。
                 Debug.LogWarning($"[RemoteControl] Ambiguous restore: {matchCount} objects match type '{typeName}'" +
                     (string.IsNullOrEmpty(objectName) ? "" : $" name '{objectName}'") +
                     $" for saved id '{savedId}'; skipped id restore to avoid mis-binding.");
