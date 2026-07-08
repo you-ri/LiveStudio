@@ -40,7 +40,7 @@
     "AVATAR_ANIMATIONPARAMETEROVERRIDES": "Animation Parameter Override",
     "AVATAR_BODYOVERRIDECLIP": "Untracked Body Override Clip",
     "AVATAR_LOCKLOWERBODYPOSE": "Lock Lower Body Pose",
-    "AVATAR_LOCKLOWERBODYPOSE_HELP": "When on, the lower-body position is locked: the hips stay at the body override clip's height and the whole avatar (root) is pinned to its anchor in both position and rotation. Individual bone rotations still follow the motion capture, so the pose keeps moving while the avatar stays put, and both feet are held at their planted position with IK so hip rotation does not drag them.",
+    "AVATAR_LOCKLOWERBODYPOSE_HELP": "Locks the lower-body position. The avatar is pinned to its anchor position. Individual bone rotations still follow the motion capture, so the pose keeps moving while the avatar stays put.",
     "AVATAR_RECEIVER": "Receiver",
     "CAMERATRACKER_MOTIONSOURCE": "Motion Source",
     "NOTIFY_PRESET_SAVED": "Preset saved"

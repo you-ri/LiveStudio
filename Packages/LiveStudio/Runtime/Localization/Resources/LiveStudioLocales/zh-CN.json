@@ -40,7 +40,7 @@
     "AVATAR_ANIMATIONPARAMETEROVERRIDES": "动画参数设置",
     "AVATAR_BODYOVERRIDECLIP": "未跟踪部位覆盖动画",
     "AVATAR_LOCKLOWERBODYPOSE": "锁定下半身姿势",
-    "AVATAR_LOCKLOWERBODYPOSE_HELP": "开启后锁定下半身位置：胯部固定在身体覆盖动画的高度，角色整体（根节点）的位置与旋转都固定在锚点。各骨骼的旋转仍跟随动作捕捉，因此角色原地不动但姿势会动。双脚通过 IK 固定在接地位置，胯部旋转不会带动脚移动。",
+    "AVATAR_LOCKLOWERBODYPOSE_HELP": "锁定下半身位置。角色固定在基准位置。各骨骼的旋转仍跟随动作捕捉，因此角色原地不动但姿势会动。",
     "AVATAR_RECEIVER": "接收器",
     "CAMERATRACKER_MOTIONSOURCE": "动作源",
     "NOTIFY_PRESET_SAVED": "已保存预设"

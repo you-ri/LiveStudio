@@ -228,9 +228,9 @@ namespace Lilium.LiveStudio.Virgo
                 if (latest >= 0)
                 {
                     // A resync jumps the playback position, which is visible as a hitch —
-                    // warn every time so it can be correlated with on-screen motion.
+                    // log every time so it can be correlated with on-screen motion.
                     int newOffset = (int)(latest - (long)localFrame);
-                    Debug.LogWarning($"[Studio] Resync playback position: playbackPos={playbackPos:F2} latest={latest} offsetJump={newOffset - _frameOffset}");
+                    Debug.Log($"[Studio] Resync playback position: playbackPos={playbackPos:F2} latest={latest} offsetJump={newOffset - _frameOffset}");
                     _frameOffset = newOffset;
                 }
             }
@@ -282,7 +282,7 @@ namespace Lilium.LiveStudio.Virgo
                     }
                     else if (delta >= 2)
                     {
-                        Debug.LogWarning($"[Studio] Received frame gap: prev={_lastReceivedFrames} curr={receivedFrameData.frames} delta={delta}");
+                        Debug.Log($"[Studio] Received frame gap: prev={_lastReceivedFrames} curr={receivedFrameData.frames} delta={delta}");
                     }
                 }
                 _lastReceivedFrames = receivedFrameData.frames;

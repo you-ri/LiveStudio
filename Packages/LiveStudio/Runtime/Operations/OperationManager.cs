@@ -174,7 +174,7 @@ namespace Lilium.LiveStudio
             InputMode mode = set.control?.mode ?? InputMode.Button;
             bool isButton = mode == InputMode.Button;
 
-            if (!float.IsNaN(set.manualValue))
+            if (set.hasManualValue)
             {
                 // Manual value from the remote app's Value-mode slider. Takes precedence over the bound
                 // input and works even when disabled (the user dragged it explicitly), like the manual hold.
@@ -252,6 +252,14 @@ namespace Lilium.LiveStudio
             _NormalizeControlPlacement();
             // Enforce each tile's fixed per-kind width (DeckControl.fixedWidth) on restored/older scenes. Idempotent.
             _EnforceControlWidths();
+            // A persisted manual hold is a steady state, not a fresh press: seed each set's edge baseline to
+            // its restored hold so the first Update after a reload resumes the hold without manufacturing a
+            // rising edge (which would re-fire the operation / re-run group exclusivity for a set left on).
+            for (int i = 0; i < operationSets.Count; i++)
+            {
+                var set = operationSets[i];
+                if (set != null) set.heldPrev = set.held;
+            }
         }
 
         /// <summary>Adds a new operation set (default key input, no operations) and rebuilds the input map.</summary>

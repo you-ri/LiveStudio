@@ -40,7 +40,7 @@
     "AVATAR_ANIMATIONPARAMETEROVERRIDES": "アニメーションパラメータ変更",
     "AVATAR_BODYOVERRIDECLIP": "未トラッキング部位の上書きアニメ",
     "AVATAR_LOCKLOWERBODYPOSE": "下半身の姿勢をロック",
-    "AVATAR_LOCKLOWERBODYPOSE_HELP": "オンにすると下半身の位置をロックします。腰はボディ上書きクリップの高さに固定され、アバター全体（原点）は位置・回転とも基準位置に固定されます。各ボーンの回転はモーションキャプチャーに従うため、アバターはその場に留まりつつポーズは動きます。両足は IK で接地位置に固定され、腰の回転で足が動きません。",
+    "AVATAR_LOCKLOWERBODYPOSE_HELP": "下半身の位置をロックします。アバターは基準位置に固定されます。各ボーンの回転はモーションキャプチャーに従うため、アバターはその場に留まりつつポーズは動きます。",
     "AVATAR_RECEIVER": "レシーバー",
     "CAMERATRACKER_MOTIONSOURCE": "モーションソース",
     "NOTIFY_PRESET_SAVED": "プリセットを保存しました"

@@ -387,15 +387,17 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
-        public void ManualValue_DefaultNaN_FallsThroughToInput()
+        public void ManualValue_DefaultNone_FallsThroughToInput()
         {
-            // A fresh set has no manual value (NaN), so the bound input drives it as before.
+            // A fresh set has no manual value (the -1 sentinel), so the bound input drives it as before.
             var set = new OperationSet
             {
                 enabled = true,
                 control = new DeckSlider(),
                 input = new FakeInputSource { raw = 0.7f },
             };
+
+            Assert.IsFalse(set.hasManualValue, "a fresh set has no manual value override");
 
             bool fired = OperationManager.TryGetFiringContext(set, wasHeld: false, out var context);
 
@@ -414,6 +416,20 @@ namespace Lilium.LiveStudio.EditorTests
 
             Assert.IsTrue(fired);
             Assert.AreEqual(0.4f, context.value, 1e-4f);
+        }
+
+        [Test]
+        public void SetManualValue_ZeroCountsAsOverride()
+        {
+            // The -1 sentinel (was NaN) means "no override"; a value of 0 is a real, persisted override
+            // (a slider dragged fully to the left), so it must not be mistaken for "none".
+            var set = new OperationSet();
+            Assert.IsFalse(set.hasManualValue, "a fresh set has no manual value override");
+
+            set.SetManualValue(0f);
+
+            Assert.IsTrue(set.hasManualValue, "a zero manual value is a real override, not the no-override sentinel");
+            Assert.AreEqual(0f, set.manualValue, 1e-4f);
         }
 
         [Test]
@@ -437,7 +453,7 @@ namespace Lilium.LiveStudio.EditorTests
 
             manager.SetOperationSetValue("does-not-exist", 0.5f);
 
-            Assert.IsTrue(float.IsNaN(set.manualValue), "an unknown id leaves every set's manual value untouched");
+            Assert.IsFalse(set.hasManualValue, "an unknown id leaves every set's manual value untouched");
         }
 
         [Test]

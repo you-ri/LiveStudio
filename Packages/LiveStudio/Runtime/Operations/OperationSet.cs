@@ -63,15 +63,19 @@ namespace Lilium.LiveStudio
         [SerializeReference, Select]
         public DeckControl control = new DeckButton();
 
-        // Runtime-only manual hold driven by the remote app's trigger toggle (never serialized). While
-        // held the set fires as if its input were held active; toggling off produces one release edge.
-        [NonSerialized]
+        // Persisted manual hold: the switch on/off state driven by the remote app's toggle / momentary deck
+        // tiles. Exposed directly as the field named `held` (NOT a shadow-of-property) so it serializes in the
+        // nested array-element path too: the shadow-field indirection is only wired for top-level objects, so
+        // a shadow `held` on this nested OperationSet silently drops from the live scene (its value never gets
+        // written). A private field with no [SerializeField], so it lives only in the live-scene json, not
+        // baked into the scene/prefab template. While held the set fires as if its input were held active.
+        [ExposedField("held"), Hide]
         private bool _held;
 
-        /// <summary>Manual-hold state, read-only over the wire so the remote app's trigger button reflects
-        /// it. Flipped only through <see cref="OperationManager.ToggleOperationSet"/>. Hidden from the generic
-        /// editor; runtime-only so it resets to false on restart.</summary>
-        [ExposedProperty, Hide]
+        /// <summary>Manual-hold state; the remote app reads it (over the wire as <c>held</c>, from the field
+        /// above) so its trigger button reflects it. Flipped only through
+        /// <see cref="OperationManager.ToggleOperationSet"/>. Persisted so a set left on survives a scene
+        /// reload. Plain C# read accessor — the <c>_held</c> field is the wire / persistence member.</summary>
         public bool held => _held;
 
         /// <summary>Previous frame's <see cref="held"/>, owned by <see cref="OperationManager"/> for edge
@@ -83,17 +87,25 @@ namespace Lilium.LiveStudio
         /// <see cref="OperationManager.ToggleOperationSet"/>.</summary>
         internal void SetHeld(bool value) => _held = value;
 
-        // Runtime-only manual value override driven by the remote app's Value-mode slider (sticky once set;
-        // NaN = no override). While set the set fires with this value, overriding the bound input, until
-        // restart — mirroring _held. Never serialized.
-        [NonSerialized]
-        private float _manualValue = float.NaN;
+        // Persisted manual value override driven by the remote app's Value-mode slider (sticky once set).
+        // -1 = no override (the bound input drives); 0..1 = the override value. Persisted (as an
+        // [ExposedField]) so a slider the operator moved survives a scene reload, mirroring _held. -1 is the
+        // sentinel rather than NaN because NaN has no JSON representation and breaks value-based dirty
+        // comparison; SetOperationSetValue clamps to 0..1, so -1 is always out of band. A private field with
+        // no [SerializeField], so it lives only in the live-scene json.
+        [ExposedField, Hide]
+        private float _manualValue = -1f;
 
-        /// <summary>Manual value override (0..1), or NaN when none. Owned by <see cref="OperationManager"/>;
-        /// the remote app sets it via <see cref="OperationManager.SetOperationSetValue"/>.</summary>
+        /// <summary>Manual value override (0..1), or negative when none (see <see cref="hasManualValue"/>).
+        /// Owned by <see cref="OperationManager"/>; the remote app sets it via
+        /// <see cref="OperationManager.SetOperationSetValue"/>.</summary>
         internal float manualValue => _manualValue;
 
-        /// <summary>Sets the manual value override. Manager-only.</summary>
+        /// <summary>True when a manual value override is in effect (the slider has been moved). Until then the
+        /// bound input drives the set.</summary>
+        internal bool hasManualValue => _manualValue >= 0f;
+
+        /// <summary>Sets the manual value override (callers clamp to 0..1). Manager-only.</summary>
         internal void SetManualValue(float value) => _manualValue = value;
 
         /// <summary>Runtime firing output (0..1) of the last <see cref="OperationManager.Update"/>: 1 while

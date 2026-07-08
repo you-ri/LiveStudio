@@ -18,6 +18,7 @@ namespace Lilium.LiveStudio
         public const string kHiddenDir = ".livestudio";
         public const string kCacheDir = "cache";
         public const string kThumbnailsDir = "thumbnails";
+        public const string kLogDir = "log";
 
         /// <summary>
         /// Absolute path of "{projectPath}/.livestudio/cache/thumbnails", or null when no project is
@@ -45,6 +46,37 @@ namespace Lilium.LiveStudio
             catch (Exception ex)
             {
                 Debug.LogWarning($"[Studio] Failed to create cache directory '{dir}': {ex.Message}");
+                return null;
+            }
+            return dir;
+        }
+
+        /// <summary>
+        /// Absolute path of "{projectPath}/.livestudio/log", or null when no project is open. Does not
+        /// create the directory.
+        /// </summary>
+        public static string GetLogDir()
+        {
+            var projectPath = ProjectManager.projectPath;
+            if (string.IsNullOrEmpty(projectPath)) return null;
+            return Path.Combine(projectPath, kHiddenDir, kLogDir);
+        }
+
+        /// <summary>
+        /// Same as <see cref="GetLogDir"/> but creates the directory. Returns null when no project is
+        /// open or the directory cannot be created.
+        /// </summary>
+        public static string EnsureLogDir()
+        {
+            var dir = GetLogDir();
+            if (string.IsNullOrEmpty(dir)) return null;
+            try
+            {
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Studio] Failed to create log directory '{dir}': {ex.Message}");
                 return null;
             }
             return dir;
