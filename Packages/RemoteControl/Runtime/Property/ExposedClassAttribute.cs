@@ -474,19 +474,32 @@ namespace Lilium.RemoteControl
     {
         public string sourcePropertyName { get; }
 
-        public AssetSelectorAttribute(string sourcePropertyName)
+        /// <summary>
+        /// Optional sibling string property that stores an external asset reference key (a scheme-prefixed
+        /// key such as LiveStudio's <c>file:&lt;path&gt;#&lt;clip&gt;</c>) which cannot be resolved to a
+        /// live <see cref="UnityEngine.Object"/> synchronously at deserialize time (its bundle loads
+        /// lazily). When set, the client routes a chosen external key here (and clears the Object field),
+        /// while a baked in-app asset still writes the Object field's <c>{"@guid"}</c> (and clears this).
+        /// The owner resolves the external key asynchronously so scene-restore survives the lazy load.
+        /// </summary>
+        public string refPropertyName { get; }
+
+        public AssetSelectorAttribute(string sourcePropertyName, string refPropertyName = null)
             : base("AssetSelector")
         {
             this.sourcePropertyName = sourcePropertyName;
+            this.refPropertyName = refPropertyName;
         }
 
         public override JObject ToJObject()
         {
-            return new JObject
+            var obj = new JObject
             {
                 ["type"] = controlName,
                 ["sourceProperty"] = sourcePropertyName,
             };
+            if (!string.IsNullOrEmpty(refPropertyName)) obj["refProperty"] = refPropertyName;
+            return obj;
         }
     }
 

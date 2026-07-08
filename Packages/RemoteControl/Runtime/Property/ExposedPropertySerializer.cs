@@ -374,6 +374,23 @@ namespace Lilium.RemoteControl
                     }
 
                     var propValue = ExposedPropertyUtility.GetValueRaw(value, propType);
+
+                    // ObjectSelector / AssetSelector are dispatched by control attribute the same way the
+                    // top-level SerializeFullToJObject does. Without this branch here, such a property on a
+                    // NESTED (inline-expanded) exposed object falls through to the generic UnityEngine.Object
+                    // path and JsonUtility.ToJson throws on engine types (e.g. an [AssetSelector] AnimationClip
+                    // on a component captured via the GameObject wrapper). Keeps both paths in parity.
+                    if (propType.controlAttribute is ObjectSelectorAttribute)
+                    {
+                        jObject[propType.name] = ObjectSelectorSerializer.SerializeObjectSelectorValue(propValue, forPersistence);
+                        continue;
+                    }
+                    if (propType.controlAttribute is AssetSelectorAttribute)
+                    {
+                        jObject[propType.name] = AssetSelectorSerializer.SerializeAssetSelectorValue(propValue, forPersistence);
+                        continue;
+                    }
+
                     fileResolver?.PushPath(propType.name);
                     var serializedValue = TrySerializeRawJson(propType, propValue)
                         ?? SerializeUnityType(resolver, propValue, propType.forceValue, forPersistence, depth - 1);

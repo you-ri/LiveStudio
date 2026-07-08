@@ -23,6 +23,24 @@ namespace Lilium.LiveStudio
     }
 
     /// <summary>
+    /// A foot IK goal captured from the override clip, expressed relative to the avatar root so
+    /// it stays fixed while the hips rotate under a position-locked root. Converted to world space
+    /// each frame with the current <see cref="RootWorldPose"/>.
+    /// </summary>
+    public struct FootIKGoal
+    {
+        public Vector3 localPosition;
+        public Quaternion localRotation;
+    }
+
+    /// <summary>Avatar root world pose, refreshed each frame by the driver for foot-IK goal conversion.</summary>
+    public struct RootWorldPose
+    {
+        public Vector3 position;
+        public Quaternion rotation;
+    }
+
+    /// <summary>
     /// Animation job that blends the mocap pose over a per-bone base pose, weighted by each
     /// bone's tracking presence. Presence 1 takes the mocap rotation fully; presence 0 takes
     /// the base pose; values in between slerp between them.
@@ -49,12 +67,38 @@ namespace Lilium.LiveStudio
         [ReadOnly] public NativeReference<byte> hasBasePose;
         [ReadOnly] public NativeReference<Vector3> baseHipPosition;
 
+        // 下半身の位置ロック (1=ON)。ON の間は hips のローカル位置を基準姿勢 (クリップ) に固定する。
+        // 回転は通常どおり mocap を反映する (root の位置・回転ロックは Tick 側)。
+        [ReadOnly] public NativeReference<byte> lockLowerBody;
+
+        // 下半身ロックで root 回転を anchor に固定した際、mocap の root 回転に含まれていた腰の向き
+        // (主に yaw) を hips ボーンへ畳み込んで補償する回転。inverse(anchorRot) * mocapRootRot。
+        [ReadOnly] public NativeReference<Quaternion> hipsRootCompensation;
+
+        // 足 IK (下半身ロック中に有効)。Unity 標準の humanoid IK (AnimationHumanStream.SolveIK) で
+        // 両足を上書きクリップの足位置へ固定し、腰の回転 (mocap) で足が振られても接地位置を保つ。
+        // footGoalValid==1 かつ lockLowerBody==1 のとき適用。ゴールは root ローカルで持ち、毎フレーム
+        // rootWorld (anchor 固定された root) で world 変換する。
+        [ReadOnly] public NativeReference<byte> footGoalValid;
+        [ReadOnly] public NativeReference<RootWorldPose> rootWorld;
+        [ReadOnly] public NativeReference<FootIKGoal> leftFootGoal;
+        [ReadOnly] public NativeReference<FootIKGoal> rightFootGoal;
+
+        // 足 IK 対象の脚ボーンの handles 内インデックス (無い場合 -1)。
+        public int leftUpperLegIndex;
+        public int leftLowerLegIndex;
+        public int leftFootIndex;
+        public int rightUpperLegIndex;
+        public int rightLowerLegIndex;
+        public int rightFootIndex;
+
         public void ProcessRootMotion(AnimationStream stream) { }
 
         public void ProcessAnimation(AnimationStream stream)
         {
             var data = input.Value;
             bool useBase = hasBasePose.Value == 1;
+            bool lockLower = lockLowerBody.Value == 1;
 
             // トラッキング無効フレーム: 基準姿勢があれば全身をそれにする。無ければ上流をパススルー。
             if (data.enabled == 0)
@@ -93,23 +137,129 @@ namespace Lilium.LiveStudio
                 }
             }
 
+            // 下半身ロック中は root 回転を anchor に固定しているため、mocap で root 側にあった腰の向き
+            // (主に yaw) が失われる。これを hips ボーンのローカル回転へ畳み込んで補償し、腰の yaw を戻す。
+            // hips は root 直下なので、ここを補正すれば配下 (spine/脚) の world 姿勢も追従する。
+            if (lockLower && hipsHandleIndex >= 0)
+            {
+                var hipsLocal = handles[hipsHandleIndex].GetLocalRotation(stream);
+                handles[hipsHandleIndex].SetLocalRotation(stream, hipsRootCompensation.Value * hipsLocal);
+            }
+
             if (hipsHandleIndex >= 0)
             {
-                float hipsPresence = data.pose.AsPresence((int)HumanBodyBones.Hips);
-                if (hipsPresence >= 1f)
+                if (lockLower)
                 {
-                    handles[hipsHandleIndex].SetLocalPosition(stream, data.pose.hipPosition);
+                    // 位置ロック中は hips のローカル位置のみ基準姿勢 (クリップ) に固定する
+                    // (回転は上のループで mocap を反映済み)。
+                    if (useBase) handles[hipsHandleIndex].SetLocalPosition(stream, baseHipPosition.Value);
                 }
-                else if (hipsPresence > 0f)
+                else
                 {
-                    var basePos = useBase ? baseHipPosition.Value : handles[hipsHandleIndex].GetLocalPosition(stream);
-                    handles[hipsHandleIndex].SetLocalPosition(stream, Vector3.Lerp(basePos, data.pose.hipPosition, hipsPresence));
-                }
-                else if (useBase)
-                {
-                    handles[hipsHandleIndex].SetLocalPosition(stream, baseHipPosition.Value);
+                    float hipsPresence = data.pose.AsPresence((int)HumanBodyBones.Hips);
+                    if (hipsPresence >= 1f)
+                    {
+                        handles[hipsHandleIndex].SetLocalPosition(stream, data.pose.hipPosition);
+                    }
+                    else if (hipsPresence > 0f)
+                    {
+                        var basePos = useBase ? baseHipPosition.Value : handles[hipsHandleIndex].GetLocalPosition(stream);
+                        handles[hipsHandleIndex].SetLocalPosition(stream, Vector3.Lerp(basePos, data.pose.hipPosition, hipsPresence));
+                    }
+                    else if (useBase)
+                    {
+                        handles[hipsHandleIndex].SetLocalPosition(stream, baseHipPosition.Value);
+                    }
                 }
             }
+
+            // 足 IK: 下半身ロック中は脚 (upperLeg→lowerLeg→foot) の 2 ボーン IK で両足を上書きクリップの
+            // 足位置へ固定する。各ボーンの回転 (mocap) で腰が回っても足の接地位置は動かない。ゴールは
+            // root ローカルで持つので、anchor 固定された root (rootWorld) で world へ変換して与える。
+            // Unity 標準の humanoid IK (AnimationHumanStream.SolveIK) は muscle 空間で解くため、この job の
+            // transform 直書きポーズを丸ごと上書きして全身を固定してしまう。よって transform 空間で自前に解く。
+            if (lockLower && footGoalValid.Value == 1)
+            {
+                var root = rootWorld.Value;
+                _SolveFootIK(stream, leftUpperLegIndex, leftLowerLegIndex, leftFootIndex, leftFootGoal.Value, root);
+                _SolveFootIK(stream, rightUpperLegIndex, rightLowerLegIndex, rightFootIndex, rightFootGoal.Value, root);
+            }
+        }
+
+        // 片脚の 2 ボーン IK。ゴール (root ローカル) を world 変換し、upperLeg/lowerLeg を解いて foot を
+        // 目標位置へ届かせ、foot 回転も目標へ合わせる。ハンドルが揃っていなければ何もしない。
+        void _SolveFootIK(AnimationStream stream, int upperIdx, int midIdx, int tipIdx, FootIKGoal goal, RootWorldPose root)
+        {
+            if (upperIdx < 0 || midIdx < 0 || tipIdx < 0) return;
+
+            Vector3 targetPosition = root.position + root.rotation * goal.localPosition;
+            Quaternion targetRotation = root.rotation * goal.localRotation;
+            _TwoBoneIK(stream, handles[upperIdx], handles[midIdx], handles[tipIdx], targetPosition, targetRotation);
+        }
+
+        // 解析的 2 ボーン IK (Unity Animation Rigging の SolveTwoBoneIK と同手法)。膝の曲げ方向は
+        // 現在の三角形 (upper-mid-tip) 法線を使うので mocap の膝向きを保つ。muscle 空間を使わない。
+        static void _TwoBoneIK(AnimationStream stream,
+            TransformStreamHandle upper, TransformStreamHandle mid, TransformStreamHandle tip,
+            Vector3 targetPosition, Quaternion targetRotation)
+        {
+            Vector3 a = upper.GetPosition(stream);
+            Vector3 b = mid.GetPosition(stream);
+            Vector3 c = tip.GetPosition(stream);
+
+            Quaternion aRotation = upper.GetRotation(stream);
+            Quaternion bRotation = mid.GetRotation(stream);
+
+            Vector3 ab = b - a;
+            Vector3 bc = c - b;
+            Vector3 ac = c - a;
+            Vector3 at = targetPosition - a;
+
+            float abLen = ab.magnitude;
+            float bcLen = bc.magnitude;
+            float acLen = ac.magnitude;
+            float atLen = at.magnitude;
+
+            if (abLen < 1e-6f || bcLen < 1e-6f || atLen < 1e-6f) return;
+
+            // 目標が脚の可動域を超えないようにクランプ (完全伸展でも解が存在するように)。
+            float maxLen = abLen + bcLen - 1e-4f;
+            if (atLen > maxLen) { at *= maxLen / atLen; atLen = maxLen; targetPosition = a + at; }
+
+            float oldAngle = _TriangleAngle(acLen, abLen, bcLen);
+            float newAngle = _TriangleAngle(atLen, abLen, bcLen);
+
+            // 膝の曲げ軸: 現在の脚三角形の法線。直線に近く縮退する場合のみ代替軸。
+            Vector3 axis = Vector3.Cross(ab, bc);
+            if (axis.sqrMagnitude < 1e-8f)
+            {
+                axis = Vector3.Cross(ab, Vector3.up);
+                if (axis.sqrMagnitude < 1e-8f) axis = Vector3.Cross(ab, Vector3.right);
+            }
+            axis = axis.normalized;
+
+            // 膝 (mid) を新旧の内角差ぶん回す。quaternion の回転角は半角の 2 倍。
+            float half = 0.5f * (oldAngle - newAngle);
+            float sin = Mathf.Sin(half);
+            float cos = Mathf.Cos(half);
+            Quaternion bendDelta = new Quaternion(axis.x * sin, axis.y * sin, axis.z * sin, cos);
+            mid.SetRotation(stream, bendDelta * bRotation);
+
+            // 膝を曲げた後の tip 位置を読み直し、upper を回して tip を目標へ向ける。
+            Vector3 c2 = tip.GetPosition(stream);
+            Vector3 ac2 = c2 - a;
+            if (ac2.sqrMagnitude > 1e-10f)
+                upper.SetRotation(stream, Quaternion.FromToRotation(ac2, at) * aRotation);
+
+            // foot の向きを目標へ合わせる。
+            tip.SetRotation(stream, targetRotation);
+        }
+
+        // aLen に対する角 (辺 aLen1, aLen2 の間の角) を余弦定理で求める。
+        static float _TriangleAngle(float aLen, float aLen1, float aLen2)
+        {
+            float c = Mathf.Clamp((aLen1 * aLen1 + aLen2 * aLen2 - aLen * aLen) / (2f * aLen1 * aLen2), -1f, 1f);
+            return Mathf.Acos(c);
         }
     }
 
@@ -156,6 +306,13 @@ namespace Lilium.LiveStudio
         NativeArray<int> _boneIndices;
         Transform[] _boneTransforms; // _handles と同順。基準姿勢サンプリングでボーンを読むために保持。
         int _hipsHandleIndex = -1;
+        // 足 IK 用の脚ボーンの _handles 内インデックス (無い場合 -1)。
+        int _leftUpperLegHandleIndex = -1;
+        int _leftLowerLegHandleIndex = -1;
+        int _leftFootHandleIndex = -1;
+        int _rightUpperLegHandleIndex = -1;
+        int _rightLowerLegHandleIndex = -1;
+        int _rightFootHandleIndex = -1;
         NativeReference<HumanoidPoseInput> _poseInput;
 
         // 上書きクリップから焼いた基準姿勢。job と共有する。
@@ -163,14 +320,26 @@ namespace Lilium.LiveStudio
         NativeReference<byte> _hasBasePose;
         NativeReference<Vector3> _baseHipPosition;
 
+        // 下半身の位置ロック (job 側: hips ローカル位置を基準姿勢へ固定)。root の位置・回転ロックは Tick 側。
+        NativeReference<byte> _lockLowerBody;
+        // SetLowerBodyPoseLock で保持する現在値。Initialize 前に設定されても保持し、
+        // Initialize 完了時に _lockLowerBody へ反映する。Tick の root 位置ロックでも参照する。
+        bool _lockLowerBodyPose;
+
+        // 足 IK ゴール (root ローカル)。_SampleBasePose で上書きクリップの足ポーズから焼く。
+        NativeReference<byte> _footGoalValid;
+        NativeReference<FootIKGoal> _leftFootGoal;
+        NativeReference<FootIKGoal> _rightFootGoal;
+        // アバター root の world 姿勢。Tick で毎フレーム更新し、job が足 IK ゴールの world 変換に使う。
+        NativeReference<RootWorldPose> _rootWorld;
+        // 下半身ロックで root 回転を anchor 固定した際の hips 補償回転 (Tick で毎フレーム更新)。
+        NativeReference<Quaternion> _hipsRootCompensation;
+
         bool _isGraphPlaying;
         bool _isTracking;
 
         // Previous face-tracking state for the show rising-edge detection in Tick().
         bool _prevFaceValid;
-
-        // 調査用: presence ログの間引きカウンタ。
-        int _tickLogCountdown;
 
         /// <summary>Source of the per-frame avatar pose. Set by the owning component.</summary>
         public MotionSourceBase motionSource { get; set; }
@@ -230,6 +399,14 @@ namespace Lilium.LiveStudio
                 transformsList.Add(bone);
             }
 
+            // 足 IK 用の脚ボーンの handles 内インデックスを控える (無ければ -1)。
+            _leftUpperLegHandleIndex = indicesList.IndexOf((int)HumanBodyBones.LeftUpperLeg);
+            _leftLowerLegHandleIndex = indicesList.IndexOf((int)HumanBodyBones.LeftLowerLeg);
+            _leftFootHandleIndex = indicesList.IndexOf((int)HumanBodyBones.LeftFoot);
+            _rightUpperLegHandleIndex = indicesList.IndexOf((int)HumanBodyBones.RightUpperLeg);
+            _rightLowerLegHandleIndex = indicesList.IndexOf((int)HumanBodyBones.RightLowerLeg);
+            _rightFootHandleIndex = indicesList.IndexOf((int)HumanBodyBones.RightFoot);
+
             _handles = new NativeArray<TransformStreamHandle>(handlesList.ToArray(), Allocator.Persistent);
             _boneIndices = new NativeArray<int>(indicesList.ToArray(), Allocator.Persistent);
             _boneTransforms = transformsList.ToArray();
@@ -239,7 +416,19 @@ namespace Lilium.LiveStudio
             _hasBasePose = new NativeReference<byte>(Allocator.Persistent);
             _baseHipPosition = new NativeReference<Vector3>(Allocator.Persistent);
 
-            // 上書きクリップを基準姿勢へ焼く (存在すれば _hasBasePose=1)。
+            // 下半身の位置ロックの共有状態。
+            _lockLowerBody = new NativeReference<byte>(Allocator.Persistent);
+            _lockLowerBody.Value = (byte)(_lockLowerBodyPose ? 1 : 0);
+
+            // 足 IK 用の共有状態。ゴールは直後の _SampleBasePose で焼く。
+            _footGoalValid = new NativeReference<byte>(Allocator.Persistent);
+            _leftFootGoal = new NativeReference<FootIKGoal>(Allocator.Persistent);
+            _rightFootGoal = new NativeReference<FootIKGoal>(Allocator.Persistent);
+            _rootWorld = new NativeReference<RootWorldPose>(Allocator.Persistent);
+            _hipsRootCompensation = new NativeReference<Quaternion>(Allocator.Persistent);
+            _hipsRootCompensation.Value = Quaternion.identity;
+
+            // 上書きクリップを基準姿勢へ焼く (存在すれば _hasBasePose=1)。足 IK ゴールもここで焼く。
             _SampleBasePose();
 
             var job = new HumanoidPoseJob
@@ -251,6 +440,18 @@ namespace Lilium.LiveStudio
                 basePose = _basePose,
                 hasBasePose = _hasBasePose,
                 baseHipPosition = _baseHipPosition,
+                lockLowerBody = _lockLowerBody,
+                footGoalValid = _footGoalValid,
+                rootWorld = _rootWorld,
+                leftFootGoal = _leftFootGoal,
+                rightFootGoal = _rightFootGoal,
+                hipsRootCompensation = _hipsRootCompensation,
+                leftUpperLegIndex = _leftUpperLegHandleIndex,
+                leftLowerLegIndex = _leftLowerLegHandleIndex,
+                leftFootIndex = _leftFootHandleIndex,
+                rightUpperLegIndex = _rightUpperLegHandleIndex,
+                rightLowerLegIndex = _rightLowerLegHandleIndex,
+                rightFootIndex = _rightFootHandleIndex,
             };
             _posePlayable = AnimationScriptPlayable.Create(_graph, job);
             _posePlayable.SetInputCount(1);
@@ -259,10 +460,6 @@ namespace Lilium.LiveStudio
 
             _output = AnimationPlayableOutput.Create(_graph, "Body", animator);
             _output.SetSourcePlayable(_posePlayable);
-
-            // 調査用ログ: リグ構成と基準姿勢の焼き込み結果を確認する。
-            var hipsBone = _HipsTransform();
-            Debug.Log($"[AvatarBodyDriver] Initialize: animator={animator.name}, avatar={(animator.avatar != null ? animator.avatar.name : "null")}, isHuman={animator.isHuman}, bones={_handles.Length}, hipsBone={(hipsBone != null ? hipsBone.name : "null")}, controller={hasControllerPlayable}, overrideClip={(_overrideClip != null ? _overrideClip.name : "null")}, hasBasePose={_hasBasePose.Value}");
 
             // With a pose source (controller or a sampled override pose), keep the graph playing
             // so the job runs even before/after tracking. Without one, stay stopped until the
@@ -294,15 +491,26 @@ namespace Lilium.LiveStudio
             if (_overrideClip == clip) return;
             _overrideClip = clip;
 
-            // 調査用ログ
-            Debug.Log($"[AvatarBodyDriver] SetOverrideClip: {(clip != null ? clip.name : "null")}, graphValid={_graph.IsValid()}");
-
             if (!_graph.IsValid()) return; // Initialize 前。次の Initialize で反映される。
 
             _SampleBasePose();
 
             // 基準姿勢ができたら job が姿勢を書けるよう graph 再生を保証する。
             if (_HasPoseSource && !_isGraphPlaying) PlayGraph();
+        }
+
+        /// <summary>
+        /// 下半身の位置ロックを切り替える。ON の間: hips のローカル位置は override クリップの姿勢に
+        /// 固定され、root (アバター全体) は位置・回転とも motionSource.anchor に固定される
+        /// (<see cref="Tick"/>)。各ボーンの回転は通常どおり mocap を反映するので、アバターの移動・
+        /// 向きだけが固定されポーズは動く。さらに上書きクリップがある場合は脚の 2 ボーン IK で
+        /// 両足を接地位置へ固定し、腰の回転で足が動かないようにする。クリップ未設定時は hips 位置は
+        /// 上流 (controller) のまま (足 IK も無効)。<see cref="Initialize"/> 前は値だけ保持する。
+        /// </summary>
+        public void SetLowerBodyPoseLock(bool locked)
+        {
+            _lockLowerBodyPose = locked;
+            if (_lockLowerBody.IsCreated) _lockLowerBody.Value = (byte)(locked ? 1 : 0);
         }
 
         /// <summary>
@@ -318,6 +526,7 @@ namespace Lilium.LiveStudio
             if (_overrideClip == null || _boneTransforms == null || !_basePose.IsCreated)
             {
                 _hasBasePose.Value = 0;
+                if (_footGoalValid.IsCreated) _footGoalValid.Value = 0;
                 return;
             }
 
@@ -340,6 +549,20 @@ namespace Lilium.LiveStudio
             if (_HipsTransform() != null)
                 _baseHipPosition.Value = _HipsTransform().localPosition;
 
+            // 足 IK ゴールを clip の足ポーズ (適用中) から root ローカルで焼く。両足が揃うときのみ有効。
+            var leftFoot = _animator.GetBoneTransform(HumanBodyBones.LeftFoot);
+            var rightFoot = _animator.GetBoneTransform(HumanBodyBones.RightFoot);
+            if (_footGoalValid.IsCreated && leftFoot != null && rightFoot != null)
+            {
+                _leftFootGoal.Value = _CaptureFootGoal(rootT, leftFoot);
+                _rightFootGoal.Value = _CaptureFootGoal(rootT, rightFoot);
+                _footGoalValid.Value = 1;
+            }
+            else if (_footGoalValid.IsCreated)
+            {
+                _footGoalValid.Value = 0;
+            }
+
             // 退避した姿勢へ復元。
             for (int i = 0; i < n; i++)
                 if (_boneTransforms[i] != null) _boneTransforms[i].localRotation = savedRot[i];
@@ -348,18 +571,21 @@ namespace Lilium.LiveStudio
             rootT.localRotation = savedRootRot;
 
             _hasBasePose.Value = 1;
-
-            // 調査用ログ: サンプリングで実際にボーンが動いたか。変化 0 なら SampleAnimation が
-            // このリグ (ControlRig 等) に効いていない = 基準姿勢が bind のまま、が確定する。
-            int changed = 0;
-            for (int i = 0; i < n; i++)
-                if (_boneTransforms[i] != null && Quaternion.Angle(savedRot[i], _basePose[i]) > 0.5f) changed++;
-            Debug.Log($"[AvatarBodyDriver] 基準姿勢サンプリング: clip={_overrideClip.name}, 変化ボーン数={changed}/{n}, baseHip={_baseHipPosition.Value:F3}");
         }
 
         Transform _HipsTransform()
             => (_hipsHandleIndex >= 0 && _boneTransforms != null && _hipsHandleIndex < _boneTransforms.Length)
                 ? _boneTransforms[_hipsHandleIndex] : null;
+
+        // 上書きクリップ適用中の foot 世界姿勢を root ローカルへ変換して足 IK ゴールにする。
+        static FootIKGoal _CaptureFootGoal(Transform root, Transform foot)
+        {
+            return new FootIKGoal
+            {
+                localPosition = root.InverseTransformPoint(foot.position),
+                localRotation = Quaternion.Inverse(root.rotation) * foot.rotation,
+            };
+        }
 
         void _AddControllerPlayable(RuntimeAnimatorController controller)
         {
@@ -425,15 +651,37 @@ namespace Lilium.LiveStudio
             if (motionSource.frameData.isValid)
             {
                 ref AvatarAnimationData frameData = ref motionSource.frameData;
-                AvatarAnimationSystem.UpdateRoot(_animator.transform, in frameData.root);
-                _poseInput.Value = new HumanoidPoseInput { enabled = 1, pose = frameData.pose };
-
-                // 調査用ログ: 約5秒ごとに presence と基準姿勢の状態を出す。
-                if (_tickLogCountdown-- <= 0)
+                // 下半身の位置ロック中は root (アバター全体) の位置・回転を anchor (AvatarController)
+                // に固定する。各ボーンの回転は job が mocap を反映するので、アバターの移動・向きだけが
+                // 固定され、ポーズ自体は動く。
+                if (_lockLowerBodyPose)
                 {
-                    _tickLogCountdown = 300;
-                    Debug.Log($"[AvatarBodyDriver] tick: hasBasePose={_hasBasePose.Value}, graphPlaying={_isGraphPlaying}, presence Hips={frameData.pose.AsPresence((int)HumanBodyBones.Hips):F2} LUpLeg={frameData.pose.AsPresence((int)HumanBodyBones.LeftUpperLeg):F2} LLoLeg={frameData.pose.AsPresence((int)HumanBodyBones.LeftLowerLeg):F2} Head={frameData.pose.AsPresence((int)HumanBodyBones.Head):F2}");
+                    var anchor = motionSource.anchor;
+                    Vector3 rootPos; Quaternion rootRot;
+                    if (anchor != null)
+                    {
+                        rootPos = anchor.position;
+                        rootRot = anchor.rotation;
+                        _animator.transform.SetPositionAndRotation(rootPos, rootRot);
+                    }
+                    else
+                    {
+                        rootPos = _animator.transform.position;
+                        rootRot = _animator.transform.rotation;
+                    }
+                    // 足 IK ゴールの world 変換基準として root 姿勢を job へ渡す。
+                    if (_rootWorld.IsCreated)
+                        _rootWorld.Value = new RootWorldPose { position = rootPos, rotation = rootRot };
+                    // root 回転を anchor に固定したぶん、mocap root に含まれる腰の向き (yaw 等) を hips へ
+                    // 畳み込むための補償回転を渡す。root が anchor と一致していれば identity。
+                    if (_hipsRootCompensation.IsCreated)
+                        _hipsRootCompensation.Value = Quaternion.Inverse(rootRot) * frameData.root.rotation;
                 }
+                else
+                {
+                    AvatarAnimationSystem.UpdateRoot(_animator.transform, in frameData.root);
+                }
+                _poseInput.Value = new HumanoidPoseInput { enabled = 1, pose = frameData.pose };
             }
             return true;
         }
@@ -447,6 +695,12 @@ namespace Lilium.LiveStudio
             if (_basePose.IsCreated) _basePose.Dispose();
             if (_hasBasePose.IsCreated) _hasBasePose.Dispose();
             if (_baseHipPosition.IsCreated) _baseHipPosition.Dispose();
+            if (_lockLowerBody.IsCreated) _lockLowerBody.Dispose();
+            if (_footGoalValid.IsCreated) _footGoalValid.Dispose();
+            if (_leftFootGoal.IsCreated) _leftFootGoal.Dispose();
+            if (_rightFootGoal.IsCreated) _rightFootGoal.Dispose();
+            if (_rootWorld.IsCreated) _rootWorld.Dispose();
+            if (_hipsRootCompensation.IsCreated) _hipsRootCompensation.Dispose();
             _controllerPlayables.Clear();
             _controllerParamHashes.Clear();
             _boneTransforms = null;

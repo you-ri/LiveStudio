@@ -29,6 +29,27 @@ namespace Lilium.RemoteControl.Tests
             public AnimationClip clip;
         }
 
+        // A nested (inline-expanded) exposed object that carries the AssetSelector field. Serializing
+        // the outer holder expands this via SerializeExposedObject — the nested path where the selector
+        // dispatch was previously missing, so an [AssetSelector] AnimationClip fell through to the
+        // generic UnityEngine.Object serializer and threw. See the "Nested serialization" region.
+        [ExposedClass("InnerClipData")]
+        public class InnerClipData
+        {
+            [ExposedProperty, Hide]
+            public string[] clipGuids => new[] { string.Empty, kClipGuid };
+
+            [SerializeField, ExposedField, AssetSelector(nameof(clipGuids))]
+            public AnimationClip clip;
+        }
+
+        [ExposedClass("TestNestedClipHolder")]
+        public class TestNestedClipHolder : MonoBehaviour
+        {
+            [ExposedField]
+            public InnerClipData inner = new InnerClipData();
+        }
+
         #endregion
 
         const string kClipGuid = "0123456789abcdef0123456789abcdef";
@@ -46,6 +67,8 @@ namespace Lilium.RemoteControl.Tests
             foreach (var obj in toRemove) obj.Unregister();
 
             ExposedClass.RegisterFromAttributes<TestClipHolder>();
+            ExposedClass.RegisterFromAttributes<InnerClipData>();
+            ExposedClass.RegisterFromAttributes<TestNestedClipHolder>();
 
             _resolver = new TestExposedObjectResolver();
         }
@@ -77,6 +100,15 @@ namespace Lilium.RemoteControl.Tests
             _createdObjects.Add(go);
             var holder = go.AddComponent<TestClipHolder>();
             exposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestClipHolder)), holder);
+            return holder;
+        }
+
+        private TestNestedClipHolder _CreateNestedHolder(out ExposedObjectHandle exposed)
+        {
+            var go = new GameObject("NestedHolderGO");
+            _createdObjects.Add(go);
+            var holder = go.AddComponent<TestNestedClipHolder>();
+            exposed = new ExposedObjectHandle("nested-holder-id", ExposedClass.Find(typeof(TestNestedClipHolder)), holder);
             return holder;
         }
 
@@ -119,6 +151,66 @@ namespace Lilium.RemoteControl.Tests
             var root = JObject.Parse(ExposedPropertySerializer.ToJson(exposed, _resolver));
 
             Assert.AreEqual(JTokenType.Null, root["clip"].Type, "unregistered asset cannot round-trip; serialize as null");
+        }
+
+        #endregion
+
+        #region Nested serialization (regression: SerializeExposedObject selector dispatch)
+
+        // These guard the divergence fix: an [AssetSelector] field on a NESTED exposed object (one
+        // expanded inline via SerializeExposedObject, e.g. a component captured through a GameObject
+        // wrapper's CaptureDefaults) must serialize as {@type,@guid} exactly like the top-level path.
+        // Before the fix it fell through to the generic UnityEngine.Object serializer and logged
+        // "ExposedClass not found for type AnimationClip / JsonUtility does not support engine types".
+
+        [Test]
+        public void SerializeNested_RegisteredClip_EmitsGuid()
+        {
+            var clip = _CreateClip("SitClip");
+            AssetRegistry.Register(kClipGuid, clip);
+
+            var holder = _CreateNestedHolder(out var exposed);
+            holder.inner.clip = clip;
+
+            var root = JObject.Parse(ExposedPropertySerializer.ToJson(exposed, _resolver));
+
+            var innerToken = root["inner"] as JObject;
+            Assert.IsNotNull(innerToken, "nested inner object should expand inline as a JObject");
+
+            var clipToken = innerToken["clip"] as JObject;
+            Assert.IsNotNull(clipToken, "nested AssetSelector clip must serialize as {@type,@guid}, not fall through to the generic path");
+            Assert.AreEqual(kClipGuid, clipToken["@guid"]?.Value<string>());
+            Assert.AreEqual("AnimationClip", clipToken["@type"]?.Value<string>());
+        }
+
+        [Test]
+        public void SerializeNested_Persistence_EmitsGuidWithoutName()
+        {
+            // Faithful to the production failure: CaptureDefaults serializes with forPersistence: true.
+            var clip = _CreateClip("SitClip");
+            AssetRegistry.Register(kClipGuid, clip);
+
+            var holder = _CreateNestedHolder(out var exposed);
+            holder.inner.clip = clip;
+
+            var root = ExposedPropertySerializer.SerializeFullToJObject(exposed, _resolver, forPersistence: true);
+
+            var clipToken = root["inner"]?["clip"] as JObject;
+            Assert.IsNotNull(clipToken, "nested AssetSelector clip must serialize under persistence (the CaptureDefaults path)");
+            Assert.AreEqual(kClipGuid, clipToken["@guid"]?.Value<string>());
+            Assert.IsNull(clipToken["@name"], "persistence form omits @name");
+        }
+
+        [Test]
+        public void SerializeNested_NullClip_EmitsNull()
+        {
+            var holder = _CreateNestedHolder(out var exposed);
+            holder.inner.clip = null;
+
+            var root = JObject.Parse(ExposedPropertySerializer.ToJson(exposed, _resolver));
+
+            Assert.AreEqual(JTokenType.Null, root["inner"]?["clip"]?.Type,
+                "null nested asset serializes as null without error");
         }
 
         #endregion

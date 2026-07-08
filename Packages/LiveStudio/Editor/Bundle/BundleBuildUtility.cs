@@ -24,8 +24,14 @@ namespace Lilium.LiveStudio.Editor
         /// Builds an AssetBundle named <paramref name="bundleName"/> containing
         /// <paramref name="assetNames"/> and copies it to <paramref name="destPath"/>.
         /// Returns true on success. A scene <c>.unity</c> asset produces a streamed scene bundle.
+        ///
+        /// <paramref name="bundleToken"/> overrides the salt used to make the bundle's internal id
+        /// (CAB-...) unique. When null (the default) the salt is the primary asset's GUID, which suits
+        /// single-content bundles (one prop / avatar). Multi-content bundles (e.g. an animation pack) pass
+        /// an explicit token derived from ALL member GUIDs, so the internal id is stable for a given clip
+        /// set and does not shift when the first member changes.
         /// </summary>
-        public static bool Build(string bundleName, string[] assetNames, string destPath)
+        public static bool Build(string bundleName, string[] assetNames, string destPath, string bundleToken = null)
         {
             if (string.IsNullOrEmpty(destPath))
             {
@@ -61,8 +67,13 @@ namespace Lilium.LiveStudio.Editor
             // same CAB (reproducible) while two different props never collide. The on-disk file name
             // (destPath) is unaffected; loaders open by path and never reference the internal name.
             // Fall back to a hash of the path only if the GUID cannot be resolved.
-            var sourceGuid = AssetDatabase.AssetPathToGUID(assetNames[0]);
-            var bundleToken = string.IsNullOrEmpty(sourceGuid) ? _StableToken(assetNames[0]) : sourceGuid;
+            // An explicit token (multi-content bundles) wins; otherwise salt with the primary asset's GUID,
+            // falling back to a hash of its path when the GUID cannot be resolved.
+            if (string.IsNullOrEmpty(bundleToken))
+            {
+                var sourceGuid = AssetDatabase.AssetPathToGUID(assetNames[0]);
+                bundleToken = string.IsNullOrEmpty(sourceGuid) ? StableToken(assetNames[0]) : sourceGuid;
+            }
             var uniqueBundleName = bundleName + "_" + bundleToken;
 
             // Explicit map overload so the importer's assetBundleName is left untouched.
@@ -112,10 +123,13 @@ namespace Lilium.LiveStudio.Editor
             }
         }
 
-        // A short, stable, filesystem-safe token derived from a string (the source asset path). Stable
-        // across runs/machines so re-exporting the same asset yields the same bundle name — and therefore
-        // the same internal CAB — keeping the build reproducible.
-        private static string _StableToken(string value)
+        /// <summary>
+        /// A short, stable, filesystem-safe token (hex MD5) derived from a string. Stable across
+        /// runs/machines so re-exporting the same input yields the same bundle name — and therefore the
+        /// same internal CAB — keeping the build reproducible. Exposed so multi-content exporters can
+        /// derive a token from all member GUIDs.
+        /// </summary>
+        public static string StableToken(string value)
         {
             using (var md5 = MD5.Create())
             {

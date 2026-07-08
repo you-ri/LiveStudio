@@ -123,8 +123,6 @@ namespace Lilium.LiveStudio
             //ResetPhysics();
 
             // Runtime プロパティ取得 (Transform 再構成) の後に PlayableGraph を構築する。
-            // 調査用ログ
-            Debug.Log($"[VRM1Avatar] Start: bodyOverrideClip={(_bodyOverrideClip != null ? _bodyOverrideClip.name : "null")}", this);
             _bodyDriver.Initialize(_animator, _bodyOverrideClip);
 
             ((IAvatar)this).BuildAvatar();
@@ -375,10 +373,13 @@ namespace Lilium.LiveStudio
 
         void IAvatar.SetBodyOverrideClip(AnimationClip clip)
         {
-            // 調査用ログ
-            Debug.Log($"[VRM1Avatar] SetBodyOverrideClip: {(clip != null ? clip.name : "null")}", this);
             _bodyOverrideClip = clip;
             _bodyDriver.SetOverrideClip(clip);
+        }
+
+        void IAvatar.SetLowerBodyPoseLock(bool locked)
+        {
+            _bodyDriver.SetLowerBodyPoseLock(locked);
         }
 
         bool IExpressionAvatar.SetWeight(FacialKey key, float weight)

@@ -46,6 +46,24 @@ namespace Lilium.RemoteControl.Tests
             public TestReceiverBase receiver;
         }
 
+        // A nested (inline-expanded) exposed object that carries the ObjectSelector field, used to
+        // guard the SerializeExposedObject selector dispatch on the nested path (the mirror of the
+        // AssetSelector fix). Without it, a nested ObjectSelector field falls through to generic
+        // UnityEngine.Object serialization instead of emitting the "wrapperId.components[N]" @ref.
+        [ExposedClass("NestedReceiverData")]
+        public class NestedReceiverData
+        {
+            [ExposedField, ObjectSelector]
+            public TestReceiverBase receiver;
+        }
+
+        [ExposedClass("TestNestedHolder")]
+        public class TestNestedHolder : MonoBehaviour
+        {
+            [ExposedField]
+            public NestedReceiverData inner = new NestedReceiverData();
+        }
+
         #endregion
 
         private TestExposedObjectResolver _resolver;
@@ -63,6 +81,8 @@ namespace Lilium.RemoteControl.Tests
             ExposedClass.RegisterFromAttributes<TestReceiver>();
             ExposedClass.RegisterFromAttributes<TestOtherComponent>();
             ExposedClass.RegisterFromAttributes<TestHolder>();
+            ExposedClass.RegisterFromAttributes<NestedReceiverData>();
+            ExposedClass.RegisterFromAttributes<TestNestedHolder>();
 
             _resolver = new TestExposedObjectResolver();
         }
@@ -161,6 +181,36 @@ namespace Lilium.RemoteControl.Tests
             var refKey = root["receiver"]?["@ref"]?.Value<string>();
             Assert.IsNotNull(refKey);
             Assert.AreEqual($"{wrapper.id}.components[1]", refKey);
+        }
+
+        [Test]
+        public void SerializeNested_ObjectSelector_EmitsComponentsPathRef()
+        {
+            // Regression: an [ObjectSelector] field on a NESTED (inline-expanded) exposed object must be
+            // serialized as a "wrapperId.components[N]" @ref by SerializeExposedObject, mirroring the
+            // top-level path. Without the nested selector dispatch it falls through to generic
+            // UnityEngine.Object serialization (wrong @ref format or full inline expansion).
+            var receiverGo = _CreateGameObject("ReceiverGO");
+            var receiverWrapper = _WrapGameObject(receiverGo);
+            var receiver = receiverGo.AddComponent<TestReceiver>();
+
+            var holderGo = _CreateGameObject("NestedHolderGO");
+            var holder = holderGo.AddComponent<TestNestedHolder>();
+            holder.inner.receiver = receiver;
+            var holderExposed = new ExposedObjectHandle("nested-holder-id", ExposedClass.Find(typeof(TestNestedHolder)), holder);
+
+            var root = JObject.Parse(ExposedPropertySerializer.ToJson(holderExposed, _resolver));
+
+            var innerToken = root["inner"] as JObject;
+            Assert.IsNotNull(innerToken, "nested inner object should expand inline");
+
+            var receiverToken = innerToken["receiver"] as JObject;
+            Assert.IsNotNull(receiverToken, "nested ObjectSelector receiver must serialize as @ref, not fall through");
+            var refKey = receiverToken["@ref"]?.Value<string>();
+            Assert.IsNotNull(refKey);
+            StringAssert.StartsWith(receiverWrapper.id, refKey, "@ref should start with GameObject wrapper id");
+            StringAssert.Contains(".components[", refKey, "@ref should contain components[N] path");
+            Assert.AreEqual("TestReceiver", receiverToken["@type"]?.Value<string>());
         }
 
         #endregion

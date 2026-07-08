@@ -683,6 +683,11 @@ namespace Lilium.LiveStudio
             _bodyDriver.SetOverrideClip(clip);
         }
 
+        void IAvatar.SetLowerBodyPoseLock(bool locked)
+        {
+            _bodyDriver.SetLowerBodyPoseLock(locked);
+        }
+
         bool IExpressionAvatar.SetWeight(FacialKey key, float weight)
         {
             if (string.IsNullOrEmpty(key.name)) return false;

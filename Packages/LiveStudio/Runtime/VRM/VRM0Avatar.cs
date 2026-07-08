@@ -427,6 +427,9 @@ namespace Lilium.LiveStudio
         // クリップ流し込みには非対応 (AvatarBodyDriver を使う VRM1Avatar / VRCFTAvatar のみ対応)。
         void IAvatar.SetBodyOverrideClip(AnimationClip clip) { }
 
+        // 下半身ロックにも非対応 (同上)。
+        void IAvatar.SetLowerBodyPoseLock(bool locked) { }
+
         bool IExpressionAvatar.SetWeight(FacialKey key, float weight)
         {
             if (_blendShapeProxy == null) return false;

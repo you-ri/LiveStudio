@@ -89,7 +89,7 @@ namespace Lilium.LiveStudio
 
     [DefaultExecutionOrder(200)]
     [ExposedClass("Avatar", Category = "Avatar", Icon = "person")]
-    public class AvatarController : MonoBehaviour, IAvatarService
+    public class AvatarController : MonoBehaviour, IAvatarService, IExposedDeserializeCallback
     {
         /// <summary>
         /// Read-only list of the active avatar's facial expressions as bindable slots. The element count
@@ -233,12 +233,35 @@ namespace Lilium.LiveStudio
         // アバター側 (VRM1Avatar の Inspector 設定など) の値を尊重して転送しない。
         // RemoteControl のシリアライズ (live.json 等) にはアセット GUID が保存される。
         [SerializeField]
-        [ExposedField(label="AVATAR_BODYOVERRIDECLIP"), AssetSelector(nameof(bodyOverrideClipGuids))]
+        [ExposedField(label="AVATAR_BODYOVERRIDECLIP"), AssetSelector(nameof(bodyOverrideClipGuids), nameof(_bodyOverrideClipRef))]
         private AnimationClip _bodyOverrideClip;
 
         // このコントローラからクリップを転送済みか。「変更しない」(空文字) では転送しないが、
         // 一度こちらで上書きした後に空へ戻された場合は解除 (null) を一度だけ転送するための状態。
         private bool _bodyOverrideClipApplied;
+
+        // 外部アニメーションバンドル (*.anim.lsb) 内のクリップを body override に選ぶための参照キー
+        // (file:<相対パス>#<clipName>)。空 = 未使用で、ベイク済みの _bodyOverrideClip (Object) を使う
+        // (既存挙動)。非空のときはこちらが優先される。実体はバンドルを非同期ロードするまで存在しないため
+        // Object でなくキー文字列で保持し、AnimationBundleLoader がロード→AssetRegistry 登録→解決する。
+        // 旧シーンにこのフィールドは無い (=空=既存挙動) ので live.json はバイト不変。Hide でジェネリック
+        // インスペクタから隠し、RemoteApp の専用 2 段セレクタが読み書きする。
+        [ExposedField, Hide]
+        private string _bodyOverrideClipRef = string.Empty;
+
+        // _bodyOverrideClipRef の非同期解決状態 (解決済みクリップ / 適用済みキー / 解決中キー / supersede)
+        // をまとめて持つ。キーが変わるたび Sync で解決を回し、完了時に再適用する。
+        private readonly ExternalAssetRef<AnimationClip> _bodyOverrideExternal =
+            new ExternalAssetRef<AnimationClip>(AnimationBundleLoader.ResolveClipAsync);
+
+        // 下半身の位置をロックするフラグ。ON の間、対応アバター (VRM1Avatar / VRCFTAvatar) は
+        // hips のローカル位置を body override クリップに固定し、root (アバター全体) を位置・回転とも
+        // motionSource の anchor へ固定する。各ボーンの回転は mocap を反映しつつ、両足は脚の 2 ボーン
+        // IK で接地位置に固定する。
+        [SerializeField]
+        [ExposedField(label="AVATAR_LOCKLOWERBODYPOSE")]
+        [ExposedHelp("AVATAR_LOCKLOWERBODYPOSE_HELP")]
+        private bool _lockLowerBodyPose;
 
         [SerializeField]
         [ExposedField, Hide]
@@ -411,6 +434,7 @@ namespace Lilium.LiveStudio
             {
                 avatarComponent.SetMotionSource(motionSource);
                 _ApplyBodyOverrideClip(avatarComponent);
+                avatarComponent.SetLowerBodyPoseLock(_lockLowerBodyPose);
             }
 
             var avatarTransform = avatar.transform;
@@ -584,10 +608,44 @@ namespace Lilium.LiveStudio
         // null で潰さない。一度こちらで上書きした後に未選択へ戻された場合のみ解除を転送する。
         private void _ApplyBodyOverrideClip(IAvatar avatarComponent)
         {
-            var clip = _bodyOverrideClip;
+            // 外部クリップ参照が指定済みだが未解決の間は適用を保留し、現在のポーズを潰さない。
+            // 解決完了時に _ReapplyOverrideToTarget から再適用される。
+            if (!string.IsNullOrEmpty(_bodyOverrideClipRef) && !_bodyOverrideExternal.IsResolved(_bodyOverrideClipRef))
+            {
+                return;
+            }
+
+            var clip = _EffectiveBodyOverrideClip();
             if (clip == null && !_bodyOverrideClipApplied) return;
             avatarComponent.SetBodyOverrideClip(clip);
             _bodyOverrideClipApplied = clip != null;
+        }
+
+        // 実際に転送するクリップ: 外部参照が指定されていれば解決済みの外部クリップ、なければ
+        // ベイク済みの _bodyOverrideClip (Object)。
+        private AnimationClip _EffectiveBodyOverrideClip()
+            => !string.IsNullOrEmpty(_bodyOverrideClipRef) ? _bodyOverrideExternal.asset : _bodyOverrideClip;
+
+        // 外部参照キーが変化したら解決を開始する。ライブシーン復元と REST 書き込みの両方で発火する
+        // OnAfterExposedDeserialize / OnPropertyChanged から呼ばれるため、変化していなければ no-op。
+        private void _OnOverrideRefMaybeChanged()
+        {
+            _bodyOverrideExternal.Sync(_bodyOverrideClipRef, _ReapplyOverrideToTarget);
+        }
+
+        // 現在のアバターに body override を再適用する。アバター未セットアップ時は何もしない
+        // (セットアップ時の _PostSetupAvatar が適用する)。
+        private void _ReapplyOverrideToTarget()
+        {
+            if (_target == null) return;
+            var avatarComponent = _target.GetComponent<IAvatar>();
+            if (avatarComponent != null) _ApplyBodyOverrideClip(avatarComponent);
+        }
+
+        // ライブシーン復元・プロパティ書き込みの後に発火。外部クリップ参照の変化を解決へ回す。
+        void IExposedDeserializeCallback.OnAfterExposedDeserialize()
+        {
+            _OnOverrideRefMaybeChanged();
         }
 
         // プリセットと選択中クリップを AssetRegistry へ登録する。AssetSelector の GUID
@@ -890,6 +948,10 @@ namespace Lilium.LiveStudio
 
         private void OnPropertyChanged(ExposedProperty property, object oldValue)
         {
+            // 外部 body override 参照の変化を解決へ回す (変化していなければ no-op)。復元経路は
+            // OnAfterExposedDeserialize、REST 書き込み経路はここ、と両経路をカバーする。
+            _OnOverrideRefMaybeChanged();
+
             if (_target != null)
             {
                 _PostSetupAvatar(_target);

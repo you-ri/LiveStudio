@@ -177,6 +177,14 @@ namespace Lilium.RemoteControl
                 controllerJObject["options"] = optionsArray;
             }
 
+            // AssetSelector: expose the field's asset type so the client can source its options from the
+            // type-filtered asset list (GET /api/assets?type=<assetType>) — one endpoint covering baked and
+            // external assets — instead of resolving a fixed sourceProperty GUID list one name at a time.
+            if (propertyType.controlAttribute is AssetSelectorAttribute && propertyType.valueType != null)
+            {
+                controllerJObject["assetType"] = propertyType.valueType.Name;
+            }
+
             var jObject = new JObject
             {
                 ["name"] = propertyType.name,

@@ -37,6 +37,14 @@ namespace Lilium.LiveStudio
         /// <summary>Suffix of a prop bundle file (case-insensitive).</summary>
         public const string PropExtension = ".prop.lsb";
 
+        /// <summary>
+        /// Suffix of an animation bundle file (case-insensitive). Unlike the prop / avatar bundles
+        /// (a single root prefab), an animation bundle packs one or more <see cref="UnityEngine.AnimationClip"/>
+        /// assets so a curated set of clips (e.g. a dance pack) ships as one file. Individual clips are
+        /// addressed by <c>file:&lt;relative-path&gt;#&lt;clipName&gt;</c> (see <see cref="ExternalAssetKey"/>).
+        /// </summary>
+        public const string AnimationExtension = ".anim.lsb";
+
         /// <summary>Legacy avatar bundle suffix. Accepted on input, no longer produced on export.</summary>
         public const string LegacyAvatarExtension = ".lsavatar";
 
@@ -49,6 +57,9 @@ namespace Lilium.LiveStudio
 
         /// <summary>True if <paramref name="path"/> names a prop bundle (<c>*.prop.lsb</c>).</summary>
         public static bool IsPropBundle(string path) => _HasSuffix(path, PropExtension);
+
+        /// <summary>True if <paramref name="path"/> names an animation bundle (<c>*.anim.lsb</c>).</summary>
+        public static bool IsAnimationBundle(string path) => _HasSuffix(path, AnimationExtension);
 
         /// <summary>
         /// True if <paramref name="path"/> names an avatar bundle, either the current

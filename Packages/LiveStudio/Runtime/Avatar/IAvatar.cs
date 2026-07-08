@@ -26,5 +26,13 @@ namespace Lilium.LiveStudio
         /// このクリップの姿勢を流し込む。対応しないアバターは無視してよい。null で解除。
         /// </summary>
         public void SetBodyOverrideClip(AnimationClip clip);
+
+        /// <summary>
+        /// 下半身の位置をロックする。ON の間、AvatarBodyDriver を使うアバターは hips のローカル位置を
+        /// body override クリップに固定し、root (アバター全体) を位置・回転とも anchor に固定する。
+        /// 各ボーンの回転は mocap を反映しつつ、両足は脚の 2 ボーン IK で接地位置に固定される。
+        /// 対応しないアバターは無視してよい。
+        /// </summary>
+        public void SetLowerBodyPoseLock(bool locked);
     }
 }
