@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.24.3] - 2026-07-09
+<!-- changelog-sha: 66ecbc810ebc2757306d12a4014067d834b7944b -->
+
+### Added
+
+- `AvatarController` can drive body parts the capture does not track with an override `AnimationClip`. The clip is chosen from Inspector presets or from an external animation bundle (`*.anim.lsb`, which packs several clips) via a unified asset key — a bare GUID for baked assets, `file:<path>#<clip>` for external ones — resolved lazily and re-applied after scene restore and REST writes so the selection survives the bundle's asynchronous load. VRM1 / VRCFT playback is supported.
+- A "lock lower body pose" toggle pins the hips and root to the capture anchor with foot IK, holding the lower body in place while the upper body keeps following the capture.
+- Per-project session log: the Unity log is mirrored into `{project}/.livestudio/log` as one file per session, alongside the native Player.log. `ProjectPaths` gains `GetLogDir` / `EnsureLogDir` helpers.
+
+### Changed
+
+- Operation set manual hold and manual value now persist across scene reloads (previously both reset). On restore the edge baseline is seeded to the restored hold, so reloading a scene with a set left on no longer manufactures a rising edge that would re-fire the operation.
+
+### Fixed
+
+- Avatar meshes no longer blink while the subject leaves the capture frustum. The avatar root's valid byte is now a body/face tracking bitmask (body = MediaPipe, face = ARKit) and visibility is asymmetric — hidden only when both signals drop, shown on the face rising edge — so the frame-to-frame body-validity beat can no longer flicker the meshes.
+
 ## [0.24.2] - 2026-07-05
 <!-- changelog-sha: 7a8804f7770e1b90b74b7719ca9885f2926f8d1f -->
 

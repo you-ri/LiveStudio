@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.24.3] - 2026-07-09
+<!-- changelog-sha: 66ecbc810ebc2757306d12a4014067d834b7944b -->
+
+### Changed
+
+- `VirgoMotionSource` resync and received-frame-gap messages are now plain logs instead of warnings; they occur under normal timing jitter, so demoting them removes recurring console noise.
+
+### Fixed
+
+- The pose frame's root valid byte now carries separate body (MediaPipe) and face (ARKit) tracking bits, driving the asymmetric avatar-visibility gate in `jp.lilium.livestudio` so the meshes no longer blink as the subject leaves the capture frustum.
+
 ## [0.24.2] - 2026-07-05
 <!-- changelog-sha: 7a8804f7770e1b90b74b7719ca9885f2926f8d1f -->
 

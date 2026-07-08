@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.24.3] - 2026-07-09
+<!-- changelog-sha: 66ecbc810ebc2757306d12a4014067d834b7944b -->
+
+### Added
+
+- `AssetSelector` control: asset-reference fields serialize as asset GUIDs (`AssetRegistry`, baked in `OnValidate` and registered at runtime). `GET /api/asset?guid=` resolves a GUID to the asset's name and type so clients can label the choices. Sub-assets use a `guid:localId` composite key, and an optional `refProperty` carries scheme-prefixed external keys (e.g. `file:<path>#<sub>`) whose target may not be loaded yet; `AssetRegistry` gains name-fallback and display-name resolution so those unloaded keys can still be labelled.
+- `GET /exposed/orphans` and `POST /exposed/orphans/remove`: root references a saved scene carries but whose object is absent this session are surfaced as removable "missing" items (path-carrying child overrides are excluded — they still bind once their asset loads asynchronously). Removing one drops every queued entry rooted at that id, so the next scene save stops re-emitting it.
+- `RemoteErrorNotifier` forwards Unity errors (Error / Exception / Assert) to every connected remote app as an error notification. The broadcast is marshalled to the main thread (the server registry is mutated only there), identical messages are de-duplicated and bursts are capped so a per-frame exception cannot flood the app. Enabled by default (`RemoteErrorNotifier.enabled`).
+
+### Changed
+
+- The live-scene serializer no longer logs an ambiguous-restore warning for persisted-file entries. They carry no `@name` and cannot be disambiguated by type, so they are left unresolved for the remote app to present and delete instead of emitting a warning the user cannot act on.
+
 ## [0.24.2] - 2026-07-05
 <!-- changelog-sha: 7a8804f7770e1b90b74b7719ca9885f2926f8d1f -->
 
