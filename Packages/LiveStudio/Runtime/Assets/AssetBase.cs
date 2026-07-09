@@ -125,6 +125,15 @@ namespace Lilium.LiveStudio
         public abstract bool isExclusive { get; }
 
         /// <summary>
+        /// True for an app-embedded (built-in) entry that is not backed by a project-folder file — e.g. a
+        /// <see cref="BuiltinAnimationAsset"/> sourced from a Resources asset. Such entries are injected by
+        /// <see cref="ExternalAssetManager"/> from the built-in catalog rather than discovered by the
+        /// project crawl, so the crawl must never prune them and they are never persisted (they are always
+        /// present, re-injected each run). Defaults to false for ordinary file-backed assets.
+        /// </summary>
+        public virtual bool isBuiltin => false;
+
+        /// <summary>
         /// True when the loaded object lives under the avatar and is therefore destroyed when the
         /// avatar is swapped, so the manager must reload it onto the new avatar. Free-standing scene
         /// objects (and the avatar itself) return false.

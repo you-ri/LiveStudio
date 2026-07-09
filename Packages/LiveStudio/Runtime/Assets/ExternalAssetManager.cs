@@ -128,6 +128,12 @@ namespace Lilium.LiveStudio
             // restore does not trigger a (clobbering) swap.
             _lastAppliedPersisted = _persistedAssets;
             _initialized = true;
+
+            // Register app-embedded built-in assets (e.g. Resources animation clips) in the asset registry
+            // and inject their catalog entries, so they list on the project asset page and resolve in
+            // selectors even before the project crawl runs.
+            BuiltinAssetRegistry.EnsureRegistered();
+            _EnsureBuiltinAssets();
         }
 
         public void OnDisable()
@@ -182,6 +188,10 @@ namespace Lilium.LiveStudio
             // (StageManager, the remote app) would otherwise dereference null and crash.
             assets = _WithoutNulls(_persistedAssets);
             _ResolveAssetPaths(assets);
+            // The persisted set never carries built-in entries (they are not persisted); re-inject them so
+            // they survive a restore. The re-armed crawl below also re-adds them, but doing it here keeps
+            // them present immediately (and even when no project folder is open).
+            _EnsureBuiltinAssets();
             _dirty = true;
             _assetManagerReadyNotified = false;
         }
@@ -200,7 +210,9 @@ namespace Lilium.LiveStudio
             for (int i = 0; i < assets.Length; i++)
             {
                 var asset = assets[i];
-                if (asset == null || (!asset.enabled && !asset.isLoaded)) continue;
+                // Built-in assets are app-embedded (no project file) and always re-injected each run, so
+                // they are never persisted — regardless of their transient enabled/loaded flags.
+                if (asset == null || asset.isBuiltin || (!asset.enabled && !asset.isLoaded)) continue;
                 // Persist a portable, project-relative path so a saved scene survives moving the project
                 // folder / opening it on another machine. The absolute id/filePath are not persisted
                 // (persistable=false) and are reconstructed from this on load.
@@ -376,6 +388,7 @@ namespace Lilium.LiveStudio
             {
                 var entry = list[i];
                 if (entry == null) continue;
+                if (entry.isBuiltin) continue; // app-embedded, not a project file — never pruned by the crawl.
                 if (entry.enabled || entry.isLoaded) continue;
                 if (discovered.Contains(entry.id)) continue;
                 list.RemoveAt(i);
@@ -405,7 +418,45 @@ namespace Lilium.LiveStudio
                 }
             }
 
-            if (!changed) return;
+            if (changed)
+            {
+                assets = list.ToArray();
+                _Broadcast();
+            }
+
+            // Keep the app-embedded built-in entries present alongside the crawled catalog (idempotent;
+            // broadcasts only if it actually adds any).
+            _EnsureBuiltinAssets();
+        }
+
+        /// <summary>
+        /// Injects the app-embedded (built-in) catalog assets (e.g. Resources animation clips) into the live
+        /// list when not already present. Built-in entries are not project-folder files, so the crawl never
+        /// discovers them; they are added here and protected from the crawl's prune (<see cref="AssetBase.isBuiltin"/>).
+        /// Cheap and idempotent — dedups by id and only broadcasts when it adds something. Called at init and
+        /// after every rebuild of <c>assets</c> (crawl / restore).
+        /// </summary>
+        private void _EnsureBuiltinAssets()
+        {
+            var builtins = BuiltinAssetRegistry.GetAssets();
+            if (builtins.Count == 0) return;
+
+            var existing = new HashSet<string>();
+            for (int i = 0; i < assets.Length; i++)
+            {
+                if (assets[i] != null && !string.IsNullOrEmpty(assets[i].id)) existing.Add(assets[i].id);
+            }
+
+            List<AssetBase> list = null;
+            for (int i = 0; i < builtins.Count; i++)
+            {
+                var builtin = builtins[i];
+                if (builtin == null || string.IsNullOrEmpty(builtin.id) || existing.Contains(builtin.id)) continue;
+                (list ??= new List<AssetBase>(assets)).Add(builtin);
+                existing.Add(builtin.id);
+            }
+            if (list == null) return; // all built-ins already present.
+
             assets = list.ToArray();
             _Broadcast();
         }
@@ -417,6 +468,9 @@ namespace Lilium.LiveStudio
             if (string.IsNullOrEmpty(assetId)) return;
 
             var asset = _Find(assetId);
+            // Built-in assets are app-embedded and re-injected each run; removing one would only make it
+            // reappear on the next crawl. Reject the request so the list stays consistent.
+            if (asset != null && asset.isBuiltin) return;
             if (asset != null)
             {
                 if (asset.isExclusive)

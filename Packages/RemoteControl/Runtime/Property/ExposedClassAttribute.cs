@@ -462,6 +462,38 @@ namespace Lilium.RemoteControl
     }
 
     /// <summary>
+    /// Control attribute that renders a live image preview.
+    /// The property value is a server-relative image URL path (e.g. "/api/camera/image").
+    /// The client polls the URL while the control is visible and renders the response image.
+    /// The property is read-only on the client.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
+    public class ImagePreviewAttribute : ControlAttribute
+    {
+        /// <summary>Polling interval in milliseconds. 0 uses the client default.</summary>
+        public int intervalMs { get; }
+
+        public ImagePreviewAttribute(int intervalMs = 0)
+            : base("ImagePreview")
+        {
+            this.intervalMs = intervalMs;
+        }
+
+        public override JObject ToJObject()
+        {
+            var obj = new JObject
+            {
+                ["type"] = controlName,
+            };
+            if (intervalMs > 0)
+            {
+                obj["intervalMs"] = intervalMs;
+            }
+            return obj;
+        }
+    }
+
+    /// <summary>
     /// アセット参照フィールド (AnimationClip 等の UnityEngine.Object 派生) 用のセレクタ属性。
     /// 値はアセット GUID (<see cref="AssetRegistry"/> 経由) でシリアライズされるため、
     /// 対象アセットは AssetRegistry に登録されている必要がある。
@@ -484,7 +516,7 @@ namespace Lilium.RemoteControl
         /// </summary>
         public string refPropertyName { get; }
 
-        public AssetSelectorAttribute(string sourcePropertyName, string refPropertyName = null)
+        public AssetSelectorAttribute(string sourcePropertyName = null, string refPropertyName = null)
             : base("AssetSelector")
         {
             this.sourcePropertyName = sourcePropertyName;
@@ -496,8 +528,10 @@ namespace Lilium.RemoteControl
             var obj = new JObject
             {
                 ["type"] = controlName,
-                ["sourceProperty"] = sourcePropertyName,
             };
+            // Optional: the client sources its options from GET /api/assets?type=<assetType> (emitted
+            // separately), so a fixed candidate-GUID sourceProperty is no longer required.
+            if (!string.IsNullOrEmpty(sourcePropertyName)) obj["sourceProperty"] = sourcePropertyName;
             if (!string.IsNullOrEmpty(refPropertyName)) obj["refProperty"] = refPropertyName;
             return obj;
         }

@@ -194,46 +194,20 @@ namespace Lilium.LiveStudio
         [ExposedField(label="AVATAR_ANIMATIONPARAMETEROVERRIDES")]
         private AnimationParameterOverride[] animationParameterOverrides = new AnimationParameterOverride[0];
 
-        // トラッキングされていない部位の姿勢を上書きするアニメーションクリップの候補（待機/基本ポーズ等）。
-        // Inspector で登録する。RemoteApp へは GUID 一覧 (bodyOverrideClipGuids) 経由で公開し、
-        // 選択されたクリップ (_bodyOverrideClip) を AvatarBodyDriver を使うアバター
-        // (VRM1Avatar / VRCFTAvatar) へ IAvatar 経由で転送する。
-        [SerializeField]
-        private AnimationClip[] _bodyOverrideClipPresets = new AnimationClip[0];
-
-        // _bodyOverrideClipPresets のアセット GUID (並行配列)。ランタイムでは AssetDatabase を
-        // 使えないため、エディタの OnValidate で焼き込み AssetRegistry への登録に使う。
-        [SerializeField, HideInInspector]
-        private string[] _bodyOverrideClipPresetGuids = new string[0];
-
-        // _bodyOverrideClip のアセット GUID (未選択は空文字)。プリセット外のクリップが
-        // Inspector で直接指定されても GUID で解決できるよう個別に焼き込む。
+        // _bodyOverrideClip のアセット GUID (未選択は空文字)。ランタイムでは AssetDatabase を使えないため
+        // エディタの OnValidate で焼き込み、選択中クリップ自身を AssetRegistry へ登録して往復解決に使う。
+        // 選択肢のカタログは AvatarController が持たない。組み込み (Resources) クリップは
+        // BuiltinAssetRegistry、外部バンドル (*.anim.lsb) は AnimationBundleLoader が AssetRegistry へ
+        // 登録し、GET /api/assets?type=AnimationClip が一覧化してセレクタの候補を供給する。
         [SerializeField, HideInInspector]
         private string _bodyOverrideClipGuid = string.Empty;
 
-        // RemoteApp / Inspector に見せる選択肢 (アセット GUID)。先頭の空文字は「変更しない」
-        // (_avatarLayer と同じ規約)。GUID の表示名は RemoteApp が GET /api/asset で解決する。
-        [ExposedProperty, Hide]
-        public string[] bodyOverrideClipGuids
-        {
-            get
-            {
-                var guids = new List<string> { string.Empty };
-                for (int i = 0; i < _bodyOverrideClipPresets.Length && i < _bodyOverrideClipPresetGuids.Length; i++)
-                {
-                    var guid = _bodyOverrideClipPresetGuids[i];
-                    if (_bodyOverrideClipPresets[i] == null || string.IsNullOrEmpty(guid)) continue;
-                    if (!guids.Contains(guid)) guids.Add(guid);
-                }
-                return guids.ToArray();
-            }
-        }
-
         // 未トラッキング部位を上書きするクリップ。null＝「変更しない」で、その場合は
         // アバター側 (VRM1Avatar の Inspector 設定など) の値を尊重して転送しない。
-        // RemoteControl のシリアライズ (live.json 等) にはアセット GUID が保存される。
+        // RemoteControl のシリアライズ (live.json 等) にはアセット GUID が保存される。候補は
+        // GET /api/assets?type=AnimationClip (組み込み Resources + 外部バンドル) から供給される。
         [SerializeField]
-        [ExposedField(label="AVATAR_BODYOVERRIDECLIP"), AssetSelector(nameof(bodyOverrideClipGuids), nameof(_bodyOverrideClipRef))]
+        [ExposedField(label="AVATAR_BODYOVERRIDECLIP"), AssetSelector(refPropertyName: nameof(_bodyOverrideClipRef))]
         private AnimationClip _bodyOverrideClip;
 
         // このコントローラからクリップを転送済みか。「変更しない」(空文字) では転送しないが、
@@ -648,15 +622,11 @@ namespace Lilium.LiveStudio
             _OnOverrideRefMaybeChanged();
         }
 
-        // プリセットと選択中クリップを AssetRegistry へ登録する。AssetSelector の GUID
-        // シリアライズと GET /api/asset の解決は、この登録を前提とする。
+        // 選択中クリップ (_bodyOverrideClip) 自身を AssetRegistry へ登録する。AssetSelector の GUID
+        // シリアライズと GET /api/asset の解決は、この登録を前提とする。選択肢のカタログは
+        // 組み込み (BuiltinAssetRegistry) / 外部バンドル (AnimationBundleLoader) が別途登録する。
         private void _RegisterBodyOverrideClips()
         {
-            for (int i = 0; i < _bodyOverrideClipPresets.Length && i < _bodyOverrideClipPresetGuids.Length; i++)
-            {
-                if (_bodyOverrideClipPresets[i] == null) continue;
-                AssetRegistry.Register(_bodyOverrideClipPresetGuids[i], _bodyOverrideClipPresets[i]);
-            }
             if (_bodyOverrideClip != null && !string.IsNullOrEmpty(_bodyOverrideClipGuid))
             {
                 AssetRegistry.Register(_bodyOverrideClipGuid, _bodyOverrideClip);
@@ -669,14 +639,6 @@ namespace Lilium.LiveStudio
         // AssetRegistry 登録に使う。
         void OnValidate()
         {
-            if (_bodyOverrideClipPresetGuids.Length != _bodyOverrideClipPresets.Length)
-            {
-                _bodyOverrideClipPresetGuids = new string[_bodyOverrideClipPresets.Length];
-            }
-            for (int i = 0; i < _bodyOverrideClipPresets.Length; i++)
-            {
-                _bodyOverrideClipPresetGuids[i] = _GetAssetGuid(_bodyOverrideClipPresets[i]);
-            }
             _bodyOverrideClipGuid = _GetAssetGuid(_bodyOverrideClip);
         }
 

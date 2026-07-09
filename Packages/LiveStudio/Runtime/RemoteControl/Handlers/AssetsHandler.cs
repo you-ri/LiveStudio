@@ -54,6 +54,10 @@ namespace Lilium.LiveStudio
             // Snapshot the registry (touches UnityEngine.Object) on the main thread and build the list.
             var assets = await ExecuteOnMainThread<JArray>(() =>
             {
+                // Register app-embedded built-in assets (Resources catalog) so they list alongside baked
+                // and external assets. Idempotent — a no-op once already registered (e.g. by play start).
+                BuiltinAssetRegistry.EnsureRegistered();
+
                 var list = new List<KeyValuePair<string, UnityEngine.Object>>();
                 AssetRegistry.CollectAssets(type, list);
                 var arr = new JArray();
