@@ -52,36 +52,69 @@ namespace Lilium.RemoteControl.Reflection
         /// </summary>
         public static PropertyPath Empty => new PropertyPath(string.Empty);
 
+        // 変換用のスクラッチバッファ。スレッドごとに使い回して StringBuilder の
+        // アロケーションを避ける (RemoteControl ハンドラはワーカースレッドで動く)。
+        // 純粋なスクラッチ用途で使用直前に必ず Clear するため Domain Reload の影響は受けない。
+        [ThreadStatic] private static StringBuilder _conversionBuffer;
+
         // Slash → DotBracket 変換
         // "components/0/value" → "components[0].value"
         private static string ConvertFromSlash(string slashPath)
         {
             if (string.IsNullOrEmpty(slashPath)) return string.Empty;
 
-            var result = new StringBuilder();
-            var segments = slashPath.Split('/');
-
-            for (int i = 0; i < segments.Length; i++)
+            // 高速パス: スラッシュを含まない単一セグメント。数値なら "[n]"、
+            // それ以外は変換不要なので入力をそのまま返す (アロケーション無し)。
+            // bare name ("useSpout" 等) が最頻なのでここで大半の GC を消せる。
+            if (slashPath.IndexOf('/') < 0)
             {
-                var segment = segments[i];
-                if (string.IsNullOrEmpty(segment)) continue;
+                return _IsAllDigits(slashPath, 0, slashPath.Length)
+                    ? string.Concat("[", slashPath, "]")
+                    : slashPath;
+            }
 
-                if (int.TryParse(segment, out _))
+            // Split はセグメントごとに string を割り当てるため、手動走査で回避する。
+            var result = _conversionBuffer ??= new StringBuilder(64);
+            result.Clear();
+
+            int segStart = 0;
+            int len = slashPath.Length;
+            for (int i = 0; i <= len; i++)
+            {
+                // セグメント境界 ('/' または終端) で 1 セグメントを確定
+                if (i < len && slashPath[i] != '/') continue;
+
+                int segLen = i - segStart;
+                if (segLen > 0)
                 {
-                    // 数値の場合はブラケット形式
-                    result.Append('[').Append(segment).Append(']');
-                }
-                else
-                {
-                    // 名前の場合: 前にセグメントがあれば '.' を追加
-                    if (result.Length > 0)
+                    if (_IsAllDigits(slashPath, segStart, segLen))
                     {
-                        result.Append('.');
+                        // 数値の場合はブラケット形式
+                        result.Append('[').Append(slashPath, segStart, segLen).Append(']');
                     }
-                    result.Append(segment);
+                    else
+                    {
+                        // 名前の場合: 前にセグメントがあれば '.' を追加
+                        if (result.Length > 0) result.Append('.');
+                        result.Append(slashPath, segStart, segLen);
+                    }
                 }
+                segStart = i + 1;
             }
             return result.ToString();
+        }
+
+        // slashPath[start..start+length) が空でなく全て数字 (0-9) かどうか。
+        // 配列添字セグメントの判定に使う。部分文字列を割り当てず走査する。
+        private static bool _IsAllDigits(string s, int start, int length)
+        {
+            if (length == 0) return false;
+            for (int i = start, end = start + length; i < end; i++)
+            {
+                char c = s[i];
+                if (c < '0' || c > '9') return false;
+            }
+            return true;
         }
 
         // DotBracket → Slash 変換
@@ -140,8 +173,11 @@ namespace Lilium.RemoteControl.Reflection
         /// <param name="index">配列インデックス</param>
         public PropertyPath AppendIndex(int index)
         {
-            if (string.IsNullOrEmpty(_dotBracket)) return new PropertyPath($"[{index}]");
-            return new PropertyPath($"{_dotBracket}[{index}]");
+            // index を string 補間 ($"...") に渡すと int が boxing され object[] も確保されるため、
+            // ToString + string.Concat で連結して boxing を避ける (GetPropertyIndex から毎要素呼ばれる)。
+            string indexText = index.ToString();
+            if (string.IsNullOrEmpty(_dotBracket)) return new PropertyPath(string.Concat("[", indexText, "]"));
+            return new PropertyPath(string.Concat(_dotBracket, "[", indexText, "]"));
         }
 
         /// <summary>

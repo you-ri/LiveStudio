@@ -171,6 +171,21 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
+        /// <see cref="_ValidatePropertyAccess"/> の例外を投げない版。Try 系 API (TryGetValue/TrySetValue) 用。
+        /// null / 破棄済み UnityObject / 型非互換 / 無効な propertyType のいずれでも false を返す。
+        /// </summary>
+        internal static bool CanAccess(object obj, in ExposedPropertyType propertyType)
+        {
+            if (propertyType == null || !propertyType.isValid) return false;
+            if (!propertyType.isStatic)
+            {
+                if (obj == null) return false;
+                if (obj is UnityEngine.Object unityObj && unityObj == null) return false;
+            }
+            return IsInstanceCompatible(obj, propertyType);
+        }
+
+        /// <summary>
         /// 指定された obj が propertyType の宣言型と互換性があるかを返す (ログ出力なし)。
         /// 静的メンバー / 配列要素 / null obj はチェック対象外として true 扱い。
         /// </summary>

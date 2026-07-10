@@ -79,9 +79,27 @@ namespace Lilium.LiveStudio
             var keys = new List<FacialKey>();
             VRCExpressionDriver.AppendExpressionKeys(_expressions, keys);
             _expressionKeys = keys.ToArray();
+            _expressionsCache = null; // 表情キーが変わったので expressions キャッシュを破棄
             _expressionDriver = new VRCExpressionDriver(new AnimatorParameterPort(_animator));
 
             _ResolveAvatarExpression();
+
+            // この item の表情が親アバターの表情集合に加わったので、
+            // AvatarController.expressions のキャッシュを破棄させる。
+            _NotifyAvatarExpressionsChanged();
+        }
+
+        void OnDestroy()
+        {
+            // item 離脱で表情集合が変わるため、親 AvatarController のキャッシュを破棄する。
+            _NotifyAvatarExpressionsChanged();
+        }
+
+        // 表情集合の変化を親 AvatarController に伝え、expressions getter のキャッシュを無効化する。
+        // item はアバターの子、アバターは AvatarController の子なので親を辿って見つける。
+        void _NotifyAvatarExpressionsChanged()
+        {
+            GetComponentInParent<AvatarController>(includeInactive: true)?.InvalidateExpressions();
         }
 
         // item 自身の controller が宣言する非 Trigger パラメータをキャッシュ（毎フレームのブリッジ対象）。
@@ -134,14 +152,23 @@ namespace Lilium.LiveStudio
         {
             get
             {
+                // AvatarController.expressions と同様、呼び出しごとの再確保を避けてキャッシュを使い回す。
+                // ExpressionEntry は名前キーのステートレスなビュー。_expressionKeys は Start でのみ
+                // 構築されるので、その場で _expressionsCache を破棄すれば整合する。
+                if (_expressionsCache != null) return _expressionsCache;
+
                 var result = new ExpressionEntry[_expressionKeys.Length];
                 for (int i = 0; i < _expressionKeys.Length; i++)
                 {
                     result[i] = new ExpressionEntry(_expressionKeys[i].name);
                 }
+                _expressionsCache = result;
                 return result;
             }
         }
+
+        // expressions getter のキャッシュ。_expressionKeys を再構築したら破棄する。
+        ExpressionEntry[] _expressionsCache;
 
         /// <summary>
         /// item の表情マッピングを注入する (変換ツールから呼ばれる)。VRCAvatar.ConfigureExpressions と同形式。

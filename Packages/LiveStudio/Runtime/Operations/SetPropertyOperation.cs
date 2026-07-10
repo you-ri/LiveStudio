@@ -65,19 +65,39 @@ namespace Lilium.LiveStudio
             var property = handle.Value.FindProperty(_ResolvePath());
             if (property == null) return;
 
-            var current = property.Value.GetValue();
-            switch (current)
+            // 毎フレーム呼ばれるため、bool/float は型付きアクセサ (TryGetValue/TrySetValue) で box せず読み書きする。
+            // TryGetValue<bool> を先に試して失敗→float、という順だと float プロパティで box するので、
+            // 宣言型 (valueType) で静的に振り分ける。PropertyRef / object 宣言メンバー等は else の従来経路へ。
+            var vt = property.Value.type?.valueType;
+            if (vt == typeof(bool))
             {
-                case bool currentBool:
-                    bool desired = context.active;
-                    if (currentBool != desired) property.Value.SetValue(desired);
-                    break;
-                case float currentFloat:
-                    // Value モード想定: 入力の連続値 (0..1) を制御の範囲 [min, max] へマッピングして書く
-                    // (DeckSlider が min/max を持つ。既定 0..1 では恒等なので素の値を書くのと同じ)。
-                    float mapped = context.MappedValue;
-                    if (currentFloat != mapped) property.Value.SetValue(mapped);
-                    break;
+                bool desired = context.active;
+                if (property.Value.TryGetValue<bool>(out var currentBool) && currentBool != desired)
+                    property.Value.TrySetValue(desired);
+            }
+            else if (vt == typeof(float))
+            {
+                // Value モード想定: 入力の連続値 (0..1) を制御の範囲 [min, max] へマッピングして書く
+                // (DeckSlider が min/max を持つ。既定 0..1 では恒等なので素の値を書くのと同じ)。
+                float mapped = context.MappedValue;
+                if (property.Value.TryGetValue<float>(out var currentFloat) && currentFloat != mapped)
+                    property.Value.TrySetValue(mapped);
+            }
+            else
+            {
+                // PropertyRef (valueType が ref 型) や object 宣言メンバー等は従来経路で互換維持。
+                var current = property.Value.GetValue();
+                switch (current)
+                {
+                    case bool currentBool:
+                        bool desired = context.active;
+                        if (currentBool != desired) property.Value.SetValue(desired);
+                        break;
+                    case float currentFloat:
+                        float mapped = context.MappedValue;
+                        if (currentFloat != mapped) property.Value.SetValue(mapped);
+                        break;
+                }
             }
         }
     }

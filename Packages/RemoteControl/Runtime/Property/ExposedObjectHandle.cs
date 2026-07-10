@@ -112,7 +112,8 @@ namespace Lilium.RemoteControl
 
         public ExposedProperty? GetProperty(ReadOnlySpan<char> name)
         {
-            var propertyType = targetType?.FindProperty(name.ToString());
+            // name.ToString() を挟まず span のまま引く (パス解決のたびの文字列確保を避ける)。
+            var propertyType = targetType?.FindProperty(name);
             if (propertyType != null)
             {
                 return new ExposedProperty(propertyType, this, target);
@@ -140,8 +141,8 @@ namespace Lilium.RemoteControl
                     }
                     else
                     {
-                        // ExposedProperty.GetProperty は string を受け取る
-                        property = property?.GetProperty(segment.name.ToString());
+                        // ExposedProperty.GetProperty の span 版で name.ToString() を避ける
+                        property = property?.GetProperty(segment.name);
                     }
                 }
 

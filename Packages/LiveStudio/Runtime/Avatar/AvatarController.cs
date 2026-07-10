@@ -103,12 +103,28 @@ namespace Lilium.LiveStudio
         {
             get
             {
+                // 呼び出しごとに配列と要素を作り直すと、keyed-array 解決 (expressions[name].weight) の
+                // 走査で毎フレーム O(N^2) の GC が出る。ExpressionEntry は名前キーのステートレスなビュー
+                // (weight は ExpressionService に委譲) なので、名前集合が変わるまで同じ配列を使い回す。
+                // 無効化はアバター変更時 (onAvatarChanged 付近) と AvatarItem 着脱時 (InvalidateExpressions)。
+                if (_expressionsCache != null) return _expressionsCache;
+
                 var keys = ExpressionService.GetAvailableExpressions();
                 var result = new ExpressionEntry[keys.Length];
                 for (int i = 0; i < keys.Length; i++) result[i] = new ExpressionEntry(keys[i].name);
+                _expressionsCache = result;
                 return result;
             }
         }
+
+        // expressions getter のキャッシュ。表情の名前集合が変わったら InvalidateExpressions で破棄する。
+        ExpressionEntry[] _expressionsCache;
+
+        /// <summary>
+        /// <see cref="expressions"/> のキャッシュを破棄する。表情の名前集合が変わったとき
+        /// (アバター変更 / AvatarItem 着脱) に呼ぶ。次回 getter で再構築される。
+        /// </summary>
+        internal void InvalidateExpressions() => _expressionsCache = null;
 
         [ExposedProperty("name"), Hide]
         public string displayName => this.name;
@@ -336,6 +352,7 @@ namespace Lilium.LiveStudio
             if (_target != null)
             {
                 _PostSetupAvatar(_target);
+                InvalidateExpressions();
                 onAvatarChanged?.Invoke();
             }
         }
@@ -412,7 +429,6 @@ namespace Lilium.LiveStudio
             }
 
             var avatarTransform = avatar.transform;
-            var meshes = avatar.GetComponentsInChildren<SkinnedMeshRenderer>(includeInactive: true);
 
             var avatarTarget = avatar.GetComponent<Animator>();
 
@@ -443,22 +459,7 @@ namespace Lilium.LiveStudio
 
             _RestorePose(restorePose); // the motion driver re-poses next frame anyway, but avoid a 1-frame artifact
 
-            foreach (var meshInfo in meshStateOverrides)
-            {
-                var prevSkinnedMeshRenderer = meshInfo.skinnedMeshRenderer;
-                var renderer = meshes.FirstOrDefault(r => GameObjectUtility.GetRelativePath(avatarTransform, r.transform) == meshInfo.name);
-                meshInfo.skinnedMeshRenderer = renderer;
-
-                if (prevSkinnedMeshRenderer != renderer)
-                {
-                    meshInfo.defaultVisible = renderer != null ? renderer.gameObject.activeSelf : true;
-                }
-
-                if (meshInfo.skinnedMeshRenderer != null)
-                {
-                    meshInfo.skinnedMeshRenderer.gameObject.SetActive(meshInfo.visible);
-                }
-            }
+            _ApplyMeshStateOverrides(avatar);
 
             _ApplyAnimationParameterOverrides(avatar);
 
@@ -525,6 +526,31 @@ namespace Lilium.LiveStudio
             foreach (var kv in restore)
             {
                 if (kv.Key != null) kv.Key.localRotation = kv.Value;
+            }
+        }
+
+        // meshStateOverrides の各エントリを現在のアバターのレンダラーに解決し、表示状態を適用する。
+        // _PostSetupAvatar (アバター設定時) と OnPropertyChanged (meshStateOverrides 変更時) から共有する。
+        private void _ApplyMeshStateOverrides(GameObject avatar)
+        {
+            var avatarTransform = avatar.transform;
+            var meshes = avatar.GetComponentsInChildren<SkinnedMeshRenderer>(includeInactive: true);
+
+            foreach (var meshInfo in meshStateOverrides)
+            {
+                var prevSkinnedMeshRenderer = meshInfo.skinnedMeshRenderer;
+                var renderer = meshes.FirstOrDefault(r => GameObjectUtility.GetRelativePath(avatarTransform, r.transform) == meshInfo.name);
+                meshInfo.skinnedMeshRenderer = renderer;
+
+                if (prevSkinnedMeshRenderer != renderer)
+                {
+                    meshInfo.defaultVisible = renderer != null ? renderer.gameObject.activeSelf : true;
+                }
+
+                if (meshInfo.skinnedMeshRenderer != null)
+                {
+                    meshInfo.skinnedMeshRenderer.gameObject.SetActive(meshInfo.visible);
+                }
             }
         }
 
@@ -851,6 +877,7 @@ namespace Lilium.LiveStudio
                 StartCoroutine(_ReapplyAnimationParameterOverridesNextFrame());
             }
 
+            InvalidateExpressions();
             onAvatarChanged?.Invoke();
         }
 
@@ -914,9 +941,39 @@ namespace Lilium.LiveStudio
             // OnAfterExposedDeserialize、REST 書き込み経路はここ、と両経路をカバーする。
             _OnOverrideRefMaybeChanged();
 
-            if (_target != null)
+            if (_target == null) return;
+
+            // 変更されたプロパティに対応する再適用だけを行う。以前は _PostSetupAvatar を丸ごと呼んでいたが、
+            // その中の T-pose 適用 + ソケット再生成 (_ApplyConfiguredTPose、全 Transform 走査で重い) と
+            // NotifyStructureChanged は「アバターの骨格が変わったとき」だけ必要で、どのプロパティ変更でも
+            // 骨格は変わらない。操作 (OperationManager) がプロパティを毎フレーム駆動すると毎フレーム走って
+            // 数十 ms のヒッチになっていたため、ここでは該当プロパティの軽い再適用に限定する。
+            if (property.PathContains(nameof(meshStateOverrides)))
             {
-                _PostSetupAvatar(_target);
+                _ApplyMeshStateOverrides(_target);
+            }
+
+            if (property.PathContains(nameof(animationParameterOverrides)))
+            {
+                _ApplyAnimationParameterOverrides(_target);
+            }
+
+            if (property.PathContains(nameof(_avatarLayer)))
+            {
+                _CaptureOriginalLayersIfNeeded(_target);
+                _ApplyAvatarLayer();
+            }
+
+            if (property.PathContains(nameof(_lockLowerBodyPose)))
+            {
+                _target.GetComponent<IAvatar>()?.SetLowerBodyPoseLock(_lockLowerBodyPose);
+            }
+
+            // ベイク済み body override クリップ (_bodyOverrideClip) の変更を反映する。
+            // 外部参照 (_bodyOverrideClipRef) は上記 _OnOverrideRefMaybeChanged が担当する。
+            if (property.PathContains(nameof(_bodyOverrideClip)))
+            {
+                _ReapplyOverrideToTarget();
             }
         }
 

@@ -179,13 +179,31 @@ namespace Lilium.RemoteControl.SourceGenerator
 
             if (!hasGetter && !hasSetter) return null;
 
+            // 値が有限な型 (bool / enum) は getter を正規箱経由にして boxing 割り当てを避ける。
+            // nullable (Nullable<bool>/Nullable<enum>) は SpecialType/TypeKind が一致しないので対象外。
+            GetterBoxKind getterBox = GetterBoxKind.None;
+            if (hasGetter)
+            {
+                if (memberType.SpecialType == SpecialType.System_Boolean) getterBox = GetterBoxKind.Bool;
+                else if (memberType.TypeKind == TypeKind.Enum) getterBox = GetterBoxKind.Enum;
+            }
+
+            // 値型メンバーは型付きアクセサ (Func<object,T>/Action<object,T>) を追加生成し、box を回避する。
+            // 参照型は object 経路で元々 box しないので不要。ポインタ / ref-like (Span 等) は
+            // generic 型引数にできないため除外。
+            bool emitTyped = memberType.IsValueType
+                && memberType.TypeKind != TypeKind.Pointer
+                && !memberType.IsRefLikeType;
+
             return new AccessorInfo(
                 declaringType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                 member.Name,
                 memberType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                 member.IsStatic,
                 hasGetter,
-                hasSetter);
+                hasSetter,
+                getterBox,
+                emitTyped);
         }
 
         // 指定アセンブリ内の System.Runtime.CompilerServices.ModuleInitializerAttribute を返す (無ければ null)。
@@ -291,9 +309,16 @@ namespace Lilium.RemoteControl.SourceGenerator
 
                     // static は型名直接、instance は宣言型にキャストしてアクセスする。
                     var target = a.IsStatic ? a.DeclaringTypeFqn : "((" + a.DeclaringTypeFqn + ")o)";
-                    var getterExpr = a.HasGetter
-                        ? "(object o) => " + target + "." + a.MemberName
-                        : "null";
+                    // bool / enum は値が有限なので正規箱 (BoxedValues) 経由で返し、読み取りごとの boxing を避ける。
+                    string getterExpr;
+                    if (!a.HasGetter)
+                        getterExpr = "null";
+                    else if (a.GetterBox == GetterBoxKind.Bool)
+                        getterExpr = "(object o) => global::Lilium.RemoteControl.BoxedValues.Box(" + target + "." + a.MemberName + ")";
+                    else if (a.GetterBox == GetterBoxKind.Enum)
+                        getterExpr = "(object o) => global::Lilium.RemoteControl.BoxedValues.BoxEnum<" + a.MemberTypeFqn + ">(" + target + "." + a.MemberName + ")";
+                    else
+                        getterExpr = "(object o) => " + target + "." + a.MemberName;
                     var setterExpr = a.HasSetter
                         ? "(object o, object v) => " + target + "." + a.MemberName + " = (" + a.MemberTypeFqn + ")v"
                         : "null";
@@ -306,6 +331,22 @@ namespace Lilium.RemoteControl.SourceGenerator
                     sb.Append(getterExpr);
                     sb.Append(", ");
                     sb.Append(setterExpr);
+
+                    // 値型メンバーは型付きアクセサ (Func<object,T>/Action<object,T>) も渡し、box を回避可能にする。
+                    if (a.EmitTyped)
+                    {
+                        var typedGetterExpr = a.HasGetter
+                            ? "(global::System.Func<object, " + a.MemberTypeFqn + ">)((object o) => " + target + "." + a.MemberName + ")"
+                            : "null";
+                        var typedSetterExpr = a.HasSetter
+                            ? "(global::System.Action<object, " + a.MemberTypeFqn + ">)((object o, " + a.MemberTypeFqn + " v) => " + target + "." + a.MemberName + " = v)"
+                            : "null";
+                        sb.Append(", ");
+                        sb.Append(typedGetterExpr);
+                        sb.Append(", ");
+                        sb.Append(typedSetterExpr);
+                    }
+
                     sb.AppendLine(");");
                 }
             }
@@ -345,6 +386,9 @@ namespace Lilium.RemoteControl.SourceGenerator
             }
         }
 
+        // getter が返す値の boxing 戦略。bool/enum は正規箱で割り当てを避ける。
+        enum GetterBoxKind { None, Bool, Enum }
+
         // 高速アクセサ 1 件分の情報。キーは DeclaringTypeFqn + MemberName。
         sealed class AccessorInfo
         {
@@ -354,9 +398,11 @@ namespace Lilium.RemoteControl.SourceGenerator
             public bool IsStatic { get; }
             public bool HasGetter { get; }
             public bool HasSetter { get; }
+            public GetterBoxKind GetterBox { get; }
+            public bool EmitTyped { get; }
 
             public AccessorInfo(string declaringTypeFqn, string memberName, string memberTypeFqn,
-                bool isStatic, bool hasGetter, bool hasSetter)
+                bool isStatic, bool hasGetter, bool hasSetter, GetterBoxKind getterBox, bool emitTyped)
             {
                 DeclaringTypeFqn = declaringTypeFqn;
                 MemberName = memberName;
@@ -364,6 +410,8 @@ namespace Lilium.RemoteControl.SourceGenerator
                 IsStatic = isStatic;
                 HasGetter = hasGetter;
                 HasSetter = hasSetter;
+                GetterBox = getterBox;
+                EmitTyped = emitTyped;
             }
 
             public override bool Equals(object obj)
@@ -374,7 +422,9 @@ namespace Lilium.RemoteControl.SourceGenerator
                     && MemberTypeFqn == o.MemberTypeFqn
                     && IsStatic == o.IsStatic
                     && HasGetter == o.HasGetter
-                    && HasSetter == o.HasSetter;
+                    && HasSetter == o.HasSetter
+                    && GetterBox == o.GetterBox
+                    && EmitTyped == o.EmitTyped;
             }
 
             public override int GetHashCode()
@@ -385,6 +435,8 @@ namespace Lilium.RemoteControl.SourceGenerator
                 hash = hash * 31 + (IsStatic ? 1 : 0);
                 hash = hash * 31 + (HasGetter ? 1 : 0);
                 hash = hash * 31 + (HasSetter ? 1 : 0);
+                hash = hash * 31 + (int)GetterBox;
+                hash = hash * 31 + (EmitTyped ? 1 : 0);
                 return hash;
             }
         }

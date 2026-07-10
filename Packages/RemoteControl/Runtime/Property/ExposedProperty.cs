@@ -142,8 +142,26 @@ namespace Lilium.RemoteControl
 
                 return null;
             }
+            // 非配列 (参照型 / 実体型) は string 化せず span のまま共通処理へ委譲する。
+            return _GetMemberProperty(name.AsSpan());
+        }
+
+        /// <summary>
+        /// <see cref="GetProperty(string)"/> の span 版。ネストパス解決時の <c>name.ToString()</c> を避ける。
+        /// 配列要素の名前照合は要素値の ToString など文字列生成を伴い span の利得が薄いため、
+        /// その場合のみ string 版へフォールバックする。非配列 (メンバー引き) はホットパスなので span のまま引く。
+        /// </summary>
+        public ExposedProperty? GetProperty(ReadOnlySpan<char> name)
+        {
+            if (isArray) return GetProperty(name.ToString());
+            return _GetMemberProperty(name);
+        }
+
+        // 非配列 (参照型 / 実体型) のメンバー引き。string/span 両 GetProperty から共有する。
+        private ExposedProperty? _GetMemberProperty(ReadOnlySpan<char> name)
+        {
             // 参照型かつExposedClassの場合
-            else if (this.isExposedObjectReference)
+            if (this.isExposedObjectReference)
             {
                 var polymorphicExposedType = ExposedClass.Find(GetPolymorphicValueType());
                 Debug.Assert(polymorphicExposedType != null, "Polymorphic ExposedClass should not be null for ExposedObjectHandle reference");
@@ -221,11 +239,10 @@ namespace Lilium.RemoteControl
             var currentLength = arrayLength;
             if (index < 0 || index >= currentLength) return null;
 
-            // 配列要素の型を取得
-            var elementType = ExposedPropertyUtility.GetCollectionElementType(type.valueType);
-
-            //TODO: 配列要素用のExposedPropertyを動的生成しているのでパフォーマンス改善の余地あり
-            var arrayElementEntity = new ExposedPropertyType(elementType, index);
+            // 配列要素の記述子 (ExposedPropertyType) は (コレクション型, index) に対して不変なので
+            // キャッシュから取得する。GetPropertyIndex はシリアライズ時に配列要素をループで引くため、
+            // 毎回動的生成すると GC が嵩む。値・オーナー・パスは呼び出しごとに異なるので下で束ねる。
+            var arrayElementEntity = ExposedPropertyType.GetArrayElement(type.valueType, index);
             var arrayValue = this.GetValue();
             var childPath = this.path.AppendIndex(index);
 
@@ -298,6 +315,15 @@ namespace Lilium.RemoteControl
 
 
             // Editorに変更を通知
+            _NotifyUnityDirty();
+
+            // onPropertyChangedイベントを呼び出す
+            owner.targetType?.RaisePropertyChanged(this, oldValue);
+        }
+
+        // 値変更を Editor に通知する (SetValue / TrySetValue 共通)。
+        private void _NotifyUnityDirty()
+        {
             if (obj is UnityEngine.Object unityObj)
             {
                 PropertyUtility.Apply(unityObj);
@@ -310,9 +336,98 @@ namespace Lilium.RemoteControl
             {
                 PropertyUtility.Apply();
             }
+        }
 
-            // onPropertyChangedイベントを呼び出す
-            owner.targetType?.RaisePropertyChanged(this, oldValue);
+        /// <summary>
+        /// 値型プロパティを boxing なしで読む。SG が登録した型付き getter (<see cref="ExposedPropertyType.typedGetter"/>)
+        /// が T に一致すれば object を経由せず読み取り、true を返す。型付き getter が無い・型不一致・
+        /// アクセス不可の場合は object 経路 (<see cref="GetValue"/> 相当、値型は box) にフォールバックする。
+        /// <see cref="GetValue"/> と違い例外は投げず、読めなければ false を返す。
+        /// この API は将来のパイプライン全面型付き化 (B 案) の中核となる。
+        /// </summary>
+        public bool TryGetValue<T>(out T value)
+        {
+            value = default;
+            if (type == null) return false;
+
+            // PropertyRef は参照先に委譲 (GetValue と同じ)。
+            if (type.isExposedPropertyReference)
+            {
+                var resolved = _ResolveRef();
+                return resolved.HasValue && resolved.Value.TryGetValue(out value);
+            }
+
+            if (!ExposedPropertyUtility.CanAccess(obj, type)) return false;
+
+            // 型付き getter が T に一致すれば box ゼロで読む。
+            if (type.typedGetter is Func<object, T> typed)
+            {
+                value = typed(type.isStatic ? null : obj);
+                return true;
+            }
+
+            // フォールバック: object 経路 (値型は box するが従来挙動)。
+            var raw = ExposedPropertyUtility.GetValueRaw(obj, type);
+            if (raw is T t) { value = t; return true; }
+            // 参照型 T で raw==null は「値あり (null)」として成功扱い。
+            if (raw == null && !typeof(T).IsValueType) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// 値型プロパティを boxing なしで書く。SG が登録した型付き setter が T に一致し、書込可・アクセス可能で
+        /// owner が struct でない場合、object を経由せず書き込む。副作用 (EnsureDefaultCaptured / Editor dirty 通知 /
+        /// onPropertyChanging・Changed) は <see cref="SetValue(object,bool)"/> と一致させる。ただし購読者
+        /// (<see cref="ExposedClass.hasPropertyChangeListeners"/>) がいない場合は oldValue 読み取りとイベント発火を
+        /// 省略し box を出さない。fast path が使えない場合は従来 <see cref="SetValue(object,bool)"/> にフォールバック。
+        /// 書き込めなかった (readOnly / 未解決 PropertyRef など) 場合は false を返す。
+        /// </summary>
+        public bool TrySetValue<T>(T value) => TrySetValue(value, captureDefault: true);
+
+        /// <inheritdoc cref="TrySetValue{T}(T)"/>
+        public bool TrySetValue<T>(T value, bool captureDefault)
+        {
+            if (type == null) return false;
+
+            // PropertyRef: 参照先に委譲しつつ owner にも onPropertyChanged を発火 (SetValue と同じ)。
+            if (type.isExposedPropertyReference)
+            {
+                var resolved = _ResolveRef();
+                if (!resolved.HasValue) return false;
+                bool refNotify = owner.targetType != null && owner.targetType.hasPropertyChangeListeners;
+                object refOldValue = refNotify ? resolved.Value.GetValue() : null;
+                if (!resolved.Value.TrySetValue(value, captureDefault)) return false;
+                if (refNotify) owner.targetType.RaisePropertyChanged(this, refOldValue);
+                return true;
+            }
+
+            if (type.isReadOnly) return false;
+
+            // struct owner は親への書き戻しが必要なので typed fast path 不可 (従来 SetValue に委ねる)。
+            // (struct 宣言メンバーは SG がアクセサを登録しないので typedSetter は元々 null。防御的ガード)
+            bool structOwner = obj != null && obj.GetType().IsValueType;
+
+            if (!structOwner
+                && type.typedSetter is Action<object, T> typed
+                && ExposedPropertyUtility.CanAccess(obj, type))
+            {
+                bool notify = owner.targetType != null && owner.targetType.hasPropertyChangeListeners;
+                // oldValue の読み取り・イベント発火は購読者がいる時だけ (box を出さない)。
+                object oldValue = notify ? GetValue() : null;
+
+                if (captureDefault) owner.EnsureDefaultCaptured(path);
+                if (notify) owner.targetType.RaisePropertyChanging(this, value);
+
+                typed(type.isStatic ? null : obj, value);   // box ゼロの書き込み
+
+                _NotifyUnityDirty();
+                if (notify) owner.targetType.RaisePropertyChanged(this, oldValue);
+                return true;
+            }
+
+            // フォールバック: 従来 SetValue (T を box して object 経路で書く、挙動不変)。
+            SetValue(value, captureDefault);
+            return true;
         }
 
         public void SetDefaultValue()

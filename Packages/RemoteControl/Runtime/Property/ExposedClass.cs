@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 
 using UnityEngine;
 
@@ -489,6 +490,8 @@ namespace Lilium.RemoteControl
         {
             _all.Clear();
             _byTypeName.Clear();
+            // 配列要素記述子は exposedValueClass 経由でレジストリに依存するため、ここで一緒に破棄する。
+            ExposedPropertyType.ClearArrayElementCache();
         }
 
         /// <summary>
@@ -619,6 +622,13 @@ namespace Lilium.RemoteControl
         public event PropertyChangingDelegate onPropertyChanging;
 
         public event PropertyChangedDelegate onPropertyChanged;
+
+        /// <summary>
+        /// onPropertyChanging / onPropertyChanged のいずれかに購読者がいるか。
+        /// 購読者がいなければ <see cref="ExposedProperty.TrySetValue{T}(T)"/> は oldValue の
+        /// 読み取り (boxing を伴う) とイベント発火を丸ごと省略できる。
+        /// </summary>
+        internal bool hasPropertyChangeListeners => onPropertyChanging != null || onPropertyChanged != null;
 
         private static Dictionary<string, ExposedFunctionType> _BuildFunctionApiNameIndex(ExposedFunctionType[] functionTypes)
         {
@@ -762,6 +772,40 @@ namespace Lilium.RemoteControl
             return result;
         }
 
+        /// <summary>
+        /// <see cref="FindProperty(string)"/> の span 版。<c>name.ToString()</c> を挟まずに引けるため、
+        /// パス解決のホットパス (<see cref="ExposedObjectHandle.GetProperty(ReadOnlySpan{char})"/>) で
+        /// 文字列確保を避けられる。_propertyByName (Dictionary) は span でキー検索できないため
+        /// propertyTypes を走査する (要素数は通常数十なのでホットパスでも無視できる)。
+        /// _propertyByName のキー空間は propertyTypes の name + [FormerlyExposedAs] エイリアスと一致するので、
+        /// string 版と同じ結果を返す (名前が競合しない前提。競合時は _BuildPropertyNameIndex が警告する)。
+        /// </summary>
+        public ExposedPropertyType FindProperty(ReadOnlySpan<char> name)
+        {
+            if (name.IsEmpty) return null;
+
+            // まず正規名で照合
+            for (int i = 0; i < propertyTypes.Length; i++)
+            {
+                if (name.SequenceEqual(propertyTypes[i].name.AsSpan()))
+                    return propertyTypes[i];
+            }
+
+            // 次に [FormerlyExposedAs] エイリアスで照合
+            for (int i = 0; i < propertyTypes.Length; i++)
+            {
+                var formerNames = propertyTypes[i].formerNames;
+                if (formerNames == null) continue;
+                for (int j = 0; j < formerNames.Length; j++)
+                {
+                    if (!string.IsNullOrEmpty(formerNames[j]) && name.SequenceEqual(formerNames[j].AsSpan()))
+                        return propertyTypes[i];
+                }
+            }
+
+            return null;
+        }
+
         public ExposedFunctionType FindFunction(string apiName)
         {
             if (string.IsNullOrEmpty(apiName)) return null;
@@ -792,6 +836,15 @@ namespace Lilium.RemoteControl
         /// </summary>
         public readonly Func<object, object> getter;
         public readonly Action<object, object> setter;
+
+        /// <summary>
+        /// 値型メンバー向けの型付きアクセサ。<c>Func&lt;object,T&gt;</c> / <c>Action&lt;object,T&gt;</c> で、
+        /// object を経由しないため boxing を避けられる。<see cref="ExposedProperty.TryGetValue{T}"/> /
+        /// <see cref="ExposedProperty.TrySetValue{T}(T)"/> がキャストして呼ぶ。参照型メンバー・配列要素・
+        /// 未登録メンバーでは null (呼び出し側は object 経路にフォールバックする)。
+        /// </summary>
+        public readonly System.Delegate typedGetter;
+        public readonly System.Delegate typedSetter;
 
         public readonly ControlAttribute controlAttribute;
 
@@ -1021,9 +1074,11 @@ namespace Lilium.RemoteControl
 
             // Source Generator が登録した高速アクセサを引く (キー = メンバー宣言型 + メンバー名)。
             // 未登録なら getter/setter は null のままで、Get/SetValueRaw は reflection にフォールバックする。
+            // typedGetter/typedSetter は値型メンバーのみ non-null (box 回避経路)。
             if (info != null)
             {
-                ExposedMemberAccessorTable.TryGet(info.DeclaringType, info.Name, out this.getter, out this.setter);
+                ExposedMemberAccessorTable.TryGet(info.DeclaringType, info.Name,
+                    out this.getter, out this.setter, out this.typedGetter, out this.typedSetter);
             }
 
             // 読み取り専用判定
@@ -1225,6 +1280,30 @@ namespace Lilium.RemoteControl
         }
 
         // 配列要素用のコンストラクタ
+        // 配列要素用 ExposedPropertyType のキャッシュ。記述子は (コレクション型, index) に対して
+        // 不変なので使い回し、GetPropertyIndex のループ呼び出しでの GC を抑える。
+        // exposedValueClass が ExposedClass レジストリに依存するため、レジストリを作り直す
+        // ExposedClass.Clear() で無効化する。RemoteControl ハンドラ (ワーカースレッド) から
+        // 読み書きされるため ConcurrentDictionary を使う。
+        private static readonly ConcurrentDictionary<(System.Type collectionType, int index), ExposedPropertyType> _arrayElementCache
+            = new ConcurrentDictionary<(System.Type, int), ExposedPropertyType>();
+
+        /// <summary>
+        /// コレクション型と index に対応する配列要素の <see cref="ExposedPropertyType"/> を返す。
+        /// 記述子は (collectionType, index) に対して不変なのでキャッシュして再利用する。
+        /// </summary>
+        internal static ExposedPropertyType GetArrayElement(System.Type collectionType, int index)
+        {
+            // ラムダは key しか参照しない (キャプチャ無し) ため、コンパイラが delegate を
+            // 静的キャッシュし、呼び出しごとの closure 確保は発生しない。
+            return _arrayElementCache.GetOrAdd((collectionType, index),
+                key => new ExposedPropertyType(
+                    ExposedPropertyUtility.GetCollectionElementType(key.collectionType), key.index));
+        }
+
+        /// <summary>配列要素記述子キャッシュを破棄する (レジストリ再構築時に呼ぶ)。</summary>
+        internal static void ClearArrayElementCache() => _arrayElementCache.Clear();
+
         public ExposedPropertyType(System.Type elementType, int arrayIndex)
         {
             Debug.Assert(elementType != null, "ElementType cannot be null");
