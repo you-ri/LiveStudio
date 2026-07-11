@@ -742,6 +742,19 @@ namespace Lilium.LiveStudio
             }
         }
 
+        /// <summary>
+        /// 左右の瞬きウェイトを小さい方に揃えて同期させる。
+        /// モデルによって左右の瞬き精度に偏りが出て非対称なまばたきになるのを防ぐ。
+        /// </summary>
+        public static void SyncBlink(ref ARKitWeightData data)
+        {
+            float min = Mathf.Min(
+                data.AtWeight(ARKitBlendShapeLocation.EyeBlinkLeft),
+                data.AtWeight(ARKitBlendShapeLocation.EyeBlinkRight));
+            data.AtWeight(ARKitBlendShapeLocation.EyeBlinkLeft) = min;
+            data.AtWeight(ARKitBlendShapeLocation.EyeBlinkRight) = min;
+        }
+
 
         /// <summary>
         /// ARKitブレンドシェイプから目の向き（Yaw, Pitch）を計算

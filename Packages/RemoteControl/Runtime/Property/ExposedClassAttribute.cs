@@ -494,6 +494,38 @@ namespace Lilium.RemoteControl
     }
 
     /// <summary>
+    /// Control attribute that renders a live, read-only scalar value (e.g. an FPS reading).
+    /// The client polls the property (GET /exposed/object/{id}/{path}) while the control is
+    /// visible and shows the latest value; polling stops when the page is hidden. Intended for
+    /// getter-only properties whose value changes continuously and should not be persisted.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
+    public class LiveValueAttribute : ControlAttribute
+    {
+        /// <summary>Polling interval in milliseconds. 0 uses the client default.</summary>
+        public int intervalMs { get; }
+
+        public LiveValueAttribute(int intervalMs = 0)
+            : base("LiveValue")
+        {
+            this.intervalMs = intervalMs;
+        }
+
+        public override JObject ToJObject()
+        {
+            var obj = new JObject
+            {
+                ["type"] = controlName,
+            };
+            if (intervalMs > 0)
+            {
+                obj["intervalMs"] = intervalMs;
+            }
+            return obj;
+        }
+    }
+
+    /// <summary>
     /// アセット参照フィールド (AnimationClip 等の UnityEngine.Object 派生) 用のセレクタ属性。
     /// 値はアセット GUID (<see cref="AssetRegistry"/> 経由) でシリアライズされるため、
     /// 対象アセットは AssetRegistry に登録されている必要がある。

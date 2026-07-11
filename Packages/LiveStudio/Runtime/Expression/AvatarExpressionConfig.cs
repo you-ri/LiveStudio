@@ -16,6 +16,11 @@ namespace Lilium.LiveStudio
         [ExposedField]
         public ARKitWeightAdjustmentData sourceWeightAdjustments = ARKitWeightAdjustmentData.Default;
 
+        // モデルによっては左右の瞬きウェイトの精度に偏りが出て非対称なまばたきになるため、
+        // 有効時は左右の瞬きウェイトを小さい方に揃えて同期させる。
+        [ExposedField]
+        public bool syncBlink = false;
+
         [ExposedField]
         public ExpressionData neutralExpression = ExpressionData.Default;
 
@@ -27,6 +32,12 @@ namespace Lilium.LiveStudio
             ARKitWeightData sourceAdjustedData;
 
             ExpressionSystem.UpdateWeights(expressionConfig.sourceWeightAdjustments, in arkitWeightData, out sourceAdjustedData);
+
+            // 左右の瞬きを同期（小さい方に揃える）
+            if (expressionConfig.syncBlink)
+            {
+                ExpressionSystem.SyncBlink(ref sourceAdjustedData);
+            }
 
             // neutralの計算結果をworkDataに格納
             ExpressionSystem.UpdateWeights(expressionConfig.neutralExpression, in sourceAdjustedData, out workData.neutralArkitWeight);
