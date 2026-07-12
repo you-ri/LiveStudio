@@ -114,29 +114,61 @@ namespace Lilium.RemoteControl
 
         public ExposedProperty? GetProperty(string name)
         {
-            // 配列要素の場合
+            // 配列要素の場合: type名もしくはキー(name)プロパティが一致する要素を探す。
+            // 毎フレーム解決される (SetPropertyOperation 等) ため、コレクションは 1 回だけ取得し、
+            // 各要素は実体から直接添字アクセス + キー値を直接読んで照合する。使い捨ての ExposedProperty /
+            // path 文字列を要素ごとに作らず、一致した 1 個だけを構築することで走査の GC を排除する。
             if (isArray)
             {
-                // 配列要素の中からtype名もしくはnameプロパティが一致するものを探す
-                // TODO: パフォーマンス改善の余地あり
-                for (int i = 0; i < arrayLength; i++)
-                {
-                    var element = GetPropertyIndex(i);
-                    if (element == null) continue;
+                var collection = GetValue();
+                int len = ExposedPropertyUtility.GetCollectionLength(collection);
 
-                    var polymorphicValueType = ExposedClass.Find(element?.GetPolymorphicValueType());
-                    if (polymorphicValueType != null && string.Compare(polymorphicValueType.typeName, name, StringComparison.OrdinalIgnoreCase) == 0)
+                // 要素型が PropertyRef のときは実体型と解決先型が異なるため、その場合のみ従来の
+                // per-element 経路 (GetPolymorphicValueType が参照先を解決する) にフォールバックして挙動を維持する。
+                var firstElement = len > 0 ? ExposedPropertyType.GetArrayElement(type.valueType, 0) : null;
+                bool refElements = firstElement != null && firstElement.isExposedPropertyReference;
+
+                for (int i = 0; i < len; i++)
+                {
+                    if (refElements)
                     {
-                        return element;
+                        var element = _GetPropertyIndexFrom(collection, i);
+                        if (element == null) continue;
+
+                        var refType = ExposedClass.Find(element?.GetPolymorphicValueType());
+                        if (refType != null && string.Compare(refType.typeName, name, StringComparison.OrdinalIgnoreCase) == 0)
+                        {
+                            return element;
+                        }
+                        var refKeyProperty = element?.GetProperty(refType?.keyProperty?.name ?? "name");
+                        if (refKeyProperty != null && refKeyProperty?.GetValue()?.ToString() == name)
+                        {
+                            return element;
+                        }
+                        continue;
                     }
 
-                    // [ExposedKey] が付いていればそのプロパティで、無ければ慣習的に "name" プロパティで照合する。
-                    // 一致した要素を返す (childPath はインデックス形なので以降の解決は index ベースのまま)。
-                    var keyPropertyName = polymorphicValueType?.keyProperty?.name ?? "name";
-                    var keyProperty = element?.GetProperty(keyPropertyName);
-                    if (keyProperty != null && keyProperty?.GetValue()?.ToString() == name)
+                    var elementValue = ExposedPropertyUtility.GetCollectionElement(collection, i);
+                    if (elementValue == null) continue;
+
+                    var elementType = ExposedClass.Find(elementValue.GetType());
+
+                    // 1) type 名一致
+                    if (elementType != null && string.Compare(elementType.typeName, name, StringComparison.OrdinalIgnoreCase) == 0)
                     {
-                        return element;
+                        return _GetPropertyIndexFrom(collection, i);
+                    }
+
+                    // 2) [ExposedKey] が付いていればそのプロパティで、無ければ慣習的に "name" プロパティで照合する。
+                    var keyPropertyName = elementType?.keyProperty?.name ?? "name";
+                    var keyPropertyType = elementType?.FindProperty(keyPropertyName);
+                    if (keyPropertyType != null)
+                    {
+                        var keyValue = ExposedPropertyUtility.GetValueRaw(elementValue, keyPropertyType);
+                        if (keyValue != null && keyValue.ToString() == name)
+                        {
+                            return _GetPropertyIndexFrom(collection, i);
+                        }
                     }
                 }
 
@@ -232,21 +264,25 @@ namespace Lilium.RemoteControl
             }
         }
         
-        public ExposedProperty? GetPropertyIndex(int index)
+        public ExposedProperty? GetPropertyIndex(int index) => _GetPropertyIndexFrom(GetValue(), index);
+
+        // 取得済みのコレクション値から index 番目の要素プロパティを束ねる。GetPropertyIndex の
+        // arrayLength(=別 GetValue) と this.GetValue() の二重読みを避け、キー走査 (GetProperty) が
+        // コレクションを 1 回だけ読んで各要素を引けるようにする共通経路。
+        private ExposedProperty? _GetPropertyIndexFrom(object collection, int index)
         {
             if (!isArray) return null;
 
-            var currentLength = arrayLength;
+            var currentLength = ExposedPropertyUtility.GetCollectionLength(collection);
             if (index < 0 || index >= currentLength) return null;
 
             // 配列要素の記述子 (ExposedPropertyType) は (コレクション型, index) に対して不変なので
             // キャッシュから取得する。GetPropertyIndex はシリアライズ時に配列要素をループで引くため、
             // 毎回動的生成すると GC が嵩む。値・オーナー・パスは呼び出しごとに異なるので下で束ねる。
             var arrayElementEntity = ExposedPropertyType.GetArrayElement(type.valueType, index);
-            var arrayValue = this.GetValue();
             var childPath = this.path.AppendIndex(index);
 
-            return new ExposedProperty(arrayElementEntity, owner, arrayValue, childPath);
+            return new ExposedProperty(arrayElementEntity, owner, collection, childPath);
         }
 
         public object GetValue()

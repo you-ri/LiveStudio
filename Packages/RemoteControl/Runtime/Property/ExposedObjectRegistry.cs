@@ -31,12 +31,31 @@ namespace Lilium.RemoteControl
 
         private static readonly Dictionary<object, ExposedObjectHandle> _byTarget = new Dictionary<object, ExposedObjectHandle>(ReferenceEqualityComparer.Instance);
 
+        // キー付き/動的な配列 (例: AvatarController.expressions) の要素インスタンスが差し替わるたびに増える版数。
+        // 解決結果をキャッシュする側 (SetPropertyOperation 等) は、root オブジェクト (handle) が不変でも
+        // ネストしたキー要素が再構築されたことをこの版数の変化で検知し、キャッシュを破棄して再解決する。
+        // レジストリの登録/解除 (=対象オブジェクトの出入り) は handle 比較で捕捉できるためここには含めない。
+        // Domain Reload 無効環境のため ClearAll (SubsystemRegistration) で 0 に戻す。
+        private static int _keyedCollectionVersion;
+
         // --- 公開プロパティ ---
 
         /// <summary>
         /// 登録されている全ExposedObjectインスタンス
         /// </summary>
         public static IReadOnlyCollection<ExposedObjectHandle> instances => _instances;
+
+        /// <summary>
+        /// キー付き/動的配列の要素が再構築された回数 (単調増加)。解決結果をキャッシュする側が、
+        /// root handle 不変のままネスト要素が差し替わったことを検知するための版数。
+        /// </summary>
+        public static int keyedCollectionVersion => _keyedCollectionVersion;
+
+        /// <summary>
+        /// キー付き/動的配列 (例: AvatarController.expressions) の要素インスタンスを差し替えた側が呼ぶ。
+        /// これにより解決結果キャッシュ (SetPropertyOperation 等) が次回アクセス時に再解決する。
+        /// </summary>
+        public static void NotifyKeyedCollectionChanged() => _keyedCollectionVersion++;
 
         /// <summary>
         /// 指定された型に代入可能な候補を持つ ExposedObjectHandle を列挙する。
@@ -146,6 +165,7 @@ namespace Lilium.RemoteControl
             _instances.Clear();
             _byId.Clear();
             _byTarget.Clear();
+            _keyedCollectionVersion = 0;
             ExposedObjectDefaultRegistry.ClearAll();
         }
 

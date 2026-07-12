@@ -124,7 +124,13 @@ namespace Lilium.LiveStudio
         /// <see cref="expressions"/> のキャッシュを破棄する。表情の名前集合が変わったとき
         /// (アバター変更 / AvatarItem 着脱) に呼ぶ。次回 getter で再構築される。
         /// </summary>
-        internal void InvalidateExpressions() => _expressionsCache = null;
+        internal void InvalidateExpressions()
+        {
+            _expressionsCache = null;
+            // expressions[key].weight を解決結果キャッシュで駆動する SetPropertyOperation 等に、
+            // 要素 (ExpressionEntry) が差し替わったことを通知して再解決させる (古いキーへの誤書き込み防止)。
+            ExposedObjectRegistry.NotifyKeyedCollectionChanged();
+        }
 
         [ExposedProperty("name"), Hide]
         public string displayName => this.name;

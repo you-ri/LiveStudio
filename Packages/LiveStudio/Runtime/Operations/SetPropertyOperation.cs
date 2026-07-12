@@ -40,10 +40,49 @@ namespace Lilium.LiveStudio
         [ExposedField]
         public string propertyPath = string.Empty;
 
+        // 解決結果のキャッシュ。Apply は毎フレーム呼ばれるが、FindProperty の walk は要素 path の文字列確保
+        // (PropertyPath.AppendIndex) や GameObject プロキシの components 配列確保 (ExposedGameObject.components)
+        // を伴うため、targetId / propertyPath と解決元 handle・キー配列世代が不変な間は解決済み ExposedProperty を
+        // 再利用して walk 自体を毎フレーム行わない。[NonSerialized] なのでシリアライズ / Domain Reload 復元時は
+        // 既定 (null) に戻り次回 Apply で必ず再解決される。[ExposedField] でないため RemoteControl 非露出
+        // (scene.json / REST 応答は不変)。Apply は LateUpdate (メインスレッド) からのみ触る (valid getter は非依存)。
+        [NonSerialized] private ExposedProperty? _cachedProperty;
+        [NonSerialized] private ExposedObjectHandle _cachedHandle;
+        [NonSerialized] private string _cachedTargetId;
+        [NonSerialized] private string _cachedPropertyPath;
+        [NonSerialized] private int _cachedGeneration;
+
         // Normalize the stored path (slash transport form) to the DotBracket form FindProperty expects.
         // A no-op for bare names ("useSpout") and DotBracket paths without slashes; converts a slash key
         // path "expressions/Joy/weight" to "expressions.Joy.weight" so it resolves by [ExposedKey].
         private string _ResolvePath() => PropertyPath.FromSlash(propertyPath).Value;
+
+        // 解決済みプロパティを返す。バインド (targetId / propertyPath)、解決元オブジェクトの再登録
+        // (handle 変化 = 対象破棄→再生成やシーン再読込)、およびキー付き配列の再構築 (keyedCollectionVersion 変化
+        // = 例: アバター切替で expressions の要素が差し替わる) を検知したときだけ FindProperty で再解決する。
+        // 解決不能 (null) の間は毎フレーム再解決し、対象が現れれば自己回復する (ダングリングは誤設定 / 一時状態)。
+        private ExposedProperty? _ResolveProperty()
+        {
+            var handle = ExposedObjectRegistry.FindById(targetId);
+            if (handle == null) { _cachedProperty = null; return null; }
+
+            int generation = ExposedObjectRegistry.keyedCollectionVersion;
+            bool fresh = _cachedProperty.HasValue
+                && string.Equals(targetId, _cachedTargetId, StringComparison.Ordinal)
+                && string.Equals(propertyPath, _cachedPropertyPath, StringComparison.Ordinal)
+                && handle.Value.Equals(_cachedHandle)
+                && generation == _cachedGeneration;
+
+            if (!fresh)
+            {
+                _cachedProperty = handle.Value.FindProperty(_ResolvePath());
+                _cachedHandle = handle.Value;
+                _cachedTargetId = targetId;
+                _cachedPropertyPath = propertyPath;
+                _cachedGeneration = generation;
+            }
+            return _cachedProperty;
+        }
 
         /// <summary>True while the target id resolves and still exposes the property. Read-only and computed
         /// (never serialized); separate from <see cref="OperationSet.enabled"/>.</summary>
@@ -59,10 +98,7 @@ namespace Lilium.LiveStudio
 
         public override void Apply(in OperationContext context)
         {
-            var handle = ExposedObjectRegistry.FindById(targetId);
-            if (handle == null) return;
-
-            var property = handle.Value.FindProperty(_ResolvePath());
+            var property = _ResolveProperty();
             if (property == null) return;
 
             // 毎フレーム呼ばれるため、bool/float は型付きアクセサ (TryGetValue/TrySetValue) で box せず読み書きする。
@@ -72,16 +108,29 @@ namespace Lilium.LiveStudio
             if (vt == typeof(bool))
             {
                 bool desired = context.active;
-                if (property.Value.TryGetValue<bool>(out var currentBool) && currentBool != desired)
-                    property.Value.TrySetValue(desired);
+                if (property.Value.TryGetValue<bool>(out var currentBool))
+                {
+                    if (currentBool != desired) property.Value.TrySetValue(desired);
+                }
+                else
+                {
+                    // 型付き read 失敗 (破棄済み Unity leaf 等) はキャッシュを捨てて次フレーム再解決する。
+                    _cachedProperty = null;
+                }
             }
             else if (vt == typeof(float))
             {
                 // Value モード想定: 入力の連続値 (0..1) を制御の範囲 [min, max] へマッピングして書く
                 // (DeckSlider が min/max を持つ。既定 0..1 では恒等なので素の値を書くのと同じ)。
                 float mapped = context.MappedValue;
-                if (property.Value.TryGetValue<float>(out var currentFloat) && currentFloat != mapped)
-                    property.Value.TrySetValue(mapped);
+                if (property.Value.TryGetValue<float>(out var currentFloat))
+                {
+                    if (currentFloat != mapped) property.Value.TrySetValue(mapped);
+                }
+                else
+                {
+                    _cachedProperty = null;
+                }
             }
             else
             {

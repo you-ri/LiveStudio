@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 using UnityEngine.Scripting;
 using UnityEngine.Serialization;
@@ -392,8 +391,27 @@ namespace Lilium.RemoteControl
             get
             {
                 if (_reference == null) return Array.Empty<Component>();
+                // LINQ (Where().ToArray()) は WhereArrayIterator + 中間配列を確保する。この getter は
+                // キー/添字プロパティ解決 (ExposedProperty) から毎フレーム引かれ得るため、手書きの 2 パスで
+                // 走査して結果配列 1 個だけを確保する (保持バッファは持たない)。全要素が対象なら
+                // GetComponents の配列 (毎回新規) をそのまま返す。
                 var allComponents = _reference.GetComponents<Component>();
-                var filtered = allComponents.Where(c => c != null && ExposedClass.Has(c.GetType())).ToArray();
+                int count = 0;
+                for (int i = 0; i < allComponents.Length; i++)
+                {
+                    var c = allComponents[i];
+                    if (c != null && ExposedClass.Has(c.GetType())) count++;
+                }
+                if (count == 0) return Array.Empty<Component>();
+                if (count == allComponents.Length) return allComponents;
+
+                var filtered = new Component[count];
+                int w = 0;
+                for (int i = 0; i < allComponents.Length; i++)
+                {
+                    var c = allComponents[i];
+                    if (c != null && ExposedClass.Has(c.GetType())) filtered[w++] = c;
+                }
                 return filtered;
             }
         }
