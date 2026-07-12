@@ -29,6 +29,20 @@ namespace Lilium.LiveStudio.Virgo
         /// <summary>Default netsh localport value for the capture inbound firewall rule.</summary>
         public const string kDefaultCapturePorts = "9005-9010";
 
+        /// <summary>
+        /// Launch-arg marker always appended to the Fusion child process. FusionQuitSignalListener
+        /// uses it as the "I am the Fusion child" gate; batch mode alone no longer identifies Fusion
+        /// now that it ships as a Player (windowed) build instead of a Dedicated Server build.
+        /// </summary>
+        public const string kFusionChildArgument = "-fusion-child";
+
+        /// <summary>
+        /// Launch-arg asking the Fusion Player build to hide its own window on startup (tray-only).
+        /// ProcessWindowStyle.Hidden is only a STARTUPINFO hint that the Unity Player may ignore,
+        /// so Fusion also self-hides when it sees this argument.
+        /// </summary>
+        public const string kHideWindowArgument = "-hidewindow";
+
         [SerializeField] PathType _fusionPathType = PathType.PackageRelative;
 
         [Tooltip("Application path relative to the resolved root (Tools~ folder for PackageRelative, Tools/ for ProjectRelative).")]
@@ -37,7 +51,7 @@ namespace Lilium.LiveStudio.Virgo
         [Tooltip("Package name used to resolve Tools~ when pathType is PackageRelative.")]
         [SerializeField] string _fusionPackageName = "jp.lilium.livestudio.virgo";
 
-        [SerializeField] string _fusionArguments = "-batchmode -nographics";
+        [SerializeField] string _fusionArguments = "";
 
         [SerializeField] bool _fusionHideWindow = true;
 
@@ -70,14 +84,24 @@ namespace Lilium.LiveStudio.Virgo
                 _fusionPathType, _fusionApplicationPath, _fusionPackageName);
 
             // The default Windows inbound policy blocks LAN capture UDP, and Fusion is launched
-            // with -batchmode (no UI), so no allow dialog would ever appear. Register a port-based
+            // with a hidden window, so no allow dialog would ever appear. Register a port-based
             // allow rule up front so capture packets reach Fusion regardless of its install path.
             if (_registerFusionFirewallRule)
             {
                 WindowsFirewall.EnsureInboundUdpPortsAllowed(_fusionCapturePorts, kCaptureFirewallRuleName);
             }
 
-            _process = ChildProcessHost.Start(fullPath, _fusionArguments, _fusionHideWindow);
+            // Always mark the child so FusionQuitSignalListener activates regardless of batch mode
+            // (the Player build is not batch mode), and ask it to self-hide when requested.
+            var arguments = string.IsNullOrEmpty(_fusionArguments)
+                ? kFusionChildArgument
+                : _fusionArguments + " " + kFusionChildArgument;
+            if (_fusionHideWindow)
+            {
+                arguments += " " + kHideWindowArgument;
+            }
+
+            _process = ChildProcessHost.Start(fullPath, arguments, _fusionHideWindow);
         }
 
         /// <summary>Stop the Fusion child process and release the handle.</summary>
@@ -86,8 +110,8 @@ namespace Lilium.LiveStudio.Virgo
         {
             if (_process == null) return;
 
-            // Fusion runs windowless with -batchmode -nographics: with no main window it cannot
-            // receive WM_CLOSE, so termination goes through a PID-keyed named-event signal. When the
+            // Fusion runs with a hidden window: WM_CLOSE cannot be delivered reliably to it,
+            // so termination goes through a PID-keyed named-event signal. When the
             // signal reaches a listening Fusion, its quit listener (FusionQuitSignalListener) runs
             // save-on-quit + Application.Quit() and exits on its own (QuitTerminationGuard inside
             // Fusion bounds this to ~5s even if native teardown wedges), so we release the handle

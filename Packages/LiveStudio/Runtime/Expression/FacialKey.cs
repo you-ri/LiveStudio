@@ -42,6 +42,28 @@ namespace Lilium.LiveStudio
         private static readonly string kCustomKeyPrefix = "Custom_";
 
         /// <summary>
+        /// custom キーのハッシュ用に prefix 分の hash を一度だけ計算してキャッシュ。
+        /// (Domain Reload 無効でもプロセス内で string.GetHashCode は一貫するため再計算不要)
+        /// </summary>
+        private static readonly int kCustomKeyPrefixHash = kCustomKeyPrefix.GetHashCode();
+
+        /// <summary>
+        /// "Custom_" + customName の GetHashCode 相当を、文字列を確保せずに求める。
+        /// CreateCustom は毎フレーム呼ばれ得る (ExpressionEntry.weight → ExpressionService) ため、
+        /// ハッシュ算出のための連結文字列アロケーションを避ける。prefix の hash を混ぜることで preset と
+        /// 同名の custom キーがハッシュ衝突しないようにする (最終的な等価判定は Equals が preset で行う)。
+        /// </summary>
+        private static int _CustomHashCode(string customName)
+        {
+            unchecked
+            {
+                int h = kCustomKeyPrefixHash;
+                h = (h * 397) ^ (customName != null ? customName.GetHashCode() : 0);
+                return h;
+            }
+        }
+
+        /// <summary>
         /// Preset of this ExpressionKey.
         /// </summary>
         public readonly ExpressionPreset preset;
@@ -133,7 +155,7 @@ namespace Lilium.LiveStudio
                 }
 
                 name = customName;
-                _hashCode = $"{kCustomKeyPrefix}{customName}".GetHashCode();
+                _hashCode = _CustomHashCode(customName);
             }
         }
 
@@ -278,7 +300,7 @@ namespace Lilium.LiveStudio
                 // カスタムの場合はハッシュコードを復元
                 if (!string.IsNullOrEmpty(name))
                 {
-                    _hashCode = $"{kCustomKeyPrefix}{name}".GetHashCode();
+                    _hashCode = _CustomHashCode(name);
                 }
             }
         }

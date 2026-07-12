@@ -26,6 +26,10 @@ namespace Lilium.LiveStudio.Virgo.Editor
 
         public void OnPostprocessBuild(BuildReport report)
         {
+            // Tools bundling is a Windows Studio concern only. Other targets (iOS Capture builds,
+            // etc.) must not get hundreds of MB of Tools copied next to their build output.
+            if (report.summary.platform != BuildTarget.StandaloneWindows64) return;
+
             string buildPath = report.summary.outputPath;
 
             // ビルドパスを保存

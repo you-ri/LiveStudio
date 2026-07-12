@@ -45,6 +45,32 @@ namespace Lilium.LiveStudio
         {
             // Arm after every other quitting handler has run (this is the last managed callback
             // before native teardown, so saves and graceful cleanup are already done).
+            //
+            // Primary guard: a detached helper process. A managed watchdog thread dies with the
+            // Mono runtime during shutdown, so it cannot cover a hang in late native teardown
+            // (the WGI DLL_PROCESS_DETACH deadlock happens after managed threads are gone). The
+            // helper outlives this process and force-kills it only if it is still alive after
+            // the grace period; taskkill on an already-exited PID is a harmless no-op.
+            try
+            {
+                int pid = System.Diagnostics.Process.GetCurrentProcess().Id;
+                int graceSeconds = kGracePeriodMs / 1000;
+                var startInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    // ping -n N+1 sleeps ~N seconds and, unlike timeout.exe, works without a console.
+                    Arguments = $"/c ping -n {graceSeconds + 1} 127.0.0.1 >nul & taskkill /f /pid {pid} >nul 2>&1",
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                };
+                System.Diagnostics.Process.Start(startInfo);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[Studio] Quit watchdog helper failed to start: {e.Message}");
+            }
+
+            // Secondary guard for wedges early enough that managed threads still run.
             var thread = new System.Threading.Thread(_WatchdogLoop)
             {
                 IsBackground = true,
@@ -58,8 +84,8 @@ namespace Lilium.LiveStudio
             System.Threading.Thread.Sleep(kGracePeriodMs);
 
             // Reaching here means the process outlived a normal shutdown: native teardown is
-            // wedged (known Windows.Gaming.Input exit hang). Force-terminate so it never lingers.
-            Debug.LogWarning("[Studio] Quit watchdog fired: native shutdown is wedged, forcing process termination.");
+            // wedged. Force-terminate so it never lingers. Do NOT log here: Unity logging from
+            // a background thread can itself deadlock while native teardown is wedged.
             TerminateProcess(GetCurrentProcess(), 0);
         }
 #endif

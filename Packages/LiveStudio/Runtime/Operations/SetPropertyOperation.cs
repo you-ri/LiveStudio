@@ -51,6 +51,10 @@ namespace Lilium.LiveStudio
         [NonSerialized] private string _cachedTargetId;
         [NonSerialized] private string _cachedPropertyPath;
         [NonSerialized] private int _cachedGeneration;
+        // 解決を試みた結果 (null=未解決/dangling も含む) が現在のバインドに対して有効かどうか。
+        // null 結果もキャッシュ対象にして、アバター読込中/表情欠落で解決できないパスが毎フレーム
+        // 再 walk (components[] の get_components や AppendIndex の GC) するのを防ぐための可否フラグ。
+        [NonSerialized] private bool _cacheValid;
 
         // Normalize the stored path (slash transport form) to the DotBracket form FindProperty expects.
         // A no-op for bare names ("useSpout") and DotBracket paths without slashes; converts a slash key
@@ -64,10 +68,11 @@ namespace Lilium.LiveStudio
         private ExposedProperty? _ResolveProperty()
         {
             var handle = ExposedObjectRegistry.FindById(targetId);
-            if (handle == null) { _cachedProperty = null; return null; }
+            // 対象が未登録: 現れたら再解決するようキャッシュを無効化して即返す (walk なし)。
+            if (handle == null) { _cacheValid = false; _cachedProperty = null; return null; }
 
             int generation = ExposedObjectRegistry.keyedCollectionVersion;
-            bool fresh = _cachedProperty.HasValue
+            bool fresh = _cacheValid
                 && string.Equals(targetId, _cachedTargetId, StringComparison.Ordinal)
                 && string.Equals(propertyPath, _cachedPropertyPath, StringComparison.Ordinal)
                 && handle.Value.Equals(_cachedHandle)
@@ -75,11 +80,15 @@ namespace Lilium.LiveStudio
 
             if (!fresh)
             {
+                // FindProperty が null (パス未解決 = dangling: 読込中/表情欠落) でもキャッシュして、毎フレームの
+                // 再 walk を止める。無効化 (targetId/path/handle 変化, keyedCollectionVersion bump=アバター変更,
+                // 型付き read 失敗) が起きるまで再解決しない → アバター読込完了時の InvalidateExpressions で自己回復する。
                 _cachedProperty = handle.Value.FindProperty(_ResolvePath());
                 _cachedHandle = handle.Value;
                 _cachedTargetId = targetId;
                 _cachedPropertyPath = propertyPath;
                 _cachedGeneration = generation;
+                _cacheValid = true;
             }
             return _cachedProperty;
         }
@@ -114,8 +123,8 @@ namespace Lilium.LiveStudio
                 }
                 else
                 {
-                    // 型付き read 失敗 (破棄済み Unity leaf 等) はキャッシュを捨てて次フレーム再解決する。
-                    _cachedProperty = null;
+                    // 型付き read 失敗 (破棄済み Unity leaf 等) はキャッシュを無効化して次フレーム再解決する。
+                    _cacheValid = false;
                 }
             }
             else if (vt == typeof(float))
@@ -129,7 +138,7 @@ namespace Lilium.LiveStudio
                 }
                 else
                 {
-                    _cachedProperty = null;
+                    _cacheValid = false;
                 }
             }
             else
