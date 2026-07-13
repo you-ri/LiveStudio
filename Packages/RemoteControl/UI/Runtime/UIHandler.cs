@@ -12,31 +12,71 @@ namespace Lilium.RemoteControl.UI
     /// <summary>
     /// REST API handler for the Remote Control UI.
     /// Handles requests to /ui/*.
+    ///
+    /// Serves a side menu merged from the host's primary <see cref="UIDefinition"/> plus any
+    /// definitions added at runtime through <see cref="UIDefinitionRegistry"/>. Because a single
+    /// handler owns <c>/ui/sidemenu</c>, dynamic pages must be merged here rather than by
+    /// registering a second handler.
     /// </summary>
     public class UIHandler : BaseRemoteControlApiHandler
     {
         private readonly UIDefinition _definition;
         private readonly string _appTitle;
-        private readonly List<ExposedObjectHandle> _selectorExposedObjects = new List<ExposedObjectHandle>();
-        private readonly List<ExposedObjectHandle> _factoryExposedObjects = new List<ExposedObjectHandle>();
+
+        // Selectors/factories registered per definition, so a removed definition unregisters
+        // exactly its own exposed objects. The primary definition is keyed too.
+        private readonly Dictionary<UIDefinition, DefinitionRegistration> _registrations =
+            new Dictionary<UIDefinition, DefinitionRegistration>();
+
+        private sealed class DefinitionRegistration
+        {
+            public readonly List<ExposedObjectHandle> selectors = new List<ExposedObjectHandle>();
+            public readonly List<ExposedObjectHandle> factories = new List<ExposedObjectHandle>();
+        }
 
         public UIHandler(RemoteControlServerCore server, UIDefinition definition) : base(server)
         {
             _definition = definition;
             // UnityEngine APIs are main-thread only; cache here at construction time.
             _appTitle = Application.productName ?? string.Empty;
-            _RegisterSelectors();
+
+            if (_definition != null) _RegisterDefinition(_definition);
+
+            // Merge definitions added before this handler existed, then stay in sync.
+            var additional = UIDefinitionRegistry.definitions;
+            for (int i = 0; i < additional.Length; i++)
+            {
+                _RegisterDefinition(additional[i]);
+            }
+            UIDefinitionRegistry.onChanged += _OnRegistryChanged;
         }
 
-        private void _RegisterSelectors()
+        // Runs on the thread that mutated the registry (main thread). Registers/unregisters the
+        // definition's selectors and tells connected clients to refetch the side menu.
+        private void _OnRegistryChanged(UIDefinition definition, bool added)
         {
-            if (_definition == null || _definition.menuItems == null) return;
+            if (definition == null || definition == _definition) return;
 
-            for (int i = 0; i < _definition.menuItems.Count; i++)
+            if (added) _RegisterDefinition(definition);
+            else _UnregisterDefinition(definition);
+
+            // Empty payload; the receiver refetches /ui/sidemenu (consistent with types_update).
+            _server?.BroadcastMessage(new Dictionary<string, object> { ["type"] = "ui_update" }, "ui_update");
+        }
+
+        // Registers the selector/factory exposed objects for one definition's menu items.
+        private void _RegisterDefinition(UIDefinition definition)
+        {
+            if (definition == null || definition.menuItems == null) return;
+            if (_registrations.ContainsKey(definition)) return;
+
+            var registration = new DefinitionRegistration();
+
+            for (int i = 0; i < definition.menuItems.Count; i++)
             {
-                var item = _definition.menuItems[i];
+                var item = definition.menuItems[i];
 
-                // CategoryPage または NavigatePage からセレクタを取得
+                // CategoryPage / NavigatePage / ScenePage からセレクタ・ファクトリを取得
                 IObjectSelector selector = null;
                 IObjectFactory factory = null;
 
@@ -67,11 +107,11 @@ namespace Lilium.RemoteControl.UI
                     if (selectorExposedClass != null)
                     {
                         var exposedObject = ExposedObjectRegistry.GetOrCreate(selectorId, selectorExposedClass, selector);
-                        _selectorExposedObjects.Add(exposedObject);
+                        registration.selectors.Add(exposedObject);
                     }
                 }
 
-                // ファクトリの登録（CategoryPageのみ）
+                // ファクトリの登録（CategoryPage / ScenePage）
                 if (factory != null)
                 {
                     if (factory is ObjectFactoryBase factoryBase)
@@ -87,25 +127,40 @@ namespace Lilium.RemoteControl.UI
                     if (factoryExposedClass != null)
                     {
                         var factoryExposedObject = ExposedObjectRegistry.GetOrCreate(factoryId, factoryExposedClass, factory);
-                        _factoryExposedObjects.Add(factoryExposedObject);
+                        registration.factories.Add(factoryExposedObject);
                     }
                 }
             }
+
+            _registrations[definition] = registration;
+        }
+
+        private void _UnregisterDefinition(UIDefinition definition)
+        {
+            if (definition == null) return;
+            if (!_registrations.TryGetValue(definition, out var registration)) return;
+
+            for (int i = 0; i < registration.selectors.Count; i++)
+            {
+                registration.selectors[i].Unregister();
+            }
+            for (int i = 0; i < registration.factories.Count; i++)
+            {
+                registration.factories[i].Unregister();
+            }
+            _registrations.Remove(definition);
         }
 
         public override void Cleanup()
         {
-            for (int i = 0; i < _selectorExposedObjects.Count; i++)
-            {
-                _selectorExposedObjects[i].Unregister();
-            }
-            _selectorExposedObjects.Clear();
+            UIDefinitionRegistry.onChanged -= _OnRegistryChanged;
 
-            for (int i = 0; i < _factoryExposedObjects.Count; i++)
+            // Snapshot the keys because _UnregisterDefinition mutates the dictionary.
+            var keys = new List<UIDefinition>(_registrations.Keys);
+            for (int i = 0; i < keys.Count; i++)
             {
-                _factoryExposedObjects[i].Unregister();
+                _UnregisterDefinition(keys[i]);
             }
-            _factoryExposedObjects.Clear();
         }
 
         public override bool CanHandle(HttpListenerRequest request)
@@ -142,17 +197,29 @@ namespace Lilium.RemoteControl.UI
 
         private Task HandleGetSideMenu(HttpListenerContext context)
         {
-            if (_definition == null)
+            var response = new SideMenuResponse { menuItems = new List<SideMenuItemResponse>() };
+
+            _AppendMenuItems(response.menuItems, _definition);
+
+            // Runtime-added definitions (e.g. the embedded capture page). Read the immutable
+            // snapshot so a concurrent Add/Remove on the main thread cannot tear this loop.
+            var additional = UIDefinitionRegistry.definitions;
+            for (int i = 0; i < additional.Length; i++)
             {
-                return WriteResponse(200, context.Response, "{\"menuItems\":[]}");
+                _AppendMenuItems(response.menuItems, additional[i]);
             }
 
-            var response = new SideMenuResponse();
-            response.menuItems = new List<SideMenuItemResponse>(_definition.menuItems.Count);
+            var json = JsonUtility.ToJson(response);
+            return WriteResponse(200, context.Response, json);
+        }
 
-            for (int i = 0; i < _definition.menuItems.Count; i++)
+        private static void _AppendMenuItems(List<SideMenuItemResponse> sink, UIDefinition definition)
+        {
+            if (definition == null || definition.menuItems == null) return;
+
+            for (int i = 0; i < definition.menuItems.Count; i++)
             {
-                var item = _definition.menuItems[i];
+                var item = definition.menuItems[i];
                 var categoryPage = item.page as CategoryPage;
                 var scenePage = item.page as ScenePage;
                 var navigatePage = item.page as NavigatePage;
@@ -187,7 +254,7 @@ namespace Lilium.RemoteControl.UI
                     factoryObjectId = "";
                 }
 
-                response.menuItems.Add(new SideMenuItemResponse
+                sink.Add(new SideMenuItemResponse
                 {
                     id = item.id,
                     icon = item.icon,
@@ -200,9 +267,6 @@ namespace Lilium.RemoteControl.UI
                     accessLevel = (int)item.accessLevel,
                 });
             }
-
-            var json = JsonUtility.ToJson(response);
-            return WriteResponse(200, context.Response, json);
         }
 
         [System.Serializable]
