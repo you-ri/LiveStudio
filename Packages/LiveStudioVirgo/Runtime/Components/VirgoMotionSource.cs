@@ -294,6 +294,34 @@ namespace Lilium.LiveStudio.Virgo
             // ここ (ワーカースレッド) ではバッファ書き込みのみに留める。
         }
 
+        /// <summary>
+        /// Re-lock playback timing by clearing the received-frame buffer and the accumulated
+        /// frame-offset, so playback re-syncs to whatever the sender streams next.
+        ///
+        /// Sender (Fusion) and receiver (Studio) number frames from their own wall clocks in
+        /// separate processes, so <see cref="_frameOffset"/> bridges the two. When the sender
+        /// restarts, its frame numbering drops back to low values — but the buffer's frameCount
+        /// only ever increases, so playback stays pinned to a stale, overwritten frame and the
+        /// avatar freezes; the per-frame auto-resync in <see cref="Update"/> cannot escape this
+        /// because it samples the same stuck frameCount. Clearing the buffer lets frameCount
+        /// rebuild from the new numbering and the next Update re-locks the offset. This also
+        /// recovers from long stalls or clock jumps.
+        ///
+        /// Runs on the main thread (ExposedFunction invocations are marshaled there); the
+        /// buffer's own lock keeps the reset safe against the receive thread.
+        /// </summary>
+        [ContextMenu("Resync Timing")]
+        [ExposedFunction]
+        public void ResyncTiming()
+        {
+            _animationFrameBuffer.Reset();
+            _frameOffset = 0;
+            // Forget the last received frame number so a sender that restarted its numbering
+            // does not emit a spurious "went backwards" warning on the next packet.
+            _lastReceivedFrames = -1;
+            Debug.Log("[Studio] Manual resync timing: cleared frame buffer and offset; re-locking on next received frames.");
+        }
+
         [ContextMenu("Reset Camera")]
         [ExposedFunction]
         public override void ResetCamera()
