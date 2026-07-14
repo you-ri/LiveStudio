@@ -677,8 +677,9 @@ namespace Lilium.RemoteControl
     /// <summary>
     /// 指定プロパティが特定の値の場合にのみ表示する条件属性。
     /// RemoteApp側で動的に表示/非表示を判定する。
+    /// 複数付与でき (ShowIf/HideIf 混在可)、その場合は全条件を AND で評価する。
     /// </summary>
-    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Method, AllowMultiple = true)]
     public class ShowIfAttribute : Attribute
     {
         public string propertyName { get; }
@@ -712,8 +713,9 @@ namespace Lilium.RemoteControl
     /// <summary>
     /// 指定プロパティが特定の値の場合に非表示にする条件属性。
     /// RemoteApp側で動的に表示/非表示を判定する。
+    /// 複数付与でき (ShowIf/HideIf 混在可)、その場合は全条件を AND で評価する。
     /// </summary>
-    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Method, AllowMultiple = true)]
     public class HideIfAttribute : Attribute
     {
         public string propertyName { get; }

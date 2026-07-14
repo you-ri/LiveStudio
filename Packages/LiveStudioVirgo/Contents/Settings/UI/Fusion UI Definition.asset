@@ -22,6 +22,15 @@ MonoBehaviour:
     position: 0
     order: 290
     accessLevel: 0
+  - id: capture
+    icon: photo_camera_front
+    editorIcon: {fileID: 0}
+    label: Capture
+    page:
+      rid: 4994765973670068306
+    position: 0
+    order: 290
+    accessLevel: 0
   - id: settings
     icon: 
     editorIcon: {fileID: 2800000, guid: 02f5db26e2e852545949f535b0807669, type: 3}
@@ -54,3 +63,13 @@ MonoBehaviour:
       data:
         objectIds:
         - LicenseSettings
+    - rid: 4994765973670068306
+      type: {class: NavigatePage, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
+      data:
+        selector:
+          rid: 4994765973670068307
+    - rid: 4994765973670068307
+      type: {class: NavigateObjectSelector, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
+      data:
+        objectIds:
+        - CapturePage

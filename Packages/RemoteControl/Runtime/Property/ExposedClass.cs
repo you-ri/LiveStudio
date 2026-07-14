@@ -814,6 +814,30 @@ namespace Lilium.RemoteControl
         }
     }
     
+    /// <summary>
+    /// 条件付き表示 (ShowIf/HideIf) の 1 条件。1 メンバーに複数条件が付く場合は AND で評価される
+    /// (RemoteApp 側)。値の一致判定に使うため <see cref="value"/> はシリアライズ形式に揃えて保持する
+    /// (enum は名前文字列)。
+    /// </summary>
+    public readonly struct ExposedVisibilityCondition
+    {
+        /// <summary>参照先プロパティ名。</summary>
+        public readonly string property;
+
+        /// <summary>比較値。</summary>
+        public readonly object value;
+
+        /// <summary>true=ShowIf (一致で表示), false=HideIf (一致で非表示)。</summary>
+        public readonly bool showWhenMatch;
+
+        public ExposedVisibilityCondition(string property, object value, bool showWhenMatch)
+        {
+            this.property = property;
+            this.value = value;
+            this.showWhenMatch = showWhenMatch;
+        }
+    }
+
     public class ExposedPropertyType
     {
         public readonly PropertyInfo properyInfo;
@@ -872,24 +896,15 @@ namespace Lilium.RemoteControl
         public readonly object defaultValue;
 
         /// <summary>
-        /// 条件付き表示: 参照先プロパティ名
+        /// 条件付き表示の条件一覧 (ShowIf/HideIf)。複数指定時は AND で評価される。
+        /// 条件が無いときは空配列 (null にはしない)。
         /// </summary>
-        public readonly string visibilityConditionProperty;
-
-        /// <summary>
-        /// 条件付き表示: 比較値
-        /// </summary>
-        public readonly object visibilityConditionValue;
-
-        /// <summary>
-        /// 条件付き表示: true=ShowIf（一致で表示）, false=HideIf（一致で非表示）
-        /// </summary>
-        public readonly bool visibilityShowWhenMatch;
+        public readonly ExposedVisibilityCondition[] visibilityConditions;
 
         /// <summary>
         /// 条件付き表示が設定されているか
         /// </summary>
-        public bool hasVisibilityCondition => visibilityConditionProperty != null;
+        public bool hasVisibilityCondition => visibilityConditions != null && visibilityConditions.Length > 0;
 
         /// <summary>
         /// セクション属性（NavigatePageでのセクション表示用）
@@ -1185,27 +1200,9 @@ namespace Lilium.RemoteControl
             var labelFieldAttr = TypeReflectionSystem.GetCustomAttribute<ExposedFieldAttribute>(info);
             this.label = labelPropAttr?.label ?? labelFieldAttr?.label;
 
-            // ShowIf/HideIf属性を読み取り
-            var showIfAttr = TypeReflectionSystem.GetCustomAttribute<ShowIfAttribute>(info);
-            var hideIfAttr = TypeReflectionSystem.GetCustomAttribute<HideIfAttribute>(info);
-            if (showIfAttr != null)
-            {
-                this.visibilityConditionProperty = showIfAttr.propertyName;
-                this.visibilityConditionValue = _ResolveConditionValue(info.DeclaringType, showIfAttr.propertyName, showIfAttr.value);
-                this.visibilityShowWhenMatch = true;
-            }
-            else if (hideIfAttr != null)
-            {
-                this.visibilityConditionProperty = hideIfAttr.propertyName;
-                this.visibilityConditionValue = _ResolveConditionValue(info.DeclaringType, hideIfAttr.propertyName, hideIfAttr.value);
-                this.visibilityShowWhenMatch = false;
-            }
-            else
-            {
-                this.visibilityConditionProperty = null;
-                this.visibilityConditionValue = null;
-                this.visibilityShowWhenMatch = true;
-            }
+            // ShowIf/HideIf属性を読み取り (複数付与可、AND 評価)。
+            // ShowIf を先に並べることで、単一条件を "visibility" として出力する際の優先順を従来と揃える。
+            this.visibilityConditions = _CollectVisibilityConditions(info, info.DeclaringType);
 
             // Section属性を読み取り
             this.sectionAttribute = TypeReflectionSystem.GetCustomAttribute<SectionAttribute>(info);
@@ -1246,6 +1243,31 @@ namespace Lilium.RemoteControl
             this.formerNames = collected;
 
             //Debug.Log($"Created ExposedPropertyEntity for {info.Name} of type {info.PropertyType.Name}, valueType: {(valueType != null ? valueType.typeName : "null")}");
+        }
+
+        /// <summary>
+        /// メンバーに付いた ShowIf/HideIf 属性を全て読み取り、条件配列を構築する (AND 評価用)。
+        /// ShowIf を先に並べ、単一条件を "visibility" として出力する際の優先順を従来実装 (ShowIf 優先) に合わせる。
+        /// </summary>
+        internal static ExposedVisibilityCondition[] _CollectVisibilityConditions(MemberInfo info, Type declaringType)
+        {
+            List<ExposedVisibilityCondition> conditions = null;
+
+            foreach (var attr in info.GetCustomAttributes<ShowIfAttribute>())
+            {
+                conditions ??= new List<ExposedVisibilityCondition>();
+                conditions.Add(new ExposedVisibilityCondition(
+                    attr.propertyName, _ResolveConditionValue(declaringType, attr.propertyName, attr.value), true));
+            }
+
+            foreach (var attr in info.GetCustomAttributes<HideIfAttribute>())
+            {
+                conditions ??= new List<ExposedVisibilityCondition>();
+                conditions.Add(new ExposedVisibilityCondition(
+                    attr.propertyName, _ResolveConditionValue(declaringType, attr.propertyName, attr.value), false));
+            }
+
+            return conditions != null ? conditions.ToArray() : Array.Empty<ExposedVisibilityCondition>();
         }
 
         /// <summary>
@@ -1327,9 +1349,7 @@ namespace Lilium.RemoteControl
             this.help = null;
             this.label = null;
             this.defaultValue = null;
-            this.visibilityConditionProperty = null;
-            this.visibilityConditionValue = null;
-            this.visibilityShowWhenMatch = true;
+            this.visibilityConditions = Array.Empty<ExposedVisibilityCondition>();
             this.sectionAttribute = null;
             this.sectionAccessLevel = AccessLevel.Public;
             this.collapsed = false;
@@ -1379,6 +1399,15 @@ namespace Lilium.RemoteControl
         /// </summary>
         public readonly ControlAttribute controlAttribute;
 
+        /// <summary>
+        /// 条件付き表示の条件一覧 (ShowIf/HideIf)。複数指定時は AND で評価される。
+        /// 条件が無いときは空配列 (null にはしない)。関数ボタンをプロパティと同様に出し分けるために使う。
+        /// </summary>
+        public readonly ExposedVisibilityCondition[] visibilityConditions;
+
+        /// <summary>条件付き表示が設定されているか。</summary>
+        public bool hasVisibilityCondition => visibilityConditions != null && visibilityConditions.Length > 0;
+
         public ExposedFunctionType(string name, MethodInfo methodInfo)
         {
             Debug.Assert(methodInfo != null, "MethodInfo cannot be null");
@@ -1398,6 +1427,9 @@ namespace Lilium.RemoteControl
 
             // ControlAttribute属性を読み取り
             this.controlAttribute = TypeReflectionSystem.GetCustomAttribute<ControlAttribute>(methodInfo);
+
+            // ShowIf/HideIf属性を読み取り (複数付与可、AND 評価)。プロパティと同じく AND 評価する。
+            this.visibilityConditions = ExposedPropertyType._CollectVisibilityConditions(methodInfo, methodInfo.DeclaringType);
         }
 
         public object Invoke(object target, object[] args)

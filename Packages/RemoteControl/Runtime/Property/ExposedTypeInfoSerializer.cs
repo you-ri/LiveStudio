@@ -252,17 +252,10 @@ namespace Lilium.RemoteControl
                 jObject["help"] = LocalizationSystem.Translate(propertyType.help);
             }
 
-            // visibility条件を追加（条件がある場合のみ）
-            if (propertyType.hasVisibilityCondition)
-            {
-                var visibility = new JObject
-                {
-                    ["property"] = propertyType.visibilityConditionProperty,
-                    ["value"] = JToken.FromObject(propertyType.visibilityConditionValue),
-                    ["showWhenMatch"] = propertyType.visibilityShowWhenMatch,
-                };
-                jObject["visibility"] = visibility;
-            }
+            // visibility条件を追加（条件がある場合のみ）。
+            // 単一条件は従来どおり "visibility" のみを出力し（既存出力と byte 互換）、
+            // 複数条件のときだけ "visibilityConditions" 配列を追加する（RemoteApp 側が AND 評価する）。
+            _WriteVisibility(jObject, propertyType.visibilityConditions);
 
             // section情報を追加（セクションがある場合のみ）
             if (propertyType.sectionAttribute != null)
@@ -331,7 +324,41 @@ namespace Lilium.RemoteControl
                 jObject["help"] = LocalizationSystem.Translate(functionType.help);
             }
 
+            // visibility条件を追加（ShowIf/HideIf。プロパティと同じスキーマで出力）
+            _WriteVisibility(jObject, functionType.visibilityConditions);
+
             return JsonConvert.SerializeObject(jObject, Formatting.None);
+        }
+
+        /// <summary>
+        /// visibility 条件を JObject に書き込む。単一条件は "visibility" のみ（従来出力と byte 互換）、
+        /// 複数条件のときは "visibilityConditions" 配列も併記する。条件が無ければ何も書かない。
+        /// </summary>
+        private static void _WriteVisibility(JObject jObject, ExposedVisibilityCondition[] conditions)
+        {
+            if (conditions == null || conditions.Length == 0) return;
+
+            jObject["visibility"] = _SerializeVisibilityCondition(conditions[0]);
+
+            if (conditions.Length > 1)
+            {
+                var arr = new JArray();
+                for (int i = 0; i < conditions.Length; i++)
+                {
+                    arr.Add(_SerializeVisibilityCondition(conditions[i]));
+                }
+                jObject["visibilityConditions"] = arr;
+            }
+        }
+
+        private static JObject _SerializeVisibilityCondition(ExposedVisibilityCondition condition)
+        {
+            return new JObject
+            {
+                ["property"] = condition.property,
+                ["value"] = JToken.FromObject(condition.value),
+                ["showWhenMatch"] = condition.showWhenMatch,
+            };
         }
 
         /// <summary>
