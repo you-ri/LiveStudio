@@ -20,7 +20,7 @@ MonoBehaviour:
     page:
       rid: 938060011343446166
     position: 0
-    order: 290
+    order: 100
     accessLevel: 0
   - id: capture
     icon: photo_camera_front
@@ -29,7 +29,7 @@ MonoBehaviour:
     page:
       rid: 4994765973670068306
     position: 0
-    order: 290
+    order: 101
     accessLevel: 0
   - id: settings
     icon: 
@@ -53,16 +53,6 @@ MonoBehaviour:
       data:
         objectIds:
         - FusionPage
-    - rid: 7884749914114883666
-      type: {class: NavigatePage, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
-      data:
-        selector:
-          rid: 7884749914114883667
-    - rid: 7884749914114883667
-      type: {class: NavigateObjectSelector, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
-      data:
-        objectIds:
-        - LicenseSettings
     - rid: 4994765973670068306
       type: {class: NavigatePage, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
       data:
@@ -73,3 +63,13 @@ MonoBehaviour:
       data:
         objectIds:
         - CapturePage
+    - rid: 7884749914114883666
+      type: {class: NavigatePage, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
+      data:
+        selector:
+          rid: 7884749914114883667
+    - rid: 7884749914114883667
+      type: {class: NavigateObjectSelector, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
+      data:
+        objectIds:
+        - LicenseSettings

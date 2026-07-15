@@ -295,6 +295,12 @@ namespace Lilium.LiveStudio
         [Tooltip("VRChat 表情マッピング。表情のウェイトのうち最大値のものをアクティブとし、その parameters を Animator に書き込む")]
         VRCExpression[] _expressions = Array.Empty<VRCExpression>();
 
+        [Header("Body")]
+
+        [SerializeField]
+        [Tooltip("トラッキングされていない部位の姿勢を上書きするアニメーションクリップ（待機/基本ポーズ等）")]
+        AnimationClip _bodyOverrideClip;
+
         Animator _animator;
 
         // 体アニメ (PlayableGraph + トラッキング状態 + メッシュ表示) は driver に委譲。
@@ -323,13 +329,21 @@ namespace Lilium.LiveStudio
         Vrm10RuntimeLookAt _vrm10LookAt;
 #endif
 
+        void OnValidate()
+        {
+            // 再生中に Inspector からクリップを差し替えた場合も driver へ反映する。
+            // (driver 未初期化 / 編集モードでは値の保持のみで何もしない)
+            _bodyDriver.SetOverrideClip(_bodyOverrideClip);
+        }
+
         void Start()
         {
             _animator = GetComponent<Animator>();
 
             // 体アニメ用 PlayableGraph を構築。AnimatorController は graph 内にラップされるため、
             // パラメータの読み書きは driver のアクセサ経由で行う。
-            _bodyDriver.Initialize(_animator);
+            // 未トラッキング部位を上書きするクリップ (待機/基本ポーズ) があれば渡す。
+            _bodyDriver.Initialize(_animator, _bodyOverrideClip);
 
             _targetValues = new float[FT_ParamCount];
             _paramHashes = new int[FT_ParamCount];
@@ -680,6 +694,7 @@ namespace Lilium.LiveStudio
 
         void IAvatar.SetBodyOverrideClip(AnimationClip clip)
         {
+            _bodyOverrideClip = clip;
             _bodyDriver.SetOverrideClip(clip);
         }
 

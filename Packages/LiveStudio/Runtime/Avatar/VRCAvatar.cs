@@ -20,7 +20,8 @@ namespace Lilium.LiveStudio
     /// <summary>
     /// VRChat 由来アバター用コンポーネント。ARKit 52 値から母音中心の VRChat viseme
     /// (sil/aa/E/ih/oh/ou) を推定し、AnimatorController の Viseme (Int) / Voice (Float)
-    /// パラメータへ書き込む。身体アニメーションは AvatarAnimationSystem.UpdateBodyAnimation。
+    /// パラメータへ書き込む。身体アニメーション (未トラッキング部位のクリップ上書き・下半身ロック含む)
+    /// は VRCFTAvatar と同じく AvatarBodyDriver に委譲する。
     /// </summary>
     [DefaultExecutionOrder(10)]
     [RequireComponent(typeof(Animator))]
@@ -136,12 +137,17 @@ namespace Lilium.LiveStudio
         [Tooltip("VRChat 表情マッピング。表情のウェイトのうち最大値のものをアクティブとし、その parameters を Animator に書き込む")]
         VRCExpression[] _expressions = Array.Empty<VRCExpression>();
 
-        Animator _animator;
-        MotionSourceBase _motionSource;
-        AvatarVisibilityGate _visibilityGate;
+        [Header("Body")]
 
-        // 子 prop (AvatarItem) のパラメータブリッジ用。controller 宣言パラメータの nameHash 集合。
-        System.Collections.Generic.HashSet<int> _paramHashes;
+        [SerializeField]
+        [Tooltip("トラッキングされていない部位の姿勢を上書きするアニメーションクリップ（待機/基本ポーズ等）")]
+        AnimationClip _bodyOverrideClip;
+
+        Animator _animator;
+
+        // 体アニメ (PlayableGraph + トラッキング状態 + メッシュ表示 + 下半身ロック) は共通ドライバに委譲。
+        // AnimatorController も graph 内にラップされるため、Viseme/Voice 等は driver のアクセサ経由で読み書きする。
+        readonly AvatarBodyDriver _bodyDriver = new AvatarBodyDriver();
 
         int _visemeHash;
         int _voiceHash;
@@ -179,17 +185,21 @@ namespace Lilium.LiveStudio
         Vrm10RuntimeLookAt _vrm10LookAt;
 #endif
 
+        void OnValidate()
+        {
+            // 再生中に Inspector からクリップを差し替えた場合も driver へ反映する。
+            // (driver 未初期化 / 編集モードでは値の保持のみで何もしない)
+            _bodyDriver.SetOverrideClip(_bodyOverrideClip);
+        }
+
         void Start()
         {
             _animator = GetComponent<Animator>();
 
-            // 子アクセサのパラメータブリッジ用に controller パラメータの nameHash をキャッシュ。
-            _paramHashes = new System.Collections.Generic.HashSet<int>();
-            if (_animator.runtimeAnimatorController != null)
-            {
-                var ps = _animator.parameters;
-                for (int i = 0; i < ps.Length; i++) _paramHashes.Add(ps[i].nameHash);
-            }
+            // 体アニメ用 PlayableGraph を構築。AnimatorController は graph 内にラップされるため、
+            // パラメータの読み書きは driver のアクセサ経由で行う。
+            // 未トラッキング部位を上書きするクリップ (待機/基本ポーズ) があれば渡す。
+            _bodyDriver.Initialize(_animator, _bodyOverrideClip);
 
             _target = new float[kVisemeCount];
             _smoothed = new float[kVisemeCount];
@@ -203,12 +213,9 @@ namespace Lilium.LiveStudio
             _visemeHash = Animator.StringToHash(_visemeParam);
             _voiceHash = Animator.StringToHash(_voiceParam);
 
-            // Animator に実在するパラメータのみへ書き込む。
-            foreach (var p in _animator.parameters)
-            {
-                if (p.nameHash == _visemeHash) _hasViseme = true;
-                if (p.nameHash == _voiceHash) _hasVoice = true;
-            }
+            // controller (graph 内にラップ済み) に実在するパラメータのみへ書き込む。
+            _hasViseme = _bodyDriver.HasParameter(_visemeHash);
+            _hasVoice = _bodyDriver.HasParameter(_voiceHash);
             if (!_hasViseme)
             {
                 Debug.LogWarning($"[Studio] VRCAvatar: '{_visemeParam}' parameter not found on Animator; mouth will not move.");
@@ -225,7 +232,8 @@ namespace Lilium.LiveStudio
             VRCExpressionDriver.AppendExpressionKeys(_expressions, keys);
             _expressionKeys = keys.ToArray();
 
-            _expressionDriver = new VRCExpressionDriver(new AnimatorParameterPort(_animator));
+            // AnimatorController は PlayableGraph 内にラップされるため controllerPlayable へ書き込む。
+            _expressionDriver = new VRCExpressionDriver(new ControllerPlayableParameterPort(_bodyDriver));
 
             expressionResolver.Setup();
 
@@ -240,7 +248,6 @@ namespace Lilium.LiveStudio
                                   && _blinkBlendShapeIndex < _eyelidsMesh.sharedMesh.blendShapeCount;
 
             _eyeRig.Setup(_animator);
-            _visibilityGate.Initialize(transform);
 
 #if VRMC_VRM10
             // Vrm10Instance が同居していれば VRM の LookAt 経由で眼球を適用する。
@@ -258,18 +265,18 @@ namespace Lilium.LiveStudio
 
         void OnDestroy()
         {
+            _bodyDriver.Dispose();
             expressionResolver?.Dispose();
         }
 
         void Update()
         {
-            bool bodyValid = _motionSource != null && _motionSource.frameData.bodyTracked;
-            bool faceValid = _motionSource != null && _motionSource.frameData.faceTracked;
-            if (!_visibilityGate.Update(bodyValid, faceValid)) return;
+            // 体アニメ (トラッキング遷移 / メッシュ表示 / root 直書き / 姿勢の Job 受け渡し / 下半身ロック) は driver が担当。
+            if (!_bodyDriver.Tick()) return;
 
             // ARKit 52 weight を resolver で reshape (neutral 表情の差分 + 各表情ウェイト合成 + スムージング)。
             // 以降のロジックは resolver の arkitWeightData / smoothedOutputs を参照する。
-            expressionResolver.Resolve(in _motionSource.frameData.expression);
+            expressionResolver.Resolve(in _bodyDriver.motionSource.frameData.expression);
 
             float voice = _ComputeVisemeScores();
             _SmoothScores();
@@ -301,18 +308,17 @@ namespace Lilium.LiveStudio
             }
 #endif
 
-            // VRChat 表情: 最大ウェイトの表情の AnimationParameterOverride を Animator へ反映。
+            // VRChat 表情: 最大ウェイトの表情の AnimationParameterOverride を controllerPlayable へ反映。
             // ウェイトは自身の IExpressionAvatar.GetWeight (内部で smoothedOutputs を引く) から取得する。
             _expressionDriver.Update(_expressions, this);
-
-            AvatarAnimationSystem.UpdateBodyAnimation(_animator, in _motionSource.frameData);
         }
 
         void LateUpdate()
         {
-            if (!_visibilityGate.isTracking || _motionSource == null) return;
+            if (!_bodyDriver.isTracking) return;
 
-            AvatarAnimationSystem.UpdateBodyAnimation(_animator, in _motionSource.frameData);
+            // 体は driver の PlayableGraph Job が AnimatorController の下流で姿勢を上書きするため、
+            // ここでの体の再書き込みは不要。
 
 #if VRMC_VRM10
             // VRM 委譲時は Update で SetYawPitchManually 済み。Vrm10Instance の Process
@@ -408,8 +414,8 @@ namespace Lilium.LiveStudio
                 ? s_localToVrcViseme[kSil]
                 : s_localToVrcViseme[best];
 
-            if (_hasViseme) _animator.SetInteger(_visemeHash, viseme);
-            if (_hasVoice) _animator.SetFloat(_voiceHash, voice);
+            if (_hasViseme) _bodyDriver.SetInteger(_visemeHash, viseme);
+            if (_hasVoice) _bodyDriver.SetFloat(_voiceHash, voice);
         }
 
         /// <summary>
@@ -486,11 +492,12 @@ namespace Lilium.LiveStudio
 
         #region IAvatarParameterSource
 
-        // VRCAvatar は素の Animator を使うため値は Animator から直接読める。存在判定のみ nameHash キャッシュで行う。
-        bool IAvatarParameterSource.HasParameter(int nameHash) => _paramHashes != null && _paramHashes.Contains(nameHash);
-        float IAvatarParameterSource.GetFloat(int nameHash) => _animator.GetFloat(nameHash);
-        int IAvatarParameterSource.GetInteger(int nameHash) => _animator.GetInteger(nameHash);
-        bool IAvatarParameterSource.GetBool(int nameHash) => _animator.GetBool(nameHash);
+        // AnimatorController は PlayableGraph 内にラップされるため、子アクセサが値を読むには
+        // Animator ではなく driver 経由で読む必要がある。driver 未初期化時は false / 0 を返す。
+        bool IAvatarParameterSource.HasParameter(int nameHash) => _bodyDriver.HasParameter(nameHash);
+        float IAvatarParameterSource.GetFloat(int nameHash) => _bodyDriver.GetFloat(nameHash);
+        int IAvatarParameterSource.GetInteger(int nameHash) => _bodyDriver.GetInteger(nameHash);
+        bool IAvatarParameterSource.GetBool(int nameHash) => _bodyDriver.GetBool(nameHash);
 
         #endregion
 
@@ -540,15 +547,19 @@ namespace Lilium.LiveStudio
 
         void IAvatar.SetMotionSource(MotionSourceBase motionSource)
         {
-            _motionSource = motionSource;
+            _bodyDriver.motionSource = motionSource;
         }
 
-        // 体は AvatarAnimationSystem で全ボーンを毎フレーム上書きするため、未トラッキング部位への
-        // クリップ流し込みには非対応 (AvatarBodyDriver を使う VRM1Avatar / VRCFTAvatar のみ対応)。
-        void IAvatar.SetBodyOverrideClip(AnimationClip clip) { }
+        void IAvatar.SetBodyOverrideClip(AnimationClip clip)
+        {
+            _bodyOverrideClip = clip;
+            _bodyDriver.SetOverrideClip(clip);
+        }
 
-        // 下半身ロックにも非対応 (同上)。
-        void IAvatar.SetLowerBodyPoseLock(bool locked) { }
+        void IAvatar.SetLowerBodyPoseLock(bool locked)
+        {
+            _bodyDriver.SetLowerBodyPoseLock(locked);
+        }
 
         bool IExpressionAvatar.SetWeight(FacialKey key, float weight)
         {

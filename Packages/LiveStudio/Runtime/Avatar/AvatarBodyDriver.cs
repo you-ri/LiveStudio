@@ -67,6 +67,13 @@ namespace Lilium.LiveStudio
         [ReadOnly] public NativeReference<byte> hasBasePose;
         [ReadOnly] public NativeReference<Vector3> baseHipPosition;
 
+        // 下半身ロック時に hips を固定する root 基準オフセット (humanScale 正規化済み)。
+        // humanoid の腰位置はアバターの humanScale (腰高) が乗って解決されるため、サンプリング値を
+        // そのまま使うとキャラクターの身長でロック位置が上下する。正規化済みオフセットを rootWorld
+        // (anchor 固定された root) で world へ変換して適用することで、リグの親子構成や身長に依らず
+        // 全キャラ同じ位置に固定する。hasBasePose==1 かつ lockLowerBody==1 のとき有効。
+        [ReadOnly] public NativeReference<Vector3> lockHipOffset;
+
         // 下半身の位置ロック (1=ON)。ON の間は hips のローカル位置を基準姿勢 (クリップ) に固定する。
         // 回転は通常どおり mocap を反映する (root の位置・回転ロックは Tick 側)。
         [ReadOnly] public NativeReference<byte> lockLowerBody;
@@ -150,9 +157,15 @@ namespace Lilium.LiveStudio
             {
                 if (lockLower)
                 {
-                    // 位置ロック中は hips のローカル位置のみ基準姿勢 (クリップ) に固定する
-                    // (回転は上のループで mocap を反映済み)。
-                    if (useBase) handles[hipsHandleIndex].SetLocalPosition(stream, baseHipPosition.Value);
+                    // 位置ロック中は hips を基準姿勢 (クリップ) の腰位置へ固定する (回転は上のループで
+                    // mocap を反映済み)。lockHipOffset は humanScale 正規化済みの root 基準オフセットで、
+                    // anchor 固定された root (rootWorld) から world へ変換して直接設定するため、
+                    // キャラクターの身長やリグの親子構成に依らず腰は同じ位置に固定される。
+                    if (useBase)
+                    {
+                        var rw = rootWorld.Value;
+                        handles[hipsHandleIndex].SetPosition(stream, rw.position + rw.rotation * lockHipOffset.Value);
+                    }
                 }
                 else
                 {
@@ -319,6 +332,8 @@ namespace Lilium.LiveStudio
         NativeArray<Quaternion> _basePose;
         NativeReference<byte> _hasBasePose;
         NativeReference<Vector3> _baseHipPosition;
+        // 下半身ロック用の root 基準 hips オフセット (humanScale 正規化済み)。_SampleBasePose で焼く。
+        NativeReference<Vector3> _lockHipOffset;
 
         // 下半身の位置ロック (job 側: hips ローカル位置を基準姿勢へ固定)。root の位置・回転ロックは Tick 側。
         NativeReference<byte> _lockLowerBody;
@@ -415,6 +430,7 @@ namespace Lilium.LiveStudio
             _basePose = new NativeArray<Quaternion>(_handles.Length, Allocator.Persistent);
             _hasBasePose = new NativeReference<byte>(Allocator.Persistent);
             _baseHipPosition = new NativeReference<Vector3>(Allocator.Persistent);
+            _lockHipOffset = new NativeReference<Vector3>(Allocator.Persistent);
 
             // 下半身の位置ロックの共有状態。
             _lockLowerBody = new NativeReference<byte>(Allocator.Persistent);
@@ -440,6 +456,7 @@ namespace Lilium.LiveStudio
                 basePose = _basePose,
                 hasBasePose = _hasBasePose,
                 baseHipPosition = _baseHipPosition,
+                lockHipOffset = _lockHipOffset,
                 lockLowerBody = _lockLowerBody,
                 footGoalValid = _footGoalValid,
                 rootWorld = _rootWorld,
@@ -500,12 +517,13 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
-        /// 下半身の位置ロックを切り替える。ON の間: hips のローカル位置は override クリップの姿勢に
-        /// 固定され、root (アバター全体) は位置・回転とも motionSource.anchor に固定される
-        /// (<see cref="Tick"/>)。各ボーンの回転は通常どおり mocap を反映するので、アバターの移動・
-        /// 向きだけが固定されポーズは動く。さらに上書きクリップがある場合は脚の 2 ボーン IK で
-        /// 両足を接地位置へ固定し、腰の回転で足が動かないようにする。クリップ未設定時は hips 位置は
-        /// 上流 (controller) のまま (足 IK も無効)。<see cref="Initialize"/> 前は値だけ保持する。
+        /// 下半身の位置ロックを切り替える。ON の間: hips は override クリップの腰位置 (humanScale
+        /// 正規化した root 基準オフセットを anchor 固定の root で world 変換した位置) に固定され、
+        /// root (アバター全体) は位置・回転とも motionSource.anchor に固定される (<see cref="Tick"/>)。
+        /// キャラクターの身長 (humanScale) に依らず腰は同じ位置に固定される。各ボーンの回転は通常
+        /// どおり mocap を反映するので、アバターの移動・向きだけが固定されポーズは動く。さらに脚の
+        /// 2 ボーン IK で両足を接地位置へ固定し、腰の回転で足が動かないようにする。クリップ未設定時は
+        /// hips 位置は上流 (controller) のまま (足 IK も無効)。<see cref="Initialize"/> 前は値だけ保持する。
         /// </summary>
         public void SetLowerBodyPoseLock(bool locked)
         {
@@ -548,6 +566,18 @@ namespace Lilium.LiveStudio
                 _basePose[i] = _boneTransforms[i] != null ? _boneTransforms[i].localRotation : Quaternion.identity;
             if (_HipsTransform() != null)
                 _baseHipPosition.Value = _HipsTransform().localPosition;
+
+            // 下半身ロック用: クリップ姿勢の hips 位置を root 基準オフセットとして捕捉し、humanScale で
+            // 正規化する。humanoid の腰位置 (RootT) はアバターの humanScale (腰高) が乗って解決されるため、
+            // サンプリング値をそのまま固定に使うとキャラクターの身長でロック位置が上下する。
+            var hipsSampled = _HipsTransform();
+            if (hipsSampled != null)
+            {
+                float humanScale = _animator.isHuman ? _animator.humanScale : 1f;
+                if (humanScale <= 0f) humanScale = 1f;
+                Vector3 rootOffset = Quaternion.Inverse(rootT.rotation) * (hipsSampled.position - rootT.position);
+                _lockHipOffset.Value = rootOffset / humanScale;
+            }
 
             // 足 IK ゴールを clip の足ポーズ (適用中) から root ローカルで焼く。両足が揃うときのみ有効。
             var leftFoot = _animator.GetBoneTransform(HumanBodyBones.LeftFoot);
@@ -695,6 +725,7 @@ namespace Lilium.LiveStudio
             if (_basePose.IsCreated) _basePose.Dispose();
             if (_hasBasePose.IsCreated) _hasBasePose.Dispose();
             if (_baseHipPosition.IsCreated) _baseHipPosition.Dispose();
+            if (_lockHipOffset.IsCreated) _lockHipOffset.Dispose();
             if (_lockLowerBody.IsCreated) _lockLowerBody.Dispose();
             if (_footGoalValid.IsCreated) _footGoalValid.Dispose();
             if (_leftFootGoal.IsCreated) _leftFootGoal.Dispose();

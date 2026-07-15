@@ -38,6 +38,10 @@ namespace Lilium.LiveStudio.Virgo
     {
         const int kResetCameraDelayCount = 2; // 受信してから何フレーム目でカメラリセットするか。受信した情報が安定していない可能性があるため、数フレーム遅らせる。
 
+        // Update の補間サンプリングが穴埋めのために前後何フレームまで neighbor を探索するか。
+        // この幅以内の飛び (gap) は補間で滑らかに跨げるため、受信側の gap 警告閾値もこれに合わせる。
+        const int kNeighborSearchFrames = 4;
+
         public int port
         {
             get { return _port; }
@@ -193,8 +197,6 @@ namespace Lilium.LiveStudio.Virgo
             // number (duplicate then a +2 jump). UDP loss also leaves holes. Instead
             // of requiring i0/i0+1 to exist, search nearby frames and interpolate
             // across the hole with the ratio recomputed for the actual span.
-            const int kNeighborSearchFrames = 4;
-
             long prevNo = -1, nextNo = -1;
             AvatarAnimationData prev = default, next = default;
             for (long f = i0; f > i0 - kNeighborSearchFrames; f--)
@@ -252,6 +254,46 @@ namespace Lilium.LiveStudio.Virgo
                 AnimationFrameBridge.ToLiveStudio(in wireFrame, out receivedFrameData);
                 _lastReceivedFrameData = receivedFrameData;
 
+                // Detect discontinuities in the sender's frame numbering BEFORE writing to the
+                // buffer, so a detected restart clears the buffer before the new frame is stored.
+                //
+                // delta==1 is normal; delta==0 (duplicate, overwritten in place) is expected from
+                // the sender's wall-clock quantization and stays silent. Small gaps (delta up to
+                // kNeighborSearchFrames, incl. the benign +2 quantization beat) are bridged by
+                // Update's gap-tolerant interpolation and stay silent too.
+                //
+                // A large BACKWARD jump means Fusion restarted: it numbers frames from its own
+                // realtimeSinceStartup, so a restart drops the numbering from a high value back to
+                // near zero. FrameBuffer.frameCount only ever increases, so without intervention
+                // the auto-resync in Update stays pinned to the stale high frame (already
+                // overwritten by the new low numbering), spamming "Resync playback position" and
+                // freezing the avatar until the manual ResyncTiming button is pressed. Clearing the
+                // buffer resets frameCount to 0 so it rebuilds from the new numbering and Update
+                // re-locks the offset on the next frames — the same recovery as ResyncTiming, done
+                // automatically on every reconnect. Reset() is thread-safe (its own lock) and the
+                // offset re-locks on the main thread, so nothing else is touched from this thread.
+                if (_lastReceivedFrames >= 0)
+                {
+                    long delta = receivedFrameData.frames - _lastReceivedFrames;
+                    if (delta < -kNeighborSearchFrames)
+                    {
+                        Debug.LogWarning($"[Studio] Received frame numbering reset (sender restart?): prev={_lastReceivedFrames} curr={receivedFrameData.frames}; clearing buffer to re-lock.");
+                        _animationFrameBuffer.Reset();
+                    }
+                    else if (delta < 0)
+                    {
+                        // Small backward step: an out-of-order or duplicate-late UDP packet. The
+                        // buffer overwrites it in place and the next in-order frame recovers, so
+                        // there is nothing to reset.
+                        Debug.LogWarning($"[Studio] Received frame went backwards: prev={_lastReceivedFrames} curr={receivedFrameData.frames} delta={delta}");
+                    }
+                    else if (delta > kNeighborSearchFrames)
+                    {
+                        Debug.LogWarning($"[Studio] Received frame gap: prev={_lastReceivedFrames} curr={receivedFrameData.frames} delta={delta}");
+                    }
+                }
+                _lastReceivedFrames = receivedFrameData.frames;
+
                 // カメラリセットは valid なフレームだけを数えて遅延させる。無効フレームでは
                 // リセットの基準となるカメラ姿勢が安定しないため、valid カウントで測る。
                 if (receivedFrameData.isValid)
@@ -268,24 +310,6 @@ namespace Lilium.LiveStudio.Virgo
                 // height/distance は _position（= transform.position）に既に含まれるため、ここでは加算しない。
                 AvatarAnimationSystem.Transform(in receivedFrameData, Matrix4x4.TRS(_rotation * _offsetPosition + _position, _rotation * Quaternion.Euler(_offsetRotation), Vector3.one), out var transformedFrameData);
                 _animationFrameBuffer.Set(receivedFrameData.frames, in transformedFrameData);
-
-                // Warn on discontinuities in the received frame numbering. delta==1 is
-                // normal; delta==0 (duplicate, overwritten in place) is expected from the
-                // sender's wall-clock quantization and stays silent. Gaps and backwards
-                // jumps indicate real hitches, packet loss or a sender clock problem.
-                if (_lastReceivedFrames >= 0)
-                {
-                    long delta = receivedFrameData.frames - _lastReceivedFrames;
-                    if (delta < 0)
-                    {
-                        Debug.LogWarning($"[Studio] Received frame went backwards: prev={_lastReceivedFrames} curr={receivedFrameData.frames}");
-                    }
-                    else if (delta >= 2)
-                    {
-                        Debug.Log($"[Studio] Received frame gap: prev={_lastReceivedFrames} curr={receivedFrameData.frames} delta={delta}");
-                    }
-                }
-                _lastReceivedFrames = receivedFrameData.frames;
 
                 _receivedFrameCount ++;
             }

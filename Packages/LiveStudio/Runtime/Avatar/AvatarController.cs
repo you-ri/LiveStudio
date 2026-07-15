@@ -250,10 +250,11 @@ namespace Lilium.LiveStudio
         private readonly ExternalAssetRef<AnimationClip> _bodyOverrideExternal =
             new ExternalAssetRef<AnimationClip>(AnimationBundleLoader.ResolveClipAsync);
 
-        // 下半身の位置をロックするフラグ。ON の間、対応アバター (VRM1Avatar / VRCFTAvatar) は
-        // hips のローカル位置を body override クリップに固定し、root (アバター全体) を位置・回転とも
-        // motionSource の anchor へ固定する。各ボーンの回転は mocap を反映しつつ、両足は脚の 2 ボーン
-        // IK で接地位置に固定する。
+        // 下半身の位置をロックするフラグ。ON の間、AvatarBodyDriver を使う対応アバター
+        // (VRM1Avatar / VRCFTAvatar / VRCAvatar) は hips を body override クリップの腰位置
+        // (humanScale 正規化済みでキャラの身長に依らず同位置) に固定し、root (アバター全体) を
+        // 位置・回転とも motionSource の anchor へ固定する。各ボーンの回転は mocap を反映しつつ、
+        // 両足は脚の 2 ボーン IK で接地位置に固定する。クリップ未設定時は固定されない。
         [SerializeField]
         [ExposedField(label="AVATAR_LOCKLOWERBODYPOSE")]
         [ExposedHelp("AVATAR_LOCKLOWERBODYPOSE_HELP")]
