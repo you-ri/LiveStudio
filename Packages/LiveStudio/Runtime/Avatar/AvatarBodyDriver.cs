@@ -79,7 +79,9 @@ namespace Lilium.LiveStudio
         [ReadOnly] public NativeReference<byte> lockLowerBody;
 
         // 下半身ロックで root 回転を anchor に固定した際、mocap の root 回転に含まれていた腰の向き
-        // (主に yaw) を hips ボーンへ畳み込んで補償する回転。inverse(anchorRot) * mocapRootRot。
+        // (主に yaw) を hips へ畳み込んで補償する world 空間の回転差分。mocapRootRot * inverse(anchorRot)。
+        // hips の world 回転へ前置適用する。ローカル空間で前置すると hips の親 (Armature 等) が回転を
+        // 持つリグで補償軸が化ける (world yaw がロール等になる) ため、world 空間で扱う。
         [ReadOnly] public NativeReference<Quaternion> hipsRootCompensation;
 
         // 足 IK (下半身ロック中に有効)。Unity 標準の humanoid IK (AnimationHumanStream.SolveIK) で
@@ -145,12 +147,14 @@ namespace Lilium.LiveStudio
             }
 
             // 下半身ロック中は root 回転を anchor に固定しているため、mocap で root 側にあった腰の向き
-            // (主に yaw) が失われる。これを hips ボーンのローカル回転へ畳み込んで補償し、腰の yaw を戻す。
-            // hips は root 直下なので、ここを補正すれば配下 (spine/脚) の world 姿勢も追従する。
+            // (主に yaw) が失われる。これを hips の world 回転へ前置して補償し、腰の yaw を戻す。
+            // 配下 (spine/脚) の world 姿勢も追従する。ローカル回転への前置は hips の親 (Armature 等)
+            // が回転を持つリグ (Blender Z-up 由来の X=-90° 等) で補償軸が化けて頭が横揺れするため、
+            // 親の回転に依存しない world 空間で適用する。
             if (lockLower && hipsHandleIndex >= 0)
             {
-                var hipsLocal = handles[hipsHandleIndex].GetLocalRotation(stream);
-                handles[hipsHandleIndex].SetLocalRotation(stream, hipsRootCompensation.Value * hipsLocal);
+                var hipsWorld = handles[hipsHandleIndex].GetRotation(stream);
+                handles[hipsHandleIndex].SetRotation(stream, hipsRootCompensation.Value * hipsWorld);
             }
 
             if (hipsHandleIndex >= 0)
@@ -579,13 +583,18 @@ namespace Lilium.LiveStudio
                 _lockHipOffset.Value = rootOffset / humanScale;
             }
 
-            // 足 IK ゴールを clip の足ポーズ (適用中) から root ローカルで焼く。両足が揃うときのみ有効。
+            // 足 IK ゴールを clip の足ポーズ (適用中) から root ローカルで焼く。位置はサンプリングした
+            // hips からの相対を humanScale 正規化済みのロック腰位置 (lockHipOffset) に載せ替える。
+            // root 基準の実寸のままだと、正規化でロック腰位置がサンプリング腰位置からずれた分
+            // (humanScale ≠ 1 のキャラ) だけ腰→足の距離が変わり、脚が届かず伸び切って膝の IK 軸が
+            // 縮退する。hips 相対なら腰→足の距離がクリップどおり保たれ必ず届く。
+            // hips と両足が揃うときのみ有効。
             var leftFoot = _animator.GetBoneTransform(HumanBodyBones.LeftFoot);
             var rightFoot = _animator.GetBoneTransform(HumanBodyBones.RightFoot);
-            if (_footGoalValid.IsCreated && leftFoot != null && rightFoot != null)
+            if (_footGoalValid.IsCreated && hipsSampled != null && leftFoot != null && rightFoot != null)
             {
-                _leftFootGoal.Value = _CaptureFootGoal(rootT, leftFoot);
-                _rightFootGoal.Value = _CaptureFootGoal(rootT, rightFoot);
+                _leftFootGoal.Value = _CaptureFootGoal(rootT, hipsSampled, _lockHipOffset.Value, leftFoot);
+                _rightFootGoal.Value = _CaptureFootGoal(rootT, hipsSampled, _lockHipOffset.Value, rightFoot);
                 _footGoalValid.Value = 1;
             }
             else if (_footGoalValid.IsCreated)
@@ -607,12 +616,14 @@ namespace Lilium.LiveStudio
             => (_hipsHandleIndex >= 0 && _boneTransforms != null && _hipsHandleIndex < _boneTransforms.Length)
                 ? _boneTransforms[_hipsHandleIndex] : null;
 
-        // 上書きクリップ適用中の foot 世界姿勢を root ローカルへ変換して足 IK ゴールにする。
-        static FootIKGoal _CaptureFootGoal(Transform root, Transform foot)
+        // 上書きクリップ適用中の foot 世界姿勢を root ローカルの足 IK ゴールへ変換する。位置は
+        // サンプリングした hips からの相対を humanScale 正規化済みのロック腰位置 (lockHipOffset) に
+        // 載せ替え、job が固定する腰と足ゴールの距離をクリップどおりに保つ。
+        static FootIKGoal _CaptureFootGoal(Transform root, Transform hips, Vector3 lockHipOffset, Transform foot)
         {
             return new FootIKGoal
             {
-                localPosition = root.InverseTransformPoint(foot.position),
+                localPosition = lockHipOffset + Quaternion.Inverse(root.rotation) * (foot.position - hips.position),
                 localRotation = Quaternion.Inverse(root.rotation) * foot.rotation,
             };
         }
@@ -703,9 +714,9 @@ namespace Lilium.LiveStudio
                     if (_rootWorld.IsCreated)
                         _rootWorld.Value = new RootWorldPose { position = rootPos, rotation = rootRot };
                     // root 回転を anchor に固定したぶん、mocap root に含まれる腰の向き (yaw 等) を hips へ
-                    // 畳み込むための補償回転を渡す。root が anchor と一致していれば identity。
+                    // 畳み込むための補償回転 (world 空間の差分) を渡す。root が anchor と一致していれば identity。
                     if (_hipsRootCompensation.IsCreated)
-                        _hipsRootCompensation.Value = Quaternion.Inverse(rootRot) * frameData.root.rotation;
+                        _hipsRootCompensation.Value = frameData.root.rotation * Quaternion.Inverse(rootRot);
                 }
                 else
                 {
