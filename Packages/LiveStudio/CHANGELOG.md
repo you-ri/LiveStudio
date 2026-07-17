@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.25.0] - 2026-07-17
+<!-- changelog-sha: d045776f7657e470fde0eb29bdd790534ca0c9b8 -->
+
+### Added
+
+- `VRCAvatar` now drives body animation, tracking gating, mesh visibility and the lower-body lock through `AvatarBodyDriver` (PlayableGraph) like `VRCFTAvatar`, so VRChat avatars gain untracked-part body-override clips and the lower-body pose lock. Viseme / voice and expression parameters are read and written through the wrapped controller playable.
+- Built-in animation asset catalog: `AnimationClip`s shipped in `Resources` are baked into a `BuiltinAssetCatalog` (Editor `BuiltinAssetCatalogBuilder`) and surfaced as `BuiltinAnimationAsset` resources. `BuiltinAssetRegistry` registers each clip in `AssetRegistry` by GUID eagerly and idempotently (play start, editor load, on demand), so persisted body-override references resolve synchronously on scene restore. Catalog entries are injected into the project asset list and marked `isBuiltin`, so `ExternalAssetManager` never prunes or persists them and removal is rejected.
+- `AvatarController`'s body-override slot now sources its candidates from `GET /api/assets?type=AnimationClip` (built-in `Resources` clips plus external `*.anim.lsb` bundles) instead of the inspector `_bodyOverrideClipPresets` array, which is removed.
+- `VRCFTAvatar` exposes `_bodyOverrideClip` as a serialized field and forwards it on `Initialize` / `OnValidate`.
+- `AvatarExpressionConfig.syncBlink` levels both eye-blink weights to the smaller of the two. Some avatars have asymmetric blink-weight accuracy between the left and right eyes and blink lopsidedly; enabling this makes the eyes blink symmetrically.
+
+### Changed
+
+- Cut per-frame GC and hitches along the Operation-driven property path: `SetPropertyOperation` caches its resolved `ExposedProperty` (self-healing on a failed typed read) and uses box-free typed accessors for its per-frame `bool` / `float` writes instead of re-walking `FindProperty` and allocating element paths and component arrays every frame. `AvatarController` caches its expressions array (invalidated on avatar / `AvatarItem` change) to avoid O(N^2) GC when resolving keyed-array paths, bumps the registry's keyed-collection generation from `InvalidateExpressions` so cached resolutions re-resolve after expression elements are rebuilt (preventing writes to stale keys), and narrows `OnPropertyChanged` to reapply only the changed property instead of the full `_PostSetupAvatar` — which re-ran the T-pose / socket rebuild every frame and caused multi-millisecond hitches. Custom `FacialKey` hashing is now allocation-free.
+- The Fusion UI Definition orders the capture page ahead of the license settings.
+
+### Fixed
+
+- The lower-body lock no longer shakes the head from side to side on rigs whose hips parent carries a rotation (e.g. Blender Z-up armatures imported with X=-90). The root-yaw compensation was prepended to the hips local rotation, which turned the world yaw delta into roll; it is now applied as a world-space delta on the hips world rotation, independent of the rig's parent chain.
+- The lower-body lock no longer clamps the legs fully straight with a degenerate knee axis on avatars whose `humanScale` is not 1. Foot IK goals were captured as raw root-local positions while the locked hip is humanScale-normalized, so the hip-to-foot distance changed and the clip's leg pose became unreachable. Goals are now captured relative to the sampled hips and rebased onto the normalized lock hip offset.
+- The lower-body lock height no longer shifts with avatar height: `AvatarBodyDriver` locks the hips to the override clip's hip position through a humanScale-normalized, root-relative offset applied in world space.
+- `QuitTerminationGuard` now arms a detached watchdog process on quitting instead of a managed watchdog thread, which dies with the Mono runtime before a late native teardown (WGI) wedge — this left the Player-built Fusion lingering after quit. The fire-time log, which can itself deadlock during teardown, is dropped.
+
 ## [0.24.3] - 2026-07-09
 <!-- changelog-sha: 66ecbc810ebc2757306d12a4014067d834b7944b -->
 

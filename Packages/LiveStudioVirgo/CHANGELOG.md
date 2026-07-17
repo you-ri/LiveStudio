@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.25.0] - 2026-07-17
+<!-- changelog-sha: d045776f7657e470fde0eb29bdd790534ca0c9b8 -->
+
+### Added
+
+- `VirgoMotionSource.ResyncTiming`: an exposed function that clears the frame buffer and the frame offset so the next `Update` re-locks onto the sender's numbering. Sender (Fusion) and receiver (Studio) number frames from their own wall clocks, so a frame offset bridges the two; this also recovers from long stalls or clock jumps.
+
+### Changed
+
+- Fusion now ships as a Player (windowed) build that can embed the capture scene, so batch mode alone no longer identifies it: `FusionApp` always appends the `-fusion-child` / `-hidewindow` launch arguments and `FusionQuitSignalListener` gates on the marker (batch mode is still accepted for older headless builds).
+- `BuildPostProcessor` bundles `Tools` only for `StandaloneWindows64`, so iOS and Capture builds no longer get `Tools` copied next to their output.
+
+### Fixed
+
+- The avatar no longer freezes after Fusion restarts. The sender's frame numbering drops to low values on restart while the buffer's `frameCount` only grows, pinning playback to a stale frame; `VirgoMotionSource` now auto-resyncs by clearing the frame buffer when the received numbering jumps far backwards. Frame-gap warnings are also limited to gaps wider than the interpolation search span.
+
 ## [0.24.3] - 2026-07-09
 <!-- changelog-sha: 66ecbc810ebc2757306d12a4014067d834b7944b -->
 

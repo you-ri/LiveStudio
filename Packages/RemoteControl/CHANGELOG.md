@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.25.0] - 2026-07-17
+<!-- changelog-sha: d045776f7657e470fde0eb29bdd790534ca0c9b8 -->
+
+### Added
+
+- `ExposedProperty.TryGetValue<T>` / `TrySetValue<T>`: read and write value-type members without boxing, through typed delegates (`Func<object,T>` / `Action<object,T>`) emitted by the Source Generator.
+- `ShowIf` / `HideIf` accept multiple conditions and can be placed on methods. Conditions serialize as a `visibilityConditions` array and are AND-evaluated on the client, so a member — or a function button — can be gated by several conditions at once. A single condition still emits the legacy `visibility` field, keeping the type output byte-compatible.
+- `ImagePreviewAttribute`: a read-only control that polls a server-relative image URL and renders it (backs the Capture camera preview).
+- `ExposedObjectRegistry.keyedCollectionVersion` and `NotifyKeyedCollectionChanged()`, so consumers can invalidate cached property resolutions when a keyed collection's elements are rebuilt and stop writes landing on stale keys.
+
+### Changed
+
+- Cut GC from the exposed property pipeline. `bool` / `enum` getters return canonical boxed instances via `BoxedValues`; `oldValue` reads and property-change events are skipped when nothing is subscribed; `FindProperty` / `GetProperty` are span-based (no `name.ToString()`); array-element descriptors are cached (`ExposedPropertyType.GetArrayElement`) and element lookup reads the collection once, building only the matched element; `PropertyPath` slash conversion and `AppendIndex` are allocation-free; `ExposedUnityObject.components` replaces its LINQ filter with a two-pass hand roll. REST responses and `scene.json` are unchanged.
+
 ## [0.24.3] - 2026-07-09
 <!-- changelog-sha: 66ecbc810ebc2757306d12a4014067d834b7944b -->
 
