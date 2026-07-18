@@ -13,20 +13,21 @@ namespace Lilium.LiveStudio.Virgo
 {
     public static class FusionRequestSystem
     {
-        public static IEnumerator BuildAvatar(AvatarBuildData data)
+        // Sends the built avatar skeleton to Fusion. The result (and the error text on failure) is
+        // reported through onComplete so the caller owns the logging and retry policy; Fusion may be
+        // offline at startup, so a failure here is not necessarily an error.
+        public static IEnumerator BuildAvatar(AvatarBuildData data, System.Action<bool, string> onComplete = null)
         {
             string baseUrl = FusionNetwork.BaseURL;
             var body = ExposedTypeInfoSerializer.ToJsonForFunctionArgs(data, DefaultExposedObjectResolver.Instance);
 
-
             string requestUrl = baseUrl + "/exposed/function/347f14d4-bca0-48fc-9f41-c6979afdacef/buildavatar";
-            UnityWebRequest request = UnityWebRequest.Post(requestUrl, body, "application/json");
-
-            yield return request.SendWebRequest();
-
-            if (request.result == UnityWebRequest.Result.ConnectionError || request.result == UnityWebRequest.Result.ProtocolError)
+            using (UnityWebRequest request = UnityWebRequest.Post(requestUrl, body, "application/json"))
             {
-                Debug.LogError($"[Studio] {requestUrl}: {request.error}");
+                yield return request.SendWebRequest();
+
+                bool ok = request.result == UnityWebRequest.Result.Success;
+                onComplete?.Invoke(ok, ok ? null : $"{requestUrl}: {request.error}");
             }
         }
 

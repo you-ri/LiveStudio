@@ -26,7 +26,7 @@ namespace Lilium.LiveStudio
     public class LookAtCameraController : ICameraController
     {
         [SerializeField, ExposedField]
-        TransformRef _target = new TransformRef("Main Avatar", "Head", TransformRef.SearchType.Name);
+        TransformRef _target = new TransformRef("Main Avatar", "S_Head", TransformRef.SearchType.Name);
 
         public TransformRef target => _target;
 
@@ -51,8 +51,10 @@ namespace Lilium.LiveStudio
             _target.onChanged -= _OnTargetChanged;
             TransformStructureService.onStructureChanged -= _OnStructureChanged;
 
-            // Release the look-at target so a later controller starts from a clean state.
+            // Release the look-at target and restore the default single-target behavior so a later
+            // controller starts from a clean state.
             camera.Target.LookAtTarget = null;
+            camera.Target.CustomLookAtTarget = false;
             _camera = null;
         }
 
@@ -77,8 +79,12 @@ namespace Lilium.LiveStudio
         void _ApplyTarget()
         {
             if (_camera == null) return;
-            // Leave the target null when it cannot be resolved yet; it is retried on the next change /
-            // structure notification once the owner (avatar) is registered.
+            // v2 exposed LookAt as a separate, always-effective target. v3 ignores LookAtTarget unless
+            // CustomLookAtTarget is set (otherwise the aim falls back to the tracking target), so enable the
+            // flag and drive only the look-at target — the tracking (position) target is left untouched.
+            // The resolved target may be null until the avatar is registered; it is retried on the next
+            // change / structure notification.
+            _camera.Target.CustomLookAtTarget = true;
             _camera.Target.LookAtTarget = _target.Resolve();
         }
     }

@@ -29,7 +29,7 @@ namespace Lilium.LiveStudio
         // Target socket name. The prop attaches to the avatar socket with this name.
         [ExposedField]
         [StringSelector(nameof(availableSocketNames))]
-        public string socketName = "WristRight";
+        public string socketName = "S_WristRight";
 
         // socket からの装着オフセット (位置 / 回転 / 拡縮) を 1 つにまとめた値。socket を親とした
         // ローカル TRS と数学的に等価で、RemoteApp 側は TransformValue 用ウィジェット (数値 + 3D ギズモ) で

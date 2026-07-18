@@ -457,12 +457,13 @@ namespace Lilium.LiveStudio
             // sockets are created, then the original pose is restored.
             var restorePose = _ApplyConfiguredTPose(avatarTarget, avatarTransform);
 
-            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.Hips, "Hips", avatarRotation);
-            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.Spine, "Spine", avatarRotation);
-            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.Chest, "Chest", avatarRotation);
-            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.Head, "Head", avatarRotation);
-            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.LeftHand, "WristLeft", avatarRotation);
-            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.RightHand, "WristRight", avatarRotation);
+            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.Hips, "S_Hips", avatarRotation);
+            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.Spine, "S_Spine", avatarRotation);
+            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.Chest, "S_Chest", avatarRotation);
+            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.Head, "S_Head", avatarRotation);
+            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.Neck, "S_Neck", avatarRotation);
+            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.LeftHand, "S_WristLeft", avatarRotation);
+            _CreateSocketIfBonePresent(avatarTarget, HumanBodyBones.RightHand, "S_WristRight", avatarRotation);
 
             _RestorePose(restorePose); // the motion driver re-poses next frame anyway, but avoid a 1-frame artifact
 

@@ -1,3 +1,5 @@
+using System.Collections;
+
 using UnityEngine;
 using UnityEngine.Scripting.APIUpdating;
 using Unity.Collections.LowLevel.Unsafe;
@@ -133,9 +135,56 @@ namespace Lilium.LiveStudio.Virgo
             Close();
         }
 
+        // Running retry coroutine for the buildavatar POST; superseded on each rebuild.
+        private Coroutine _buildAvatarRetry;
+
+        // Fusion may not be listening yet when the avatar is first built (Studio can start before
+        // Fusion, or the avatar is built during scene restore). Keep retrying the buildavatar POST
+        // until it lands so a late-starting Fusion still receives the skeleton, and supersede any
+        // in-flight retry on rebuild so only the latest avatar is sent.
         void IAvatarBuildObserver.OnAvatarBuilt(in AvatarBuildData data)
         {
-            StartCoroutine(FusionRequestSystem.BuildAvatar(data));
+            if (_buildAvatarRetry != null)
+            {
+                StopCoroutine(_buildAvatarRetry);
+                _buildAvatarRetry = null;
+            }
+            _buildAvatarRetry = StartCoroutine(_SendBuildAvatarLoop(data));
+        }
+
+        private IEnumerator _SendBuildAvatarLoop(AvatarBuildData data)
+        {
+            const float kRetryDelay = 2f;
+            var wait = new WaitForSeconds(kRetryDelay);
+            bool warned = false;
+
+            while (this != null && isActiveAndEnabled)
+            {
+                bool ok = false;
+                string error = null;
+                yield return FusionRequestSystem.BuildAvatar(data, (success, err) =>
+                {
+                    ok = success;
+                    error = err;
+                });
+
+                if (ok)
+                {
+                    break;
+                }
+
+                // Warn only on the first failure so the console is not flooded while retrying
+                // (Fusion may legitimately be offline during Studio-only sessions).
+                if (!warned)
+                {
+                    warned = true;
+                    Debug.LogWarning($"[Studio] Failed to send avatar to Fusion, retrying every {kRetryDelay:0}s: {error}");
+                }
+
+                yield return wait;
+            }
+
+            _buildAvatarRetry = null;
         }
 
 

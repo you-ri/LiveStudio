@@ -10,24 +10,25 @@ namespace Lilium.LiveStudio
     public class OrbitalFollowCameraController : ICameraController, IExposedSerializeCallback, IExposedDeserializeCallback
     {
         [SerializeField, ExposedField]
-        TransformRef _target = new TransformRef("Main Avatar", "Head", TransformRef.SearchType.Name);
+        TransformRef _target = new TransformRef("Main Avatar", "S_Head", TransformRef.SearchType.Name);
 
         public TransformRef target => _target;
 
         [SerializeField, ExposedField, Hide]
-        [FormerlyExposedAs("roll")]
-        private float _roll = 0f;
+        [FormerlyExposedAs("yaw")]
+        private float _yaw = 0f;
 
         [ExposedProperty, Slider(-180f, 180f, 1f)]
-        public float roll
+        [FormerlyExposedAs("roll")]
+        public float yaw
         {
-            get => _roll;
+            get => _yaw;
             set
             {
-                _roll = value;
-                if (_orbitalFollow != null)
+                _yaw = value;
+                if (_orbit != null)
                 {
-                    _orbitalFollow.HorizontalAxis.Value = value;
+                    _orbit.yaw = value;
                 }
             }
         }
@@ -43,9 +44,9 @@ namespace Lilium.LiveStudio
             set
             {
                 _pitch = value;
-                if (_orbitalFollow != null)
+                if (_orbit != null)
                 {
-                    _orbitalFollow.VerticalAxis.Value = value;
+                    _orbit.pitch = value;
                 }
             }
         }
@@ -61,9 +62,9 @@ namespace Lilium.LiveStudio
             set
             {
                 _distance = value;
-                if (_orbitalFollow != null)
+                if (_orbit != null)
                 {
-                    _orbitalFollow.RadialAxis.Value = value;
+                    _orbit.distance = value;
                 }
             }
         }
@@ -104,7 +105,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        CinemachineOrbitalFollow _orbitalFollow;
+        LiveStudioOrbitalFollow _orbit;
 
         CinemachineRotationComposer _rotationComposer;
 
@@ -114,8 +115,7 @@ namespace Lilium.LiveStudio
         {
             if (camera == null) return;
 
-            _orbitalFollow = Lilium.RemoteControl.GameObjectUtility.GetOrAddComponent<CinemachineOrbitalFollow>(camera.gameObject);
-            _orbitalFollow.Radius = 1;
+            _orbit = Lilium.RemoteControl.GameObjectUtility.GetOrAddComponent<LiveStudioOrbitalFollow>(camera.gameObject);
             _rotationComposer = Lilium.RemoteControl.GameObjectUtility.GetOrAddComponent<CinemachineRotationComposer>(camera.gameObject);
             _camera = camera;
 
@@ -131,11 +131,11 @@ namespace Lilium.LiveStudio
 
         void _ApplyCameraSettings()
         {
-            if (_orbitalFollow != null)
+            if (_orbit != null)
             {
-                _orbitalFollow.HorizontalAxis.Value = _roll;
-                _orbitalFollow.VerticalAxis.Value = _pitch;
-                _orbitalFollow.RadialAxis.Value = _distance;
+                _orbit.yaw = _yaw;
+                _orbit.pitch = _pitch;
+                _orbit.distance = _distance;
             }
             if (_camera != null)
             {
@@ -151,11 +151,11 @@ namespace Lilium.LiveStudio
 
         public void OnBeforeExposedSerialize()
         {
-            if (_orbitalFollow != null)
+            if (_orbit != null)
             {
-                _roll = _orbitalFollow.HorizontalAxis.Value;
-                _pitch = _orbitalFollow.VerticalAxis.Value;
-                _distance = _orbitalFollow.RadialAxis.Value;
+                _yaw = _orbit.yaw;
+                _pitch = _orbit.pitch;
+                _distance = _orbit.distance;
             }
             if (_camera != null)
             {
@@ -176,7 +176,7 @@ namespace Lilium.LiveStudio
             _target.onChanged -= _OnTargetChanged;
             TransformStructureService.onStructureChanged -= _OnStructureChanged;
 
-            Lilium.RemoteControl.GameObjectUtility.RemoveComponent<CinemachineOrbitalFollow>(camera.gameObject, immediate: true);
+            Lilium.RemoteControl.GameObjectUtility.RemoveComponent<LiveStudioOrbitalFollow>(camera.gameObject, immediate: true);
             Lilium.RemoteControl.GameObjectUtility.RemoveComponent<CinemachineRotationComposer>(camera.gameObject, immediate: true);
 
             _camera = null;
@@ -205,7 +205,12 @@ namespace Lilium.LiveStudio
         void _ApplyTarget()
         {
             if (_camera == null) return;
-            // 解決できない場合は null のまま残し、StudioCameraLookAt の socket("head") フォールバックに委ねる
+            // Drive both position (orbit) and aim from a single tracking target: the RotationComposer's
+            // LookAt falls back to the tracking target when CustomLookAtTarget is off, so force it off and
+            // clear any stale custom LookAt left by a previous controller. The tracking target may resolve
+            // to null until the avatar is registered; it is retried on the next change / structure event.
+            _camera.Target.CustomLookAtTarget = false;
+            _camera.Target.LookAtTarget = null;
             _camera.Target.TrackingTarget = _target.Resolve();
         }
 

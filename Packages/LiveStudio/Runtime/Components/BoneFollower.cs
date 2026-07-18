@@ -36,7 +36,7 @@ namespace Lilium.LiveStudio
         // Bone reference (owner name + bone name / path). Defaults to the main avatar's head, matching
         // LookAtCameraController, since a head anchor is the common look-at case.
         [SerializeField, ExposedField]
-        TransformRef _target = new TransformRef("Main Avatar", "Head", TransformRef.SearchType.Name);
+        TransformRef _target = new TransformRef("Main Avatar", "S_Head", TransformRef.SearchType.Name);
 
         public TransformRef target => _target;
 
