@@ -1,7 +1,7 @@
 # Changelog
 
 ## [0.25.0] - 2026-07-17
-<!-- changelog-sha: d045776f7657e470fde0eb29bdd790534ca0c9b8 -->
+<!-- changelog-sha: c7e861eafdda90dd7e573cda31b4e8ff62b2e076 -->
 
 ### Added
 
@@ -15,6 +15,7 @@
 ### Fixed
 
 - The avatar no longer freezes after Fusion restarts. The sender's frame numbering drops to low values on restart while the buffer's `frameCount` only grows, pinning playback to a stale frame; `VirgoMotionSource` now auto-resyncs by clearing the frame buffer when the received numbering jumps far backwards. Frame-gap warnings are also limited to gaps wider than the interpolation search span.
+- Studio now retries the `buildavatar` POST to Fusion until it lands, so a Fusion that starts after Studio still receives the avatar skeleton (previously the one-shot POST failed and the avatar had to be re-selected). The transient connection failure is logged once as a warning instead of an error, so launching Studio without Fusion no longer spams the console.
 
 ## [0.24.3] - 2026-07-09
 <!-- changelog-sha: 66ecbc810ebc2757306d12a4014067d834b7944b -->
