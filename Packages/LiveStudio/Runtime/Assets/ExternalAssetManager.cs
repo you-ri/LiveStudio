@@ -620,6 +620,41 @@ namespace Lilium.LiveStudio
         public AssetBase FindAsset(string assetId) => _Find(assetId);
 
         /// <summary>
+        /// The portable, project-relative reference (forward slashes) for the asset with the given runtime
+        /// <see cref="AssetBase.id"/> (an absolute path), so callers can persist a stable cross-machine handle
+        /// instead of the machine-specific id — e.g. a deck tile's background. Mirrors the persisted
+        /// <see cref="AssetBase.path"/>. Returns the input unchanged when the asset is unknown or no relative
+        /// path can be formed (file outside the project / different drive). Resolve it back with
+        /// <see cref="FindAssetByReference"/>.
+        /// </summary>
+        public string GetPortableAssetReference(string assetId)
+        {
+            var asset = _Find(assetId);
+            if (asset == null) return assetId;
+            var relative = PropPreset.Relativize(asset.filePath, ProjectManager.projectPath);
+            return string.IsNullOrEmpty(relative) ? assetId : relative;
+        }
+
+        /// <summary>
+        /// Finds an asset by either its runtime absolute <see cref="AssetBase.id"/> (the remote app's
+        /// within-session handle) or a persisted project-relative reference (see
+        /// <see cref="GetPortableAssetReference"/>). An absolute reference matches directly; a relative one is
+        /// resolved against the project folder before matching. Legacy absolute references stored before the
+        /// portable form still resolve. Returns null when nothing matches.
+        /// </summary>
+        public AssetBase FindAssetByReference(string reference)
+        {
+            if (string.IsNullOrEmpty(reference)) return null;
+            var direct = _Find(reference);
+            if (direct != null) return direct;
+            // A project-relative reference: resolve to an absolute path, then to the normalized id.
+            // PropPreset.ResolveSource returns a rooted path verbatim, so an absolute reference that failed
+            // the direct match above is simply re-normalized here (handles slash differences).
+            var abs = PropPreset.ResolveSource(reference, ProjectManager.projectPath);
+            return _Find(_MakeId(abs));
+        }
+
+        /// <summary>
         /// Saves a loaded exposed object as a named preset (<c>*.preset.json</c>) in the project folder:
         /// records how to recreate the object (a <c>target</c> descriptor) plus the parameter state to
         /// reapply, then re-crawls so the preset appears as a loadable entry. The user can later load the

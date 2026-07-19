@@ -47,6 +47,14 @@ namespace Lilium.LiveStudio
         [ExposedField, Hide]
         public int h = 1;
 
+        /// <summary>Optional asset id whose preview thumbnail (served by <c>/api/avatar/image?id=</c>) the
+        /// remote app draws as this tile's full-frame background. Empty = no background (the tile keeps its
+        /// plain glass face). Set by the remote app's "add avatar switch tile" affordance to the switched
+        /// avatar's id so the deck tile shows that avatar. Hidden from the generic editor (an asset id is not
+        /// hand-edited) but still sent over the wire and persisted, like <see cref="OperationSet.id"/>.</summary>
+        [ExposedField, Hide]
+        public string backgroundAssetId = string.Empty;
+
         /// <summary>The fixed column span this tile kind occupies. <see cref="OperationManager"/> enforces
         /// <see cref="w"/> to this value, so a new tile size is declared here (override per kind) rather than
         /// switched on by the manager. Defaults to 1.</summary>

@@ -373,6 +373,36 @@ namespace Lilium.LiveStudio
             return set.id;
         }
 
+        /// <summary>Creates an operation set that switches the active avatar to the one with asset id
+        /// <paramref name="avatarAssetId"/> (a <see cref="SwitchAvatarOperation"/> matching that asset's display
+        /// name) when its tile fires, with the deck tile's full-frame background set to that avatar's preview
+        /// (<see cref="DeckControl.backgroundAssetId"/> = the same id). The set is named after the avatar (falls
+        /// back to the generic default when the name is empty). A momentary <see cref="DeckButton"/> control — a
+        /// tap switches the avatar. The avatar name and label are resolved from
+        /// <see cref="ExternalAssetManager"/> so the remote app only supplies the id. Returns the new set's id.
+        /// Drives the remote app's "add this avatar as a switch tile" affordance on the Avatar page.</summary>
+        [ExposedFunction]
+        public string AddSwitchAvatarOperation(string avatarAssetId)
+        {
+            // Resolve the avatar's display name from the asset (SwitchAvatarOperation matches avatars by name,
+            // like its dropdown). Empty id / unknown asset yields an empty name, which selects the default avatar.
+            var manager = ExternalAssetManager.current;
+            var asset = manager?.FindAsset(avatarAssetId);
+            string avatarName = asset?.name ?? string.Empty;
+            // Persist a portable, project-relative reference for the tile background (the incoming id is an
+            // absolute, machine-specific path), so a saved deck survives moving the project / another machine.
+            // AvatarImageHandler resolves it back through FindAssetByReference.
+            string background = manager?.GetPortableAssetReference(avatarAssetId) ?? avatarAssetId ?? string.Empty;
+            var control = new DeckButton { backgroundAssetId = background };
+            var set = _AddOperationSet(
+                new KeyInputSource(),
+                avatarName,
+                new OperationBase[] { new SwitchAvatarOperation { avatar = avatarName } },
+                null,
+                control);
+            return set.id;
+        }
+
         /// <summary>The control path captured by the most recent <see cref="StartKeyCapture"/> (empty while
         /// waiting, or if it was cancelled / timed out). The remote app's add-operation dialog polls this to show
         /// the captured key before committing the new set. Runtime-only.</summary>

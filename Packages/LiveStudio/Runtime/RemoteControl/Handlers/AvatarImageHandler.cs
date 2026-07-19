@@ -45,7 +45,9 @@ namespace Lilium.LiveStudio
                 if (string.IsNullOrEmpty(assetId)) return null;
                 var manager = ExternalAssetManager.current;
                 if (manager == null) return null;
-                return manager.FindAsset(assetId)?.filePath;
+                // Resolve by reference so both a runtime absolute id (the remote app's session handle) and a
+                // persisted project-relative reference (e.g. a deck tile's backgroundAssetId) find the asset.
+                return manager.FindAssetByReference(assetId)?.filePath;
             });
 
             if (string.IsNullOrEmpty(filePath))
