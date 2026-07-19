@@ -20,12 +20,22 @@ namespace Lilium.LiveStudio.EditorTests
             [ExposedField] public bool flag;
             public int invokeCount;
 
+            // Records the last argument received by SetValue so an argument-bearing invoke can be asserted.
+            public int lastValue;
+
             // Read-only keyed array standing in for an avatar's expressions[]: a bound action targets
             // an element's float weight by its stable key, e.g. "weights[Beta].weight".
             [ExposedField] public WeightedEntry[] weights;
 
             [ExposedFunction]
             public void DoThing() => invokeCount++;
+
+            [ExposedFunction]
+            public void SetValue(int value)
+            {
+                lastValue = value;
+                invokeCount++;
+            }
         }
 
         [ExposedClass("FakeWeighted")]
@@ -40,6 +50,10 @@ namespace Lilium.LiveStudio.EditorTests
             [ExposedProperty, ExposedKey] public string key => _key;
 
             [ExposedProperty] public float weight { get; set; }
+
+            // A nested [ExposedFunction] so an InvokeFunctionOperation can target it via a property path
+            // (the generic shape of StageManager's set-element WarpTo).
+            [ExposedFunction] public void Bump(float amount) => weight += amount;
         }
 
         FakeTarget _target;
@@ -74,6 +88,61 @@ namespace Lilium.LiveStudio.EditorTests
             action.Apply(Triggered(active: true));
 
             Assert.AreEqual(1, _target.invokeCount, "the bound function runs on the trigger pulse");
+        }
+
+        [Test]
+        public void InvokeFunctionOperation_WithArgsJson_PassesArgumentToTarget()
+        {
+            var action = new InvokeFunctionOperation
+            {
+                targetId = kTargetId,
+                functionName = "SetValue",
+                argsJson = "[42]",
+            };
+
+            action.Apply(Triggered(active: true));
+
+            Assert.AreEqual(42, _target.lastValue,
+                "the stored JSON argument is deserialized to the parameter type and passed to the function");
+            Assert.AreEqual(1, _target.invokeCount, "the argument-bearing function runs on the trigger pulse");
+        }
+
+        [Test]
+        public void InvokeFunctionOperation_NestedFunction_ViaPropertyPath_InvokesOnElement()
+        {
+            // WarpTo-shaped: the function lives on a keyed array element, not the target object directly.
+            var action = new InvokeFunctionOperation
+            {
+                targetId = kTargetId,
+                functionName = "Bump",
+                propertyPath = "weights/Beta",
+                argsJson = "[0.25]",
+            };
+
+            Assert.IsTrue(action.valid, "valid resolves the nested function through the property path");
+
+            action.Apply(Triggered(active: true));
+
+            Assert.AreEqual(0.25f, _target.weights[1].weight, 1e-5f,
+                "the nested function runs on the element resolved by propertyPath, with the deserialized arg");
+            Assert.AreEqual(0f, _target.weights[0].weight, "the other element is untouched");
+        }
+
+        [Test]
+        public void InvokeFunctionOperation_EmptyArgsJson_InvokesWithoutArguments()
+        {
+            // An empty argsJson must keep the original no-argument behaviour (regression guard for the
+            // back-compat of the new field on operations saved before it existed).
+            var action = new InvokeFunctionOperation
+            {
+                targetId = kTargetId,
+                functionName = "DoThing",
+                argsJson = string.Empty,
+            };
+
+            action.Apply(Triggered(active: true));
+
+            Assert.AreEqual(1, _target.invokeCount, "the no-argument function still runs when argsJson is empty");
         }
 
         [Test]

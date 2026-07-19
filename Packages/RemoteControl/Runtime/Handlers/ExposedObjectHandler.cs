@@ -851,43 +851,19 @@ namespace Lilium.RemoteControl
         /// リクエストボディ JSON の "args" 配列から関数引数を構築する。
         /// パラメータ個数ベースで確保し、未指定/null は HasDefaultValue があれば
         /// 既定値、無ければ型の default を使う。body 空 or args 無しなら null。
+        /// 引数構築の実体は <see cref="ExposedPropertySerializer.BuildInvokeArguments"/> に集約し、
+        /// 保存済みオペレーション引数 (InvokeFunctionOperation) と共有する。
         /// </summary>
         private static object[] _BuildInvokeArguments(ExposedFunctionType function, string body)
         {
-            object[] args = null;
-            var parameters = function.parameters;
+            if (string.IsNullOrEmpty(body)) return null;
 
-            // リクエストボディからパラメータを取得
-            if (!string.IsNullOrEmpty(body))
-            {
-                var jObject = JsonConvert.DeserializeObject<JObject>(body);
-                var argsToken = jObject["args"];
+            var jObject = JsonConvert.DeserializeObject<JObject>(body);
+            var argsToken = jObject["args"] as JArray;
+            if (argsToken == null) return null;
 
-                if (argsToken != null && argsToken is JArray jArray)
-                {
-                    // パラメータ個数ベースで配列を確保。送られて来た要素を埋め、
-                    // 未指定/null の位置は HasDefaultValue があれば既定値、無ければ型の default を使う。
-                    args = new object[parameters.Length];
-                    for (int i = 0; i < parameters.Length; i++)
-                    {
-                        var param = parameters[i];
-                        var jToken = i < jArray.Count ? jArray[i] : null;
-                        if (jToken == null || jToken.Type == JTokenType.Null)
-                        {
-                            args[i] = param.HasDefaultValue
-                                ? param.DefaultValue
-                                : (param.ParameterType.IsValueType ? Activator.CreateInstance(param.ParameterType) : null);
-                        }
-                        else
-                        {
-                            //TODO: DeseirializeExposedObjectを使うべきか？
-                            args[i] = ExposedPropertySerializer.DeserializeUnityType(DefaultExposedObjectResolver.Instance, jToken, param.ParameterType);
-                        }
-                    }
-                }
-            }
-
-            return args;
+            return ExposedPropertySerializer.BuildInvokeArguments(
+                function, argsToken, DefaultExposedObjectResolver.Instance);
         }
 
         private ExposedObjectHandle? FindExposedObjectById(string id)

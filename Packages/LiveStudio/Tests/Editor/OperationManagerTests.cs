@@ -204,6 +204,34 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
+        public void HeldButton_PressAndReleaseCollapsedInOneFrame_StillTriggersOnce()
+        {
+            // A momentary deck button sends held=true then held=false as two separate REST calls. If both land
+            // between two Update frames, the manager never observes held as true (wasHeld stays false), and the
+            // release one-shot used to be silently dropped (intermittent "no reaction" on fast taps). The
+            // rising-edge pulse latched by SetHeld makes the release still fire exactly once.
+            var set = new OperationSet
+            {
+                enabled = true,
+                control = new DeckButton(),
+                input = new FakeInputSource(),
+            };
+
+            // Press then release before any frame observed the hold: held ends false, but the pulse latched.
+            set.SetHeld(true);
+            set.SetHeld(false);
+
+            OperationManager.TryGetFiringContext(set, wasHeld: false, out var collapsed);
+            Assert.IsTrue(collapsed.released, "the collapsed press is seen as a release");
+            Assert.IsTrue(collapsed.triggered, "the button's one-shot still fires when the press collapsed in one frame");
+
+            // The manager consumes the pulse each frame; the next frame must not re-fire the one-shot.
+            set.heldPulse = false;
+            OperationManager.TryGetFiringContext(set, wasHeld: false, out var next);
+            Assert.IsFalse(next.triggered, "the collapsed press fires exactly once, not on subsequent frames");
+        }
+
+        [Test]
         public void HeldToggle_TriggersOnPress()
         {
             // Non-button (toggle) sets keep triggering on the press edge (when turned on).
@@ -288,6 +316,24 @@ namespace Lilium.LiveStudio.EditorTests
             Assert.IsNotNull(action);
             Assert.AreEqual("obj-1", action.targetId);
             Assert.AreEqual("DoThing", action.functionName);
+            Assert.AreEqual(string.Empty, action.argsJson,
+                "the no-argument overload leaves argsJson empty");
+        }
+
+        [Test]
+        public void AddFunctionOperation_StoresArgsJsonOnInvokeOperation()
+        {
+            var manager = new OperationManager();
+
+            var id = manager.AddFunctionOperation("obj-1", "SetValue", "Set Value", "", "[42]");
+
+            var set = manager.operationSets[0];
+            Assert.AreEqual(id, set.id);
+            var action = set.operations[0] as InvokeFunctionOperation;
+            Assert.IsNotNull(action);
+            Assert.AreEqual("SetValue", action.functionName);
+            Assert.AreEqual("[42]", action.argsJson,
+                "the positional arguments are stored on the operation for replay");
         }
 
         [Test]

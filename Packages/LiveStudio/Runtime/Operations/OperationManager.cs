@@ -120,7 +120,11 @@ namespace Lilium.LiveStudio
                 bool wasHeld = set.heldPrev;
                 set.heldPrev = set.held;
 
-                if (!TryGetFiringContext(set, wasHeld, out var context))
+                bool fired = TryGetFiringContext(set, wasHeld, out var context);
+                // Consume the sub-frame press pulse: it was read during evaluation above (release edge), so
+                // clear it now that this frame has accounted for it. A collapsed press-release fires once.
+                set.heldPulse = false;
+                if (!fired)
                 {
                     set.lastValue = 0f;
                     continue;
@@ -199,10 +203,12 @@ namespace Lilium.LiveStudio
                 return true;
             }
 
-            if (wasHeld)
+            if (wasHeld || set.heldPulse)
             {
                 // Hold released this frame: a single falling edge, then back to normal next frame. Button
-                // commits its one-shot trigger here.
+                // commits its one-shot trigger here. heldPulse covers the sub-frame case where a momentary
+                // press (held true then false) collapsed within one Update frame so wasHeld never became true —
+                // without it the button's one-shot would be dropped on fast taps (intermittent "no reaction").
                 context = new OperationContext(0f, pressed: false, released: true, active: false,
                     triggered: isButton);
                 return true;
@@ -326,18 +332,23 @@ namespace Lilium.LiveStudio
             return input;
         }
 
-        /// <summary>Creates an operation set that invokes a no-argument <c>[ExposedFunction]</c> (named
+        /// <summary>Creates an operation set that invokes the <c>[ExposedFunction]</c> (named
         /// <paramref name="functionName"/>) on the object with id <paramref name="targetId"/>, bound to the
         /// momentary key <paramref name="binding"/> (a control path; empty = unbound). The set is named
         /// <paramref name="name"/> (the function's display name; falls back to the generic default when empty).
-        /// Returns the new set's id. Drives the "bind this function button to a key" flow.</summary>
+        /// <paramref name="argsJson"/> carries the positional call arguments as a JSON array string (the same
+        /// shape the REST invoke body uses); empty = no arguments. <paramref name="propertyPath"/> (slash
+        /// transport form; e.g. "sets/0") addresses the property value that owns the function when it is not on
+        /// the target object directly (a nested exposed function); empty = on the target itself. Both are
+        /// trailing optionals, so callers of the no-argument / non-nested overload are unaffected. Returns the
+        /// new set's id. Drives the "bind this function button to a key" flow.</summary>
         [ExposedFunction]
-        public string AddFunctionOperation(string targetId, string functionName, string name, string binding)
+        public string AddFunctionOperation(string targetId, string functionName, string name, string binding, string argsJson = "", string propertyPath = "")
         {
             var set = _AddOperationSet(
                 _KeyInput(binding),
                 name,
-                new OperationBase[] { new InvokeFunctionOperation { targetId = targetId, functionName = functionName } });
+                new OperationBase[] { new InvokeFunctionOperation { targetId = targetId, functionName = functionName, argsJson = argsJson, propertyPath = propertyPath } });
             return set.id;
         }
 

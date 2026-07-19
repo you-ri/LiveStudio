@@ -434,6 +434,48 @@ namespace Lilium.RemoteControl
         // JToken Deserialization
         // -------------------------------------------------------
 
+        /// <summary>
+        /// 関数の引数配列を JArray から構築する。パラメータ個数ベースで確保し、未指定/null の位置は
+        /// HasDefaultValue があれば既定値、無ければ型の default を使う。REST invoke の "args" 配列と
+        /// 保存済みオペレーション引数 (InvokeFunctionOperation.argsJson) の両方で共有する。
+        /// resolver 省略時は <see cref="DefaultExposedObjectResolver.Instance"/> を使う。
+        /// </summary>
+        public static object[] BuildInvokeArguments(ExposedFunctionType function, JArray jArray, IExposedObjectResolver resolver = null)
+        {
+            if (function == null || jArray == null) return null;
+            if (resolver == null) resolver = DefaultExposedObjectResolver.Instance;
+
+            var parameters = function.parameters;
+            var args = new object[parameters.Length];
+            for (int i = 0; i < parameters.Length; i++)
+            {
+                var param = parameters[i];
+                var jToken = i < jArray.Count ? jArray[i] : null;
+                if (jToken == null || jToken.Type == JTokenType.Null)
+                {
+                    args[i] = param.HasDefaultValue
+                        ? param.DefaultValue
+                        : (param.ParameterType.IsValueType ? Activator.CreateInstance(param.ParameterType) : null);
+                }
+                else
+                {
+                    args[i] = DeserializeUnityType(resolver, jToken, param.ParameterType);
+                }
+            }
+            return args;
+        }
+
+        /// <summary>
+        /// JSON 配列文字列から関数の引数配列を構築する。空文字/null は null (= 引数なし)。オペレーションに
+        /// 保存した位置引数 (argsJson) を実行時に型付き引数へ戻すために使う。
+        /// </summary>
+        public static object[] BuildInvokeArgumentsFromJson(ExposedFunctionType function, string argsJson, IExposedObjectResolver resolver = null)
+        {
+            if (function == null || string.IsNullOrEmpty(argsJson)) return null;
+            var jArray = JsonConvert.DeserializeObject<JArray>(argsJson);
+            return BuildInvokeArguments(function, jArray, resolver);
+        }
+
         // JTokenからUnity型にデシリアライズする共通メソッド
         // 既存のインスタンスに上書き、インスタンスがnullの場合は新規作成
         public static object DeserializeUnityType(IExposedObjectResolver resolver, JToken token, System.Type type, object instance = null)

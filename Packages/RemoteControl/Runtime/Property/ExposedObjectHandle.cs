@@ -188,6 +188,36 @@ namespace Lilium.RemoteControl
             }
         }
 
+        /// <summary>
+        /// 関数を解決する。<paramref name="propertyPath"/> が空ならこのオブジェクト直下の関数、非空なら
+        /// そのパス (slash 転送形式) のプロパティ値の型 (ExposedClass) から関数を検索する。解決できなければ
+        /// null を返す (ログは出さない — 呼び出し側が扱いを決める)。<paramref name="functionTarget"/> は実行対象
+        /// インスタンス (直下なら target、ネストならプロパティ値)。REST invoke のネスト解決
+        /// (ExposedObjectHandler._ResolveInvokeFunction) と同じ経路で、ネストした exposed 関数
+        /// (例: StageManager の set 要素の WarpTo) をオペレーションから実行するために使う。
+        /// </summary>
+        public ExposedFunctionType ResolveFunction(string propertyPath, string functionName, out object functionTarget)
+        {
+            if (string.IsNullOrEmpty(propertyPath))
+            {
+                functionTarget = target;
+                return GetFunction(functionName);
+            }
+
+            functionTarget = null;
+            var property = FindProperty(PropertyPath.FromSlash(propertyPath).Value);
+            if (property == null) return null;
+
+            var value = property.Value.GetValue();
+            if (value == null) return null;
+
+            var exposedClass = ExposedClass.Get(value.GetType());
+            if (exposedClass == null) return null;
+
+            functionTarget = value;
+            return exposedClass.FindFunction(functionName);
+        }
+
         // --- Dirty追跡（ExposedObjectDefaultRegistryに委譲） ---
 
         public bool IsPropertyDirty(string propertyPath)

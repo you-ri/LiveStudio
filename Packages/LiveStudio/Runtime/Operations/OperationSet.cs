@@ -83,9 +83,23 @@ namespace Lilium.LiveStudio
         [NonSerialized]
         internal bool heldPrev;
 
+        /// <summary>Latches true when <see cref="SetHeld"/> sees a rising edge, and is cleared by
+        /// <see cref="OperationManager.Update"/> after it evaluates the set each frame. A momentary deck button
+        /// sends its press and release as two separate REST calls (<c>held=true</c> then <c>held=false</c>); if
+        /// both land between two Update frames, the manager would never observe <see cref="held"/> as true and
+        /// the button's one-shot release trigger would be silently dropped (intermittent "no reaction" on fast
+        /// taps). This pulse remembers that a press happened so the release still fires exactly once.</summary>
+        [NonSerialized]
+        internal bool heldPulse;
+
         /// <summary>Sets the manual hold. Manager-only; the remote app flips it via
-        /// <see cref="OperationManager.ToggleOperationSet"/>.</summary>
-        internal void SetHeld(bool value) => _held = value;
+        /// <see cref="OperationManager.ToggleOperationSet"/> / <c>SetOperationSetHeld</c>. A rising edge latches
+        /// <see cref="heldPulse"/> so a press released before the next Update frame is not lost.</summary>
+        internal void SetHeld(bool value)
+        {
+            if (value && !_held) heldPulse = true;
+            _held = value;
+        }
 
         // Persisted manual value override driven by the remote app's Value-mode slider (sticky once set).
         // -1 = no override (the bound input drives); 0..1 = the override value. Persisted (as an
