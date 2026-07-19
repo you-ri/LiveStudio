@@ -87,6 +87,8 @@
 *.dylib filter=lfs diff=lfs merge=lfs -text
 # Unity Application
 *.assets filter=lfs diff=lfs merge=lfs -text
+*.resS filter=lfs diff=lfs merge=lfs -text
+*.resource filter=lfs diff=lfs merge=lfs -text
 # MediaPipe
 *.aar filter=lfs diff=lfs merge=lfs -text
 *.bytes filter=lfs diff=lfs merge=lfs -text
@@ -98,3 +100,5 @@ VirgoCapture/Assets/UI/Fonts/NotoSansJP-Regular[[:space:]]SDF.asset filter=lfs d
 *.tgz filter=lfs diff=lfs merge=lfs -text
 Packages/LiveStudioVirgo/Tools~/VirgoMotionFusion/VirgoMotionFusion_Data/Resources/unity[[:space:]]default[[:space:]]resources filter=lfs diff=lfs merge=lfs -text
 Packages/LiveStudioVirgo/Tools~/VirgoMotionFusion/VirgoMotionFusion_Data/globalgamemanagers filter=lfs diff=lfs merge=lfs -text
+Packages/LiveStudioVirgo/Tools~/VirgoMotionFusion/VirgoMotionFusion_Data/Resources/unity_builtin_extra filter=lfs diff=lfs merge=lfs -text
+Packages/LiveStudioVirgo/Tools~/VirgoMotionFusion/VirgoMotionFusion_Data/level* filter=lfs diff=lfs merge=lfs -text
