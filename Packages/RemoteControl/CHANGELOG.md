@@ -1,10 +1,11 @@
 # Changelog
 
 ## [0.25.0] - 2026-07-17
-<!-- changelog-sha: d045776f7657e470fde0eb29bdd790534ca0c9b8 -->
+<!-- changelog-sha: e35e6b466c57bae26ebaa8ecb4e4c73921db66bb -->
 
 ### Added
 
+- Invoking exposed functions with arguments and through property paths: `ExposedPropertySerializer.BuildInvokeArguments` builds a typed positional argument array from a JSON array (shared by the REST invoke path and callers that replay a stored call), and `ExposedObjectHandle.ResolveFunction` resolves a function reached through a property path (a nested function on a member), mirroring how the REST layer resolves nested members.
 - `ExposedProperty.TryGetValue<T>` / `TrySetValue<T>`: read and write value-type members without boxing, through typed delegates (`Func<object,T>` / `Action<object,T>`) emitted by the Source Generator.
 - `ShowIf` / `HideIf` accept multiple conditions and can be placed on methods. Conditions serialize as a `visibilityConditions` array and are AND-evaluated on the client, so a member — or a function button — can be gated by several conditions at once. A single condition still emits the legacy `visibility` field, keeping the type output byte-compatible.
 - `ImagePreviewAttribute`: a read-only control that polls a server-relative image URL and renders it (backs the Capture camera preview).

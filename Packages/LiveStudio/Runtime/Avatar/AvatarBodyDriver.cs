@@ -571,9 +571,21 @@ namespace Lilium.LiveStudio
             if (_HipsTransform() != null)
                 _baseHipPosition.Value = _HipsTransform().localPosition;
 
-            // 下半身ロック用: クリップ姿勢の hips 位置を root 基準オフセットとして捕捉し、humanScale で
-            // 正規化する。humanoid の腰位置 (RootT) はアバターの humanScale (腰高) が乗って解決されるため、
-            // サンプリング値をそのまま固定に使うとキャラクターの身長でロック位置が上下する。
+            // 下半身ロック用の hips 固定位置と足 IK ゴールは、クリップの Root Transform Position (Y) の
+            // Offset (AnimationClipSettings.level) を反映して焼く。SampleAnimation は applyRootMotion=false の
+            // ままだとこの Offset を無視する (root も hips も Offset 分ずれない) ため、Offset を設定した
+            // クリップだけロック腰位置が本来より浮く/沈む。applyRootMotion=true で再サンプリングすると Unity が
+            // Offset を root の移動 (≒ level×humanScale) として適用するので、移動後の root を基準に hips/足を
+            // 捕捉すれば Offset がそのまま反映される。基準姿勢の回転と baseHipPosition (非ロック経路用) は
+            // 上の非ルートモーションサンプルのまま据え置き、root/hips/ボーンは末尾でまとめて復元する。
+            bool savedApplyRootMotion = _animator.applyRootMotion;
+            _animator.applyRootMotion = true;
+            _overrideClip.SampleAnimation(_animator.gameObject, 0f);
+            _animator.applyRootMotion = savedApplyRootMotion;
+
+            // hips 位置を root 基準オフセットとして捕捉し、humanScale で正規化する。humanoid の腰位置
+            // (RootT) はアバターの humanScale (腰高) が乗って解決されるため、サンプリング値をそのまま
+            // 固定に使うとキャラクターの身長でロック位置が上下する。
             var hipsSampled = _HipsTransform();
             if (hipsSampled != null)
             {

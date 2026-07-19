@@ -1,10 +1,12 @@
 # Changelog
 
 ## [0.25.0] - 2026-07-17
-<!-- changelog-sha: c7e861eafdda90dd7e573cda31b4e8ff62b2e076 -->
+<!-- changelog-sha: e35e6b466c57bae26ebaa8ecb4e4c73921db66bb -->
 
 ### Added
 
+- `AddSwitchAvatarOperation` creates an operation set that switches the active avatar, with the deck tile's full-frame background set to that avatar's thumbnail. `DeckControl` gains a `backgroundAssetId` stored as a portable project-relative reference (resolved back by `AvatarImageHandler`), so a saved deck survives moving the project or opening it on another machine.
+- `InvokeFunctionOperation` can invoke exposed functions that take arguments and reach nested functions: it stores the positional call arguments as a JSON array (`argsJson`) plus an optional `propertyPath` (e.g. a `StageManager` set element's `WarpTo`), not just a no-argument function on the target. `AddFunctionOperation` gains trailing optional `argsJson` / `propertyPath` parameters, keeping the existing no-argument overload source-compatible.
 - `VRCAvatar` now drives body animation, tracking gating, mesh visibility and the lower-body lock through `AvatarBodyDriver` (PlayableGraph) like `VRCFTAvatar`, so VRChat avatars gain untracked-part body-override clips and the lower-body pose lock. Viseme / voice and expression parameters are read and written through the wrapped controller playable.
 - Built-in animation asset catalog: `AnimationClip`s shipped in `Resources` are baked into a `BuiltinAssetCatalog` (Editor `BuiltinAssetCatalogBuilder`) and surfaced as `BuiltinAnimationAsset` resources. `BuiltinAssetRegistry` registers each clip in `AssetRegistry` by GUID eagerly and idempotently (play start, editor load, on demand), so persisted body-override references resolve synchronously on scene restore. Catalog entries are injected into the project asset list and marked `isBuiltin`, so `ExternalAssetManager` never prunes or persists them and removal is rejected.
 - `AvatarController`'s body-override slot now sources its candidates from `GET /api/assets?type=AnimationClip` (built-in `Resources` clips plus external `*.anim.lsb` bundles) instead of the inspector `_bodyOverrideClipPresets` array, which is removed.
@@ -21,6 +23,8 @@
 
 ### Fixed
 
+- The lower-body lock now honors a body-override clip's "Root Transform Position (Y)" offset (the humanoid muscle-clip `level` setting). `AvatarBodyDriver` baked the locked hip position and foot-IK goals with `AnimationClip.SampleAnimation` while `applyRootMotion` was disabled, which silently drops that offset, so a sitting clip authored with a Y offset (to sink the hips) locked at the un-offset height and floated — while a clip with a zero offset looked fine. The lock offset and foot goals are now re-sampled with root motion enabled so the clip's Y offset is applied; the base pose used off the lock path is unchanged.
+- A momentary deck button no longer intermittently misses its action on fast taps: press and release arrive as two REST calls, and when both collapsed within one `Update` frame the manager never observed `held=true`, silently losing the release trigger. `SetHeld` now latches a release pulse on the rising edge so it fires exactly once.
 - The lower-body lock no longer shakes the head from side to side on rigs whose hips parent carries a rotation (e.g. Blender Z-up armatures imported with X=-90). The root-yaw compensation was prepended to the hips local rotation, which turned the world yaw delta into roll; it is now applied as a world-space delta on the hips world rotation, independent of the rig's parent chain.
 - The lower-body lock no longer clamps the legs fully straight with a degenerate knee axis on avatars whose `humanScale` is not 1. Foot IK goals were captured as raw root-local positions while the locked hip is humanScale-normalized, so the hip-to-foot distance changed and the clip's leg pose became unreachable. Goals are now captured relative to the sampled hips and rebased onto the normalized lock hip offset.
 - The lower-body lock height no longer shifts with avatar height: `AvatarBodyDriver` locks the hips to the override clip's hip position through a humanScale-normalized, root-relative offset applied in world space.
