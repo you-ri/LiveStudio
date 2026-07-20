@@ -66,6 +66,19 @@ namespace Lilium.RemoteControl.Tests
             public TestDirtyNestedStruct nested;
         }
 
+        // Mirrors the real split that decides whether a change is an "unsaved edit": persistable
+        // members are written by a save, non-persistable ones are runtime-only state.
+        [Serializable]
+        [ExposedClass("TestDirtyMixedPersistence")]
+        public class TestDirtyMixedPersistence
+        {
+            [ExposedField]
+            public int saved;
+
+            [ExposedField(persistable = false)]
+            public int runtimeOnly;
+        }
+
         [Serializable]
         [ExposedClass("TestDirtyClassWithArray")]
         public class TestDirtyClassWithArray
@@ -687,6 +700,102 @@ namespace Lilium.RemoteControl.Tests
             Assert.IsTrue(dirtyProps.Contains("value"));
             Assert.IsTrue(dirtyProps.Contains("name"));
             Assert.IsFalse(dirtyProps.Contains("position"));
+        }
+
+        #endregion
+
+        #region MarkClean Tests
+
+        [Test]
+        public void MarkClean_ClearsDirtyWithoutRevertingValues()
+        {
+            // Arrange
+            ExposedClass.RegisterFromAttributes<TestDirtyClass>();
+            var testObj = new TestDirtyClass { value = 42, name = "Saved", position = 1.0f };
+            var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
+            var exposedObj = new ExposedObjectHandle("test-markclean-1", exposedClass, testObj);
+            ExposedObjectDefaultRegistry.CaptureDefaults(exposedObj, DefaultExposedObjectResolver.Instance);
+
+            // A restore applies saved values; they differ from the captured defaults, so the object
+            // is dirty even though the user has not touched anything.
+            testObj.value = 100;
+            Assume.That(exposedObj.isDirty, Is.True, "precondition: applied value should be dirty");
+
+            // Act
+            exposedObj.MarkClean();
+
+            // Assert: no longer counted as an unsaved edit, and the value itself is untouched.
+            Assert.IsFalse(exposedObj.isDirty);
+            Assert.AreEqual(100, testObj.value);
+        }
+
+        [Test]
+        public void MarkClean_KeepsSerializationDefaults_SoDeltaSaveStillWritesTheOverride()
+        {
+            // Guards the reason MarkClean touches only the user-change baseline: if it moved the
+            // serialization baseline too, the applied value would become the default and the next
+            // delta save would silently drop it.
+            ExposedClass.RegisterFromAttributes<TestDirtyClass>();
+            var testObj = new TestDirtyClass { value = 42, name = "Saved", position = 1.0f };
+            var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
+            var exposedObj = new ExposedObjectHandle("test-markclean-2", exposedClass, testObj);
+            ExposedObjectDefaultRegistry.CaptureDefaults(exposedObj, DefaultExposedObjectResolver.Instance);
+
+            testObj.value = 100;
+
+            // Act
+            exposedObj.MarkClean();
+
+            // Assert: the serialization baseline still holds the pre-override default (42), so the
+            // delta save keeps emitting value=100.
+            var defaults = ExposedObjectDefaultRegistry.GetDefaults(exposedObj);
+            Assert.IsNotNull(defaults);
+            Assert.AreEqual(42, defaults["value"].Value<int>());
+        }
+
+        [Test]
+        public void MarkClean_EditAfterwardsIsDirtyAgain()
+        {
+            ExposedClass.RegisterFromAttributes<TestDirtyClass>();
+            var testObj = new TestDirtyClass { value = 42, name = "Saved", position = 1.0f };
+            var exposedClass = ExposedClass.Find(typeof(TestDirtyClass));
+            var exposedObj = new ExposedObjectHandle("test-markclean-3", exposedClass, testObj);
+            ExposedObjectDefaultRegistry.CaptureDefaults(exposedObj, DefaultExposedObjectResolver.Instance);
+
+            testObj.value = 100;
+            exposedObj.MarkClean();
+            Assume.That(exposedObj.isDirty, Is.False, "precondition: clean right after MarkClean");
+
+            // Act: a genuine user edit after the re-baseline.
+            testObj.value = 101;
+
+            // Assert
+            Assert.IsTrue(exposedObj.isDirty);
+        }
+
+        [Test]
+        public void IsDirty_IgnoresNonPersistableMembers()
+        {
+            // "Unsaved changes" means "a save would write something different". Members a save never
+            // writes must not count — they are exactly what async loading churns after a scene is
+            // restored (crawl-built asset catalogs, resolved-reference name lists), and counting them
+            // reported the scene as unsaved on every launch and blocked quit.
+            ExposedClass.RegisterFromAttributes<TestDirtyMixedPersistence>();
+            var testObj = new TestDirtyMixedPersistence { saved = 1, runtimeOnly = 1 };
+            var exposedClass = ExposedClass.Find(typeof(TestDirtyMixedPersistence));
+            var exposedObj = new ExposedObjectHandle("test-persistable-1", exposedClass, testObj);
+            ExposedObjectDefaultRegistry.CaptureDefaults(exposedObj, DefaultExposedObjectResolver.Instance);
+            exposedObj.MarkClean();
+
+            // Act: only the non-persistable member changes.
+            testObj.runtimeOnly = 999;
+
+            // Assert
+            Assert.IsFalse(exposedObj.isDirty, "a non-persistable change must not count as unsaved");
+
+            // And the persistable one still does.
+            testObj.saved = 2;
+            Assert.IsTrue(exposedObj.isDirty, "a persistable change must count as unsaved");
         }
 
         #endregion

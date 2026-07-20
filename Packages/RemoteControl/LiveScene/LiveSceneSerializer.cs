@@ -223,37 +223,12 @@ namespace Lilium.RemoteControl.LiveScene
                 baseSceneName);
         }
 
-        /// <summary>
-        /// 現在の Container 状態と基準 JSON を比較し、差分があれば true。
-        /// baselineJson または container が null の場合は false。
-        /// baseSceneName は baselineJson から抽出して比較対象 JSON にも反映する
-        /// （baseline 生成時と同じフィールドが揃うように）。
-        /// </summary>
-        public static bool HasChanges(ExposedObjectContainer container, string baselineJson)
-        {
-            if (container == null) return false;
-            if (baselineJson == null) return false;
-            var baseSceneName = ExtractBaseSceneName(baselineJson);
-            return !_LiveSceneEquals(BuildLiveSceneJson(container, baseSceneName), baselineJson);
-        }
-
-        /// <summary>
-        /// Compares two live-scene JSON documents for state equality, ignoring the informational
-        /// <c>metadata</c> block (package / app / unity version) and any formatting or property-order
-        /// differences. This lets a scene saved by a different build, or a file reformatted in an editor,
-        /// round-trip without being mistaken for an edit. An exact ordinal match short-circuits to equal;
-        /// if the strings differ and either side is not valid JSON, they are treated as not equal.
-        /// </summary>
-        private static bool _LiveSceneEquals(string a, string b)
-        {
-            if (string.Equals(a, b, StringComparison.Ordinal)) return true;
-            JObject ja, jb;
-            try { ja = JObject.Parse(a); jb = JObject.Parse(b); }
-            catch (JsonException) { return false; }
-            ja.Remove("metadata");
-            jb.Remove("metadata");
-            return JToken.DeepEquals(ja, jb);
-        }
+        // Unsaved-change detection used to live here as HasChanges(container, baselineJson): serialize
+        // the whole scene and diff it against the file. That could not distinguish "the user edited
+        // something" from "this build serializes the scene differently than the build that wrote the
+        // file", so a scene saved by an older version reported unsaved changes forever and blocked
+        // quit. It now lives in LiveSceneSaveSystem.HasUnsavedChanges, which asks the per-object dirty
+        // tracking instead.
 
         /// <summary>
         /// Reads the top-level <c>baseSceneName</c> from a scene JSON without performing a full deserialization.
@@ -625,6 +600,10 @@ namespace Lilium.RemoteControl.LiveScene
                 var handle = resolver.FindById(rootId);
                 if (handle == null) return false;
                 ExposedPropertySerializer.FromJson(entryJson, handle.Value, resolver, captureDefaults: false);
+                // Deferred apply of saved state, not a user edit: this lands after the load-time
+                // re-baseline, so adopt it as the user-change baseline or the quit check reports the
+                // restored values as unsaved changes.
+                handle.Value.MarkClean();
                 return true;
             }
 
@@ -637,6 +616,9 @@ namespace Lilium.RemoteControl.LiveScene
             var tempExposed = ExposedObjectHandle.CreateUnregistered(pendingClass, target);
             ExposedObjectDefaultRegistry.EnsureDefaultsCaptured(tempExposed, resolver);
             ExposedPropertySerializer.FromJson(entryJson, tempExposed, resolver, captureDefaults: false);
+            // Same as the root branch. The handle is unregistered, but the dirty baselines are keyed by
+            // target reference, so this cleans the state the registered handle reports too.
+            tempExposed.MarkClean();
             return true;
         }
 

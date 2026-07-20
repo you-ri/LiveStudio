@@ -254,6 +254,15 @@ namespace Lilium.RemoteControl
             ExposedObjectDefaultRegistry.ClearPropertyDirty(this, propertyPath, DefaultExposedObjectResolver.Instance);
         }
 
+        /// <summary>
+        /// Adopts the current state as the user-change baseline without touching the serialization
+        /// defaults. See <see cref="ExposedObjectDefaultRegistry.MarkClean"/>.
+        /// </summary>
+        public void MarkClean()
+        {
+            ExposedObjectDefaultRegistry.MarkClean(this, DefaultExposedObjectResolver.Instance);
+        }
+
         public IReadOnlyCollection<string> GetDirtyProperties()
         {
             return ExposedObjectDefaultRegistry.GetDirtyProperties(this, DefaultExposedObjectResolver.Instance);

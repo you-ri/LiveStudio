@@ -152,6 +152,11 @@ namespace Lilium.LiveStudio
                 var wrapperId = _ResolveControllerObjectId();
                 if (!string.IsNullOrEmpty(wrapperId))
                     LiveScenePendingStore.ApplyFor(wrapperId, DefaultExposedObjectResolver.Instance);
+
+                // The load is complete and everything applied above came from disk, not from the user.
+                // Re-baseline the dirty tracking (delta baseline untouched) so an avatar that finishes
+                // loading after the scene restore is not reported as an unsaved change at quit time.
+                AssetStateSnapshot.MarkAllClean(controllerGO);
             };
             service.onAvatarChanged += handler;
         }

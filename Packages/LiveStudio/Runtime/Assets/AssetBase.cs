@@ -296,6 +296,30 @@ namespace Lilium.LiveStudio
             }
         }
 
+        /// <summary>
+        /// Adopts the current state of the wrapper and its components as the user-change baseline.
+        ///
+        /// Call as the LAST step of an asset's load sequence — after CaptureDefaults, after the
+        /// state-carrier Restore, and after the deferred live-scene apply — so everything the load
+        /// itself applied stops counting as an unsaved user edit. The serialization baseline is left
+        /// alone, so delta saves and save-as-preset still write the full diff.
+        /// </summary>
+        public static void MarkAllClean(GameObject instance)
+            => _MarkAllClean(_WrapperHandleForGameObject(instance), instance);
+
+        /// <inheritdoc cref="MarkAllClean(GameObject)"/>
+        public static void MarkAllClean(ExposedGameObject exposed, GameObject instance)
+            => _MarkAllClean(_WrapperHandle(exposed), instance);
+
+        private static void _MarkAllClean(ExposedObjectHandle? wrapperHandle, GameObject instance)
+        {
+            if (instance == null) return;
+            foreach (var entry in _EnumerateHandles(wrapperHandle, instance))
+            {
+                entry.handle.MarkClean();
+            }
+        }
+
         // Serializes each handle with the given strategy (full Capture or CaptureDelta) into the shared
         // { wrapper, components } snapshot. The per-instance @id changes every reload, and wrapper
         // parenting / nested component values are owned elsewhere, so those keys are stripped. When

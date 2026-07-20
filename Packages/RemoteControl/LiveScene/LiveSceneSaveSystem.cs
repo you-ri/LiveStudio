@@ -97,7 +97,6 @@ namespace Lilium.RemoteControl.LiveScene
         private readonly string _defaultFileName;
         private readonly bool _switchSceneOnLoad;
         private string _currentFilePath;
-        private string _baselineJson;
 
         public event Action onResetDataRequested;
 
@@ -300,7 +299,9 @@ namespace Lilium.RemoteControl.LiveScene
             var baseSceneName = _ResolveBaseSceneName();
             var json = LiveSceneSerializer.BuildLiveSceneJson(_objectContainer, baseSceneName);
             System.IO.File.WriteAllText(fullPath, json);
-            _baselineJson = json;
+
+            // Everything on disk is now the saved state, so nothing counts as an unsaved edit.
+            _MarkAllClean();
 
             // Project scope のメンバーは live.json から除外済みなので、ここで
             // {projectPath}/Settings/{クラス名}.settings.json へ別途書き出す。
@@ -329,15 +330,51 @@ namespace Lilium.RemoteControl.LiveScene
             ProjectSettingsStore.WriteAll(projectPath, perClass);
         }
 
+        /// <summary>
+        /// True when any exposed object has been edited since the last load or save.
+        ///
+        /// This asks the per-object dirty tracking rather than diffing a serialized snapshot of the
+        /// whole scene against the file. Document comparison could not tell "the user changed
+        /// something" apart from "this build serializes the scene differently than the build that
+        /// wrote the file", so a scene saved by an older version reported unsaved changes forever and
+        /// blocked quit. Dirty state is re-baselined on load and on save (<see cref="_MarkAllClean"/>),
+        /// which makes the question exactly "edited since then".
+        /// </summary>
         public bool HasUnsavedChanges()
-            => LiveSceneSerializer.HasChanges(_objectContainer, _baselineJson);
+        {
+            if (_objectContainer == null) return false;
+
+            var objects = ExposedObjectGraph.ResolveExposedObjects(
+                new List<IExposedObject>(_objectContainer.EnumerateAllObjects()), _objectContainer);
+
+            foreach (var obj in objects)
+            {
+                if (obj.isDirty) return true;
+            }
+            return false;
+        }
+
+        // Adopts the current state of every contained object as its user-change baseline. Called once
+        // a load has finished applying and after each save. Only the dirty baseline moves; the
+        // serialization defaults stay put, so a later delta save still writes the full diff.
+        private void _MarkAllClean()
+        {
+            if (_objectContainer == null) return;
+
+            var objects = ExposedObjectGraph.ResolveExposedObjects(
+                new List<IExposedObject>(_objectContainer.EnumerateAllObjects()), _objectContainer);
+
+            foreach (var obj in objects)
+            {
+                obj.MarkClean();
+            }
+        }
 
         public void ClearCurrentData()
         {
             var fullPath = _ResolvePath(_currentFilePath);
             _currentFilePath = _defaultFileName;
             StartupStateStore.Delete(_StateDir());
-            _baselineJson = null;
 
             if (System.IO.File.Exists(fullPath))
                 System.IO.File.Delete(fullPath);
@@ -506,16 +543,12 @@ namespace Lilium.RemoteControl.LiveScene
                 ProjectSettingsStore.ApplyAll(_stateProjectDirectoryOverride, _objectContainer);
             }
 
-            // Use the loaded file's content verbatim as the dirty baseline. The file was written by a
-            // previous BuildLiveSceneJson save and already holds the COMPLETE saved state — including
-            // entries for assets (e.g. props) that finish loading asynchronously after this point.
-            // Re-snapshotting the live container here would capture it before those async loads complete,
-            // so the quit-time snapshot would always look "more populated" and falsely report unsaved
-            // changes (the dialog appeared on every launch→quit, even right after a clean save).
-            // HasChanges tolerates version / formatting differences, so comparing against the raw file is
-            // safe. When no file exists (a brand-new scene), fall back to a freshly built empty baseline.
-            _baselineJson = fileJson
-                ?? LiveSceneSerializer.BuildLiveSceneJson(_objectContainer, _ResolveBaseSceneName());
+            // Whatever was just applied — the scene file, the project settings, or neither — is the
+            // state the user opened, not something they edited, so re-baseline the dirty tracking here.
+            // Assets that finish loading asynchronously after this point re-baseline themselves when
+            // their load completes (see ExposedObjectDefaultRegistry.CaptureDefaultsPreservingOverrides),
+            // so a late prop no longer resurfaces as an unsaved edit at quit time.
+            _MarkAllClean();
         }
 
         // A Unity scene counts as a "base scene" only when it is registered in build settings.

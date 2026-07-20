@@ -41,7 +41,13 @@ namespace Lilium.LiveStudio
             if (process == null)
             {
                 UnityEngine.Debug.LogError($"[Studio] Failed to start child application. path:{applicationFullPath}");
+                return null;
             }
+
+            // Tie the child to this process's lifetime. The graceful stop paths below only run from
+            // managed cleanup, so without this a force-terminated host leaves orphans holding ports
+            // and file locks.
+            ChildProcessJob.Assign(process);
             return process;
         }
 

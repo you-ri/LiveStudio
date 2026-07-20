@@ -219,6 +219,11 @@ namespace Lilium.LiveStudio
             // baseline used by "save as preset". Keyed by objectId, the id the wrapper was just re-keyed to.
             if (!string.IsNullOrEmpty(objectId))
                 LiveScenePendingStore.ApplyFor(objectId, DefaultExposedObjectResolver.Instance);
+
+            // The load is complete and everything applied above came from disk, not from the user.
+            // Re-baseline the dirty tracking (delta baseline untouched) so a prop that finishes loading
+            // after the scene restore is not reported as an unsaved change at quit time.
+            AssetStateSnapshot.MarkAllClean(_exposed, _instance);
         }
 
         // Unregisters the exposed wrapper from its container and destroys the prop instance, dropping

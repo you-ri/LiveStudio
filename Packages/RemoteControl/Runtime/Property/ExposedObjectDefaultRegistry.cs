@@ -153,8 +153,15 @@ namespace Lilium.RemoteControl
             var defaultJson = _GetUserChangeBaseline(key);
             if (defaultJson == null) return false;
 
-            // ExposedPropertyRef は baseline に含まれないため、current 側でも除外して比較する
-            var currentJson = ExposedPropertySerializer.SerializeFullToJObject(obj, resolver, forPersistence: false, skipPropertyRef: true);
+            // ExposedPropertyRef は baseline に含まれないため、current 側でも除外して比較する。
+            //
+            // Compare in persistence shape (matching CaptureDefaults and the per-property baseline):
+            // "dirty" answers "would a save write something different", so members a save never
+            // writes must not count. Read-only and non-persistable members are exactly what async
+            // loading churns after a scene is restored — the crawl-built ExternalAssetManager.assets
+            // catalog, StageManager.sets, TransformRef.availableOwnerNames — and including them
+            // reported the scene as unsaved on every launch, blocking quit.
+            var currentJson = ExposedPropertySerializer.SerializeFullToJObject(obj, resolver, forPersistence: true, skipPropertyRef: true);
             var diff = ExposedPropertySerializer.JsonDiff(defaultJson, currentJson);
             if (diff != null) return true;
 
@@ -242,8 +249,9 @@ namespace Lilium.RemoteControl
             if (defaultJson == null) return Array.Empty<string>();
 
             var result = new List<string>();
-            // PropertyRef は currentJson から除外し、参照先の dirty を別途判定する
-            var currentJson = ExposedPropertySerializer.SerializeFullToJObject(obj, resolver, forPersistence: false, skipPropertyRef: true);
+            // PropertyRef は currentJson から除外し、参照先の dirty を別途判定する。
+            // Persistence shape, for the same reason as IsDirty.
+            var currentJson = ExposedPropertySerializer.SerializeFullToJObject(obj, resolver, forPersistence: true, skipPropertyRef: true);
 
             foreach (var propType in obj.propertyTypes)
             {
@@ -291,6 +299,33 @@ namespace Lilium.RemoteControl
         public static void ClearDirty(ExposedObjectHandle obj, IExposedObjectResolver resolver)
         {
             CaptureDefaults(obj, resolver);
+        }
+
+        /// <summary>
+        /// Adopts the object's CURRENT state as the user-change baseline, so nothing on it counts as
+        /// an unsaved user edit until the next write.
+        ///
+        /// Only <see cref="_userChangeBaseline"/> is touched. <see cref="_serializationBaseline"/> —
+        /// which delta serialization and Revert read — keeps the captured defaults, so a save that
+        /// follows still writes the full diff. That split is what lets "unsaved changes" mean
+        /// "edited since the last load/save" instead of "differs from the scene's built-in defaults":
+        /// every value restored from a live scene differs from those defaults, so without this the
+        /// quit check would report unsaved changes on every launch.
+        /// </summary>
+        public static void MarkClean(ExposedObjectHandle obj, IExposedObjectResolver resolver)
+        {
+            var key = _GetKey(obj);
+            if (!_serializationBaseline.ContainsKey(key))
+            {
+                // No defaults captured yet; CaptureDefaults establishes both baselines at once.
+                CaptureDefaults(obj, resolver);
+                return;
+            }
+
+            // Serialize exactly as IsDirty / GetDirtyProperties build their "current" side, so the
+            // very next comparison finds no difference.
+            _userChangeBaseline[key] = ExposedPropertySerializer.SerializeFullToJObject(
+                obj, resolver, forPersistence: true, skipPropertyRef: true);
         }
 
         /// <summary>

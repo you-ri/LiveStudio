@@ -82,8 +82,18 @@ namespace Lilium.LiveStudio
         [ExposedProperty]
         public float weight
         {
-            get => ExpressionService.GetExpressionWeight(FacialKey.CreateCustom(_name));
-            set => ExpressionService.SetExpressionWeight(FacialKey.CreateCustom(_name), value);
+            // A default-constructed entry has an empty name: that is the array-diff template built by
+            // ExposedPropertySerializer._GetDefaultTemplate, not a live expression slot. FacialKey
+            // rejects an empty custom name, and there is no expression to drive anyway, so read 0 and
+            // ignore writes rather than throwing out of a serialization pass.
+            get => string.IsNullOrEmpty(_name)
+                ? 0f
+                : ExpressionService.GetExpressionWeight(FacialKey.CreateCustom(_name));
+            set
+            {
+                if (string.IsNullOrEmpty(_name)) return;
+                ExpressionService.SetExpressionWeight(FacialKey.CreateCustom(_name), value);
+            }
         }
     }
 
