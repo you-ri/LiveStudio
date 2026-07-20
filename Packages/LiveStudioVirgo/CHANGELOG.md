@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- `FusionApp` now always passes the window preference explicitly: `-hidewindow` or the new `-showwindow`. Fusion starts hidden (tray-only) by default, so `fusionHideWindow: false` alone would otherwise launch a Fusion that hides itself anyway.
+
 ## [0.25.0] - 2026-07-17
 <!-- changelog-sha: c7e861eafdda90dd7e573cda31b4e8ff62b2e076 -->
 

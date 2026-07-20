@@ -39,9 +39,17 @@ namespace Lilium.LiveStudio.Virgo
         /// <summary>
         /// Launch-arg asking the Fusion Player build to hide its own window on startup (tray-only).
         /// ProcessWindowStyle.Hidden is only a STARTUPINFO hint that the Unity Player may ignore,
-        /// so Fusion also self-hides when it sees this argument.
+        /// so Fusion also self-hides when it sees this argument. Fusion now starts hidden by
+        /// default, so this only restates that default and is kept for explicitness.
         /// </summary>
         public const string kHideWindowArgument = "-hidewindow";
+
+        /// <summary>
+        /// Launch-arg asking the Fusion Player build to keep its window visible on startup.
+        /// Fusion runs as a tray-resident process and starts hidden by default, so this
+        /// argument is required to override that default.
+        /// </summary>
+        public const string kShowWindowArgument = "-showwindow";
 
         [SerializeField] PathType _fusionPathType = PathType.PackageRelative;
 
@@ -92,14 +100,13 @@ namespace Lilium.LiveStudio.Virgo
             }
 
             // Always mark the child so FusionQuitSignalListener activates regardless of batch mode
-            // (the Player build is not batch mode), and ask it to self-hide when requested.
+            // (the Player build is not batch mode). Fusion starts hidden by default, so the window
+            // preference is always passed explicitly: without -showwindow, hideWindow: false would
+            // launch a Fusion that hides itself anyway.
             var arguments = string.IsNullOrEmpty(_fusionArguments)
                 ? kFusionChildArgument
                 : _fusionArguments + " " + kFusionChildArgument;
-            if (_fusionHideWindow)
-            {
-                arguments += " " + kHideWindowArgument;
-            }
+            arguments += " " + (_fusionHideWindow ? kHideWindowArgument : kShowWindowArgument);
 
             _process = ChildProcessHost.Start(fullPath, arguments, _fusionHideWindow);
         }
