@@ -68,6 +68,7 @@ MonoBehaviour:
       data:
         objectIds:
         - LiveSceneManager
+        - RenderQuality
     - rid: 1948541687429857378
       type: {class: ScenePage, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
       data:

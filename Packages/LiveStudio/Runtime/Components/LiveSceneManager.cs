@@ -11,9 +11,6 @@ namespace Lilium.LiveStudio
     public static class LiveSceneManager
     {
         [ExposedProperty, Hide]
-        public static string[] qualityNames => QualitySettings.names;
-
-        [ExposedProperty, Hide]
         public static string scenePath
         {
             get
@@ -55,44 +52,6 @@ namespace Lilium.LiveStudio
                 }
                 return result;
             }
-        }
-
-        // 品質設定はどのシーンを開いても共通の設定なので Project scope で永続化する。
-        [ExposedField(persistScope = PersistScope.Project), Hide]
-        [FormerlyExposedAs("quality")]
-        private static string _quality;
-
-        [Section("high_quality", "SECTION_QUALITY_TITLE", "SECTION_QUALITY_SUBTITLE")]
-        [ExposedProperty]
-        [StringSelector(nameof(qualityNames))]
-        public static string quality
-        {
-            get => _quality;
-            set
-            {
-                _quality = value;
-                SetQuality(value);
-            }
-        }
-
-        public static int currentQualityIndex => QualitySettings.GetQualityLevel();
-
-        // Sync the shadow field with QualitySettings on startup so the initial
-        // getter value reflects the active quality level (and the JSON baseline
-        // matches reality for dirty detection).
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-        private static void _InitializeQuality()
-        {
-            _quality = QualitySettings.names[QualitySettings.GetQualityLevel()];
-        }
-
-        // Convention-based static deserialize callback fired by ExposedClass when
-        // the owning ExposedObjectHandle's target is null (static class). Re-applies
-        // _quality to QualitySettings since the shadow field write bypasses the
-        // property setter.
-        public static void OnAfterExposedDeserialize()
-        {
-            if (!string.IsNullOrEmpty(_quality)) SetQuality(_quality);
         }
 
         [ExposedFunction(label = "LIVESCENE_OPEN_SAVE_FOLDER"), Hide]
@@ -190,21 +149,6 @@ namespace Lilium.LiveStudio
 
             Debug.LogWarning($"[Studio] Scene '{sceneName}' not found in build settings. Falling back to active scene.");
             SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-        }
-
-        public static void SetQuality(string name)
-        {
-            var names = QualitySettings.names;
-            for (int i = 0; i < names.Length; i++)
-            {
-                if (names[i] == name)
-                {
-                    QualitySettings.SetQualityLevel(i, true);
-                    return;
-                }
-            }
-
-            Debug.LogError($"[Studio] Quality level '{name}' not found. Available: {string.Join(", ", names)}");
         }
     }
 }

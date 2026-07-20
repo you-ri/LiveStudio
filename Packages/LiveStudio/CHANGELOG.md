@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- The render quality setting moved off the static `LiveSceneManager` class into `RenderQuality`, a serializable `IExposedObject` (like `StageManager`). Whether the remote app's settings page shows the quality section is now decided by registration: the settings `NavigatePage` lists the `RenderQuality` id, and `NavigateObjectSelector` skips ids that resolve to nothing, so an app exposes quality control by putting a `RenderQuality` in a `RemoteControlContainer` (or the host `RemoteControlBehaviour`) object list and hides it by leaving the instance out. The `Live Studio System` prefab registers one by default. `LiveSceneManager.quality` / `.qualityNames` / `.currentQualityIndex` / `.SetQuality` are removed, and the persisted level moves from `LiveSceneManager.settings.json` to `RenderQuality.settings.json` (the level resets to the project default once).
+
 ## [0.25.0] - 2026-07-17
 <!-- changelog-sha: 84adc94402cc38a0d4f33c34ea8e7c9364bbd108 -->
 

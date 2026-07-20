@@ -96,6 +96,7 @@ MonoBehaviour:
   _objects:
   - rid: 4217817217901789388
   - rid: 4217817217901789389
+  - rid: 4217817297473503389
   - rid: 4217817217901789390
   - rid: 4217817217901789391
   - rid: 4217817297473503388
@@ -119,3 +120,7 @@ MonoBehaviour:
       type: {class: OperationManager, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
       data:
         operationSets: []
+        decks: []
+    - rid: 4217817297473503389
+      type: {class: RenderQuality, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      data: 
