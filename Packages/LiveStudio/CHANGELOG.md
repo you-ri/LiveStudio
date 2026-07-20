@@ -1,6 +1,12 @@
 # Changelog
 
-## [Unreleased]
+## [0.25.2] - 2026-07-21
+<!-- changelog-sha: 9a672726afe9b37983b2e8e941a5380792866d98 -->
+
+### Fixed
+
+- A child process started through `ChildProcessHost` is now tied to the host's lifetime by a kill-on-close job object. Every graceful stop path ran from managed cleanup, so a host that died without unwinding (a crash, End task, the quit watchdog) orphaned Fusion and the Remote app, which went on holding their ports and locking build output. `StartChildApplication` also returns early when the process fails to start instead of falling through to use it.
+- `ExpressionEntry.weight` no longer throws on the empty-named template instance that the array diff builds: `FacialKey` rejects an empty custom name, and there is no expression slot to drive, so the property now reads `0` and ignores writes. The exception escaped `wantsToQuit`, and Unity then let the quit through without the unsaved-changes check ever running — which looks like a successful quit and is not.
 
 ### Changed
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.25.2] - 2026-07-21
+<!-- changelog-sha: 9a672726afe9b37983b2e8e941a5380792866d98 -->
+
+### Added
+
+- `ExposedObjectHandle.MarkClean` / `ExposedObjectDefaultRegistry.MarkClean` adopt an object's current state as the user-change baseline, so nothing on it counts as an unsaved edit until the next write. Only the user-change baseline moves; the serialization baseline keeps the captured defaults, so a delta save that follows still writes the full diff. Call it wherever state arrives from disk.
+
+### Fixed
+
+- Unsaved-change detection no longer reports a scene as dirty on every launch, which blocked quitting a Studio that had opened an existing project. The check serialized the whole scene and string-compared it against the file, so it could not tell "the user edited something" apart from "this build serializes the scene differently than the build that wrote the file" — any project whose `live.json` came from an older version failed it forever. It now asks the per-object dirty tracking, re-baselined wherever state arrives from disk (scene load, save, deferred pending entries, asset load tails).
+- `IsDirty` and `GetDirtyProperties` compare in persistence shape (`forPersistence: true`), matching `CaptureDefaults` and the per-property baseline. Dirty must mean "a save would write something different", so read-only and non-persistable members — exactly what async loading churns after a restore: the crawl-built `ExternalAssetManager.assets` catalog, rebuilt `StageManager.sets`, `TransformRef.availableOwnerNames` — no longer count.
+
 ## [0.25.0] - 2026-07-17
 <!-- changelog-sha: e35e6b466c57bae26ebaa8ecb4e4c73921db66bb -->
 
