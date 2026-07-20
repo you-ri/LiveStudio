@@ -1,10 +1,19 @@
 # Changelog
 
-## [Unreleased]
+## [0.25.1] - 2026-07-20
+<!-- changelog-sha: dc55cba22927641c3ad952c44a494539b13e05dc -->
+
+### Added
+
+- `THIRD_PARTY_NOTICES.md` documents the third-party components bundled under `Tools~/VirgoMotionFusion/` (MediaPipe and its models, MediaPipe Unity Plugin, Protocol Buffers, UniVRM, Newtonsoft.Json, Bouncy Castle, Final IK and the Unity packages), which this package shipped without attribution until now.
 
 ### Changed
 
 - `FusionApp` now always passes the window preference explicitly: `-hidewindow` or the new `-showwindow`. Fusion starts hidden (tray-only) by default, so `fusionHideWindow: false` alone would otherwise launch a Fusion that hides itself anyway.
+
+### Removed
+
+- The bundled Fusion build no longer ships the six AR Foundation Remote assemblies or `MCPForUnity.Runtime.dll`. Both are editor-only development tools that a Player build never references, and AR Foundation Remote is a paid Asset Store asset that was not meant to travel inside this openly distributed package. The build script drops them from `Managed/` and from `ScriptingAssemblies.json`.
 
 ## [0.25.0] - 2026-07-17
 <!-- changelog-sha: c7e861eafdda90dd7e573cda31b4e8ff62b2e076 -->
