@@ -1,6 +1,7 @@
 # Changelog
 
-## [Unreleased]
+## [0.25.3] - 2026-07-22
+<!-- changelog-sha: ead5a500c2674f81ae92f66e88e1b3eacac8bd4f -->
 
 ### Added
 
@@ -14,6 +15,10 @@
 ### Changed
 
 - The unsaved-changes prompt shown when quitting now goes through `RemoteConfirmSystem`, so it appears in the remote apps as well as on the machine. It no longer needs the deferring coroutine either: the prompt never blocks `wantsToQuit`, which simply declines the quit and lets the answer start a new one.
+
+### Fixed
+
+- The package compiles on Unity 6.5 (6000.5), where `Object.GetInstanceID` / `Resources.InstanceIDToObject` — and the `EntityId`⇔`int` implicit conversions that had kept them working since Unity 6.3 — were promoted to Obsolete errors. Every call site goes through `ExposedObjectUtility`, which is now the single place holding the version split, and the ID is carried as `long` so it still fits once `EntityId` outgrows 32 bits. The `@instanceID` field and the numeric-id fallback in `ExposedObjectHandler` are unchanged for callers; the values remain session-scoped and must not be persisted.
 
 ## [0.25.2] - 2026-07-21
 <!-- changelog-sha: 9a672726afe9b37983b2e8e941a5380792866d98 -->

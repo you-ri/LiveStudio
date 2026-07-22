@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.3] - 2026-07-22
+<!-- changelog-sha: ead5a500c2674f81ae92f66e88e1b3eacac8bd4f -->
+
+### Fixed
+
+- `InMemoryAssetCollector` compiles on Unity 6.5 (6000.5), where `Object.GetInstanceID` and the `EntityId`⇔`int` implicit conversions became Obsolete errors. Its visited-set key now comes from a version-guarded helper and is widened to `long`; only identity within a single collection pass matters, so the change is invisible to callers.
+
 ## [0.24.2] - 2026-07-03
 <!-- changelog-sha: 378d90c48c438183219cce60ea3f6e38536979f4 -->
 

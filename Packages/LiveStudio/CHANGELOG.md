@@ -1,6 +1,7 @@
 # Changelog
 
-## [Unreleased]
+## [0.25.3] - 2026-07-22
+<!-- changelog-sha: ead5a500c2674f81ae92f66e88e1b3eacac8bd4f -->
 
 ### Added
 
