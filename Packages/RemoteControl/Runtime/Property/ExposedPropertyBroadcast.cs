@@ -59,7 +59,7 @@ namespace Lilium.RemoteControl
             var jObject = ExposedPropertySerializer.ToJObject(
                 property.Value, DefaultExposedObjectResolver.Instance);
             jObject["type"] = "exposed_object_updated";
-            jObject["id"] = target.GetInstanceID().ToString();
+            jObject["id"] = ExposedObjectUtility.GetInstanceID(target).ToString();
 
             foreach (var instance in RemoteControlServerManager.servers.Values)
             {

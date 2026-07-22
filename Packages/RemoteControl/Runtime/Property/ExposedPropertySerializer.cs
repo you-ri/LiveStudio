@@ -109,7 +109,7 @@ namespace Lilium.RemoteControl
                 && exposedObject.target is UnityEngine.Object unityObj
                 && unityObj != null)
             {
-                jObject["@instanceID"] = unityObj.GetInstanceID().ToString();
+                jObject["@instanceID"] = ExposedObjectUtility.GetInstanceID(unityObj).ToString();
             }
             // @name は RemoteApp 側の表示用。永続化には不要。
             if (!forPersistence)
@@ -305,7 +305,7 @@ namespace Lilium.RemoteControl
                         jObject["@name"] = valueExposedObject.Value.name;
                         if (value is UnityEngine.Object refUnityObj && refUnityObj != null)
                         {
-                            jObject["@instanceID"] = refUnityObj.GetInstanceID().ToString();
+                            jObject["@instanceID"] = ExposedObjectUtility.GetInstanceID(refUnityObj).ToString();
                         }
                     }
                     return jObject;
@@ -328,7 +328,7 @@ namespace Lilium.RemoteControl
                         }
                         if (value is UnityEngine.Object truncatedUnityObj && truncatedUnityObj != null)
                         {
-                            jObject["@instanceID"] = truncatedUnityObj.GetInstanceID().ToString();
+                            jObject["@instanceID"] = ExposedObjectUtility.GetInstanceID(truncatedUnityObj).ToString();
                         }
                     }
                     return jObject;
@@ -341,7 +341,7 @@ namespace Lilium.RemoteControl
                     && value is UnityEngine.Object inlineUnityObj
                     && inlineUnityObj != null)
                 {
-                    jObject["@instanceID"] = inlineUnityObj.GetInstanceID().ToString();
+                    jObject["@instanceID"] = ExposedObjectUtility.GetInstanceID(inlineUnityObj).ToString();
                 }
 
                 if (!forPersistence && valueExposedObject != null)

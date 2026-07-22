@@ -29,7 +29,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
         {
             if (root == null || container == null) return 0;
 
-            var visited = new HashSet<int>();
+            var visited = new HashSet<long>();
             var queue = new Queue<Object>();
 
             // 1. シーン階層の全コンポーネントから whitelist 型の在メモリ参照を収集する。
@@ -38,7 +38,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 if (component == null) continue; // Missing Script
                 _ScanReferences(component, r =>
                 {
-                    if (_ShouldCollectFromComponent(r) && visited.Add(r.GetInstanceID()))
+                    if (_ShouldCollectFromComponent(r) && visited.Add(_GetId(r)))
                     {
                         queue.Enqueue(r);
                     }
@@ -62,7 +62,7 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 {
                     _ScanReferences(obj, r =>
                     {
-                        if (_ShouldCollectNested(r) && visited.Add(r.GetInstanceID()))
+                        if (_ShouldCollectNested(r) && visited.Add(_GetId(r)))
                         {
                             queue.Enqueue(r);
                         }
@@ -125,6 +125,20 @@ namespace Lilium.VRChatAvatarTransfer.Editor
                 && !(o is AudioClip)
                 && !(o is Avatar)
                 && !(o is AvatarMask);
+        }
+
+        // Unity 6.3 (6000.3) replaced GetInstanceID with GetEntityId, and Unity 6.5 (6000.5)
+        // promoted both the old API and the EntityId<->int implicit conversions to Obsolete errors.
+        // Only identity within this call matters here, so any stable 64-bit form will do.
+        private static long _GetId(Object o)
+        {
+#if UNITY_6000_5_OR_NEWER
+            return unchecked((long)EntityId.ToULong(o.GetEntityId()));
+#elif UNITY_6000_3_OR_NEWER
+            return o.GetEntityId();
+#else
+            return o.GetInstanceID();
+#endif
         }
     }
 }

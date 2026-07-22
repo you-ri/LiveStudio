@@ -63,7 +63,7 @@ namespace Lilium.RemoteControl.Tests
             var go = new GameObject("batch-target");
             _created.Add(go);
             var comp = go.AddComponent<TestBatchComponent>();
-            id = comp.GetInstanceID().ToString();
+            id = ExposedObjectUtility.GetInstanceID(comp).ToString();
             return comp;
         }
 

@@ -53,7 +53,7 @@ namespace Lilium.RemoteControl.LiveScene
 
             // Prefab GUID マップ構築とシリアライズを1パスで処理
             // ID付きオブジェクトのみトップレベルに出力（IDなしは親プロパティ経由でネスト出力）
-            var goPrefabMap = new Dictionary<int, string>();
+            var goPrefabMap = new Dictionary<long, string>();
             var jArray = new JArray();
             foreach (var obj in objects)
             {
@@ -70,7 +70,7 @@ namespace Lilium.RemoteControl.LiveScene
                     var prefabGo = LiveSceneObjectUtil.GetGameObject(obj);
                     if (prefabGo != null)
                     {
-                        goPrefabMap[prefabGo.GetInstanceID()] = unityObj.prefabSourceKey;
+                        goPrefabMap[ExposedObjectUtility.GetInstanceID(prefabGo)] = unityObj.prefabSourceKey;
                     }
                 }
 
@@ -86,7 +86,7 @@ namespace Lilium.RemoteControl.LiveScene
                 // Prefab から生成された新規エントリは「存在そのものが default からの差分」なので
                 // Delta モードでもプロパティ差分の有無に関わらず必ず出力する。
                 var go = LiveSceneObjectUtil.GetGameObject(obj);
-                bool isPrefabNew = go != null && goPrefabMap.ContainsKey(go.GetInstanceID());
+                bool isPrefabNew = go != null && goPrefabMap.ContainsKey(ExposedObjectUtility.GetInstanceID(go));
 
                 // onlyDirty の場合、メタデータ(@type/@id/@name)以外のプロパティがなければスキップ
                 // （ただし prefab-new エントリは存在情報を保持するため例外）
@@ -100,7 +100,7 @@ namespace Lilium.RemoteControl.LiveScene
                     fileResolver.AssignFileId(rootUnityObj, registerPending: false);
                 }
 
-                if (isPrefabNew && goPrefabMap.TryGetValue(go.GetInstanceID(), out var pfKey))
+                if (isPrefabNew && goPrefabMap.TryGetValue(ExposedObjectUtility.GetInstanceID(go), out var pfKey))
                 {
                     // Prefab 新規: @id を残したまま先頭に @prefab を差し込む (@source は付けない)。
                     // @prefab の値は prefab の Asset GUID。

@@ -917,7 +917,7 @@ namespace Lilium.RemoteControl
 
             // 最終フォールバック: 数値 instanceId として Unity の内部 API から逆引きして
             // 未登録の UnityEngine.Object を一時的な ExposedObjectHandle にラップする（レジストリ登録しない）
-            if (int.TryParse(id, out var unityInstanceId))
+            if (long.TryParse(id, out var unityInstanceId))
             {
                 var unityObj = ExposedObjectUtility.InstanceIDToObject(unityInstanceId);
                 if (unityObj != null)

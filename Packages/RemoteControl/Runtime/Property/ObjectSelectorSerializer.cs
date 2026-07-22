@@ -104,7 +104,7 @@ namespace Lilium.RemoteControl
                     directResult["@name"] = directObj.name;
                     if (value is UnityEngine.Object unityValue && unityValue != null)
                     {
-                        directResult["@instanceID"] = unityValue.GetInstanceID().ToString();
+                        directResult["@instanceID"] = ExposedObjectUtility.GetInstanceID(unityValue).ToString();
                     }
                 }
                 return directResult;
@@ -130,7 +130,7 @@ namespace Lilium.RemoteControl
                 if (!forPersistence)
                 {
                     result["@name"] = component.name;
-                    result["@instanceID"] = component.GetInstanceID().ToString();
+                    result["@instanceID"] = ExposedObjectUtility.GetInstanceID(component).ToString();
                 }
                 return result;
             }
