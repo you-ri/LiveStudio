@@ -1,6 +1,7 @@
 {
     "DIALOG_UNSAVED_CHANGES_TITLE": "Unsaved Changes",
     "DIALOG_UNSAVED_CHANGES_MESSAGE": "The live scene has unsaved changes. Save before quitting?",
+    "DIALOG_UNSAVED_CHANGES_OPEN_PROJECT_MESSAGE": "The live scene has unsaved changes. Save before opening another project?",
     "DIALOG_SAVE_AS_TITLE": "Save Live Scene As",
     "DIALOG_OK": "OK",
     "DIALOG_CANCEL": "Cancel",

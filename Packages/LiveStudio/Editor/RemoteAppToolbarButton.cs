@@ -1,7 +1,9 @@
 // Copyright (c) You-Ri, 2026
 
+using System;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -21,31 +23,13 @@ namespace Lilium.LiveStudio.Editor
     static class RemoteAppLauncher
     {
         static Process _process;
+        static SynchronizationContext _mainThreadContext;
+
+        /// <summary>Raised on the main thread whenever <see cref="IsRunning"/> changes.</summary>
+        public static event Action stateChanged;
 
         /// <summary>True while a Remote app started from the toolbar is still alive.</summary>
-        public static bool IsRunning
-        {
-            get
-            {
-                if (_process == null) return false;
-                try
-                {
-                    if (_process.HasExited)
-                    {
-                        _process.Dispose();
-                        _process = null;
-                        return false;
-                    }
-                    return true;
-                }
-                catch (System.InvalidOperationException)
-                {
-                    // The process was disposed elsewhere; treat it as stopped.
-                    _process = null;
-                    return false;
-                }
-            }
-        }
+        public static bool IsRunning => _process != null;
 
         public static void Toggle()
         {
@@ -75,12 +59,103 @@ namespace Lilium.LiveStudio.Editor
 
             // Always show the window when launched by hand from the editor; hiding it (the packaged
             // default in settings.remoteHideWindow) would defeat the purpose of opening the UI here.
-            _process = ChildProcessHost.Start(fullPath, settings.remoteArguments, hideWindow: false);
+            var process = ChildProcessHost.Start(fullPath, settings.remoteArguments, hideWindow: false);
+            if (process == null) return;
+
+            // Report a Remote app that the user quits on its own instead of having the toolbar poll
+            // for it. Exited is raised on a thread pool thread, so remember the main thread to hop
+            // back to; this runs from a button click, so the current context is the editor's.
+            _mainThreadContext = SynchronizationContext.Current;
+            process.EnableRaisingEvents = true;
+            process.Exited += _OnProcessExited;
+
+            _process = process;
+            stateChanged?.Invoke();
         }
 
         static void _Close()
         {
+            if (_process == null) return;
+
+            _process.Exited -= _OnProcessExited;
             ChildProcessHost.RequestCloseAndRelease(ref _process);
+            stateChanged?.Invoke();
+        }
+
+        static void _OnProcessExited(object sender, EventArgs args)
+        {
+            var exited = sender as Process;
+            _mainThreadContext?.Post(_ => _Release(exited), null);
+        }
+
+        static void _Release(Process process)
+        {
+            if (process == null) return;
+
+            process.Exited -= _OnProcessExited;
+            process.Dispose();
+
+            // A later launch may already own the field; leave the newer process's state alone.
+            if (!ReferenceEquals(_process, process)) return;
+
+            _process = null;
+            stateChanged?.Invoke();
+        }
+    }
+
+    /// <summary>
+    /// The toolbar icon and the tints that convey the Remote app's launch state, shared by every
+    /// editor-version branch below.
+    /// </summary>
+    static class RemoteAppToolbarIcon
+    {
+        const string kIconPath = "Packages/jp.lilium.livestudio/Editor/Icons/cards.png";
+
+        /// <summary>Idle tint matches the other main-toolbar icons (#e3e3e3).</summary>
+        public static readonly Color idleTint = new Color(0.89f, 0.89f, 0.89f);
+
+        /// <summary>The icon turns green while a Remote app started from the toolbar is running.</summary>
+        public static readonly Color runningTint = new Color(0.30f, 0.85f, 0.30f);
+
+        public static Texture2D Load()
+        {
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(kIconPath);
+        }
+
+        /// <summary>
+        /// Builds a tinted copy of the icon for hosts that cannot tint the rendered image. The source
+        /// icon is white, so multiplying it by the tint yields the tint itself while keeping the alpha
+        /// silhouette. The PNG is decoded from disk because the imported asset is not readable.
+        /// </summary>
+        public static Texture2D CreateTinted(Color tint)
+        {
+            var fullPath = Path.GetFullPath(kIconPath);
+            if (!File.Exists(fullPath))
+            {
+                UnityEngine.Debug.LogError($"[Studio] Toolbar icon not found: {fullPath}");
+                return null;
+            }
+
+            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false) { hideFlags = HideFlags.HideAndDontSave };
+            if (!texture.LoadImage(File.ReadAllBytes(fullPath)))
+            {
+                UnityEngine.Debug.LogError($"[Studio] Failed to decode toolbar icon: {fullPath}");
+                UnityEngine.Object.DestroyImmediate(texture);
+                return null;
+            }
+
+            var pixels = texture.GetPixels32();
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                var pixel = pixels[i];
+                pixel.r = (byte)(pixel.r * tint.r);
+                pixel.g = (byte)(pixel.g * tint.g);
+                pixel.b = (byte)(pixel.b * tint.b);
+                pixels[i] = pixel;
+            }
+            texture.SetPixels32(pixels);
+            texture.Apply();
+            return texture;
         }
     }
 
@@ -91,16 +166,51 @@ namespace Lilium.LiveStudio.Editor
     {
         const string kToolbarButtonId = "Lilium.LiveStudio/RemoteAppToolbarButton";
 
+        static MainToolbarButton _button;
+        static Texture2D _runningIcon;
+
+        static RemoteAppToolbarButton()
+        {
+            RemoteAppLauncher.stateChanged -= _OnStateChanged;
+            RemoteAppLauncher.stateChanged += _OnStateChanged;
+        }
+
         [MainToolbarElement(kToolbarButtonId,
             defaultDockPosition = MainToolbarDockPosition.Left,
             defaultDockIndex = 10)]
         static MainToolbarButton CreateButton()
         {
-            var icon = AssetDatabase.LoadAssetAtPath<Texture2D>(
-                "Packages/jp.lilium.livestudio/Editor/Icons/cards.png");
-            return new MainToolbarButton(
-                new MainToolbarContent(null, icon, "Launch / close the Remote app"),
+            _button = new MainToolbarButton(
+                _BuildContent(RemoteAppLauncher.IsRunning),
                 RemoteAppLauncher.Toggle);
+            return _button;
+        }
+
+        /// <summary>
+        /// A <see cref="MainToolbarElement"/> is a content descriptor rather than a VisualElement, so
+        /// the running state cannot be shown by tinting a child Image the way the older path does.
+        /// The tint is baked into a second icon and swapped into the element's content instead.
+        /// </summary>
+        static MainToolbarContent _BuildContent(bool running)
+        {
+            if (running && _runningIcon == null)
+            {
+                _runningIcon = RemoteAppToolbarIcon.CreateTinted(RemoteAppToolbarIcon.runningTint);
+            }
+
+            var icon = running && _runningIcon != null ? _runningIcon : RemoteAppToolbarIcon.Load();
+            return new MainToolbarContent(
+                null,
+                icon,
+                running ? "Close the Remote app" : "Launch the Remote app");
+        }
+
+        static void _OnStateChanged()
+        {
+            if (_button == null) return;
+
+            _button.content = _BuildContent(RemoteAppLauncher.IsRunning);
+            MainToolbar.Refresh(kToolbarButtonId);
         }
     }
 #elif UNITY_2021_2_OR_NEWER
@@ -111,10 +221,6 @@ namespace Lilium.LiveStudio.Editor
     [InitializeOnLoad]
     static class RemoteAppToolbarButton
     {
-        // Idle tint matches the other main-toolbar icons (#e3e3e3); running turns the icon green.
-        static readonly Color kIdleTint = new Color(0.89f, 0.89f, 0.89f);
-        static readonly Color kRunningTint = new Color(0.30f, 0.85f, 0.30f);
-
         static EditorToolbarButton _button;
         static Image _icon;
 
@@ -125,11 +231,8 @@ namespace Lilium.LiveStudio.Editor
 
         static void _Register()
         {
-            var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(
-                "Packages/jp.lilium.livestudio/Editor/Icons/cards.png");
-
             // Own Image child (instead of EditorToolbarButton.icon) so the tint is fully controllable.
-            _icon = new Image { image = texture, scaleMode = ScaleMode.ScaleToFit };
+            _icon = new Image { image = RemoteAppToolbarIcon.Load(), scaleMode = ScaleMode.ScaleToFit };
             _icon.style.width = 16;
             _icon.style.height = 16;
             _icon.style.alignSelf = Align.Center;
@@ -140,9 +243,9 @@ namespace Lilium.LiveStudio.Editor
             _button.style.justifyContent = Justify.Center;
             _button.Add(_icon);
 
-            // Poll the launch state so the icon reflects a Remote app that was closed on its own.
-            _button.schedule.Execute(_UpdateState).Every(500);
             _UpdateState();
+            RemoteAppLauncher.stateChanged -= _UpdateState;
+            RemoteAppLauncher.stateChanged += _UpdateState;
 
             MainToolbarHook.AddLeftElement(_button);
         }
@@ -150,7 +253,7 @@ namespace Lilium.LiveStudio.Editor
         static void _UpdateState()
         {
             bool running = RemoteAppLauncher.IsRunning;
-            _icon.tintColor = running ? kRunningTint : kIdleTint;
+            _icon.tintColor = running ? RemoteAppToolbarIcon.runningTint : RemoteAppToolbarIcon.idleTint;
             _button.tooltip = running ? "Close the Remote app" : "Launch the Remote app";
         }
     }

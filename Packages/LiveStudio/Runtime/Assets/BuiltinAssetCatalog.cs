@@ -14,6 +14,10 @@ namespace Lilium.LiveStudio
     /// reads them at runtime to register each asset in <see cref="Lilium.RemoteControl.AssetRegistry"/> and
     /// to list it on the project's asset page.
     ///
+    /// The catalog is kind-agnostic: every entry carries the <see cref="Entry.type"/> of the
+    /// <see cref="BuiltinAssetTypeDescriptor"/> that owns it, so which asset types are baked is decided by
+    /// <see cref="BuiltinAssetTypeRegistry"/> rather than by this format.
+    ///
     /// The asset GUID is kept as the key (rather than a new <c>res:</c> scheme) so a reference selected from
     /// a built-in asset serializes byte-identically to a baked scene reference: an existing live scene keeps
     /// resolving after an asset is moved into a Resources folder, since moving a Unity asset preserves its
@@ -24,31 +28,38 @@ namespace Lilium.LiveStudio
         /// <summary>The fixed Resources name this catalog is loaded by at runtime (see <see cref="BuiltinAssetRegistry"/>).</summary>
         public const string kResourcesName = "BuiltinAssetCatalog";
 
-        /// <summary>One built-in <see cref="AnimationClip"/> baked from a Resources asset.</summary>
+        /// <summary>One built-in asset baked from a Resources asset.</summary>
         [Serializable]
-        public struct AnimationClipEntry
+        public struct Entry
         {
             /// <summary>
-            /// The asset GUID (a sub-asset uses the compound <c>guid:localId</c> key), under which the clip
+            /// The <see cref="BuiltinAssetTypeDescriptor.typeName"/> of the kind that owns this entry (the
+            /// asset type's simple name, e.g. <c>AnimationClip</c>). Resolved back through
+            /// <see cref="BuiltinAssetTypeRegistry.Find"/> to load the asset and to create its catalog entry.
+            /// </summary>
+            public string type;
+
+            /// <summary>
+            /// The asset GUID (a sub-asset uses the compound <c>guid:localId</c> key), under which the asset
             /// is registered in <see cref="Lilium.RemoteControl.AssetRegistry"/> and referenced by a selector.
             /// </summary>
             public string guid;
 
-            /// <summary>The <c>Resources.Load</c> path (Resources-relative, no extension) used to load the clip at runtime.</summary>
+            /// <summary>The <c>Resources.Load</c> path (Resources-relative, no extension) used to load the asset at runtime.</summary>
             public string resourcesPath;
 
-            /// <summary>The clip's display name, baked so the catalog entry can be listed without loading it.</summary>
+            /// <summary>The asset's display name, baked so the catalog entry can be listed without loading it.</summary>
             public string name;
         }
 
         [SerializeField]
-        private AnimationClipEntry[] _animationClips = Array.Empty<AnimationClipEntry>();
+        private Entry[] _entries = Array.Empty<Entry>();
 
-        /// <summary>The baked built-in animation clips (never null).</summary>
-        public AnimationClipEntry[] animationClips
+        /// <summary>The baked built-in assets, of every registered kind (never null).</summary>
+        public Entry[] entries
         {
-            get => _animationClips ?? Array.Empty<AnimationClipEntry>();
-            set => _animationClips = value ?? Array.Empty<AnimationClipEntry>();
+            get => _entries ?? Array.Empty<Entry>();
+            set => _entries = value ?? Array.Empty<Entry>();
         }
     }
 }

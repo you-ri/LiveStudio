@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `RemoteConfirmSystem` raises a confirmation on every surface at once — the OS dialog on the machine running the app and a modal in each connected remote app — and resolves it from whichever answers first, dismissing the rest. An operator working from a phone could not answer a prompt that only existed on the PC, and someone at the PC could not answer one that only existed in the remote app. Prompts travel as localization keys with the app's translation attached as a fallback, so each remote app renders them in ITS language. Answers come back over `POST /api/confirm` (a default route, since the framework itself raises prompts).
+- `NativeConfirmDialog` shows the OS dialog on its own thread and can be closed from another one. The blocking `ConfirmDialog` cannot back a mirrored prompt: while it is up the app cannot serve the REST call carrying the remote answer, let alone act on it. `ConfirmDialog` stays for terminal, single-surface paths.
+- `RemoteControlBehaviour.TrySaveOrPrompt` saves to the current path or opens the platform's "Save As" picker, picking the Editor or player dialog itself.
+- `QuitApiHandler.onQuitRequesting` vetoes a quit asked for over REST. A player already has `Application.wantsToQuit` for this, but in the Editor a remote quit forces play mode off and the resulting `ExitingPlayMode` cannot be aborted — so without a veto here the Editor tore down before an asynchronous unsaved-changes prompt could be answered, and the prompt never reached the remote apps at all. Pressing Stop in the Editor still uses the local, un-mirrored dialog: nothing can hold that path open.
+- `LiveSceneSaveSystem.ResetAllToDefault` reverts every contained object to its captured defaults regardless of dirty state. `RevertAllToDefault` only touches objects reporting dirty properties, and a load re-baselines everything as clean, so right after one it reverts nothing — a caller that has to discard the current state (switching to another project) needs the unconditional form.
+- `LoadCurrentData` / `LoadCurrentDataFrom` take `forceBaseSceneReload`, which reloads the base scene even when the file already targets the active one. Without it a load into the same base scene deserializes on top of the live state, so every value the (delta) file omits keeps whatever was there before.
+
+### Changed
+
+- The unsaved-changes prompt shown when quitting now goes through `RemoteConfirmSystem`, so it appears in the remote apps as well as on the machine. It no longer needs the deferring coroutine either: the prompt never blocks `wantsToQuit`, which simply declines the quit and lets the answer start a new one.
+
 ## [0.25.2] - 2026-07-21
 <!-- changelog-sha: 9a672726afe9b37983b2e8e941a5380792866d98 -->
 

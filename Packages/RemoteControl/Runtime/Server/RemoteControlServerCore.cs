@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 using System.Threading.Tasks;
 using Lilium.RemoteControl.Core;
+using Lilium.RemoteControl.RestApi;
 using Lilium.RemoteControl.RestApi.Controllers;
 using Lilium.RemoteControl;
 
@@ -20,6 +21,7 @@ namespace Lilium.RemoteControl.Server
         private PerformanceHandler _performanceHandler;
         private LanguageHandler _languageHandler;
         private AssetHandler _assetHandler;
+        private ConfirmApiHandler _confirmHandler;
 
         public event Action<RestApiClient> onClientConnected;
         public event Action<RestApiClient> onClientDisconnected;
@@ -57,6 +59,10 @@ namespace Lilium.RemoteControl.Server
             RegisterRoute(_languageHandler);
             _assetHandler = new AssetHandler(this);
             RegisterRoute(_assetHandler);
+            // Carries a remote app's answer to a RemoteConfirmSystem prompt. A default route because
+            // the prompt can be raised by the framework itself (unsaved changes), not just by an app.
+            _confirmHandler = new ConfirmApiHandler(this);
+            RegisterRoute(_confirmHandler);
         }
 
         public void UnregisterDefaultRoutes()
@@ -74,6 +80,8 @@ namespace Lilium.RemoteControl.Server
             _languageHandler = null;
             UnregisterRoute(_assetHandler);
             _assetHandler = null;
+            UnregisterRoute(_confirmHandler);
+            _confirmHandler = null;
         }
         
         public override void StartServer()

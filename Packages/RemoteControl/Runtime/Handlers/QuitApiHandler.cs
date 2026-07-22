@@ -19,6 +19,45 @@ namespace Lilium.RemoteControl.RestApi
         /// </summary>
         public static event Action onQuitRequested;
 
+        /// <summary>
+        /// 終了してよいかを問う。1 つでも false を返したら終了を中止する。
+        ///
+        /// Player なら <see cref="Application.wantsToQuit"/> が同じ役目を果たすが、Editor では
+        /// 再生停止が強制で、そこから起きる ExitingPlayMode は中止できない。未保存確認のように
+        /// 非同期の回答を待つ必要があるものは、ここで止めないと Editor だけ確認を出せないまま
+        /// 終了してしまう。回答後は改めて終了を要求し直す前提。
+        /// </summary>
+        public static event Func<bool> onQuitRequesting;
+
+        // Domain Reload 無効でも前セッションの購読が残らないように、実行開始時に初期化する。
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void _ResetStatics()
+        {
+            onQuitRequested = null;
+            onQuitRequesting = null;
+        }
+
+        // 購読者のうち 1 つでも拒否したら終了しない。例外は「拒否」ではなく無視する
+        // (ハンドラの不具合でアプリが終了できなくなる方が困る)。
+        private static bool _IsQuitAllowed()
+        {
+            var gates = onQuitRequesting;
+            if (gates == null) return true;
+
+            foreach (Func<bool> gate in gates.GetInvocationList())
+            {
+                try
+                {
+                    if (!gate()) return false;
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[RemoteControl] Quit gate threw, ignoring it: {ex}");
+                }
+            }
+            return true;
+        }
+
         public QuitApiHandler(RemoteControlServerCore server)
             : base(server, new RouteRule("/api/commands/quit", RouteMatch.Exact))
         {
@@ -53,6 +92,14 @@ namespace Lilium.RemoteControl.RestApi
                 await ExecuteOnMainThread(() =>
                 {
                     Debug.Log("[Debug][RemoteControl] Quit main-thread callback entered");
+
+                    // 未保存確認などで保留された場合はここで打ち切る。確認に answer があれば
+                    // 購読側が改めて終了を実行する。
+                    if (!_IsQuitAllowed())
+                    {
+                        Debug.Log("[Debug][RemoteControl] Quit held by a quit gate");
+                        return;
+                    }
 
                     // 終了前イベントを発火
                     onQuitRequested?.Invoke();

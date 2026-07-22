@@ -92,6 +92,26 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
+        /// Broadcasts a property of a static <see cref="ExposedClass"/> over SSE. A static class has no
+        /// target instance to look the handle up by, so it is resolved through the registry id assigned
+        /// at registration time (the exposed type name).
+        /// </summary>
+        public static void BroadcastStaticProperty(System.Type staticType, string propertyPath)
+        {
+            if (staticType == null || string.IsNullOrEmpty(propertyPath)) return;
+            if (!_HasConnectedClients()) return;
+
+            var exposedClass = ExposedClass.Find(staticType);
+            if (exposedClass == null) return;
+
+            var exposedObject = ExposedObjectRegistry.FindById(exposedClass.typeName);
+            if (exposedObject == null) return;
+
+            // Passing the nullable handle as-is would bind to the object overload, so unwrap it.
+            BroadcastProperty(exposedObject.Value, propertyPath);
+        }
+
+        /// <summary>
         /// Notify connected clients that the ExposedClass / ExposedEnum tables have been
         /// rebuilt and they should refetch /exposed/types and /exposed/enums.
         /// Payload is intentionally empty — the receiver pulls fresh data via REST so that

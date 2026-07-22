@@ -190,8 +190,11 @@ namespace Lilium.RemoteControl.LiveScene
         /// Loads the current scene file. Returns <c>true</c> when a base-scene switch was triggered
         /// (the deserialize is then deferred until the new scene loads), <c>false</c> when the data was
         /// deserialized in place.
+        ///
+        /// <paramref name="forceBaseSceneReload"/> reloads the base scene even when the file already
+        /// targets the active one, so the load starts from a scene as pristine as a fresh launch's.
         /// </summary>
-        public bool LoadCurrentData()
+        public bool LoadCurrentData(bool forceBaseSceneReload = false)
         {
             string fullPath;
             if (_currentFilePath != _defaultFileName && System.IO.File.Exists(currentFullPath))
@@ -211,7 +214,7 @@ namespace Lilium.RemoteControl.LiveScene
             // deserialize" for both startup loads (startup.json-backed) and explicit LoadScene calls.
             // When switching is disabled, skip the switch but still deserialize the saved property
             // values into the current scene.
-            if (_switchSceneOnLoad && _TrySwitchBaseScene(fullPath)) return true;
+            if (_switchSceneOnLoad && _TrySwitchBaseScene(fullPath, forceBaseSceneReload)) return true;
 
             _LoadFrom(fullPath);
             return false;
@@ -221,14 +224,14 @@ namespace Lilium.RemoteControl.LiveScene
         /// Sets <see cref="currentFilePath"/> then loads it. Returns <c>true</c> when a base-scene
         /// switch was triggered (see <see cref="LoadCurrentData"/>).
         /// </summary>
-        public bool LoadCurrentDataFrom(string filePath)
+        public bool LoadCurrentDataFrom(string filePath, bool forceBaseSceneReload = false)
         {
             if (_objectContainer == null) return false;
 
             currentFilePath = filePath;
             // Delegate to LoadCurrentData so the base-scene switch path is exercised
             // identically to the startup load path.
-            return LoadCurrentData();
+            return LoadCurrentData(forceBaseSceneReload);
         }
 
         /// <summary>
@@ -236,24 +239,18 @@ namespace Lilium.RemoteControl.LiveScene
         /// and is registered in build settings, calls <see cref="SceneManager.LoadScene(int)"/>
         /// and returns <c>true</c>; the new scene's RemoteControlBehaviour will re-trigger the load.
         /// Returns <c>false</c> when no switch is needed (legacy file, same scene, or scene not in build).
+        ///
+        /// With <paramref name="force"/>, "same scene" and "no recorded scene" reload the active build
+        /// scene instead of doing nothing, so the caller still gets a scene rebuilt from scratch.
         /// </summary>
-        private static bool _TrySwitchBaseScene(string fullPath)
+        private static bool _TrySwitchBaseScene(string fullPath, bool force)
         {
-            if (string.IsNullOrEmpty(fullPath) || !System.IO.File.Exists(fullPath)) return false;
-            string json;
-            try
-            {
-                json = System.IO.File.ReadAllText(fullPath);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[RemoteControl] Failed to read '{fullPath}' for base-scene check: {ex.Message}");
-                return false;
-            }
+            var baseSceneName = _ReadBaseSceneName(fullPath);
 
-            var baseSceneName = LiveSceneSerializer.ExtractBaseSceneName(json);
-            if (string.IsNullOrEmpty(baseSceneName)) return false;
-            if (baseSceneName == SceneManager.GetActiveScene().name) return false;
+            // Legacy file / brand-new scene: the only sensible forced target is the active scene.
+            if (string.IsNullOrEmpty(baseSceneName)) return force && _ReloadActiveBuildScene();
+
+            if (!force && baseSceneName == SceneManager.GetActiveScene().name) return false;
 
             int count = SceneManager.sceneCountInBuildSettings;
             for (int i = 0; i < count; i++)
@@ -267,7 +264,34 @@ namespace Lilium.RemoteControl.LiveScene
             }
 
             Debug.LogWarning($"[RemoteControl] Base scene '{baseSceneName}' not found in build settings. Loading data into current active scene.");
-            return false;
+            // A forced reload still has to wipe whatever the active scene holds.
+            return force && _ReloadActiveBuildScene();
+        }
+
+        // Reads the file's recorded baseSceneName, or null when it is missing/unreadable/not recorded.
+        private static string _ReadBaseSceneName(string fullPath)
+        {
+            if (string.IsNullOrEmpty(fullPath) || !System.IO.File.Exists(fullPath)) return null;
+            try
+            {
+                return LiveSceneSerializer.ExtractBaseSceneName(System.IO.File.ReadAllText(fullPath));
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[RemoteControl] Failed to read '{fullPath}' for base-scene check: {ex.Message}");
+                return null;
+            }
+        }
+
+        // Reloads the active scene when it comes from build settings. Returns false when it does not
+        // (e.g. an AssetBundle set scene, which has no build index), leaving the caller to
+        // deserialize in place.
+        private static bool _ReloadActiveBuildScene()
+        {
+            var active = SceneManager.GetActiveScene();
+            if (active.buildIndex < 0 || active.buildIndex >= SceneManager.sceneCountInBuildSettings) return false;
+            SceneManager.LoadScene(active.buildIndex);
+            return true;
         }
 
         public void SaveCurrentData()
@@ -378,6 +402,37 @@ namespace Lilium.RemoteControl.LiveScene
 
             if (System.IO.File.Exists(fullPath))
                 System.IO.File.Delete(fullPath);
+        }
+
+        /// <summary>
+        /// Reverts every contained ExposedObjectHandle to its captured defaults, whether or not it
+        /// currently counts as edited.
+        ///
+        /// <see cref="RevertAllToDefault"/> only touches objects that report dirty properties, and a
+        /// load re-baselines every object as clean (<see cref="_MarkAllClean"/>) — so right after one
+        /// it reverts nothing. Opening another project has to drop the previous project's values
+        /// regardless of that baseline: the incoming scene file is a delta, so every value it omits
+        /// would otherwise survive the switch, and Project-scoped values are not in the scene file at
+        /// all. Reverting against the (immutable) serialization baseline restores the state a fresh
+        /// launch would start from.
+        /// </summary>
+        public void ResetAllToDefault()
+        {
+            if (_objectContainer == null) return;
+
+            var objects = ExposedObjectGraph.ResolveExposedObjects(
+                new List<IExposedObject>(_objectContainer.EnumerateAllObjects()), _objectContainer);
+
+            foreach (var obj in objects)
+            {
+                var defaultJson = ExposedObjectDefaultRegistry.GetDefaults(obj);
+                if (defaultJson == null) continue;
+
+                // FromJson (SetValueRaw) rather than Revert(path), for the same reason as
+                // RevertAllToDefault: it can write through read-only component arrays.
+                ExposedPropertySerializer.FromJson(
+                    defaultJson.ToString(), obj, _objectContainer, captureDefaults: false);
+            }
         }
 
         /// <summary>

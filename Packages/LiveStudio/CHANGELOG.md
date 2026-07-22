@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Opening a project asks before discarding unsaved live-scene edits (Save / Don't Save / Cancel), instead of dropping them silently. The prompt is raised through `RemoteConfirmSystem`, so it shows both on the machine and in the remote app that asked for the project — a cancelled "Save As" abandons the open rather than discarding the very edits the user just chose to keep.
+
+### Fixed
+
+- Opening a project now leaves the app in the state a launch into that project would produce, instead of carrying the previously open project over. `OpenProject` reused the ordinary live-scene load, which only reloads the base Unity scene when the incoming scene targets a different one — so two projects sharing a base scene skipped the reload entirely, leaving the old project's loaded props/avatars in place and keeping every value the incoming (delta) scene file omits. Project-scoped settings were worse off: they are not in the scene file at all and are applied additively, so any setting the new project does not record kept the old project's value. `LiveSceneManager.OpenProjectScene` resets every exposed object to its captured defaults and forces the base-scene reload before restoring. The project folder crawl also moved after the reset, so the previous project's enabled/loaded catalog entries — which the crawl deliberately never prunes — no longer survive the switch.
+
+### Changed
+
+- The built-in asset catalog is no longer `AnimationClip`-specific. Which asset types are baked out of the `Resources` folders now comes from `BuiltinAssetTypeRegistry`, the built-in counterpart of `AssetTypeRegistry`: a kind declares the Unity asset type it owns and the `AssetBase` entry it lists as, so a package can add one without touching the baker or the runtime registry. `BuiltinAssetCatalog` stores a single entry list whose entries name their owning kind instead of one array per type; `BuiltinAssetCatalogBuilder` scans once per registered kind, classifies imports by asset type rather than by file extension (so a kind never enumerates the extensions its type can come from), and rebuilds once per editor load, which is what picks up a newly registered kind — no asset import announces one. The reference-resource behavior of `BuiltinAnimationAsset` (no load/unload toggle, never pruned, never persisted) moved to a shared `BuiltinAssetBase`, leaving each kind as its own exposed `@type`. Existing baked catalogs are rewritten in the new shape on the next editor load.
+
 ## [0.25.2] - 2026-07-21
 <!-- changelog-sha: 9a672726afe9b37983b2e8e941a5380792866d98 -->
 

@@ -108,6 +108,74 @@ namespace Lilium.LiveStudio
             }
         }
 
+        /// <summary>True when any host reports edits made since the last load or save.</summary>
+        internal static bool HasUnsavedChanges()
+        {
+            var providers = Object.FindObjectsOfType<Lilium.RemoteControl.LiveScene.RemoteControlBehaviour>();
+            foreach (var provider in providers)
+            {
+                if (provider.HasUnsavedChanges()) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Saves every host, prompting for a path where one has none. Returns false when the user
+        /// cancels a picker, in which case the scene is still unsaved.
+        /// </summary>
+        internal static bool TrySaveOrPrompt()
+        {
+            var providers = Object.FindObjectsOfType<Lilium.RemoteControl.LiveScene.RemoteControlBehaviour>();
+            foreach (var provider in providers)
+            {
+                if (!provider.TrySaveOrPrompt()) return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Opens a live scene the way a fresh app launch does, for the project-open path. An empty
+        /// <paramref name="filePath"/> opens a new, unsaved scene (the project records no scene yet).
+        ///
+        /// <see cref="LoadScene"/> / <see cref="NewScene"/> deserialize on top of whatever is currently
+        /// live, and only reload the base Unity scene when the file targets a different one — fine
+        /// within a project, but switching projects leaks the previous project's state: the scene file
+        /// is a delta, so every value it omits keeps the old project's value; loaded props/avatars stay
+        /// loaded; and Project-scoped settings live outside the scene file entirely. Resetting to the
+        /// captured defaults and forcing the base-scene reload reproduces the startup state.
+        /// </summary>
+        internal static void OpenProjectScene(string filePath)
+        {
+            bool isNewScene = string.IsNullOrEmpty(filePath);
+
+            var providers = Object.FindObjectsOfType<Lilium.RemoteControl.LiveScene.RemoteControlBehaviour>();
+            foreach (var provider in providers)
+            {
+                provider.ResetAllToDefault();
+
+                if (isNewScene)
+                {
+                    provider.currentFilePath = "";
+                    provider.PrepareBaseSceneReload();
+                }
+                else
+                {
+                    provider.LoadCurrentDataFrom(filePath, forceBaseSceneReload: true);
+                }
+            }
+
+            // A new scene has no file to read a base scene from, so reload the active one (the load
+            // path above drives the reload itself).
+            if (isNewScene) _SwitchBaseScene(null);
+
+            // Remote apps show the scene name from scenePath, but a project switch changes it without
+            // any request of theirs (and may run long after the OpenProject call returns, once the
+            // unsaved-changes confirmation is answered), so push the new value instead of leaving them
+            // to poll for it. currentFilePath is already set above; the pending base-scene reload does
+            // not change it.
+            ExposedPropertyBroadcast.BroadcastStaticProperty(typeof(LiveSceneManager), nameof(scenePath));
+        }
+
         [ExposedFunction(label = "LIVESCENE_NEW_SCENE"), Hide]
         public static void NewScene(string sceneName = null)
         {

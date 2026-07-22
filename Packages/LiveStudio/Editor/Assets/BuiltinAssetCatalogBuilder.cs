@@ -13,26 +13,37 @@ namespace Lilium.LiveStudio.Editor
     /// Bakes the <see cref="BuiltinAssetCatalog"/> from the assets under the project's <c>Resources</c>
     /// folders. At runtime <c>AssetDatabase</c> is unavailable, so each built-in asset's GUID and
     /// <c>Resources.Load</c> path are captured here, at edit time, and read back by
-    /// <see cref="BuiltinAssetRegistry"/>. The catalog is rebuilt automatically whenever a relevant asset
-    /// under a <c>Resources</c> folder changes (see the <see cref="AssetPostprocessor"/> below), and can be
-    /// rebuilt on demand from <c>Assets ▸ Lilium Live Studio ▸ Rebuild Built-in Asset Catalog</c>.
+    /// <see cref="BuiltinAssetRegistry"/>.
     ///
-    /// Only standalone <see cref="AnimationClip"/> assets (<c>*.anim</c>, whose main asset is the clip) are
-    /// baked for now: <c>Resources.Load</c> addresses the main asset by path, so a clip embedded as a
-    /// sub-asset of a model file cannot be loaded that way and is skipped.
+    /// Which asset types are baked comes from <see cref="BuiltinAssetTypeRegistry"/>, not from this class,
+    /// so a package that adds a built-in kind gets its Resources assets baked without touching the baker.
+    /// The catalog is rebuilt automatically once per editor load (which is also what picks up a newly
+    /// registered kind, since no asset import announces one) and whenever an asset of a registered kind
+    /// under a <c>Resources</c> folder changes; it can also be rebuilt on demand from
+    /// <c>Assets ▸ Lilium Live Studio ▸ Rebuild Built-in Asset Catalog</c>. Every path is a no-op unless the
+    /// baked set actually changed, so the repeated rebuilds never churn the asset.
+    ///
+    /// Only main assets are baked: <c>Resources.Load</c> addresses the main asset by path, so an asset
+    /// embedded as a sub-asset of another file (e.g. a clip inside a model) cannot be loaded that way and
+    /// is skipped.
     /// </summary>
     public static class BuiltinAssetCatalogBuilder
     {
         // Where the baked catalog lives so Resources.Load(kResourcesName) finds it at runtime. A project
-        // asset (it lists that project's own Resources clips), not shipped with the package.
+        // asset (it lists that project's own Resources assets), not shipped with the package.
         const string kCatalogAssetPath = "Assets/Resources/" + BuiltinAssetCatalog.kResourcesName + ".asset";
         const string kResourcesMarker = "/Resources/";
-        const string kAnimExtension = ".anim";
+
+        // Rebuild once per editor load, deferred past every [InitializeOnLoadMethod] so kinds registered by
+        // other packages are already in the registry (their registration order relative to ours is
+        // undefined). This is also what heals a catalog baked by an older format or an older kind set.
+        [InitializeOnLoadMethod]
+        static void _RebuildOnLoad() => EditorApplication.delayCall += Rebuild;
 
         [MenuItem("Assets/Lilium Live Studio/Rebuild Built-in Asset Catalog")]
         public static void Rebuild()
         {
-            var entries = _ScanAnimationClips();
+            var entries = _Scan();
 
             var catalog = AssetDatabase.LoadAssetAtPath<BuiltinAssetCatalog>(kCatalogAssetPath);
             if (catalog == null)
@@ -42,51 +53,71 @@ namespace Lilium.LiveStudio.Editor
 
                 Directory.CreateDirectory(Path.GetDirectoryName(kCatalogAssetPath));
                 catalog = ScriptableObject.CreateInstance<BuiltinAssetCatalog>();
-                catalog.animationClips = entries;
+                catalog.entries = entries;
                 AssetDatabase.CreateAsset(catalog, kCatalogAssetPath);
                 AssetDatabase.SaveAssets();
                 BuiltinAssetRegistry.Reload();
-                Debug.Log($"[LiveStudio] Built-in asset catalog created with {entries.Length} animation clip(s).");
+                Debug.Log($"[LiveStudio] Built-in asset catalog created with {entries.Length} asset(s).");
                 return;
             }
 
             // Only rewrite when the baked set actually changed, so we do not churn the asset (and re-trigger
-            // the postprocessor) on every import.
-            if (_Equal(catalog.animationClips, entries)) return;
+            // the postprocessor) on every import or editor load.
+            if (_Equal(catalog.entries, entries)) return;
 
-            catalog.animationClips = entries;
+            catalog.entries = entries;
             EditorUtility.SetDirty(catalog);
             AssetDatabase.SaveAssets();
             BuiltinAssetRegistry.Reload();
-            Debug.Log($"[LiveStudio] Built-in asset catalog rebuilt with {entries.Length} animation clip(s).");
+            Debug.Log($"[LiveStudio] Built-in asset catalog rebuilt with {entries.Length} asset(s).");
         }
 
-        // Enumerates every standalone AnimationClip (*.anim) under any Resources folder, capturing its GUID,
-        // Resources load path and name. Sorted by load path for a deterministic bake (stable diffs).
-        static BuiltinAssetCatalog.AnimationClipEntry[] _ScanAnimationClips()
+        // Enumerates every main asset under a Resources folder that a registered kind owns, capturing its
+        // kind, GUID, Resources load path and name. Sorted by kind then load path for a deterministic bake
+        // (stable diffs).
+        static BuiltinAssetCatalog.Entry[] _Scan()
         {
-            var entries = new List<BuiltinAssetCatalog.AnimationClipEntry>();
+            var entries = new List<BuiltinAssetCatalog.Entry>();
+            // An asset can be found by more than one kind's search filter (e.g. a Texture2D under both a
+            // Texture and a Texture2D kind); the first registered kind owns it.
+            var taken = new HashSet<string>();
 
-            foreach (var guid in AssetDatabase.FindAssets("t:AnimationClip"))
+            var descriptors = BuiltinAssetTypeRegistry.descriptors;
+            for (int d = 0; d < descriptors.Count; d++)
             {
-                var path = AssetDatabase.GUIDToAssetPath(guid);
-                if (string.IsNullOrEmpty(path)) continue;
-                if (!_TryResourcesLoadPath(path, out var loadPath)) continue;
-
-                // Main-asset clips only: Resources.Load addresses the main asset, so a clip that is a
-                // sub-asset of a model file (main asset is the model, not the clip) cannot be loaded here.
-                var main = AssetDatabase.LoadMainAssetAtPath(path);
-                if (!(main is AnimationClip clip)) continue;
-
-                entries.Add(new BuiltinAssetCatalog.AnimationClipEntry
+                var descriptor = descriptors[d];
+                foreach (var guid in AssetDatabase.FindAssets("t:" + descriptor.assetType.Name))
                 {
-                    guid = guid,
-                    resourcesPath = loadPath,
-                    name = clip.name,
-                });
+                    if (taken.Contains(guid)) continue;
+
+                    var path = AssetDatabase.GUIDToAssetPath(guid);
+                    if (string.IsNullOrEmpty(path)) continue;
+                    // The catalog lives under Resources too; never let a broad kind (one whose type also
+                    // covers ScriptableObject) bake the catalog into itself.
+                    if (string.Equals(path, kCatalogAssetPath, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!_TryResourcesLoadPath(path, out var loadPath)) continue;
+
+                    // Main assets only: Resources.Load addresses the main asset, so an asset that is a
+                    // sub-asset of another file (main asset is the container, not this) cannot be loaded here.
+                    var main = AssetDatabase.LoadMainAssetAtPath(path);
+                    if (main == null || !descriptor.assetType.IsInstanceOfType(main)) continue;
+
+                    taken.Add(guid);
+                    entries.Add(new BuiltinAssetCatalog.Entry
+                    {
+                        type = descriptor.typeName,
+                        guid = guid,
+                        resourcesPath = loadPath,
+                        name = main.name,
+                    });
+                }
             }
 
-            entries.Sort((a, b) => string.CompareOrdinal(a.resourcesPath, b.resourcesPath));
+            entries.Sort((a, b) =>
+            {
+                int byType = string.CompareOrdinal(a.type, b.type);
+                return byType != 0 ? byType : string.CompareOrdinal(a.resourcesPath, b.resourcesPath);
+            });
             return entries.ToArray();
         }
 
@@ -105,44 +136,66 @@ namespace Lilium.LiveStudio.Editor
             return !string.IsNullOrEmpty(loadPath);
         }
 
-        static bool _Equal(BuiltinAssetCatalog.AnimationClipEntry[] a, BuiltinAssetCatalog.AnimationClipEntry[] b)
+        static bool _Equal(BuiltinAssetCatalog.Entry[] a, BuiltinAssetCatalog.Entry[] b)
         {
             if (a == null || b == null) return a == b;
             if (a.Length != b.Length) return false;
             for (int i = 0; i < a.Length; i++)
             {
-                if (a[i].guid != b[i].guid || a[i].resourcesPath != b[i].resourcesPath || a[i].name != b[i].name)
+                if (a[i].type != b[i].type || a[i].guid != b[i].guid ||
+                    a[i].resourcesPath != b[i].resourcesPath || a[i].name != b[i].name)
                     return false;
             }
             return true;
         }
 
-        // Auto-rebuilds the catalog when an *.anim under a Resources folder is imported, deleted or moved.
-        // Filtered to *.anim so writing the catalog *.asset itself does not retrigger a rebuild loop.
+        // Auto-rebuilds the catalog when an asset of a registered kind under a Resources folder is imported,
+        // deleted or moved. Imports are filtered by asset type rather than by extension, so a kind never has
+        // to enumerate the extensions its type can come from — and writing the catalog *.asset itself does
+        // not retrigger a rebuild loop, since no kind owns a BuiltinAssetCatalog.
         class Postprocessor : AssetPostprocessor
         {
             static void OnPostprocessAllAssets(
                 string[] imported, string[] deleted, string[] moved, string[] movedFrom)
             {
-                if (_Touches(imported) || _Touches(deleted) || _Touches(moved) || _Touches(movedFrom))
+                // The removed paths cannot be typed any more (the asset is gone from the database), so they
+                // fall back to a path test: any Resources path but the catalog itself. A rebuild that finds
+                // nothing changed writes nothing, so the occasional false positive is free.
+                if (_TouchesTyped(imported) || _TouchesTyped(moved) ||
+                    _TouchesResources(deleted) || _TouchesResources(movedFrom))
                 {
                     // Defer past the import that triggered us so the AssetDatabase is settled.
                     EditorApplication.delayCall += Rebuild;
                 }
             }
 
-            static bool _Touches(string[] paths)
+            static bool _TouchesTyped(string[] paths)
             {
                 if (paths == null) return false;
                 for (int i = 0; i < paths.Length; i++)
                 {
-                    var p = paths[i];
-                    if (string.IsNullOrEmpty(p)) continue;
-                    if (p.IndexOf(kResourcesMarker, StringComparison.OrdinalIgnoreCase) < 0) continue;
-                    if (p.EndsWith(kAnimExtension, StringComparison.OrdinalIgnoreCase)) return true;
+                    if (!_UnderResources(paths[i])) continue;
+                    var type = AssetDatabase.GetMainAssetTypeAtPath(paths[i]);
+                    if (BuiltinAssetTypeRegistry.FindForAssetType(type) != null) return true;
                 }
                 return false;
             }
+
+            static bool _TouchesResources(string[] paths)
+            {
+                if (paths == null) return false;
+                for (int i = 0; i < paths.Length; i++)
+                {
+                    if (!_UnderResources(paths[i])) continue;
+                    if (string.Equals(paths[i], kCatalogAssetPath, StringComparison.OrdinalIgnoreCase)) continue;
+                    return true;
+                }
+                return false;
+            }
+
+            static bool _UnderResources(string path)
+                => !string.IsNullOrEmpty(path) &&
+                   path.IndexOf(kResourcesMarker, StringComparison.OrdinalIgnoreCase) >= 0;
         }
     }
 }

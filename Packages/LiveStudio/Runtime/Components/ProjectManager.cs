@@ -5,6 +5,7 @@ using System.IO;
 using UnityEngine;
 using Lilium.RemoteControl;
 using Lilium.RemoteControl.LiveScene;
+using Lilium.RemoteControl.Notification;
 
 namespace Lilium.LiveStudio
 {
@@ -144,6 +145,38 @@ namespace Lilium.LiveStudio
                 return;
             }
 
+            // Opening a project replaces the live scene, so unsaved edits would be lost. Confirm on
+            // every surface at once (RemoteConfirmSystem): this call usually arrives from a remote
+            // app, whose operator must be able to answer without walking to the machine.
+            if (!LiveSceneManager.HasUnsavedChanges())
+            {
+                _OpenProjectConfirmed(folderPath);
+                return;
+            }
+
+            RemoteConfirmSystem.Ask(
+                RemoteConfirmSystem.Request.UnsavedChanges("DIALOG_UNSAVED_CHANGES_OPEN_PROJECT_MESSAGE"),
+                choice =>
+                {
+                    switch (choice)
+                    {
+                        case RemoteConfirmSystem.Choice.Yes:
+                            // A cancelled "Save As" leaves the scene unsaved; abandon the open rather
+                            // than discarding the very edits the user just chose to keep.
+                            if (!LiveSceneManager.TrySaveOrPrompt()) return;
+                            break;
+                        case RemoteConfirmSystem.Choice.No:
+                            break; // Open and discard the edits.
+                        default:
+                            return; // Cancel: stay in the current project.
+                    }
+                    _OpenProjectConfirmed(folderPath);
+                });
+        }
+
+        // The actual switch, once any unsaved changes have been dealt with.
+        private static void _OpenProjectConfirmed(string folderPath)
+        {
             _projectPath = folderPath;
             PlayerPrefs.SetString(kProjectPathKey, folderPath);
             PlayerPrefs.Save();
@@ -151,20 +184,30 @@ namespace Lilium.LiveStudio
             // Apply the state directory before loading so the load path writes startup.json under
             // the newly opened project (not the previous one).
             _ApplySaveDirectory();
-            _Crawl();
 
-            // Open the live scene recorded in the project's Settings/startup.json. When the project
-            // has no recorded scene (or it is missing on disk), drop to a fresh scene so the open
-            // project always determines the active scene.
+            // Open the live scene recorded in the project's Settings/startup.json. This goes through
+            // the project-open path so the app ends up in the same state a launch into this project
+            // would produce, rather than carrying the previous project's values over (see
+            // LiveSceneManager.OpenProjectScene).
+            LiveSceneManager.OpenProjectScene(ResolveProjectScene(folderPath));
+
+            // The folder crawl runs after the reset above wiped the previous project's catalog, and is
+            // re-armed once the live scene has been restored (ExternalAssetManager.OnAssetManagerReady),
+            // matching the startup order "restore scene -> merge the project catalog on top".
+            _Crawl();
+        }
+
+        /// <summary>
+        /// The live scene an opened project starts on: the one recorded in its Settings/startup.json,
+        /// or <c>null</c> when the project records none, or records one that no longer exists on disk.
+        /// A null result opens a fresh scene, so the project being opened always decides the active
+        /// scene and the previously open project's scene is never carried over.
+        /// </summary>
+        internal static string ResolveProjectScene(string folderPath)
+        {
             var sceneFullPath = StartupStateStore.Read(folderPath);
-            if (!string.IsNullOrEmpty(sceneFullPath) && File.Exists(sceneFullPath))
-            {
-                LiveSceneManager.LoadScene(sceneFullPath);
-            }
-            else
-            {
-                LiveSceneManager.NewScene();
-            }
+            if (string.IsNullOrEmpty(sceneFullPath) || !File.Exists(sceneFullPath)) return null;
+            return sceneFullPath;
         }
 
         /// <summary>Re-scans the current project folder (e.g. after files were added on disk).</summary>

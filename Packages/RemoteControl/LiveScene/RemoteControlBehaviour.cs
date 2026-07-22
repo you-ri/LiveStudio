@@ -1,10 +1,10 @@
 // Copyright (c) You-Ri, 2026
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
 using Lilium.RemoteControl;
-using Lilium.RemoteControl.Dialogs;
+using Lilium.RemoteControl.Notification;
+using Lilium.RemoteControl.RestApi;
 using Lilium.RemoteControl.Server;
 
 namespace Lilium.RemoteControl.LiveScene
@@ -126,9 +126,9 @@ namespace Lilium.RemoteControl.LiveScene
             bool switched = _sceneSave?.LoadCurrentData() ?? false;
             if (switched && persistAcrossScenes) _switchPendingReload = true;
         }
-        public void LoadCurrentDataFrom(string path)
+        public void LoadCurrentDataFrom(string path, bool forceBaseSceneReload = false)
         {
-            bool switched = _sceneSave?.LoadCurrentDataFrom(path) ?? false;
+            bool switched = _sceneSave?.LoadCurrentDataFrom(path, forceBaseSceneReload) ?? false;
             if (switched && persistAcrossScenes) _switchPendingReload = true;
         }
         public void SaveCurrentData() => _sceneSave?.SaveCurrentData();
@@ -136,6 +136,21 @@ namespace Lilium.RemoteControl.LiveScene
         public bool HasUnsavedChanges() => _sceneSave?.HasUnsavedChanges() ?? false;
         public void ClearCurrentData() => _sceneSave?.ClearCurrentData();
         public void RevertAllToDefault() => _sceneSave?.RevertAllToDefault();
+        public void ResetAllToDefault() => _sceneSave?.ResetAllToDefault();
+
+        /// <summary>
+        /// Saves to the current path, or opens the platform's "Save As" picker when there is none.
+        /// Returns false only when the user cancels that picker.
+        /// </summary>
+        public bool TrySaveOrPrompt()
+        {
+            if (_sceneSave == null) return false;
+#if UNITY_EDITOR
+            return _sceneSave.TrySaveOrPromptEditor();
+#else
+            return _sceneSave.TrySaveOrPromptRuntime();
+#endif
+        }
 
         /// <summary>
         /// Arms the deferred re-deserialize for a base-scene reload that is triggered programmatically
@@ -232,6 +247,10 @@ namespace Lilium.RemoteControl.LiveScene
             if (persistAcrossScenes)
                 UnityEngine.SceneManagement.SceneManager.sceneLoaded += _OnSceneLoaded;
 
+            // Gates a quit asked for over REST. In the Editor this is the only cancellable point in
+            // that path (ExitingPlayMode is not), so the prompt reaches every surface there too.
+            QuitApiHandler.onQuitRequesting += _ShouldAllowQuit;
+
 #if UNITY_EDITOR
             UnityEditor.EditorApplication.playModeStateChanged += _OnPlayModeStateChanged;
 #else
@@ -265,6 +284,8 @@ namespace Lilium.RemoteControl.LiveScene
 
             if (Application.isPlaying)
             {
+                QuitApiHandler.onQuitRequesting -= _ShouldAllowQuit;
+
 #if UNITY_EDITOR
                 UnityEditor.EditorApplication.playModeStateChanged -= _OnPlayModeStateChanged;
 #else
@@ -403,21 +424,31 @@ namespace Lilium.RemoteControl.LiveScene
 
         // --- Quit / Play-mode dialog handling ---
 
-#if !UNITY_EDITOR
-        private bool _OnWantsToQuit()
+        /// <summary>
+        /// Decides whether a quit may proceed, raising the unsaved-changes prompt (on every surface)
+        /// and returning false while it is up. The answer restarts the quit itself.
+        ///
+        /// Two callers share this. In a player, <see cref="Application.wantsToQuit"/> gates every quit.
+        /// In the Editor there is no such veto — a remote quit forces play mode off and the resulting
+        /// ExitingPlayMode cannot be aborted — so <see cref="QuitApiHandler.onQuitRequesting"/> gates
+        /// the remote path before it gets that far, making both behave the same.
+        /// </summary>
+        private bool _ShouldAllowQuit()
         {
+            if (_isDuplicate || _sceneSave == null) return true;
+
             bool hasUnsaved = _sceneSave.HasUnsavedChanges();
-            Debug.Log($"[Debug][RemoteControl] wantsToQuit: allowQuit={_sceneSave.allowQuit} " +
+            Debug.Log($"[Debug][RemoteControl] quit gate: allowQuit={_sceneSave.allowQuit} " +
                       $"hasUnsaved={hasUnsaved} autoSave={_sceneSave.autoSaveOnQuit} dialogPending={_dialogPending}");
 
             if (_sceneSave.allowQuit)
             {
-                Debug.Log("[Debug][RemoteControl] wantsToQuit -> true (allowQuit)");
+                Debug.Log("[Debug][RemoteControl] quit gate -> true (allowQuit)");
                 return true;
             }
             if (!hasUnsaved)
             {
-                Debug.Log("[Debug][RemoteControl] wantsToQuit -> true (no unsaved changes)");
+                Debug.Log("[Debug][RemoteControl] quit gate -> true (no unsaved changes)");
                 return true;
             }
 
@@ -425,58 +456,60 @@ namespace Lilium.RemoteControl.LiveScene
             {
                 _sceneSave.SaveCurrentData();
                 _sceneSave.allowQuit = true;
-                Debug.Log("[Debug][RemoteControl] wantsToQuit -> true (autoSave)");
+                Debug.Log("[Debug][RemoteControl] quit gate -> true (autoSave)");
                 return true;
             }
 
-            // Showing a MessageBox from inside wantsToQuit lets Unity continue tearing down in
-            // parallel, so the dialog gets dismissed immediately. Defer one frame via coroutine.
+            // The prompt goes up on every surface (OS dialog + every connected remote app) and answers
+            // back asynchronously, so we abort this quit and let the answer start a new one. Refusing
+            // here is also what stops Unity tearing down underneath the prompt.
             if (!_dialogPending)
             {
                 _dialogPending = true;
-                StartCoroutine(_ShowDialogAndQuit());
+                RemoteConfirmSystem.Ask(RemoteConfirmSystem.Request.UnsavedChanges(), _OnQuitConfirmAnswered);
             }
-            Debug.Log("[Debug][RemoteControl] wantsToQuit -> false (dialog pending)");
+            Debug.Log("[Debug][RemoteControl] quit gate -> false (dialog pending)");
             return false;
         }
 
-        private IEnumerator _ShowDialogAndQuit()
+        // Runs on the main thread once any surface answers the unsaved-changes prompt.
+        private void _OnQuitConfirmAnswered(RemoteConfirmSystem.Choice choice)
         {
-            yield return null; // exit the wantsToQuit context
+            Debug.Log($"[Debug][RemoteControl] dialog answered: result={choice}");
 
-            string title = LocalizationSystem.Translate("DIALOG_UNSAVED_CHANGES_TITLE");
-            string message = LocalizationSystem.Translate("DIALOG_UNSAVED_CHANGES_MESSAGE");
-            string yesLabel = LocalizationSystem.Translate("DIALOG_SAVE");
-            string noLabel = LocalizationSystem.Translate("DIALOG_DONT_SAVE");
-            string cancelLabel = LocalizationSystem.Translate("DIALOG_CANCEL");
-
-            var result = ConfirmDialog.ShowYesNoCancel(title, message, yesLabel, noLabel, cancelLabel);
-            Debug.Log($"[Debug][RemoteControl] dialog answered: result={result}");
-
-            switch (result)
+            switch (choice)
             {
-                case ConfirmDialog.ConfirmResult.Yes:
-                    if (!_sceneSave.TrySaveOrPromptRuntime())
+                case RemoteConfirmSystem.Choice.Yes:
+                    if (!TrySaveOrPrompt())
                     {
                         // The user cancelled the file picker; abort the quit so the app stays open.
                         _dialogPending = false;
-                        yield break;
+                        return;
                     }
                     break;
-                case ConfirmDialog.ConfirmResult.No:
+                case RemoteConfirmSystem.Choice.No:
                     // Quit without saving.
                     break;
-                case ConfirmDialog.ConfirmResult.Cancel:
+                case RemoteConfirmSystem.Choice.Cancel:
                 default:
                     // The user wants to keep the app running; release the dialog gate so the next
-                    // wantsToQuit can show the prompt again.
+                    // quit can show the prompt again.
                     _dialogPending = false;
-                    yield break;
+                    return;
             }
 
+            // allowQuit lets the gate through on the way back in, and (in the Editor) keeps
+            // _OnPlayModeStateChanged from asking a second time.
             _sceneSave.allowQuit = true;
             Application.Quit();
+#if UNITY_EDITOR
+            // Application.Quit() does nothing in play mode; stopping is what actually quits.
+            UnityEditor.EditorApplication.isPlaying = false;
+#endif
         }
+
+#if !UNITY_EDITOR
+        private bool _OnWantsToQuit() => _ShouldAllowQuit();
 #endif
 
 #if UNITY_EDITOR
@@ -494,9 +527,13 @@ namespace Lilium.RemoteControl.LiveScene
                 return;
             }
 
-            // ExitingPlayMode runs synchronously, so DisplayDialog reliably blocks here.
-            // Cancel-the-quit is intentionally omitted: ExitingPlayMode is informational and
-            // cannot be aborted, so we only ask Save vs Don't Save.
+            // The one prompt that is NOT mirrored to the remote apps. ExitingPlayMode is synchronous
+            // and cannot be aborted, so there is no way to hold play mode open while an asynchronous
+            // answer comes back — DisplayDialog blocking right here is the only thing that works.
+            // Cancel is omitted for the same reason: we can only ask Save vs Don't Save.
+            // Stopping play from a remote app does go through the mirrored path
+            // (QuitApiHandler.onQuitRequesting -> _ShouldAllowQuit), which sets allowQuit and returns
+            // above, so this is reached only when the developer presses Stop in the Editor.
             bool save = UnityEditor.EditorUtility.DisplayDialog(
                 LocalizationSystem.Translate("DIALOG_UNSAVED_CHANGES_TITLE"),
                 LocalizationSystem.Translate("DIALOG_UNSAVED_CHANGES_MESSAGE"),
