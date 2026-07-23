@@ -22,7 +22,7 @@ namespace Lilium.LiveStudio
     /// </summary>
     [Serializable]
     [ExposedClass("SetBundleAsset", Category = "Asset", Icon = "public")]
-    public class SetBundleAsset : AssetBase
+    public class SetBundleAsset : AssetBase, ISetAsset
     {
         public override bool isExclusive => false;
         public override bool reloadsOnAvatarChange => false;
@@ -35,6 +35,10 @@ namespace Lilium.LiveStudio
         /// </summary>
         [ExposedField]
         public bool isActive;
+
+        // ISetAsset.isActive delegates to the exposed field (a field cannot implement the property
+        // directly). scene / hasScene below already satisfy the interface implicitly.
+        bool ISetAsset.isActive { get => isActive; set => isActive = value; }
 
         // The loaded bundle + scene, owned until unload. Held only at runtime.
         [NonSerialized]

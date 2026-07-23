@@ -102,6 +102,10 @@ namespace Lilium.LiveStudio.Editor
                     var main = AssetDatabase.LoadMainAssetAtPath(path);
                     if (main == null || !descriptor.assetType.IsInstanceOfType(main)) continue;
 
+                    // Content narrowing (e.g. only IProp-rooted prefabs are built-in props). Applied before
+                    // taken.Add so a rejected asset stays available to a later kind's filter.
+                    if (descriptor.accept != null && !descriptor.accept(main)) continue;
+
                     taken.Add(guid);
                     entries.Add(new BuiltinAssetCatalog.Entry
                     {

@@ -42,9 +42,9 @@ namespace Lilium.LiveStudio
         // *.prop.lsb attaches under the avatar; glTF is a free-standing scene prop.
         private bool _isAvatarAttached => LiveStudioBundle.IsPropBundle(_effectiveSourcePath);
 
-        [NonSerialized] private GameObject _instance;
-        [NonSerialized] private ExposedGameObject _exposed;
-        [NonSerialized] private RemoteControlContainer _container;
+        // The loaded prop instance and its source-agnostic registration/teardown (shared with
+        // BuiltinPropAsset). Held only at runtime.
+        [NonSerialized] private readonly LoadedProp _loaded = new LoadedProp();
 
         // Absolute source asset path resolved while loading a preset; null for a direct prop entry.
         [NonSerialized] private string _resolvedSourcePath;
@@ -59,11 +59,7 @@ namespace Lilium.LiveStudio
         internal string sourceFilePath => _effectiveSourcePath;
 
         /// <summary>Serializes the loaded prop's current parameter delta (vs the source defaults).</summary>
-        internal string CaptureDeltaState()
-        {
-            if (_instance == null) return null;
-            return AssetStateSnapshot.CaptureDelta(_exposed, _instance);
-        }
+        internal string CaptureDeltaState() => _loaded.CaptureDelta();
 
         public override async Task LoadAsync(AssetLoadContext context)
         {
@@ -108,17 +104,12 @@ namespace Lilium.LiveStudio
         public override void Unload(AssetLoadContext context)
         {
             // Snapshot current parameter values before destroying so they reapply on the next load.
-            CaptureState();
-            _DestroyLoaded();
+            _loaded.Capture(this);
+            _loaded.Destroy();
             isLoaded = false;
         }
 
-        public override void CaptureState()
-        {
-            if (_instance == null) return;
-            var json = AssetStateSnapshot.Capture(_exposed, _instance);
-            if (!string.IsNullOrEmpty(json)) state = json;
-        }
+        public override void CaptureState() => _loaded.Capture(this);
 
         // --- Avatar prop (*.prop.lsb) ---
 
@@ -141,7 +132,7 @@ namespace Lilium.LiveStudio
                 return;
             }
 
-            if (_instance != null)
+            if (_loaded.hasInstance)
             {
                 // A concurrent load already registered this prop (e.g. an avatar swap cleared busy
                 // mid-load); discard the duplicate instead of leaking it.
@@ -151,7 +142,7 @@ namespace Lilium.LiveStudio
 
             // Wrap so the remote app can control the prop component. No transform is exposed: the pose
             // is socket-driven, so the authored state lives on Prop, not the GameObject transform.
-            _Register(context, new ExposedGameObject(instance), instance);
+            _loaded.Register(context, new ExposedGameObject(instance), instance, this);
         }
 
         // --- Free-standing scene prop (*.glb / *.gltf) ---
@@ -174,7 +165,7 @@ namespace Lilium.LiveStudio
                 UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(host, baseContainer.gameObject.scene);
 
             // Expose the transform so the user can position the free-standing prop from the remote app.
-            _Register(context, new ExposedGameObjectWithTransform(host), host);
+            _loaded.Register(context, new ExposedGameObjectWithTransform(host), host, this);
 
             host.SetActive(true);
 #else
@@ -183,71 +174,5 @@ namespace Lilium.LiveStudio
 #endif
         }
 
-        // --- Shared registration / teardown ---
-
-        // Wraps the loaded instance, re-keys the wrapper to the persisted objectId so the remote app's
-        // reference survives unload/reload, registers it in the container, and reapplies saved state.
-        private void _Register(AssetLoadContext context, ExposedGameObject exposed, GameObject instance)
-        {
-            var container = context?.container;
-            if (container == null)
-            {
-                Debug.LogWarning("[LiveStudio] No base-scene RemoteControlContainer found; prop loaded but not remote-controllable.");
-            }
-            else
-            {
-                if (string.IsNullOrEmpty(objectId)) objectId = Guid.NewGuid().ToString();
-                exposed.ReplaceId(objectId);
-                container._objects.Add(exposed);
-                // The container's source list is already initialized by the host, so call OnEnable manually.
-                exposed.OnEnable();
-            }
-
-            _instance = instance;
-            _exposed = exposed;
-            _container = container;
-            isLoaded = true;
-
-            // Record the freshly loaded values as the delta baseline (the source asset's defaults)
-            // BEFORE reapplying saved state, so a later "save as preset" captures only the user's edits.
-            AssetStateSnapshot.CaptureDefaults(_exposed, _instance);
-            AssetStateSnapshot.Restore(state, _exposed, _instance);
-
-            // Finally, apply this prop's deferred live-scene entries (its top-level diff, queued during
-            // the scene restore because the prop had not loaded yet). Ordered LAST — after CaptureDefaults
-            // and the state carrier — so the persisted overrides land on top without polluting the delta
-            // baseline used by "save as preset". Keyed by objectId, the id the wrapper was just re-keyed to.
-            if (!string.IsNullOrEmpty(objectId))
-                LiveScenePendingStore.ApplyFor(objectId, DefaultExposedObjectResolver.Instance);
-
-            // The load is complete and everything applied above came from disk, not from the user.
-            // Re-baseline the dirty tracking (delta baseline untouched) so a prop that finishes loading
-            // after the scene restore is not reported as an unsaved change at quit time.
-            AssetStateSnapshot.MarkAllClean(_exposed, _instance);
-        }
-
-        // Unregisters the exposed wrapper from its container and destroys the prop instance, dropping
-        // any exposed-object handles created for the root's components so the registry retains no
-        // dangling targets after the GameObject is destroyed.
-        private void _DestroyLoaded()
-        {
-            if (_exposed != null)
-            {
-                _exposed.OnDisable();
-                if (_container != null) _container._objects.Remove(_exposed);
-            }
-            if (_instance != null)
-            {
-                foreach (var comp in _instance.GetComponents<Component>())
-                {
-                    if (comp == null || !ExposedClass.Has(comp.GetType())) continue;
-                    ExposedObjectRegistry.FindByTarget(comp)?.Unregister();
-                }
-                UnityEngine.Object.Destroy(_instance);
-            }
-            _instance = null;
-            _exposed = null;
-            _container = null;
-        }
     }
 }

@@ -11,10 +11,11 @@ namespace Lilium.LiveStudio
 {
     /// <summary>
     /// Runtime facade over the baked <see cref="BuiltinAssetCatalog"/>: loads the catalog from
-    /// <c>Resources</c>, registers each built-in asset in <see cref="AssetRegistry"/> under its GUID so a
-    /// selector reference (e.g. the avatar body-override slot) resolves it where <c>AssetDatabase</c> is
-    /// unavailable, and builds the <see cref="AssetBase"/> catalog entries <see cref="ExternalAssetManager"/>
-    /// injects into the project asset list.
+    /// <c>Resources</c>, registers each reference-only built-in asset in <see cref="AssetRegistry"/> under
+    /// its GUID so a selector reference (e.g. the avatar body-override slot) resolves it where
+    /// <c>AssetDatabase</c> is unavailable, and builds the <see cref="AssetBase"/> catalog entries
+    /// <see cref="ExternalAssetManager"/> injects into the project asset list. A loadable built-in (e.g. a
+    /// prop) is not pre-registered here — it is loaded on demand via <see cref="LoadPrefab"/> when enabled.
     ///
     /// Kind-agnostic: how a baked entry is loaded and what catalog entry it becomes comes from its
     /// <see cref="BuiltinAssetTypeDescriptor"/> (resolved by <see cref="BuiltinAssetCatalog.Entry.type"/>),
@@ -66,11 +67,12 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
-        /// Loads and registers every built-in asset in the catalog into <see cref="AssetRegistry"/> (by
-        /// GUID). Idempotent: once a catalog has been processed, subsequent calls return immediately. A
-        /// missing catalog is not marked done (so a later call retries once one is baked); an entry whose
-        /// kind is not registered, or whose Resources asset is missing, is skipped (logged) so one bad entry
-        /// never blocks the rest.
+        /// Loads and registers every reference-only built-in asset in the catalog into
+        /// <see cref="AssetRegistry"/> (by GUID). Loadable kinds (isReference=false, e.g. props) are skipped
+        /// — they are loaded on demand, not pre-registered. Idempotent: once a catalog has been processed,
+        /// subsequent calls return immediately. A missing catalog is not marked done (so a later call
+        /// retries once one is baked); an entry whose kind is not registered, or whose Resources asset is
+        /// missing, is skipped (logged) so one bad entry never blocks the rest.
         /// </summary>
         public static void EnsureRegistered()
         {
@@ -97,6 +99,12 @@ namespace Lilium.LiveStudio
                     continue;
                 }
 
+                // Reference-only kinds (e.g. animation clips) are pre-loaded and registered so a selector
+                // resolves them by GUID. A loadable kind (e.g. a prop) must not be force-loaded here — it
+                // would drag every built-in prop's dependency tree into memory at startup; it is loaded on
+                // demand when enabled (see BuiltinPropAsset / LoadPrefab).
+                if (!descriptor.isReference) continue;
+
                 var asset = Resources.Load(entry.resourcesPath, descriptor.assetType);
                 if (asset == null)
                 {
@@ -105,6 +113,31 @@ namespace Lilium.LiveStudio
                 }
                 AssetRegistry.Register(entry.guid, asset);
             }
+        }
+
+        /// <summary>
+        /// Loads the built-in prefab baked under <paramref name="guid"/> from Resources, or null when the
+        /// guid is unknown or the Resources asset is missing. Looked up in the catalog by GUID (not by a
+        /// stored Resources path) so a loadable built-in asset need not persist its path — a renamed or
+        /// moved asset still resolves as long as its GUID is unchanged. Used by <see cref="BuiltinPropAsset"/>
+        /// when it is enabled.
+        /// </summary>
+        public static GameObject LoadPrefab(string guid)
+        {
+            if (string.IsNullOrEmpty(guid)) return null;
+
+            var catalog = _Catalog();
+            if (catalog == null) return null;
+
+            var entries = catalog.entries;
+            for (int i = 0; i < entries.Length; i++)
+            {
+                if (!string.Equals(entries[i].guid, guid, StringComparison.Ordinal)) continue;
+                var resourcesPath = entries[i].resourcesPath;
+                if (string.IsNullOrEmpty(resourcesPath)) return null;
+                return Resources.Load<GameObject>(resourcesPath);
+            }
+            return null;
         }
 
         /// <summary>

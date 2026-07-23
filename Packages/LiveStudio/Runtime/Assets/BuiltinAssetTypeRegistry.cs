@@ -22,6 +22,23 @@ namespace Lilium.LiveStudio
         public Type assetType;
 
         /// <summary>
+        /// True for a reference-only kind whose asset is pre-loaded and registered in
+        /// <see cref="Lilium.RemoteControl.AssetRegistry"/> at startup so a selector resolves it by GUID
+        /// (e.g. an animation clip). False for a loadable kind that is instantiated on demand (e.g. a
+        /// prop): such a kind must NOT be force-loaded at startup — it only lists and loads when enabled.
+        /// </summary>
+        public bool isReference;
+
+        /// <summary>
+        /// Optional content narrowing applied after the <see cref="assetType"/> match, so a broad type
+        /// filter can be refined by inspecting the asset — e.g. only prefabs whose root carries an
+        /// <see cref="IProp"/> component qualify as built-in props (a bare <c>t:GameObject</c> filter would
+        /// otherwise sweep up every prefab under a Resources folder). Null accepts every asset of
+        /// <see cref="assetType"/>. Receives the loaded main asset; evaluated only at bake time.
+        /// </summary>
+        public Func<UnityEngine.Object, bool> accept;
+
+        /// <summary>
         /// Creates the catalog entry for one baked asset (an empty instance; <see cref="BuiltinAssetRegistry"/>
         /// fills id / name). Receives the entry so a kind that needs the Resources path or GUID can keep it.
         /// </summary>
@@ -134,11 +151,31 @@ namespace Lilium.LiveStudio
         private static void _RegisterBuiltIns()
         {
             // Animation clips (*.anim in Resources): reference resources selectable from the avatar
-            // body-override slot, alongside the clips of an external *.anim.lsb bundle.
+            // body-override slot, alongside the clips of an external *.anim.lsb bundle. Reference-only:
+            // registered in AssetRegistry at startup, never instantiated.
             _descriptors.Add(new BuiltinAssetTypeDescriptor
             {
                 assetType = typeof(AnimationClip),
+                isReference = true,
                 create = _ => new BuiltinAnimationAsset(),
+            });
+
+            // Built-in props: a prefab under a Resources folder whose root carries an IProp component (the
+            // same avatar-attached prop root shipped in a *.prop.lsb). A loadable kind — instantiated under
+            // the avatar on demand like an external prop, so isReference is false. The accept filter is
+            // functionally required, not just a semantic scope: without it a bare t:GameObject search would
+            // bake every prefab (UI, internal) under any Resources folder.
+            //
+            // Only avatar props exist today. A future free-standing (scene-placed) built-in prop is a load
+            // path branch within THIS kind (by IProp presence, mirroring PropAsset's suffix branch), NOT a
+            // second GameObject kind: BuiltinAssetTypeRegistry.Find keys on the asset type name, so only one
+            // GameObject-based kind can be resolved.
+            _descriptors.Add(new BuiltinAssetTypeDescriptor
+            {
+                assetType = typeof(GameObject),
+                isReference = false,
+                accept = o => o is GameObject go && go.GetComponent<IProp>() != null,
+                create = entry => new BuiltinPropAsset { guid = entry.guid },
             });
         }
     }

@@ -5,15 +5,18 @@ using System.Threading.Tasks;
 namespace Lilium.LiveStudio
 {
     /// <summary>
-    /// Shared base for a catalog entry describing an app-embedded (built-in) asset shipped inside the app
-    /// under a <c>Resources</c> folder (baked into <see cref="BuiltinAssetCatalog"/>). Like
+    /// Shared base for a catalog entry describing a reference-only app-embedded (built-in) asset shipped
+    /// inside the app under a <c>Resources</c> folder (baked into <see cref="BuiltinAssetCatalog"/>). Like
     /// <see cref="AnimationBundleAsset"/> such an entry is a reference resource, not scene content: it has
     /// no load/unload toggle and instantiates nothing. It exists in the catalog so the asset is listed on
     /// the project's asset page and selectable; the asset itself is registered in
     /// <see cref="Lilium.RemoteControl.AssetRegistry"/> under its GUID by <see cref="BuiltinAssetRegistry"/>.
     ///
-    /// Marked <see cref="AssetBase.isBuiltin"/> so the project crawl never prunes it and it is never
-    /// persisted — it is always present, re-injected by <see cref="ExternalAssetManager"/> each run.
+    /// Marked <see cref="AssetBase.isBuiltin"/> so the project crawl never prunes it, and
+    /// <see cref="AssetBase.isPersistable"/> = false so it is never written to the live scene — it carries
+    /// no per-scene state and is always re-injected by <see cref="ExternalAssetManager"/> each run. (A
+    /// loadable built-in such as <see cref="BuiltinPropAsset"/> extends <see cref="AssetBase"/> directly
+    /// instead, because it DOES instantiate and persist its in-use state.)
     ///
     /// Deliberately NOT marked <c>[ExposedClass]</c> (like <see cref="AssetBase"/>): each concrete kind
     /// registers its own, so the polymorphic <c>@type</c> discriminator never names this abstract type.
@@ -26,6 +29,9 @@ namespace Lilium.LiveStudio
         public override bool isExclusive => false;
 
         public override bool isBuiltin => true;
+
+        // Reference-only: no scene instance, no per-scene state — never written to the live scene.
+        public override bool isPersistable => false;
 
         /// <summary>
         /// No-op "load": a built-in entry holds no scene instance. The asset is registered in

@@ -6,6 +6,7 @@ using System.IO;
 using System.Threading.Tasks;
 
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 using Lilium.RemoteControl;
 using Lilium.RemoteControl.LiveScene;
@@ -188,9 +189,12 @@ namespace Lilium.LiveStudio
             // (StageManager, the remote app) would otherwise dereference null and crash.
             assets = _WithoutNulls(_persistedAssets);
             _ResolveAssetPaths(assets);
-            // The persisted set never carries built-in entries (they are not persisted); re-inject them so
-            // they survive a restore. The re-armed crawl below also re-adds them, but doing it here keeps
-            // them present immediately (and even when no project folder is open).
+            // The persisted set carries only loadable built-ins that were in use (e.g. an enabled built-in
+            // prop, restored with its objectId so its overrides reattach); reference-only built-ins and the
+            // disabled catalog are not persisted. Re-inject the built-in catalog so the rest is present —
+            // idempotent, dedups by id, so a restored loadable entry is kept, not duplicated. The re-armed
+            // crawl below also re-adds them, but doing it here keeps them present immediately (and even when
+            // no project folder is open).
             _EnsureBuiltinAssets();
             _dirty = true;
             _assetManagerReadyNotified = false;
@@ -210,13 +214,17 @@ namespace Lilium.LiveStudio
             for (int i = 0; i < assets.Length; i++)
             {
                 var asset = assets[i];
-                // Built-in assets are app-embedded (no project file) and always re-injected each run, so
-                // they are never persisted — regardless of their transient enabled/loaded flags.
-                if (asset == null || asset.isBuiltin || (!asset.enabled && !asset.isLoaded)) continue;
-                // Persist a portable, project-relative path so a saved scene survives moving the project
-                // folder / opening it on another machine. The absolute id/filePath are not persisted
-                // (persistable=false) and are reconstructed from this on load.
-                asset.path = PropPreset.Relativize(asset.filePath, projectPath);
+                // Skip entries with nothing to persist: unused ones, and reference-only built-ins
+                // (app-embedded selectable resources with no per-scene state, always re-injected each run —
+                // isPersistable=false). A loadable built-in (e.g. a built-in prop) IS persisted, so its
+                // enabled state and objectId — hence its saved parameter overrides — survive a restore.
+                if (asset == null || !asset.isPersistable || (!asset.enabled && !asset.isLoaded)) continue;
+                // A built-in asset has no project file; its identity is the catalog GUID persisted on the
+                // entry, so leave its path empty. A file-backed asset persists a portable, project-relative
+                // path so a saved scene survives moving the project folder / opening it on another machine
+                // (the absolute id/filePath are persistable=false and reconstructed from it on load).
+                if (!asset.isBuiltin)
+                    asset.path = PropPreset.Relativize(asset.filePath, projectPath);
                 used.Add(asset);
             }
             _persistedAssets = used.ToArray();
@@ -430,16 +438,22 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
-        /// Injects the app-embedded (built-in) catalog assets (e.g. Resources animation clips) into the live
-        /// list when not already present. Built-in entries are not project-folder files, so the crawl never
-        /// discovers them; they are added here and protected from the crawl's prune (<see cref="AssetBase.isBuiltin"/>).
-        /// Cheap and idempotent — dedups by id and only broadcasts when it adds something. Called at init and
-        /// after every rebuild of <c>assets</c> (crawl / restore).
+        /// Injects the app-embedded (built-in) catalog assets — reference resources (e.g. Resources
+        /// animation clips) and loadable ones (e.g. Resources prop prefabs) — into the live list when not
+        /// already present. Built-in entries are not project-folder files, so the crawl never discovers
+        /// them; they are added here and protected from the crawl's prune (<see cref="AssetBase.isBuiltin"/>).
+        /// Cheap and idempotent — dedups by id (a loadable built-in restored from the live scene therefore
+        /// wins over the fresh catalog entry, keeping its enabled state / objectId) and only broadcasts when
+        /// it adds something. Called at init and after every rebuild of <c>assets</c> (crawl / restore).
         /// </summary>
         private void _EnsureBuiltinAssets()
         {
-            var builtins = BuiltinAssetRegistry.GetAssets();
-            if (builtins.Count == 0) return;
+            // Two built-in sources: catalog-baked Resources assets (props / clips) and the build's scene
+            // list projected to sets. Both are app-embedded, so both are injected here and protected from
+            // the crawl's prune; a set needs no bake because the build scene list is readable at runtime.
+            var catalogAssets = BuiltinAssetRegistry.GetAssets();
+            var buildSets = BuiltinSetSource.GetSets();
+            if (catalogAssets.Count == 0 && buildSets.Count == 0) return;
 
             var existing = new HashSet<string>();
             for (int i = 0; i < assets.Length; i++)
@@ -448,6 +462,19 @@ namespace Lilium.LiveStudio
             }
 
             List<AssetBase> list = null;
+            _AddBuiltins(catalogAssets, existing, ref list);
+            _AddBuiltins(buildSets, existing, ref list);
+            if (list == null) return; // all built-ins already present.
+
+            assets = list.ToArray();
+            _Broadcast();
+        }
+
+        // Appends each not-yet-present built-in (deduped by id) from `builtins`, lazily copying the live
+        // `assets` array into `list` on the first addition. A restored loadable built-in (already in
+        // `assets` under the same id) is therefore kept, not duplicated.
+        private void _AddBuiltins(IReadOnlyList<AssetBase> builtins, HashSet<string> existing, ref List<AssetBase> list)
+        {
             for (int i = 0; i < builtins.Count; i++)
             {
                 var builtin = builtins[i];
@@ -455,10 +482,6 @@ namespace Lilium.LiveStudio
                 (list ??= new List<AssetBase>(assets)).Add(builtin);
                 existing.Add(builtin.id);
             }
-            if (list == null) return; // all built-ins already present.
-
-            assets = list.ToArray();
-            _Broadcast();
         }
 
         /// <summary>Unloads (if loaded) and removes the entry with the given id.</summary>
@@ -976,8 +999,8 @@ namespace Lilium.LiveStudio
         // GameObject lives in the (reloadable) base scene, so its wrapper belongs in that scene's
         // container: both are then torn down and rebuilt together on a base-scene reload, leaving no
         // dangling wrapper in the persistent host container (which would crash live-scene serialization
-        // when accessed after its GameObject is destroyed). Prefers a container in a build (base) scene;
-        // additively-loaded set-bundle scenes have buildIndex -1.
+        // when accessed after its GameObject is destroyed). Prefers a container that is NOT in a loaded
+        // set scene — i.e. the persistent (bootstrap) scene, the one not backed by any set asset.
         private RemoteControlContainer _ResolveContainer()
         {
             var all = RemoteControlContainer.all;
@@ -987,9 +1010,22 @@ namespace Lilium.LiveStudio
                 var c = all[i];
                 if (c == null) continue;
                 if (fallback == null) fallback = c;
-                if (c.gameObject.scene.buildIndex >= 0) return c;
+                if (!_IsSetScene(c.gameObject.scene)) return c;
             }
             return fallback;
+        }
+
+        // True when the scene is the loaded scene of a set asset (bundle or built-in). The set's own scene
+        // handle is the source of truth, so this holds regardless of build index — a built-in set scene
+        // (real build index, unlike a bundle set scene at -1) is recognized too. Lets _ResolveContainer
+        // keep props out of a set scene without the old build-index heuristic.
+        private bool _IsSetScene(Scene scene)
+        {
+            for (int i = 0; i < assets.Length; i++)
+            {
+                if (assets[i] is ISetAsset s && s.hasScene && s.scene == scene) return true;
+            }
+            return false;
         }
 
         // Derives a stable entry id from the file path. Path separators are normalized so the same
@@ -1013,6 +1049,15 @@ namespace Lilium.LiveStudio
             {
                 var asset = assets[i];
                 if (asset == null) continue;
+
+                if (asset.isBuiltin)
+                {
+                    // App-embedded entry: no project file, so there is no path to resolve. Restore the
+                    // runtime id from the persisted stable identity (the catalog GUID) so this entry dedups
+                    // against the catalog entry re-injected by _EnsureBuiltinAssets right after.
+                    if (string.IsNullOrEmpty(asset.id)) asset.id = asset.persistentId;
+                    continue;
+                }
 
                 if (string.IsNullOrEmpty(asset.filePath) && !string.IsNullOrEmpty(asset.path))
                 {

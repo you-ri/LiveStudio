@@ -92,13 +92,15 @@ namespace Lilium.LiveStudio
     /// concepts the unified asset pipeline does not model: the active set and the bootstrap
     /// (persistent) set.
     ///
-    /// The actual load/unload of set bundles is delegated to <see cref="ExternalAssetManager"/>,
-    /// where each set is a <see cref="SetBundleAsset"/> alongside props and avatars. This manager keeps
-    /// no bundles of its own: <see cref="sets"/> is a runtime-only projection of the SetBundleAsset
-    /// entries (plus the synthetic persistent entry), so the persisted source of truth lives entirely
-    /// on the assets side. Remote-app edits to an entry's <see cref="SetBundleEntry.enabled"/> flag
-    /// are forwarded to the matching SetBundleAsset; activation is applied here through the asset's loaded
-    /// scene handle.
+    /// The actual load/unload of sets is delegated to <see cref="ExternalAssetManager"/>, where each set
+    /// is an <see cref="ISetAsset"/> alongside props and avatars — either a <see cref="SetBundleAsset"/>
+    /// (external <c>*.set.lsb</c>) or a <see cref="BuiltinSetAsset"/> (a scene shipped in the build). This
+    /// manager keeps no scenes of its own: <see cref="sets"/> is a runtime-only projection of the ISetAsset
+    /// entries (plus the synthetic persistent entry), so the persisted source of truth lives entirely on
+    /// the assets side. Remote-app edits to an entry's <see cref="SetBundleEntry.enabled"/> flag are
+    /// forwarded to the matching set asset; activation is applied here through the asset's loaded scene
+    /// handle. Keying on <see cref="ISetAsset"/> rather than a concrete type is what lets built-in and
+    /// bundle sets reconcile through one path.
     /// </summary>
     [Serializable]
     [ExposedClass(Icon = "public", Category = "Stage", HideInScene = true)]
@@ -306,14 +308,14 @@ namespace Lilium.LiveStudio
 
             var manager = ExternalAssetManager.current;
 
-            // Activating the bootstrap set: clear the SetBundleAsset active flags so it becomes active.
+            // Activating the bootstrap set: clear the set assets' active flags so it becomes active.
             if (setId == kPersistentSetId)
             {
-                _ClearSetBundleAssetActiveFlags(manager);
+                _ClearSetAssetActiveFlags(manager);
             }
             else
             {
-                var asset = manager?.FindAsset(setId) as SetBundleAsset;
+                var asset = manager?.FindAsset(setId) as ISetAsset;
                 if (asset == null || !asset.hasScene)
                 {
                     Debug.LogWarning($"[LiveStudio] Cannot activate a set that is not loaded: {setId}");
@@ -324,7 +326,7 @@ namespace Lilium.LiveStudio
                 var view = manager.assetsView;
                 for (int i = 0; i < view.Count; i++)
                 {
-                    if (view[i] is SetBundleAsset s) s.isActive = s == asset;
+                    if (view[i] is ISetAsset s) s.isActive = ReferenceEquals(s, asset);
                 }
             }
 
@@ -369,10 +371,10 @@ namespace Lilium.LiveStudio
             if (manager == null) return;
 
             // null target = switch to the bootstrap (persistent) scene: no set asset stays loaded.
-            SetBundleAsset target = null;
+            ISetAsset target = null;
             if (setId != kPersistentSetId)
             {
-                target = manager.FindAsset(setId) as SetBundleAsset;
+                target = manager.FindAsset(setId) as ISetAsset;
                 if (target == null)
                 {
                     Debug.LogWarning($"[LiveStudio] Cannot switch to an unknown set: {setId}");
@@ -383,10 +385,11 @@ namespace Lilium.LiveStudio
             var view = manager.assetsView;
             for (int i = 0; i < view.Count; i++)
             {
-                if (view[i] is not SetBundleAsset s) continue;
-                bool isTarget = s == target;
+                var asset = view[i];
+                if (asset is not ISetAsset s) continue;
+                bool isTarget = ReferenceEquals(s, target);
                 s.isActive = isTarget;
-                if (!isTarget) manager.SetAssetEnabled(s.id, false);
+                if (!isTarget) manager.SetAssetEnabled(asset.id, false);
             }
 
             if (target != null && !target.hasScene)
@@ -502,7 +505,7 @@ namespace Lilium.LiveStudio
             if (!Application.isPlaying) return;
 
             var current = SceneManager.GetActiveScene();
-            var desired = _FindActiveSetBundleAsset();
+            var desired = _FindActiveSetAsset();
 
             if (desired != null)
             {
@@ -517,37 +520,37 @@ namespace Lilium.LiveStudio
             }
         }
 
-        // The loaded SetBundleAsset that should be the active set, or null when the bootstrap set is.
-        private SetBundleAsset _FindActiveSetBundleAsset()
+        // The loaded set asset that should be the active set, or null when the bootstrap set is.
+        private ISetAsset _FindActiveSetAsset()
         {
             var manager = ExternalAssetManager.current;
             if (manager == null) return null;
             var view = manager.assetsView;
             for (int i = 0; i < view.Count; i++)
             {
-                if (view[i] is SetBundleAsset s && s.isActive && s.hasScene) return s;
+                if (view[i] is ISetAsset s && s.isActive && s.hasScene) return s;
             }
             return null;
         }
 
-        private static bool _AnySetBundleAssetActive(ExternalAssetManager manager)
+        private static bool _AnySetAssetActive(ExternalAssetManager manager)
         {
             if (manager == null) return false;
             var view = manager.assetsView;
             for (int i = 0; i < view.Count; i++)
             {
-                if (view[i] is SetBundleAsset s && s.isActive) return true;
+                if (view[i] is ISetAsset s && s.isActive) return true;
             }
             return false;
         }
 
-        private static void _ClearSetBundleAssetActiveFlags(ExternalAssetManager manager)
+        private static void _ClearSetAssetActiveFlags(ExternalAssetManager manager)
         {
             if (manager == null) return;
             var view = manager.assetsView;
             for (int i = 0; i < view.Count; i++)
             {
-                if (view[i] is SetBundleAsset s) s.isActive = false;
+                if (view[i] is ISetAsset s) s.isActive = false;
             }
         }
 
@@ -571,14 +574,15 @@ namespace Lilium.LiveStudio
                 var view = manager.assetsView;
                 for (int i = 0; i < view.Count; i++)
                 {
-                    if (!(view[i] is SetBundleAsset s)) continue;
+                    var asset = view[i];
+                    if (!(asset is ISetAsset s)) continue;
                     list.Add(new SetBundleEntry
                     {
-                        id = s.id,
-                        name = s.name,
-                        filePath = s.filePath,
-                        enabled = s.enabled,
-                        isLoaded = s.isLoaded,
+                        id = asset.id,
+                        name = asset.name,
+                        filePath = asset.filePath,
+                        enabled = asset.enabled,
+                        isLoaded = asset.isLoaded,
                         isActive = s.isActive,
                         isPersistent = false,
                         marks = _MarkLabelsInScene(s.scene),
@@ -601,7 +605,7 @@ namespace Lilium.LiveStudio
                 filePath = string.Empty,
                 enabled = true,
                 isLoaded = true,
-                isActive = !_AnySetBundleAssetActive(manager),
+                isActive = !_AnySetAssetActive(manager),
                 isPersistent = true,
                 marks = _MarkLabelsInScene(_persistentScene),
             };
@@ -612,7 +616,7 @@ namespace Lilium.LiveStudio
         private Scene _ResolveSetScene(string setId)
         {
             if (setId == kPersistentSetId) return _persistentScene;
-            var asset = ExternalAssetManager.current?.FindAsset(setId) as SetBundleAsset;
+            var asset = ExternalAssetManager.current?.FindAsset(setId) as ISetAsset;
             return asset != null ? asset.scene : default;
         }
 
