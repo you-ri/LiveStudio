@@ -50,6 +50,17 @@ namespace Lilium.LiveStudio
 
             /// <summary>The asset's display name, baked so the catalog entry can be listed without loading it.</summary>
             public string name;
+
+            /// <summary>
+            /// The <c>Resources.Load</c> path of an authored <see cref="BundleThumbnail"/> sibling holding this
+            /// asset's preview image, or empty when none is authored. Kept separate from
+            /// <see cref="resourcesPath"/> so the thumbnail's raw bytes can be pre-warmed into
+            /// <see cref="ThumbnailCache"/> at startup without loading the asset itself (a prefab would drag its
+            /// whole dependency tree into memory; a thumbnail must not). Empty is the graceful "no preview"
+            /// state — the entry still lists and loads, the remote app just shows its icon. New field: appended
+            /// last so older baked catalogs deserialize unchanged.
+            /// </summary>
+            public string thumbnailPath;
         }
 
         [SerializeField]

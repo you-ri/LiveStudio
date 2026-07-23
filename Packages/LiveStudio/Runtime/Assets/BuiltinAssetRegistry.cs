@@ -28,9 +28,25 @@ namespace Lilium.LiveStudio
     /// </summary>
     public static class BuiltinAssetRegistry
     {
+        /// <summary>
+        /// Prefix of the synthetic <see cref="ThumbnailCache"/> key a built-in asset's thumbnail is stored
+        /// under. A built-in asset has no project file, so it cannot key the cache by file path the way an
+        /// external asset does; the image handler resolves the same key from the asset's GUID (see
+        /// <see cref="ThumbnailCacheKey"/>).
+        /// </summary>
+        const string kThumbnailKeyPrefix = "builtin:";
+
         static BuiltinAssetCatalog _catalog;
         static bool _catalogLoaded;
         static bool _registered;
+
+        /// <summary>
+        /// The <see cref="ThumbnailCache"/> key a built-in asset's pre-warmed thumbnail is stored under, or
+        /// null for an empty GUID. Both the startup pre-warm and <c>AvatarImageHandler</c> derive the key
+        /// from the same GUID so a request finds the bytes without loading the asset itself.
+        /// </summary>
+        public static string ThumbnailCacheKey(string guid)
+            => string.IsNullOrEmpty(guid) ? null : kThumbnailKeyPrefix + guid;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
 #if UNITY_EDITOR
@@ -87,6 +103,14 @@ namespace Lilium.LiveStudio
             {
                 var entry = entries[i];
                 if (string.IsNullOrEmpty(entry.guid) || string.IsNullOrEmpty(entry.resourcesPath)) continue;
+
+                // Pre-warm the preview into ThumbnailCache from the authored thumbnail sibling — bytes only,
+                // never the asset itself. Runs for every kind (props included) and regardless of whether the
+                // asset is already registered, so it must sit ahead of the registration continues below.
+                // Resources.Load runs here on the main thread; the image handler (a request worker thread)
+                // then only reads the cache.
+                _PrewarmThumbnail(entry);
+
                 if (AssetRegistry.TryFind(entry.guid, out _)) continue; // already registered (e.g. by a scene component).
 
                 // Unknown kinds are reported here only — this runs once, while GetAssets re-runs on every
@@ -113,6 +137,24 @@ namespace Lilium.LiveStudio
                 }
                 AssetRegistry.Register(entry.guid, asset);
             }
+        }
+
+        /// <summary>
+        /// Loads the authored thumbnail sibling baked for <paramref name="entry"/> and stores its raw bytes in
+        /// <see cref="ThumbnailCache"/> under the built-in key, so the image handler can serve the preview
+        /// without ever loading the asset. No-op when the entry has no thumbnail or the sibling is missing /
+        /// empty (the graceful "no preview" state — the remote app shows the entry's icon). Only the small
+        /// <see cref="BundleThumbnail"/> asset is loaded, not the prefab; its byte array is captured by
+        /// reference into the cache, so it survives even if the source asset is later unloaded.
+        /// </summary>
+        static void _PrewarmThumbnail(BuiltinAssetCatalog.Entry entry)
+        {
+            if (string.IsNullOrEmpty(entry.thumbnailPath)) return;
+
+            var thumbnail = Resources.Load<BundleThumbnail>(entry.thumbnailPath);
+            if (thumbnail == null || !thumbnail.HasImage) return;
+
+            ThumbnailCache.Store(ThumbnailCacheKey(entry.guid), thumbnail.ImageData, thumbnail.MimeType);
         }
 
         /// <summary>

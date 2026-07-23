@@ -72,6 +72,43 @@ namespace Lilium.LiveStudio.Editor
             Debug.Log($"[LiveStudio] Built-in asset catalog rebuilt with {entries.Length} asset(s).");
         }
 
+        // Renders a preview for every built-in prop that has no thumbnail yet, persisting a BundleThumbnail
+        // next to the prefab (kept, so it can be replaced via the BundleThumbnail inspector), then rebuilds so
+        // the freshly authored thumbnails bake into the catalog. Explicit rather than part of the auto-bake:
+        // rendering N prefabs is not something to run on every asset import, and thumbnails are optional — the
+        // catalog and the remote app work without them. Only GameObject kinds have a renderable preview.
+        [MenuItem("Assets/Lilium Live Studio/Generate Built-in Prop Thumbnails")]
+        public static void GenerateBuiltinPropThumbnails()
+        {
+            // Rebuild first so the catalog reflects the current Resources set (a just-added prop is included).
+            Rebuild();
+
+            var catalog = AssetDatabase.LoadAssetAtPath<BuiltinAssetCatalog>(kCatalogAssetPath);
+            if (catalog == null)
+            {
+                Debug.Log("[LiveStudio] No built-in assets to generate thumbnails for.");
+                return;
+            }
+
+            int rendered = 0;
+            foreach (var entry in catalog.entries)
+            {
+                var descriptor = BuiltinAssetTypeRegistry.Find(entry.type);
+                if (descriptor == null || descriptor.assetType != typeof(GameObject)) continue; // props only
+
+                var prefabPath = AssetDatabase.GUIDToAssetPath(entry.guid);
+                if (string.IsNullOrEmpty(prefabPath)) continue;
+
+                // Creates the sibling thumbnail and renders the preview only when it is missing/empty; an
+                // existing (auto or user-provided) image is preserved.
+                if (BundleThumbnailAuthoring.GetOrCreateThumbnailAssetPath(prefabPath) != null) rendered++;
+            }
+
+            // Re-bake so the newly authored thumbnail paths are discovered into the catalog.
+            Rebuild();
+            Debug.Log($"[LiveStudio] Built-in prop thumbnails ready for {rendered} prop(s).");
+        }
+
         // Enumerates every main asset under a Resources folder that a registered kind owns, capturing its
         // kind, GUID, Resources load path and name. Sorted by kind then load path for a deterministic bake
         // (stable diffs).
@@ -113,6 +150,7 @@ namespace Lilium.LiveStudio.Editor
                         guid = guid,
                         resourcesPath = loadPath,
                         name = main.name,
+                        thumbnailPath = _ResolveThumbnailLoadPath(path),
                     });
                 }
             }
@@ -123,6 +161,20 @@ namespace Lilium.LiveStudio.Editor
                 return byType != 0 ? byType : string.CompareOrdinal(a.resourcesPath, b.resourcesPath);
             });
             return entries.ToArray();
+        }
+
+        // Resolves the Resources.Load path of an authored thumbnail sibling for the asset at assetPath, or
+        // empty when none is usable. Discovery only — never renders here, so the frequent auto-bake stays
+        // cheap and side-effect free; a preview is generated on demand by GenerateBuiltinPropThumbnails.
+        // A thumbnail must sit under a Resources folder (so it loads at runtime) and actually hold an image;
+        // an empty result is the graceful "no preview" state.
+        static string _ResolveThumbnailLoadPath(string assetPath)
+        {
+            var thumbnailAssetPath = BundleThumbnailAuthoring.GetThumbnailAssetPath(assetPath);
+            var thumbnail = AssetDatabase.LoadAssetAtPath<BundleThumbnail>(thumbnailAssetPath);
+            if (thumbnail == null || !thumbnail.HasImage) return string.Empty;
+            if (!_TryResourcesLoadPath(thumbnailAssetPath, out var loadPath)) return string.Empty;
+            return loadPath;
         }
 
         // Maps an asset path under a Resources folder to its Resources.Load path (relative to the last
@@ -147,7 +199,8 @@ namespace Lilium.LiveStudio.Editor
             for (int i = 0; i < a.Length; i++)
             {
                 if (a[i].type != b[i].type || a[i].guid != b[i].guid ||
-                    a[i].resourcesPath != b[i].resourcesPath || a[i].name != b[i].name)
+                    a[i].resourcesPath != b[i].resourcesPath || a[i].name != b[i].name ||
+                    a[i].thumbnailPath != b[i].thumbnailPath)
                     return false;
             }
             return true;

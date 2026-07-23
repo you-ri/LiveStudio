@@ -22,12 +22,18 @@ namespace Lilium.LiveStudio.Editor
         // Square thumbnail edge length in pixels. Matches the avatar card preview which is square.
         private const int kSize = 256;
 
-        /// <summary>Deterministic, persistent thumbnail asset path next to <paramref name="prefabAssetPath"/>.</summary>
+        /// <summary>
+        /// Deterministic, persistent thumbnail asset path next to <paramref name="prefabAssetPath"/>, named
+        /// <c>&lt;prefab&gt;.Thumbnail.asset</c>. The dot form keeps the thumbnail visually grouped with its
+        /// prefab in the Project window; when the prefab lives under <c>Resources</c> the resulting
+        /// <c>Resources.Load</c> path is <c>&lt;prefab&gt;.Thumbnail</c>, which loads correctly (Unity does not
+        /// strip the internal dot as an extension) and never collides with the prefab's own key.
+        /// </summary>
         public static string GetThumbnailAssetPath(string prefabAssetPath)
         {
             var dir = Path.GetDirectoryName(prefabAssetPath).Replace('\\', '/');
             var name = Path.GetFileNameWithoutExtension(prefabAssetPath);
-            return $"{dir}/{name} Thumbnail.asset";
+            return $"{dir}/{name}.Thumbnail.asset";
         }
 
         /// <summary>

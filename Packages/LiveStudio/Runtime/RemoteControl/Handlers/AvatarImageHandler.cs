@@ -37,20 +37,27 @@ namespace Lilium.LiveStudio
         {
             var assetId = context.Request.QueryString["id"];
 
-            // Resolve the asset's file path on the main thread (ExternalAssetManager touches Unity state).
-            // Any asset kind is accepted (avatar / prop); the file extension below decides how the
-            // thumbnail is obtained.
-            string filePath = await ExecuteOnMainThread<string>(() =>
+            // Resolve the ThumbnailCache key on the main thread (ExternalAssetManager touches Unity state).
+            // For a file-backed asset (avatar / prop) the key is its file path — the file extension below then
+            // decides how the thumbnail is obtained. A built-in asset has no project file: its preview is
+            // pre-warmed at startup under a synthetic GUID key (see BuiltinAssetRegistry), so it resolves to
+            // that key instead. Any asset kind is accepted.
+            string cacheKey = await ExecuteOnMainThread<string>(() =>
             {
                 if (string.IsNullOrEmpty(assetId)) return null;
                 var manager = ExternalAssetManager.current;
                 if (manager == null) return null;
                 // Resolve by reference so both a runtime absolute id (the remote app's session handle) and a
                 // persisted project-relative reference (e.g. a deck tile's backgroundAssetId) find the asset.
-                return manager.FindAssetByReference(assetId)?.filePath;
+                var asset = manager.FindAssetByReference(assetId);
+                if (asset == null) return null;
+                if (!string.IsNullOrEmpty(asset.filePath)) return asset.filePath;
+                // Built-in (Resources) asset: key by its stable GUID, matching the startup pre-warm.
+                if (asset.isBuiltin) return BuiltinAssetRegistry.ThumbnailCacheKey(asset.persistentId ?? asset.id);
+                return null;
             });
 
-            if (string.IsNullOrEmpty(filePath))
+            if (string.IsNullOrEmpty(cacheKey))
             {
                 await WriteError(context, 404, "Avatar thumbnail not available");
                 return;
@@ -63,22 +70,23 @@ namespace Lilium.LiveStudio
             // pure CPU/IO; ThumbnailCache is thread-safe).
             await Task.Run(() =>
             {
-                // Cached (memory or disk) for any asset kind — survives restarts and is available for
-                // bundles once they have been loaded at least once.
-                if (ThumbnailCache.TryGet(filePath, out var cachedBytes, out var cachedMime))
+                // Cached (memory or disk) for any asset kind — survives restarts, available for bundles once
+                // loaded at least once, and for built-in assets once pre-warmed at startup.
+                if (ThumbnailCache.TryGet(cacheKey, out var cachedBytes, out var cachedMime))
                 {
                     imageBytes = cachedBytes;
                     mimeType = cachedMime;
                     return;
                 }
 
-                // VRM/glb: extract the embedded thumbnail from the file and cache it for next time.
-                // Bundle thumbnails cannot be read here (opening a bundle in a request handler would
-                // stall the server); they are cached by the loaders when the asset is loaded.
-                if (IsVrmFile(filePath)
-                    && GlbThumbnailExtractor.TryExtract(filePath, out var bytes, out var mime))
+                // VRM/glb: extract the embedded thumbnail from the file and cache it for next time (the key is
+                // the file path here). Bundle thumbnails cannot be read here (opening a bundle in a request
+                // handler would stall the server); they are cached by the loaders when the asset is loaded.
+                // A built-in key is synthetic (not a VRM path), so this branch is skipped for it.
+                if (IsVrmFile(cacheKey)
+                    && GlbThumbnailExtractor.TryExtract(cacheKey, out var bytes, out var mime))
                 {
-                    ThumbnailCache.Store(filePath, bytes, mime);
+                    ThumbnailCache.Store(cacheKey, bytes, mime);
                     imageBytes = bytes;
                     mimeType = mime;
                 }
