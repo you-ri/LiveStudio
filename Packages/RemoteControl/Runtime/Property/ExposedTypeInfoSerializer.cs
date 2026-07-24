@@ -20,12 +20,19 @@ namespace Lilium.RemoteControl
         internal static string ToJson(ExposedClass type)
         {
             if (type == null) return "{}";
+            return ExposedPropertySerializer.SerializeToJson(ToJObject(type));
+        }
+
+        // ToJson(ExposedClass) の JObject 構築部。/exposed/types のコレクション構築が各要素を
+        // 「文字列化 → 再パース」する往復を避けるため、JObject を直接返す経路を公開する。
+        internal static JObject ToJObject(ExposedClass type)
+        {
             var jObject = new JObject
             {
                 ["type"] = type.typeName,
                 ["properties"] = new JArray(type.propertyTypes.Select(p =>
                 {
-                    var pj = JsonConvert.DeserializeObject<JObject>(ToJson(p));
+                    var pj = ToJObject(p);
                     // [ExposedKey] のプロパティに印を付け、RemoteApp が配列要素を index でなく
                     // このプロパティ値で安定参照 ("arr[Joy].weight") できるようにする。
                     if (type.keyProperty != null && ReferenceEquals(p, type.keyProperty)) pj["isKey"] = true;
@@ -43,7 +50,7 @@ namespace Lilium.RemoteControl
             // RemoteApp 側は parameters の有無で実行ボタンと引数入力モーダルを切り替える。
             if (type.functionTypes != null && type.functionTypes.Length > 0)
             {
-                jObject["functions"] = new JArray(type.functionTypes.Select(f => JsonConvert.DeserializeObject<JObject>(ToJson(f))));
+                jObject["functions"] = new JArray(type.functionTypes.Select(f => ToJObject(f)));
             }
 
             // help項目を追加（nullでない場合のみ）
@@ -76,18 +83,22 @@ namespace Lilium.RemoteControl
                 jObject["baseTypes"] = new JArray(baseTypeNames);
             }
 
-            return JsonConvert.SerializeObject(jObject, Formatting.None);
+            return jObject;
         }
 
         internal static string ToJson(IEnumerable<ExposedClass> types)
         {
-            return _ToJsonCollection(types, "types", ToJson);
+            return _ToJsonCollection(types, "types", ToJObject);
         }
 
         internal static string ToJson(ExposedEnum enumType)
         {
             if (enumType == null) return "{}";
+            return ExposedPropertySerializer.SerializeToJson(ToJObject(enumType));
+        }
 
+        internal static JObject ToJObject(ExposedEnum enumType)
+        {
             var jObject = new JObject
             {
                 ["type"] = enumType.typeName,
@@ -105,15 +116,18 @@ namespace Lilium.RemoteControl
                 jObject["help"] = LocalizationSystem.Translate(enumType.help);
             }
 
-            return JsonConvert.SerializeObject(jObject, Formatting.None);
+            return jObject;
         }
 
         internal static string ToJson(IEnumerable<ExposedEnum> enumTypes)
         {
-            return _ToJsonCollection(enumTypes, "enums", ToJson);
+            return _ToJsonCollection(enumTypes, "enums", ToJObject);
         }
 
         internal static string ToJson(ExposedPropertyType propertyType)
+            => ExposedPropertySerializer.SerializeToJson(ToJObject(propertyType));
+
+        internal static JObject ToJObject(ExposedPropertyType propertyType)
         {
             // ExposedPropertyRef の場合、RemoteApp には参照先の型 (例: float) を伝える
             var valueType = propertyType.resolvedValueType;
@@ -292,12 +306,18 @@ namespace Lilium.RemoteControl
                 jObject["collapsed"] = true;
             }
 
-            return JsonConvert.SerializeObject(jObject, Formatting.None);
+            return jObject;
         }
 
         internal static string ToJson(ExposedFunctionType functionType)
         {
             if (functionType == null) return "{}";
+            return ExposedPropertySerializer.SerializeToJson(ToJObject(functionType));
+        }
+
+        internal static JObject ToJObject(ExposedFunctionType functionType)
+        {
+            if (functionType == null) return new JObject();
 
             var parameters = functionType.parameters;
             var jParams = new JArray();
@@ -339,7 +359,7 @@ namespace Lilium.RemoteControl
             // visibility条件を追加（ShowIf/HideIf。プロパティと同じスキーマで出力）
             _WriteVisibility(jObject, functionType.visibilityConditions);
 
-            return JsonConvert.SerializeObject(jObject, Formatting.None);
+            return jObject;
         }
 
         /// <summary>
@@ -431,13 +451,15 @@ namespace Lilium.RemoteControl
 
         internal static string ToJson(IEnumerable<ExposedFunctionType> functionTypes)
         {
-            return _ToJsonCollection(functionTypes, "functions", ToJson);
+            return _ToJsonCollection(functionTypes, "functions", ToJObject);
         }
 
         /// <summary>
-        /// IEnumerableのToJsonを共通化するヘルパー。
+        /// IEnumerable の要素を JObject 化して { key: [...] } を返す共通ヘルパー。各要素を
+        /// 「文字列化 → JObject.Parse で再パース」する往復を避け、<paramref name="toJObject"/> が返す
+        /// JObject を直接配列に詰める。最終シリアライズはプール済みバッファ経由。
         /// </summary>
-        private static string _ToJsonCollection<T>(IEnumerable<T> items, string key, Func<T, string> toJson)
+        private static string _ToJsonCollection<T>(IEnumerable<T> items, string key, Func<T, JObject> toJObject)
         {
             if (items == null || !items.Any()) return "[]";
 
@@ -445,10 +467,10 @@ namespace Lilium.RemoteControl
             foreach (var item in items)
             {
                 if (item == null) continue;
-                jArray.Add(JObject.Parse(toJson(item)));
+                jArray.Add(toJObject(item));
             }
             var jRoot = new JObject { [key] = jArray };
-            return JsonConvert.SerializeObject(jRoot, Formatting.None);
+            return ExposedPropertySerializer.SerializeToJson(jRoot);
         }
 
         //TODO: 引数の数分用意する

@@ -1603,6 +1603,11 @@ namespace Lilium.RemoteControl
         {
             if (exposedObjects == null || !exposedObjects.Any()) return "[]";
 
+            // ToJson(exposedObj) の「JObject → 文字列 → DeserializeObject で再パース」の往復を避け、
+            // 各オブジェクトの JObject を直接構築して配列に詰める (isDirtyOnly=false / forPersistence=false の
+            // フルシリアライズと同一)。最終シリアライズはプール済みバッファ経由。
+            var options = new SerializeOptions(forPersistence: false, skipPropertyRef: false, PersistScope.Scene, maxDepth);
+
             var jArray = new JArray();
 
             foreach (var exposedObj in exposedObjects)
@@ -1610,10 +1615,7 @@ namespace Lilium.RemoteControl
                 if (exposedObj == null) continue;
                 if (exposedObj.propertyTypes == null) continue;
 
-                // 既存のToJsonを使用してプロパティをシリアライズ
-                var jsonString = ToJson(exposedObj, resolver, maxDepth: maxDepth);
-                var jObject = JsonConvert.DeserializeObject<JObject>(jsonString);
-                jArray.Add(jObject);
+                jArray.Add(SerializeFullToJObject(exposedObj, resolver, options));
             }
 
             var jResult = new JObject
