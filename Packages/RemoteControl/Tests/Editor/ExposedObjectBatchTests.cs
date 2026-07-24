@@ -78,6 +78,16 @@ namespace Lilium.RemoteControl.Tests
             return (JArray)JObject.Parse(json)["responses"];
         }
 
+        // 生の JSON 文字列を batch 本文として流す (ストリーム解析の忠実性テスト用)。
+        // コメント・切断・末尾ゴミ・重複キー・コンテナ値など JObject 経由では作れない入力を渡せる。
+        static JArray RunBatchRaw(ExposedObjectContainer container, string json)
+        {
+            var result = ExposedObjectHandler.ExecuteBatch(container, Resolver, json);
+            return (JArray)JObject.Parse(result)["responses"];
+        }
+
+        static JArray RunBatchRaw(string json) => RunBatchRaw(EmptyContainer(), json);
+
         [Test]
         public void Batch_MultiplePropertySets_AllAppliedAndEchoed()
         {
@@ -193,6 +203,194 @@ namespace Lilium.RemoteControl.Tests
 
             Assert.AreEqual(404, (int)responses[0]["status"]);
             Assert.AreEqual("Not found", (string)responses[0]["body"]["error"]);
+        }
+
+        // ---- ストリーム解析の忠実性 (JObject.Parse 経由と同じ意味論を固定する) ----
+        // ExecuteBatch は本文を JObject ツリー化せずストリームで抽出するため、コメント/切断/末尾ゴミ/
+        // 重複キー/コンテナ値/フィールド順などで挙動が JObject.Parse と一致することを回帰テストで固定する。
+
+        [Test]
+        public void Batch_FieldOrderIndependent_Applies()
+        {
+            var comp = CreateTarget(out var id);
+            var json = @"{""requests"":[{""body"":{""value"":9},""path"":""/exposed/object/ID/a"",""method"":""PUT"",""id"":7}]}"
+                .Replace("ID", id);
+
+            var responses = RunBatchRaw(json);
+
+            Assert.AreEqual(1, responses.Count);
+            Assert.AreEqual(200, (int)responses[0]["status"]);
+            Assert.AreEqual(7, (int)responses[0]["id"]);
+            Assert.AreEqual(9, comp.a);
+        }
+
+        [Test]
+        public void Batch_IdTypes_EchoedFaithfully()
+        {
+            var json = @"{""requests"":[
+                {""id"":""str-id"",""method"":""GET"",""path"":""/api/status""},
+                {""method"":""GET"",""path"":""/api/status""},
+                {""id"":null,""method"":""GET"",""path"":""/api/status""}
+            ]}";
+
+            var responses = RunBatchRaw(json);
+
+            Assert.AreEqual(3, responses.Count);
+            Assert.AreEqual("str-id", (string)responses[0]["id"]);       // 文字列 id
+            Assert.AreEqual(JTokenType.Null, responses[1]["id"].Type);   // 欠落 → null echo
+            Assert.AreEqual(JTokenType.Null, responses[2]["id"].Type);   // JSON null → null echo
+        }
+
+        [Test]
+        public void Batch_BodyNull_TreatedAsNoBody()
+        {
+            var comp = CreateTarget(out var id);
+            comp.a = 42;
+            var json = @"{""requests"":[{""id"":1,""method"":""POST"",""path"":""/exposed/function/ID/geta"",""body"":null}]}"
+                .Replace("ID", id);
+
+            var responses = RunBatchRaw(json);
+
+            Assert.AreEqual(200, (int)responses[0]["status"]);
+            Assert.AreEqual(42, (int)responses[0]["body"]["result"]);
+        }
+
+        [Test]
+        public void Batch_NonObjectElements_ReportInvalidWithNullId()
+        {
+            var json = @"{""requests"":[5, null, {""id"":9,""method"":""GET"",""path"":""/api/status""}]}";
+
+            var responses = RunBatchRaw(json);
+
+            Assert.AreEqual(3, responses.Count);
+            Assert.AreEqual(400, (int)responses[0]["status"]);
+            Assert.AreEqual(JTokenType.Null, responses[0]["id"].Type);
+            Assert.AreEqual(400, (int)responses[1]["status"]);
+            Assert.AreEqual(404, (int)responses[2]["status"]);
+            Assert.AreEqual(9, (int)responses[2]["id"]);
+        }
+
+        [Test]
+        public void Batch_UnknownFields_Ignored()
+        {
+            var json = @"{""requests"":[{""id"":1,""extra"":{""nested"":[1,2,3]},""method"":""GET"",""foo"":42,""path"":""/api/status""}]}";
+
+            var responses = RunBatchRaw(json);
+
+            Assert.AreEqual(1, responses.Count);
+            Assert.AreEqual(1, (int)responses[0]["id"]);
+            Assert.AreEqual(404, (int)responses[0]["status"]);
+        }
+
+        [Test]
+        public void Batch_TruncatedJson_EmptyResponsesAndNoSideEffects()
+        {
+            var comp = CreateTarget(out var id);
+            // 末尾の root 閉じ } を欠いた切断入力。JObject.Parse なら例外 → 実行ゼロ。
+            var json = @"{""requests"":[{""id"":1,""method"":""PUT"",""path"":""/exposed/object/ID/a"",""body"":{""value"":5}}]"
+                .Replace("ID", id);
+
+            var responses = RunBatchRaw(json);
+
+            Assert.AreEqual(0, responses.Count);
+            Assert.AreEqual(0, comp.a, "malformed batch must not apply any operation (atomicity)");
+        }
+
+        [Test]
+        public void Batch_TruncatedMidStructure_Empty()
+        {
+            Assert.AreEqual(0, RunBatchRaw(@"{""requests"":[").Count);
+            Assert.AreEqual(0, RunBatchRaw(@"{""requests"":[{""id"":1,""method"":""GET""").Count);
+        }
+
+        [Test]
+        public void Batch_TrailingGarbage_EmptyResponsesAndNoSideEffects()
+        {
+            var comp = CreateTarget(out var id);
+            var json = @"{""requests"":[{""id"":1,""method"":""PUT"",""path"":""/exposed/object/ID/a"",""body"":{""value"":5}}]} trailing-garbage"
+                .Replace("ID", id);
+
+            var responses = RunBatchRaw(json);
+
+            Assert.AreEqual(0, responses.Count);
+            Assert.AreEqual(0, comp.a, "trailing garbage must reject the whole batch");
+        }
+
+        [Test]
+        public void Batch_Comments_SkippedLikeJObjectLoad()
+        {
+            var json = @"/* leading */ {""requests"":[{""id"":1, /* mid */ ""method"":""GET"",""path"":""/api/status"" /* trail */ }]}";
+
+            var responses = RunBatchRaw(json);
+
+            Assert.AreEqual(1, responses.Count);
+            Assert.AreEqual(1, (int)responses[0]["id"]);
+            Assert.AreEqual(404, (int)responses[0]["status"]);
+        }
+
+        [Test]
+        public void Batch_DuplicateRequestsKey_LastWins()
+        {
+            var comp = CreateTarget(out var id);
+            var json = (@"{""requests"":[{""id"":""A"",""method"":""PUT"",""path"":""/exposed/object/ID/a"",""body"":{""value"":1}}],"
+                      + @"""requests"":[{""id"":""B"",""method"":""PUT"",""path"":""/exposed/object/ID/a"",""body"":{""value"":2}}]}")
+                .Replace("ID", id);
+
+            var responses = RunBatchRaw(json);
+
+            Assert.AreEqual(1, responses.Count);
+            Assert.AreEqual("B", (string)responses[0]["id"]);
+            Assert.AreEqual(2, comp.a, "duplicate top-level requests key must be last-wins");
+        }
+
+        [Test]
+        public void Batch_DuplicateFieldInRequest_LastWins()
+        {
+            var comp = CreateTarget(out var id);
+            var json = @"{""requests"":[{""id"":1,""method"":""GET"",""method"":""PUT"",""path"":""/exposed/object/ID/a"",""body"":{""value"":3}}]}"
+                .Replace("ID", id);
+
+            var responses = RunBatchRaw(json);
+
+            Assert.AreEqual(200, (int)responses[0]["status"]);
+            Assert.AreEqual(3, comp.a, "duplicate field must be last-wins (PUT)");
+        }
+
+        [Test]
+        public void Batch_ContainerValuedMethod_YieldsMethodNotAllowed()
+        {
+            CreateTarget(out var id);
+            // method がコンテナ値: 従来 req["method"].ToString() は非空 → 405 (400 ではない)。
+            var json = @"{""requests"":[{""id"":1,""method"":{""x"":1},""path"":""/exposed/object/ID/a""}]}"
+                .Replace("ID", id);
+
+            var responses = RunBatchRaw(json);
+
+            Assert.AreEqual(1, responses.Count);
+            Assert.AreEqual(405, (int)responses[0]["status"]);
+        }
+
+        [Test]
+        public void Batch_EmptyArrayAndEmptyObject()
+        {
+            Assert.AreEqual(0, RunBatchRaw(@"{""requests"":[]}").Count);
+
+            var responses = RunBatchRaw(@"{""requests"":[{}]}");
+            Assert.AreEqual(1, responses.Count);
+            Assert.AreEqual(400, (int)responses[0]["status"]);
+            Assert.AreEqual(JTokenType.Null, responses[0]["id"].Type);
+        }
+
+        [Test]
+        public void Batch_RequestsNotArrayOrAbsentOrNonObjectRoot_Empty()
+        {
+            Assert.AreEqual(0, RunBatchRaw(@"{""requests"":5}").Count);
+            Assert.AreEqual(0, RunBatchRaw(@"{""other"":[1,2]}").Count);
+            Assert.AreEqual(0, RunBatchRaw(@"{}").Count);
+            Assert.AreEqual(0, RunBatchRaw(@"[1,2,3]").Count);
+            Assert.AreEqual(0, RunBatchRaw("5").Count);
+            Assert.AreEqual(0, RunBatchRaw("\"hello\"").Count);
+            Assert.AreEqual(0, RunBatchRaw("").Count);
         }
     }
 }

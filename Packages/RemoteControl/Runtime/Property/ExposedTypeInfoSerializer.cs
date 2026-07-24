@@ -64,6 +64,18 @@ namespace Lilium.RemoteControl
                 jObject["hideInScene"] = true;
             }
 
+            // baseTypes: ExposedClass が公開する基底クラス連鎖（最も近い祖先が先頭）。クライアントが
+            // 「この型は AvatarAssetBase の派生か？」のような多態グループ判定を、具象サブクラスを
+            // 列挙せずに行えるようにする。判定ルールの定義元は ExposedClass.baseTypeNames（Studio 側の
+            // IsSubclassOf と共有）。hideInScene 等と同じ「条件付き追加キー」で、ユーザー定義の祖先を
+            // 持つ型（AssetBase 派生など）にのみ末尾追記する。祖先が無い型（大多数、特に MonoBehaviour 系）
+            // では付与しないので出力は不変のまま。scene.json は型スキーマを含まないため影響なし。
+            var baseTypeNames = type.baseTypeNames;
+            if (baseTypeNames.Count > 0)
+            {
+                jObject["baseTypes"] = new JArray(baseTypeNames);
+            }
+
             return JsonConvert.SerializeObject(jObject, Formatting.None);
         }
 

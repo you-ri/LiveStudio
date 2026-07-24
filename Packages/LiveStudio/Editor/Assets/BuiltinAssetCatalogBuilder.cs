@@ -72,15 +72,16 @@ namespace Lilium.LiveStudio.Editor
             Debug.Log($"[LiveStudio] Built-in asset catalog rebuilt with {entries.Length} asset(s).");
         }
 
-        // Renders a preview for every built-in prop that has no thumbnail yet, persisting a BundleThumbnail
-        // next to the prefab (kept, so it can be replaced via the BundleThumbnail inspector), then rebuilds so
-        // the freshly authored thumbnails bake into the catalog. Explicit rather than part of the auto-bake:
-        // rendering N prefabs is not something to run on every asset import, and thumbnails are optional — the
-        // catalog and the remote app work without them. Only GameObject kinds have a renderable preview.
-        [MenuItem("Assets/Lilium Live Studio/Generate Built-in Prop Thumbnails")]
-        public static void GenerateBuiltinPropThumbnails()
+        // Renders a preview for every built-in prefab asset (prop or avatar) that has no thumbnail yet,
+        // persisting a BundleThumbnail next to the prefab (kept, so it can be replaced via the
+        // BundleThumbnail inspector), then rebuilds so the freshly authored thumbnails bake into the catalog.
+        // Explicit rather than part of the auto-bake: rendering N prefabs is not something to run on every
+        // asset import, and thumbnails are optional — the catalog and the remote app work without them. Only
+        // GameObject kinds (props / avatars) have a renderable preview.
+        [MenuItem("Assets/Lilium Live Studio/Generate Built-in Thumbnails")]
+        public static void GenerateBuiltinThumbnails()
         {
-            // Rebuild first so the catalog reflects the current Resources set (a just-added prop is included).
+            // Rebuild first so the catalog reflects the current Resources set (a just-added prefab is included).
             Rebuild();
 
             var catalog = AssetDatabase.LoadAssetAtPath<BuiltinAssetCatalog>(kCatalogAssetPath);
@@ -94,7 +95,7 @@ namespace Lilium.LiveStudio.Editor
             foreach (var entry in catalog.entries)
             {
                 var descriptor = BuiltinAssetTypeRegistry.Find(entry.type);
-                if (descriptor == null || descriptor.assetType != typeof(GameObject)) continue; // props only
+                if (descriptor == null || descriptor.assetType != typeof(GameObject)) continue; // prefab kinds only
 
                 var prefabPath = AssetDatabase.GUIDToAssetPath(entry.guid);
                 if (string.IsNullOrEmpty(prefabPath)) continue;
@@ -106,7 +107,7 @@ namespace Lilium.LiveStudio.Editor
 
             // Re-bake so the newly authored thumbnail paths are discovered into the catalog.
             Rebuild();
-            Debug.Log($"[LiveStudio] Built-in prop thumbnails ready for {rendered} prop(s).");
+            Debug.Log($"[LiveStudio] Built-in thumbnails ready for {rendered} prefab(s).");
         }
 
         // Enumerates every main asset under a Resources folder that a registered kind owns, capturing its
@@ -132,6 +133,11 @@ namespace Lilium.LiveStudio.Editor
                     // The catalog lives under Resources too; never let a broad kind (one whose type also
                     // covers ScriptableObject) bake the catalog into itself.
                     if (string.Equals(path, kCatalogAssetPath, StringComparison.OrdinalIgnoreCase)) continue;
+                    // Editor-only Resources (an "/Editor/" special folder) are stripped from player builds,
+                    // so a built-in entry baked from one would never resolve via Resources.Load at runtime
+                    // (only a failed load / broken catalog entry). Skip them — e.g. SRP core's
+                    // Editor/Resources/DebugProbe.fbx, which a broad kind would otherwise pick up.
+                    if (path.Replace('\\', '/').IndexOf("/Editor/", StringComparison.OrdinalIgnoreCase) >= 0) continue;
                     if (!_TryResourcesLoadPath(path, out var loadPath)) continue;
 
                     // Main assets only: Resources.Load addresses the main asset, so an asset that is a
@@ -165,7 +171,7 @@ namespace Lilium.LiveStudio.Editor
 
         // Resolves the Resources.Load path of an authored thumbnail sibling for the asset at assetPath, or
         // empty when none is usable. Discovery only — never renders here, so the frequent auto-bake stays
-        // cheap and side-effect free; a preview is generated on demand by GenerateBuiltinPropThumbnails.
+        // cheap and side-effect free; a preview is generated on demand by GenerateBuiltinThumbnails.
         // A thumbnail must sit under a Resources folder (so it loads at runtime) and actually hold an image;
         // an empty result is the graceful "no preview" state.
         static string _ResolveThumbnailLoadPath(string assetPath)

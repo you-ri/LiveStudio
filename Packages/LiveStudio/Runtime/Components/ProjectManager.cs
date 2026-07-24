@@ -59,6 +59,24 @@ namespace Lilium.LiveStudio
             set => _unselectedCameraPreviewIntervalMs = Mathf.Max(1, value);
         }
 
+        // Polling interval (milliseconds) used by the remote app to keep the values of the properties
+        // currently shown on the active page in sync with Studio. Studio-side values can change through
+        // paths that do not raise the SSE property_update event (operations/gamepad, physics/animation,
+        // getter-only computed values), so the remote app periodically batch-GETs the visible properties.
+        // Kept per project like the camera preview intervals above.
+        [ExposedField(persistScope = PersistScope.Project), Hide]
+        [FormerlyExposedAs("realtimePropertyIntervalMs")]
+        private static int _realtimePropertyIntervalMs = 100;
+
+        [ExposedProperty]
+        [Slider(16, 1000, 1)]
+        [ExposedHelp("PROJECT_REALTIMEPROPERTYINTERVAL")]
+        public static int realtimePropertyIntervalMs
+        {
+            get => _realtimePropertyIntervalMs;
+            set => _realtimePropertyIntervalMs = Mathf.Max(1, value);
+        }
+
         /// <summary>Absolute path of the currently open project folder, or empty if none.</summary>
         [ExposedProperty, Hide]
         public static string projectPath => _projectPath;
@@ -94,6 +112,7 @@ namespace Lilium.LiveStudio
             // afterwards on project load by ProjectSettingsStore.ApplyAll.
             _selectedCameraPreviewIntervalMs = 100;
             _unselectedCameraPreviewIntervalMs = 50;
+            _realtimePropertyIntervalMs = 100;
 
             _projectPath = PlayerPrefs.GetString(kProjectPathKey, "");
             if (string.IsNullOrEmpty(_projectPath))

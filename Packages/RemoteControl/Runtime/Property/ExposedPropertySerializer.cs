@@ -1,8 +1,11 @@
 // Copyright (c) You-Ri, 2026
 using System;
+using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Text;
 
 using UnityEngine;
 using Newtonsoft.Json;
@@ -48,6 +51,33 @@ namespace Lilium.RemoteControl
                 this.scopeFilter = scopeFilter;
                 this.maxDepth = maxDepth;
             }
+        }
+
+        // JToken → JSON 文字列化用のスクラッチバッファ。スレッドごとに使い回して、毎回の
+        // StringBuilder(256) 新規確保とその成長時の再確保を避ける (RemoteControl ハンドラは
+        // ワーカースレッドで動くため ThreadStatic で衝突しない)。使用直前に必ず Clear するので
+        // Domain Reload の状態を持ち越さない。
+        [ThreadStatic] private static StringBuilder _jsonBuffer;
+
+        /// <summary>
+        /// JToken を <c>Formatting.None</c> の JSON 文字列にシリアライズする。
+        /// <c>JsonConvert.SerializeObject(token, Formatting.None)</c> と出力バイトは同一だが、
+        /// 内部バッファ (StringBuilder) をスレッドローカルに使い回すことで、シリアライズごとの
+        /// バッファ確保・成長アロケーションを排除する (バッチ経路のように多数のオペレーションを
+        /// 連続でシリアライズする用途で GC を削減する)。最終的な文字列 1 本のみ確保する。
+        /// </summary>
+        internal static string SerializeToJson(JToken token)
+        {
+            var sb = _jsonBuffer ??= new StringBuilder(4096);
+            sb.Clear();
+
+            using (var writer = new StringWriter(sb, CultureInfo.InvariantCulture))
+            using (var jsonWriter = new JsonTextWriter(writer) { Formatting = Formatting.None })
+            {
+                token.WriteTo(jsonWriter);
+            }
+
+            return sb.ToString();
         }
 
         /// <summary>
@@ -1461,7 +1491,7 @@ namespace Lilium.RemoteControl
             if (deltaToken == null || (deltaToken is JObject deltaCheck && !HasNonMetaProperties(deltaCheck)))
             {
                 // 差分なし: メタデータのみ出力
-                return JsonConvert.SerializeObject(_CreateMetadataJObject(exposedObject, options.forPersistence), Formatting.None);
+                return SerializeToJson(_CreateMetadataJObject(exposedObject, options.forPersistence));
             }
 
             // 4. メタデータを確保（JsonDiffが@typeなどを保持しているはずだが念のため）
@@ -1473,7 +1503,7 @@ namespace Lilium.RemoteControl
                     deltaJson.AddFirst(new JProperty(metaProp.Name, metaProp.Value));
             }
 
-            return JsonConvert.SerializeObject(deltaJson, Formatting.None);
+            return SerializeToJson(deltaJson);
         }
 
         /// <summary>
@@ -1566,7 +1596,7 @@ namespace Lilium.RemoteControl
         private static string _ToJsonFull(ExposedObjectHandle exposedObject, IExposedObjectResolver resolver, in SerializeOptions options)
         {
             var jObject = SerializeFullToJObject(exposedObject, resolver, options);
-            return JsonConvert.SerializeObject(jObject, Formatting.None);
+            return SerializeToJson(jObject);
         }
 
         internal static string ToJson(IEnumerable<ExposedObjectHandle> exposedObjects, IExposedObjectResolver resolver, int maxDepth = int.MaxValue)
@@ -1590,7 +1620,7 @@ namespace Lilium.RemoteControl
             {
                 ["objects"] = jArray
             };
-            return JsonConvert.SerializeObject(jResult, Formatting.None);
+            return SerializeToJson(jResult);
         }
 
         public static string ToJson(object value, IExposedObjectResolver resolver)
@@ -1600,7 +1630,7 @@ namespace Lilium.RemoteControl
                 ["value"] = SerializeUnityType(resolver, value),
             };
 
-            return JsonConvert.SerializeObject(jObject, Formatting.None);
+            return SerializeToJson(jObject);
         }
 
         public static string ToJson(object value)
@@ -1639,7 +1669,7 @@ namespace Lilium.RemoteControl
 
         public static string ToJson(ExposedProperty property, IExposedObjectResolver resolver)
         {
-            return JsonConvert.SerializeObject(ToJObject(property, resolver), Formatting.None);
+            return SerializeToJson(ToJObject(property, resolver));
         }
 
         // -------------------------------------------------------

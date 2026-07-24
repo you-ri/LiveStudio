@@ -934,10 +934,22 @@ namespace Lilium.LiveStudio
             {
                 var asset = assets[i];
                 if (asset == null || !asset.isExclusive) continue;
-                bool selected = asset.id == desiredId;
-                asset.isLoaded = selected;
-                if (!selected && asset.enabled) asset.enabled = false; // radio: turn the others off
+                if (asset.id == desiredId)
+                {
+                    // Keep whatever LoadAsync set for the selected avatar. A synchronous failure (e.g. a
+                    // built-in avatar whose Resources prefab is missing) calls MarkLoadFailed, clearing
+                    // isLoaded/enabled; forcing isLoaded back to true here would persist a broken entry
+                    // (enabled=false but isLoaded=true bypasses the not-in-use persist skip) and never fall
+                    // back to the default avatar. Success paths already set isLoaded=true themselves.
+                    continue;
+                }
+                asset.isLoaded = false;
+                if (asset.enabled) asset.enabled = false; // radio: turn the others off
             }
+
+            // The desired avatar failed to load synchronously (LoadAsync cleared its enabled flag): re-arm
+            // a diff so the exclusive group reconciles back to the default avatar on the next pass.
+            if (desired != null && !desired.enabled) _dirty = true;
 
             _selectedExclusiveId = desiredId;
             _Broadcast();

@@ -298,5 +298,57 @@ namespace Lilium.RemoteControl.Tests
         }
 
         #endregion
+
+        #region Escape / Edge Segment Tests
+
+        // GC 削減のため GetPathSegment/GetPathSegmentFrom を Split 非使用の走査実装に置き換えた。
+        // %XX エスケープ復元と連続スラッシュ (空セグメント) の挙動が従来 (Trim/Split/Unescape/Join)
+        // と一致することを固定する。
+
+        [Test]
+        public void GetPathSegment_PercentEscape_IsUnescaped()
+        {
+            Assert.AreEqual("my id", PathParser.GetPathSegment("/exposed/object/my%20id", 2));
+            Assert.AreEqual("a/b", PathParser.GetPathSegment("/exposed/object/a%2Fb", 2));
+        }
+
+        [Test]
+        public void GetPathSegment_NoEscape_ReturnsVerbatim()
+        {
+            Assert.AreEqual("plain-id_1", PathParser.GetPathSegment("/exposed/object/plain-id_1", 2));
+        }
+
+        [Test]
+        public void GetPathSegment_ConsecutiveSlashes_YieldEmptySegment()
+        {
+            // "a//b" 相当: 内部の連続スラッシュは空セグメントとして保持される (string.Split 準拠)。
+            Assert.AreEqual("a", PathParser.GetPathSegment("/a//b", 0));
+            Assert.AreEqual("", PathParser.GetPathSegment("/a//b", 1));
+            Assert.AreEqual("b", PathParser.GetPathSegment("/a//b", 2));
+        }
+
+        [Test]
+        public void GetPathSegmentFrom_PercentEscape_IsUnescaped()
+        {
+            // 既定区切り "/" でエスケープを含む場合は従来経路 (セグメント単位で復元して結合)。
+            Assert.AreEqual("a/b", PathParser.GetPathSegmentFrom("/x/y/a%2Fb", 2));
+            Assert.AreEqual("my id/name", PathParser.GetPathSegmentFrom("/x/y/my%20id/name", 2));
+        }
+
+        [Test]
+        public void GetPathSegmentFrom_NoEscapeDefaultSeparator_MatchesJoin()
+        {
+            Assert.AreEqual("property/name", PathParser.GetPathSegmentFrom("/exposed/object/123/property/name", 3));
+            // 連続スラッシュ (空セグメント) を含む結合も従来と一致する。
+            Assert.AreEqual("/b/c", PathParser.GetPathSegmentFrom("/a//b/c", 1));
+        }
+
+        [Test]
+        public void GetPathSegmentFrom_CustomSeparatorWithEscape_UnescapesPerSegment()
+        {
+            Assert.AreEqual("a/b.name", PathParser.GetPathSegmentFrom("/x/y/a%2Fb/name", 2, "."));
+        }
+
+        #endregion
     }
 }

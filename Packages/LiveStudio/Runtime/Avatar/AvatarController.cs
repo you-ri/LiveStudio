@@ -837,6 +837,23 @@ namespace Lilium.LiveStudio
             avatarSource.RequestLoad(filepath);
         }
 
+        // 組込 (Resources) アバターのように、ファイルパスを持たず prefab そのものを渡してロードする。
+        // prefab をこの AvatarController 直下にインスタンス化し、ファイルローダー (ExternalAvatarSource)
+        // が onAvatarReady で辿るのと同じ _OnAvatarSourceReady 経路 (旧アバター解放 + VRM セットアップ
+        // + SetupAvatar) に流す。生の VRM prefab は VRMAvatarSetupSystem が VRM1Avatar を付与し、
+        // セットアップ済み prefab (.avatar.lsb 相当) は既存 IAvatar を尊重する。
+        public void RequestLoadPrefab(GameObject prefab)
+        {
+            if (prefab == null)
+            {
+                Debug.LogError("[Studio] Avatar prefab is null.");
+                return;
+            }
+            var instance = Instantiate(prefab, this.transform, worldPositionStays: false);
+            instance.name = prefab.name;
+            _OnAvatarSourceReady(instance);
+        }
+
         [ContextMenu("Reset Camera")]
         public void ResetCamera()
         {

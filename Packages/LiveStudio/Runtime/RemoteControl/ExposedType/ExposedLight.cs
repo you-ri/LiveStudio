@@ -16,7 +16,11 @@ namespace Lilium.LiveStudio
         [ExposedProperty]
         public bool enabled
         {
-            get => _enabled;
+            // Read live from the Light so external changes (Inspector / scripts / operations that
+            // touch the Light directly) are reflected by RemoteApp. The shadow field _enabled is
+            // kept only for serialization and as a fallback when _reference is null; it is refreshed
+            // from the live state in OnBeforeExposedSerialize. Matches ExposedGameObject.active.
+            get => _reference != null ? _reference.enabled : _enabled;
             set
             {
                 _enabled = value;
@@ -31,7 +35,7 @@ namespace Lilium.LiveStudio
         [ExposedProperty]
         public Color color
         {
-            get => _color;
+            get => _reference != null ? _reference.color : _color;
             set
             {
                 _color = value;
@@ -46,7 +50,7 @@ namespace Lilium.LiveStudio
         [ExposedProperty, Slider(0, 10, 0.1f)]
         public float intensity
         {
-            get => _intensity;
+            get => _reference != null ? _reference.intensity : _intensity;
             set
             {
                 _intensity = value;
@@ -61,7 +65,7 @@ namespace Lilium.LiveStudio
         [ExposedProperty]
         public bool shadow
         {
-            get => _shadow;
+            get => _reference != null ? _reference.shadows != LightShadows.None : _shadow;
             set
             {
                 _shadow = value;
@@ -76,7 +80,7 @@ namespace Lilium.LiveStudio
         [ExposedProperty]
         public TransformValue transform
         {
-            get => _transform;
+            get => _reference != null ? TransformValue.FromTransform(_reference.transform) : _transform;
             set
             {
                 _transform = value;
@@ -145,7 +149,16 @@ namespace Lilium.LiveStudio
         public override void OnBeforeExposedSerialize()
         {
             base.OnBeforeExposedSerialize();
-            if (_reference != null) _transform = TransformValue.FromTransform(_reference.transform);
+            // Getters now read live, so refresh every shadow field from the Light before saving.
+            // Otherwise scene.json would persist the stale OnEnable snapshot (a latent bug).
+            if (_reference != null)
+            {
+                _enabled = _reference.enabled;
+                _color = _reference.color;
+                _intensity = _reference.intensity;
+                _shadow = _reference.shadows != LightShadows.None;
+                _transform = TransformValue.FromTransform(_reference.transform);
+            }
         }
 
         public override void OnAfterExposedDeserialize()

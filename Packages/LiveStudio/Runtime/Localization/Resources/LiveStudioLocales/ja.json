@@ -25,6 +25,7 @@
     "PROJECT_OPEN_SCENE": "シーンを開く",
     "PROJECT_SELECTEDCAMERAPREVIEWINTERVAL": "リモートアプリのカメラページで、選択中カメラのプレビューを更新する間隔(ms)。小さいほど滑らかですが負荷が増えます。",
     "PROJECT_UNSELECTEDCAMERAPREVIEWINTERVAL": "その他のカメラのプレビューを更新する間隔(ms)。1台ずつ順番に更新するため、小さいほど巡回が速くなりますが負荷が増えます。",
+    "PROJECT_REALTIMEPROPERTYINTERVAL": "リモートアプリが、開いているページに表示中のプロパティ値を取得して Studio 側の変化に追従させる間隔(ms)。小さいほど反映が速くなりますが負荷が増えます。",
     "AVATAR_VRMMODELFILEPATH_HELP": "VRMの場合 Perfect Sync 対応VRMの使用を推奨します。非対応の場合、口の開閉にはaaブレンドシェイプが使用されます。",
     "AVATAR_RESETPHYSICS_HELP": "物理ボーンがスタックした状態や不自然な位置にある場合にリセットします。",
     "AVATAR_RESETPHYSICS": "物理ボーンをリセット",

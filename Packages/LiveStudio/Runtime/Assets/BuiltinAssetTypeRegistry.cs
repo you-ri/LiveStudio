@@ -45,11 +45,23 @@ namespace Lilium.LiveStudio
         public Func<BuiltinAssetCatalog.Entry, AssetBase> create;
 
         /// <summary>
-        /// The key this kind is baked under (<see cref="BuiltinAssetCatalog.Entry.type"/>): the asset type's
-        /// simple name, which is also what <c>GET /api/assets?type=</c> filters by (see
-        /// <c>AssetRegistry.CollectAssets</c>), so the two stay consistent without a second name to maintain.
+        /// Optional explicit key this kind is baked under (<see cref="BuiltinAssetCatalog.Entry.type"/>),
+        /// overriding the <see cref="assetType"/> simple name. Required whenever two kinds share a Unity
+        /// asset type — <see cref="Find"/> resolves an entry by this key, so two <c>GameObject</c> kinds
+        /// (a built-in prop and a built-in avatar) must carry distinct keys to be told apart. Null falls back
+        /// to the asset type's simple name (the default for a type owned by a single kind, e.g. an animation
+        /// clip, which also keeps that key equal to what <c>GET /api/assets?type=</c> filters by).
         /// </summary>
-        public string typeName => assetType != null ? assetType.Name : null;
+        public string kind;
+
+        /// <summary>
+        /// The key this kind is baked under (<see cref="BuiltinAssetCatalog.Entry.type"/>): the explicit
+        /// <see cref="kind"/> when set, otherwise the asset type's simple name — which for a single-kind type
+        /// is also what <c>GET /api/assets?type=</c> filters by (see <c>AssetRegistry.CollectAssets</c>).
+        /// </summary>
+        public string typeName => !string.IsNullOrEmpty(kind)
+            ? kind
+            : (assetType != null ? assetType.Name : null);
     }
 
     /// <summary>
@@ -166,10 +178,10 @@ namespace Lilium.LiveStudio
             // functionally required, not just a semantic scope: without it a bare t:GameObject search would
             // bake every prefab (UI, internal) under any Resources folder.
             //
-            // Only avatar props exist today. A future free-standing (scene-placed) built-in prop is a load
-            // path branch within THIS kind (by IProp presence, mirroring PropAsset's suffix branch), NOT a
-            // second GameObject kind: BuiltinAssetTypeRegistry.Find keys on the asset type name, so only one
-            // GameObject-based kind can be resolved.
+            // Props and avatars are BOTH GameObject prefabs, so this kind keeps the default "GameObject" key
+            // while the avatar kind below carries an explicit `kind` — two GameObject kinds are told apart
+            // only because Find resolves an entry by its (distinct) key. Registered before the avatar kind
+            // so an IProp prefab is claimed here first (the baker's `taken` set dedups by GUID).
             _descriptors.Add(new BuiltinAssetTypeDescriptor
             {
                 assetType = typeof(GameObject),
@@ -177,6 +189,46 @@ namespace Lilium.LiveStudio
                 accept = o => o is GameObject go && go.GetComponent<IProp>() != null,
                 create = entry => new BuiltinPropAsset { guid = entry.guid },
             });
+
+            // Built-in avatars: a prefab under a Resources folder that the avatar setup path can actually
+            // drive — a UniVRM-imported *.vrm prefab (Vrm10Instance; VRMAvatarSetupSystem adds the IAvatar
+            // at load) or a *.avatar.lsb-style prefab that already carries an IAvatar. Loadable and
+            // exclusive: instantiated as the active avatar on demand, so isReference is false. A bare
+            // humanoid rig / FBX is deliberately rejected (see _IsHumanoidAvatarPrefab): it would list on
+            // the avatar page but never animate, and it is exactly what would otherwise sweep in package /
+            // editor sample rigs. Registered AFTER the prop kind, so any IProp prefab (which could also
+            // carry a humanoid Animator) is already taken as a prop and never doubles as an avatar.
+            _descriptors.Add(new BuiltinAssetTypeDescriptor
+            {
+                assetType = typeof(GameObject),
+                kind = "BuiltinAvatar",
+                isReference = false,
+                accept = _IsHumanoidAvatarPrefab,
+                create = entry => new BuiltinAvatarAsset { guid = entry.guid },
+            });
+        }
+
+        // True when the asset is a humanoid-rigged prefab the avatar pipeline can turn into a driven
+        // avatar. Requiring an IAvatar or a VRM 1.0 instance (not merely a humanoid Animator) keeps the
+        // catalog to prefabs that will actually animate: VRMAvatarSetupSystem only wires an IAvatar onto a
+        // Vrm10Instance / VRM0 proxy / existing IAvatar, so a bare humanoid rig would list but stay inert.
+        //
+        // The Animator check uses Unity's null semantics (`== null`), NOT the C# `is Animator` pattern: an
+        // imported model (e.g. SRP core's Editor/Resources/DebugProbe.fbx) can return a "fake-null" Animator
+        // whose managed reference is non-null but whose native component is absent — `is` would bind it and
+        // the subsequent `.avatar` access would throw MissingComponentException.
+        private static bool _IsHumanoidAvatarPrefab(UnityEngine.Object asset)
+        {
+            if (!(asset is GameObject go)) return false;
+
+            var animator = go.GetComponent<Animator>();
+            if (animator == null || animator.avatar == null || !animator.avatar.isHuman) return false;
+
+            if (go.GetComponent<IAvatar>() != null) return true;
+#if VRMC_VRM10
+            if (go.GetComponent<UniVRM10.Vrm10Instance>() != null) return true;
+#endif
+            return false;
         }
     }
 }

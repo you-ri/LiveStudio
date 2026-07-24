@@ -26,6 +26,13 @@ namespace Lilium.LiveStudio
         /// </summary>
         void RequestLoad(string filepath);
 
+        /// <summary>
+        /// アバターの prefab から直接ロードを要求する。ファイルパスを持たない組込 (Resources) アバター用。
+        /// prefab をインスタンス化し、ファイルローダー経由と同じアバターセットアップ経路
+        /// （VRMAvatarSetupSystem + SetupAvatar）に流す。
+        /// </summary>
+        void RequestLoadPrefab(GameObject prefab);
+
         void ResetAvatar();
     }
 }

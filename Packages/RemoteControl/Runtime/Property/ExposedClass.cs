@@ -600,6 +600,69 @@ namespace Lilium.RemoteControl
         /// </summary>
         public readonly string[] formerTypeNames;
 
+        // baseTypeNames の遅延キャッシュ (型ごとに一度だけ算出)。
+        private string[] _baseTypeNames;
+
+        /// <summary>
+        /// ユーザー定義の基底クラス名の連鎖 (最も近い祖先が先頭、自身は含まない)。祖先が [ExposedClass]
+        /// ならその <see cref="typeName"/>、そうでなければ素の C# 名を使う (共有抽象基底のように
+        /// [ExposedClass] を付けない型もグループ判定キーとして有用)。<c>System.*</c> / <c>UnityEngine.*</c>
+        /// の最初のフレームワーク型で打ち切るので、エンジン基底型は含まれない。
+        /// クライアントは <c>GET /exposed/types</c> の <c>baseTypes</c> でこれを受け取り、具象 <c>@type</c>
+        /// を列挙せずに多態グループ (例: すべての <c>AvatarAssetBase</c> 派生) を判定できる。
+        /// </summary>
+        public IReadOnlyList<string> baseTypeNames
+        {
+            get
+            {
+                if (_baseTypeNames == null)
+                {
+                    var names = new List<string>();
+                    for (var t = type?.BaseType; t != null && !_IsFrameworkType(t); t = t.BaseType)
+                    {
+                        // Non-registering lookup (_all, not Find): reading a base type's name must not
+                        // register it as a side effect. Find -> _GetOrRegister would add an [ExposedClass]
+                        // ancestor to _all, which HandleGetTypes enumerates live — a collection-modified
+                        // hazard during type serialization. A non-registered base falls back to its C# name.
+                        names.Add(_all.TryGetValue(t, out var ec) ? ec.typeName : t.Name);
+                    }
+                    _baseTypeNames = names.ToArray();
+                }
+                return _baseTypeNames;
+            }
+        }
+
+        /// <summary>
+        /// この型が <paramref name="baseTypeName"/> の (厳密な) サブクラスか。<see cref="baseTypeNames"/>
+        /// に <paramref name="baseTypeName"/> を含むかで判定する。.NET の <see cref="System.Type.IsSubclassOf"/>
+        /// と同じく厳密 (自分自身は false)・interface は対象外。クライアント側の同名判定 (RemoteApp
+        /// <c>isSubclassOf</c>) はこの by-name 定義を wire 越しに鏡写しにするため、両者の語義が一致する。
+        /// </summary>
+        public bool IsSubclassOf(string baseTypeName)
+        {
+            if (string.IsNullOrEmpty(baseTypeName)) return false;
+            var names = baseTypeNames;
+            for (int i = 0; i < names.Count; i++)
+            {
+                if (names[i] == baseTypeName) return true;
+            }
+            return false;
+        }
+
+        // フレームワーク (BCL / Unity / エンジン) 由来の型か。基底クラス連鎖はここで打ち切るので、
+        // baseTypeNames には利用側が判定に使うユーザー定義の基底のみが残る。UnityEngine に加え
+        // Unity.* / UnityEditor.* も除外し、エンジン内部やエディタ基底型が wire 契約に漏れないようにする。
+        private static bool _IsFrameworkType(System.Type t)
+        {
+            if (t == typeof(object)) return true;
+            var ns = t.Namespace;
+            if (string.IsNullOrEmpty(ns)) return false;
+            return ns == "System" || ns.StartsWith("System.", System.StringComparison.Ordinal)
+                || ns == "UnityEngine" || ns.StartsWith("UnityEngine.", System.StringComparison.Ordinal)
+                || ns == "UnityEditor" || ns.StartsWith("UnityEditor.", System.StringComparison.Ordinal)
+                || ns == "Unity" || ns.StartsWith("Unity.", System.StringComparison.Ordinal);
+        }
+
         private readonly Dictionary<string, ExposedPropertyType> _propertyByName;
 
         private readonly Dictionary<string, ExposedFunctionType> _functionByApiName;

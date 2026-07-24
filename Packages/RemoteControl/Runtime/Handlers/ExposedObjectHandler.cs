@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using System.Threading.Tasks;
 using System.Linq;
@@ -548,43 +549,244 @@ namespace Lilium.RemoteControl
         private async Task HandleBatch(HttpListenerContext context)
         {
             var body = await ReadRequestBody(context.Request);
+
+            // Pass 1: パース/抽出は Unity API 非依存なのでメインスレッドホップの外 (ワーカー) で行い、
+            // 毎フレームのメインスレッド占有を減らす。不正 JSON は空リスト → 実行ゼロ (原子性)。
+            var items = ExtractBatchItems(body);
+
+            // Pass 2: 実行 + 応答構築はメインスレッド (各オペレーションが Unity API を含む)。
+            // 全件を 1 ホップで適用しフレーム内で一貫させる。
             var responseJson = await ExecuteOnMainThread(
-                () => ExecuteBatch(GetObjectContainer(), GetResolver(), body));
+                () => ExecuteBatchItems(GetObjectContainer(), GetResolver(), items));
             await WriteResponse(200, context.Response, responseJson);
         }
 
+        // バッチ本文のプロパティ名 intern テーブル。既知キーを生成時に一度だけ登録し、以降は
+        // 読み取り専用 (DefaultJsonNameTable.Get はロックフリー) なので並行バッチのワーカースレッドから
+        // 安全に共有できる。⚠ 生成後に Add してはならない (Add は非スレッド安全)。
+        // これにより、リクエスト件数 N に比例して確保していた繰り返しプロパティ名文字列 (~4N 本) を排除する。
+        private static readonly DefaultJsonNameTable _kBatchNameTable = _CreateBatchNameTable();
+
+        private static DefaultJsonNameTable _CreateBatchNameTable()
+        {
+            var table = new DefaultJsonNameTable();
+            table.Add("requests");
+            table.Add("id");
+            table.Add("method");
+            table.Add("path");
+            table.Add("body");
+            return table;
+        }
+
+        // batch サブリクエスト 1 件分の抽出結果。JObject ツリー (JObject/JProperty/内部辞書/ラッパ JValue)
+        // を作らず、ストリーム読みで軽量に取り出すためのタプル。id は echo 用の JToken (欠落/null 可)。
+        internal readonly struct BatchItem
+        {
+            public readonly JToken id;
+            public readonly string method;
+            public readonly string path;
+            public readonly string body;
+
+            public BatchItem(JToken id, string method, string path, string body)
+            {
+                this.id = id;
+                this.method = method;
+                this.path = path;
+                this.body = body;
+            }
+        }
+
         /// <summary>
-        /// batch リクエスト本文を解釈し、各サブリクエストを順に適用して
-        /// { "responses": [...] } JSON を返す HTTP 非依存コア。サーバーを立てずにテスト可能。
-        /// メインスレッド前提 (各オペレーションが Unity API を含む)。
+        /// batch 本文 (POST /exposed/batch) をストリーム解析し、各サブリクエストの id/method/path/body を
+        /// 軽量タプルに取り出す (Pass 1)。JObject ツリーを作らないことでパース側の GC を削減する。
+        /// Unity API を含まないためワーカースレッドで実行できる (メインスレッドホップの外で呼ぶ)。
+        ///
+        /// 挙動は従来の JObject.Parse + フィールド読みと厳密に一致させる:
+        /// - 不正 JSON / 途中切断 / 末尾余剰は全体を棄却し空リストを返す (部分実行しない = 原子性)。
+        /// - コメントトークンは JObject.Load 同様に読み飛ばす。
+        /// - トップレベル requests の重複キーは last-wins (JObject 既定の Replace 準拠)。
+        /// - フィールド順不同、未知フィールド無視、id の型は問わずそのまま echo。
         /// </summary>
-        internal static string ExecuteBatch(
-            ExposedObjectContainer container, IExposedObjectResolver resolver, string requestsBodyJson)
+        internal static List<BatchItem> ExtractBatchItems(string requestsBodyJson)
+        {
+            var items = new List<BatchItem>();
+            if (string.IsNullOrWhiteSpace(requestsBodyJson)) return items;
+
+            try
+            {
+                using (var reader = new JsonTextReader(new StringReader(requestsBodyJson))
+                {
+                    PropertyNameTable = _kBatchNameTable,
+                })
+                {
+                    _ExtractBatchItems(reader, items);
+                }
+            }
+            catch (JsonException)
+            {
+                // 不正 JSON: 途中まで抽出した分も含め全体を棄却する
+                // (JObject.Parse 失敗時と同じく 1 件も実行しない)。
+                items.Clear();
+            }
+
+            return items;
+        }
+
+        private static void _ExtractBatchItems(JsonTextReader reader, List<BatchItem> items)
+        {
+            // ルートオブジェクトへ。非オブジェクト root は JObject.Parse なら例外だが結果は空 responses で
+            // 同じなので、ここでは空のまま抜ける (バイト列一致)。
+            if (!_ReadSkipComments(reader)) return;
+            if (reader.TokenType != JsonToken.StartObject) return;
+
+            while (true)
+            {
+                _ReadOrThrowSkipComments(reader);
+                if (reader.TokenType == JsonToken.EndObject) break;
+                if (reader.TokenType != JsonToken.PropertyName)
+                    throw new JsonReaderException("Unexpected token while reading batch object.");
+
+                var name = (string)reader.Value; // name table により intern 済み
+                _ReadOrThrowSkipComments(reader); // 値へ
+
+                if (string.Equals(name, "requests", StringComparison.Ordinal)
+                    && reader.TokenType == JsonToken.StartArray)
+                {
+                    items.Clear(); // 重複 requests キーは last-wins (JObject 既定 Replace と一致)
+                    _ExtractRequestArray(reader, items);
+                }
+                else
+                {
+                    reader.Skip(); // requests 以外 / requests 非配列は無視 (JObject.Parse でも空 responses)
+                }
+            }
+
+            _DrainToEnd(reader); // 末尾に余剰があれば reader が例外 → 呼び出し側で全体棄却
+        }
+
+        private static void _ExtractRequestArray(JsonTextReader reader, List<BatchItem> items)
+        {
+            // reader は StartArray 上。
+            while (true)
+            {
+                _ReadOrThrowSkipComments(reader);
+                if (reader.TokenType == JsonToken.EndArray) break;
+
+                if (reader.TokenType == JsonToken.StartObject)
+                {
+                    JToken id = null;
+                    string method = null, path = null, body = null;
+
+                    while (true)
+                    {
+                        _ReadOrThrowSkipComments(reader);
+                        if (reader.TokenType == JsonToken.EndObject) break;
+                        if (reader.TokenType != JsonToken.PropertyName)
+                            throw new JsonReaderException("Unexpected token while reading batch request.");
+
+                        var field = (string)reader.Value;
+                        _ReadOrThrowSkipComments(reader); // 値へ
+
+                        if (string.Equals(field, "id", StringComparison.Ordinal))
+                        {
+                            id = JToken.ReadFrom(reader); // 型を問わず echo (現行 req["id"] と等価)
+                        }
+                        else if (string.Equals(field, "method", StringComparison.Ordinal))
+                        {
+                            method = _ReadFieldAsString(reader);
+                        }
+                        else if (string.Equals(field, "path", StringComparison.Ordinal))
+                        {
+                            path = _ReadFieldAsString(reader);
+                        }
+                        else if (string.Equals(field, "body", StringComparison.Ordinal))
+                        {
+                            body = reader.TokenType == JsonToken.Null
+                                ? null
+                                : JToken.ReadFrom(reader).ToString(Formatting.None);
+                        }
+                        else
+                        {
+                            reader.Skip(); // 未知フィールドは無視
+                        }
+                    }
+
+                    items.Add(new BatchItem(id, method, path, body));
+                }
+                else
+                {
+                    // 非オブジェクト要素 (スカラー/配列/null): 従来の (reqToken as JObject)==null 相当。
+                    // method/path が null になり Pass 2 で 400 "Invalid request format"、id は null echo。
+                    reader.Skip();
+                    items.Add(default);
+                }
+            }
+        }
+
+        /// <summary>
+        /// method/path フィールドの値を、従来の <c>req["field"]?.ToString()</c> と同じ文字列に変換する。
+        /// 文字列はそのまま (追加確保なし)、コンテナ (オブジェクト/配列) は JToken.ToString (= Indented) を
+        /// 再現、その他 (数値/bool/null) は JValue.ToString() と等価な内部値の ToString。
+        /// </summary>
+        private static string _ReadFieldAsString(JsonTextReader reader)
+        {
+            switch (reader.TokenType)
+            {
+                case JsonToken.String:
+                    return (string)reader.Value;
+                case JsonToken.StartObject:
+                case JsonToken.StartArray:
+                    // 従来 req["field"].ToString() は Formatting.Indented。稀な病的入力なので確保は許容し忠実再現。
+                    return JToken.ReadFrom(reader).ToString();
+                default:
+                    // 数値/bool/null 等: JValue.ToString() は内部値の ToString() (CurrentCulture) と同一。
+                    // reader.Value?.ToString() はこれと一致 (null は null → IsNullOrEmpty で 400、現行と同結果)。
+                    return reader.Value?.ToString();
+            }
+        }
+
+        // name table 付き reader で、コメントトークンを透過して次の意味あるトークンへ進む。
+        // EOF (Read()==false) では false を返す。JObject.Load 既定 (CommentHandling.Ignore) と挙動を揃える。
+        private static bool _ReadSkipComments(JsonTextReader reader)
+        {
+            while (reader.Read())
+            {
+                if (reader.TokenType != JsonToken.Comment) return true;
+            }
+            return false;
+        }
+
+        // 構造 (オブジェクト/配列/値) の途中で次のトークンが必須の箇所で使う。EOF は不完全 JSON として例外化する。
+        // JObject.Load は途中切断を "Unexpected end of content" として例外化するため、生ループでもこれを再現する
+        // (放置すると切断入力で無限ループや部分実行になる)。
+        private static void _ReadOrThrowSkipComments(JsonTextReader reader)
+        {
+            if (!_ReadSkipComments(reader))
+                throw new JsonReaderException("Unexpected end of content while reading batch.");
+        }
+
+        // ルートオブジェクト読了後に末尾を読み切る。余剰コンテンツがあれば reader が JsonException を投げ、
+        // 呼び出し側が全体を棄却する (JObject.Parse の末尾チェックと一致)。EOF は正常。
+        private static void _DrainToEnd(JsonReader reader)
+        {
+            while (reader.Read()) { }
+        }
+
+        /// <summary>
+        /// 抽出済みの <see cref="BatchItem"/> 群を順に適用し { "responses": [...] } JSON を返す (Pass 2)。
+        /// 各オペレーションが Unity API を含むためメインスレッド前提。各 item は独立 (continue-on-error)。
+        /// </summary>
+        internal static string ExecuteBatchItems(
+            ExposedObjectContainer container, IExposedObjectResolver resolver, List<BatchItem> items)
         {
             var responses = new JArray();
 
-            JObject root = null;
-            if (!string.IsNullOrWhiteSpace(requestsBodyJson))
+            if (items != null)
             {
-                try { root = JObject.Parse(requestsBodyJson); }
-                catch (JsonException) { root = null; }
-            }
-
-            if (root?["requests"] is JArray requests)
-            {
-                foreach (var reqToken in requests)
+                foreach (var item in items)
                 {
-                    var req = reqToken as JObject;
-                    var idToken = req?["id"]; // クライアント指定の echo (欠落/null 可)
-                    var method = req?["method"]?.ToString();
-                    var path = req?["path"]?.ToString();
-                    var bodyToken = req?["body"];
-                    var subBody = bodyToken == null || bodyToken.Type == JTokenType.Null
-                        ? null
-                        : bodyToken.ToString(Formatting.None);
-
                     PropertyResult opResult;
-                    if (req == null || string.IsNullOrEmpty(method) || string.IsNullOrEmpty(path))
+                    if (string.IsNullOrEmpty(item.method) || string.IsNullOrEmpty(item.path))
                     {
                         opResult = PropertyResult.Error(400, "Invalid request format");
                     }
@@ -592,22 +794,34 @@ namespace Lilium.RemoteControl
                     {
                         try
                         {
-                            opResult = ExecuteOperation(container, resolver, method, path, subBody);
+                            opResult = ExecuteOperation(container, resolver, item.method, item.path, item.body);
                         }
                         catch (Exception ex)
                         {
                             // 1 件の例外でバッチ全体を巻き込まない (continue-on-error)。
-                            Debug.LogError($"[RemoteControl] Batch operation failed ({method} {path}): {ex.Message}");
+                            Debug.LogError($"[RemoteControl] Batch operation failed ({item.method} {item.path}): {ex.Message}");
                             opResult = PropertyResult.Error(500, "Internal error");
                         }
                     }
 
-                    responses.Add(_BuildBatchResponseItem(idToken, opResult));
+                    responses.Add(_BuildBatchResponseItem(item.id, opResult));
                 }
             }
 
             var resultRoot = new JObject { ["responses"] = responses };
-            return resultRoot.ToString(Formatting.None);
+            return ExposedPropertySerializer.SerializeToJson(resultRoot);
+        }
+
+        /// <summary>
+        /// batch 本文を解釈し { "responses": [...] } を返す HTTP 非依存コア (パース+実行を同期実行)。
+        /// サーバーを立てずにテスト可能。本番経路 (<see cref="HandleBatch"/>) は Pass 1
+        /// (<see cref="ExtractBatchItems"/>) をワーカーで、Pass 2 (<see cref="ExecuteBatchItems"/>) を
+        /// メインスレッドで分けて呼ぶ。
+        /// </summary>
+        internal static string ExecuteBatch(
+            ExposedObjectContainer container, IExposedObjectResolver resolver, string requestsBodyJson)
+        {
+            return ExecuteBatchItems(container, resolver, ExtractBatchItems(requestsBodyJson));
         }
 
         /// <summary>
@@ -620,10 +834,14 @@ namespace Lilium.RemoteControl
             ExposedObjectContainer container, IExposedObjectResolver resolver,
             string method, string absolutePath, string body)
         {
-            var m = (method ?? string.Empty).ToUpperInvariant();
+            // ToUpperInvariant で正規化文字列を確保する代わりに、比較時に大小無視で照合する
+            // (バッチ経路で 1 オペレーションあたり 1 本の文字列確保を排除する)。
+            var m = method ?? string.Empty;
+
+            bool isPost = string.Equals(m, "POST", StringComparison.OrdinalIgnoreCase);
 
             // 関数呼び出し
-            if (m == "POST" && MatchPattern(absolutePath, "/exposed/function/*", RouteMatch.Wildcard))
+            if (isPost && MatchPattern(absolutePath, "/exposed/function/*", RouteMatch.Wildcard))
             {
                 var id = PathParser.GetPathSegment(absolutePath, 2);
                 var functionPath = PathParser.GetPathSegmentFrom(absolutePath, 3);
@@ -635,7 +853,7 @@ namespace Lilium.RemoteControl
             }
 
             // プロパティ系パイプライン。reset サフィックスは単発ルートと同じ優先順で先に判定する。
-            var isReset = m == "POST"
+            var isReset = isPost
                 && MatchPattern(absolutePath, "/exposed/object/*/*/reset", RouteMatch.Wildcard);
             if (isReset || MatchPattern(absolutePath, "/exposed/object/*/*", RouteMatch.Wildcard))
             {
@@ -645,15 +863,13 @@ namespace Lilium.RemoteControl
                     return PropertyResult.Error(errStatus, errMessage);
                 }
 
-                switch (m)
-                {
-                    case "GET": return ApplyGetProperty(ctx, resolver);
-                    case "PUT": return ApplySetProperty(ctx, resolver);
-                    case "POST": return isReset ? ApplyResetProperty(ctx, resolver) : ApplyAddArrayElement(ctx, resolver);
-                    case "DELETE": return ApplyRemoveArrayElement(ctx, resolver);
-                    case "PATCH": return ApplyReorderArrayElement(ctx, resolver);
-                    default: return PropertyResult.Error(405, "Method not allowed");
-                }
+                // 元の switch(uppercased) と同じ評価順・同じ判定を大小無視比較で再現する。
+                if (string.Equals(m, "GET", StringComparison.OrdinalIgnoreCase)) return ApplyGetProperty(ctx, resolver);
+                if (string.Equals(m, "PUT", StringComparison.OrdinalIgnoreCase)) return ApplySetProperty(ctx, resolver);
+                if (isPost) return isReset ? ApplyResetProperty(ctx, resolver) : ApplyAddArrayElement(ctx, resolver);
+                if (string.Equals(m, "DELETE", StringComparison.OrdinalIgnoreCase)) return ApplyRemoveArrayElement(ctx, resolver);
+                if (string.Equals(m, "PATCH", StringComparison.OrdinalIgnoreCase)) return ApplyReorderArrayElement(ctx, resolver);
+                return PropertyResult.Error(405, "Method not allowed");
             }
 
             return PropertyResult.Error(404, "Not found");
@@ -670,9 +886,13 @@ namespace Lilium.RemoteControl
             if (result.ok)
             {
                 status = 200;
+                // 成功オペレーションの body は必ず Formatting.None のコンパクトな有効 JSON
+                // (ToJson / "{}" / SerializeObject が生成)。JToken へ再パースせず JRaw で逐語挿入すると、
+                // レスポンス全体をシリアライズした際のバイト列は従来 (parse→再シリアライズ) と同一のまま、
+                // 1 オペレーションあたりの JToken ツリー複製を丸ごと省ける。
                 bodyToken = string.IsNullOrEmpty(result.body)
                     ? JValue.CreateNull()
-                    : _SafeParseJson(result.body);
+                    : (JToken)new JRaw(result.body);
             }
             else
             {
@@ -686,12 +906,6 @@ namespace Lilium.RemoteControl
                 ["status"] = status,
                 ["body"] = bodyToken,
             };
-        }
-
-        private static JToken _SafeParseJson(string json)
-        {
-            try { return JToken.Parse(json); }
-            catch (JsonException) { return new JValue(json); }
         }
 
         private async Task HandleGetTypes(HttpListenerContext context)
