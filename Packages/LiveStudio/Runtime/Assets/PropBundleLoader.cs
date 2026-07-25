@@ -57,6 +57,22 @@ namespace Lilium.LiveStudio
             return _Instantiate(prefab, parent);
         }
 
+        /// <summary>
+        /// Returns the cached root prefab for a <c>*.prop.lsb</c> bundle (loading it once if needed) WITHOUT
+        /// instantiating it, so a caller can spawn its own copies (e.g. the scene "+" adding multiple
+        /// instances). Shares the same per-path prefab cache, in-flight de-duplication and CAB gate as
+        /// <see cref="LoadAsync"/>. Null when the file is missing or the bundle has no root prefab.
+        /// </summary>
+        internal static Task<GameObject> GetPrefabAsync(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
+            {
+                Debug.LogError($"[LiveStudio] Prop bundle not found: {filePath}");
+                return Task.FromResult<GameObject>(null);
+            }
+            return _GetPrefabAsync(filePath);
+        }
+
         // Returns the cached root prefab for a bundle path, loading it once if needed. Concurrent
         // callers for the same path await the same load instead of opening the bundle in parallel.
         static Task<GameObject> _GetPrefabAsync(string filePath)

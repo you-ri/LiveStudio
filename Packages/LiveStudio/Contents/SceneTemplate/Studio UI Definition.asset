@@ -76,12 +76,13 @@ MonoBehaviour:
         factory:
           rid: 1948541687429857379
     - rid: 1948541687429857379
-      type: {class: StandardObjectFactory, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
+      type: {class: PropObjectFactory, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
       data:
         factories:
         - rid: 1948541982014701722
         - rid: 1948541702825050202
         - rid: 1948541932242993236
+        _propAccessLevel: 0
     - rid: 1948541702825050202
       type: {class: ExposedGameObjectWithTransformFactory, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl}
       data:

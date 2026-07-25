@@ -57,6 +57,11 @@ namespace Lilium.LiveStudio
             // AssetRegistry is cleared at SubsystemRegistration (before this), so re-register every play.
             _registered = false;
             EnsureRegistered();
+
+            // Let @prefab restore resolve a built-in prop prefab lazily by its catalog GUID (loadable
+            // built-ins are not pre-registered in PrefabRegistry so their content stays out of memory
+            // until an instance is actually created — via the scene "+" or a live-scene restore).
+            PrefabRegistry.RegisterResolver(LoadPrefab);
         }
 
         static BuiltinAssetCatalog _Catalog()

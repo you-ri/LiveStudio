@@ -265,7 +265,7 @@ namespace Lilium.RemoteControl.UI
         }
 #endif
 
-        private string _GenerateUniqueName(string baseName)
+        protected string _GenerateUniqueName(string baseName)
         {
             if (_container == null) return baseName;
 

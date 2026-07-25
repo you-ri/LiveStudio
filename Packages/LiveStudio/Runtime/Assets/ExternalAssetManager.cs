@@ -114,6 +114,9 @@ namespace Lilium.LiveStudio
         public void OnEnable()
         {
             _current = this;
+            // Resolve deferred external-prop @prefab instances (queued by the live-scene restore before this
+            // manager's crawl registered their asset) through this manager.
+            PendingPrefabStore.SetProvider(_ResolveInstancePrefabForKey);
             ExposedObjectRegistry.Create<ExternalAssetManager>(this, kId);
             ExposedClass.Get<ExternalAssetManager>().onPropertyChanged += _OnPropertyChanged;
 
@@ -448,6 +451,10 @@ namespace Lilium.LiveStudio
         /// </summary>
         private void _EnsureBuiltinAssets()
         {
+            // Retry any deferred external-prop @prefab instances now that the asset set may have changed
+            // (crawl / restore); fire-and-forget, and a no-op until the owning asset is registered.
+            _ = PendingPrefabStore.DrainAsync();
+
             // Two built-in sources: catalog-baked Resources assets (props / clips) and the build's scene
             // list projected to sets. Both are app-embedded, so both are injected here and protected from
             // the crawl's prune; a set needs no bake because the build scene list is readable at runtime.
@@ -675,6 +682,30 @@ namespace Lilium.LiveStudio
             // the direct match above is simply re-normalized here (handles slash differences).
             var abs = PropPreset.ResolveSource(reference, ProjectManager.projectPath);
             return _Find(_MakeId(abs));
+        }
+
+        // Provider for PendingPrefabStore: resolves a live-scene @prefab key (an IInstantiableProp's
+        // instanceKey) to its root prefab, so a deferred external-prop instance can be created once its asset
+        // has registered. Static so a single registration routes to whichever manager is current.
+        private static Task<GameObject> _ResolveInstancePrefabForKey(string key)
+        {
+            var manager = _current;
+            return manager != null ? manager._ResolveInstancePrefab(key) : Task.FromResult<GameObject>(null);
+        }
+
+        private Task<GameObject> _ResolveInstancePrefab(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return Task.FromResult<GameObject>(null);
+            // Match by instanceKey (a built-in prop's catalog GUID or an external prop's portable reference).
+            for (int i = 0; i < assets.Length; i++)
+            {
+                if (assets[i] is IInstantiableProp p && p.supportsInstancing && p.instanceKey == key)
+                    return p.LoadInstancePrefabAsync();
+            }
+            // Fall back to reference resolution so path-variant keys (absolute vs project-relative) still match.
+            if (FindAssetByReference(key) is IInstantiableProp byRef && byRef.supportsInstancing)
+                return byRef.LoadInstancePrefabAsync();
+            return Task.FromResult<GameObject>(null);
         }
 
         /// <summary>

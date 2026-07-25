@@ -25,7 +25,7 @@ namespace Lilium.LiveStudio
     /// </summary>
     [Serializable]
     [ExposedClass("PropAsset", Category = "Asset", Icon = "deployed_code")]
-    public class PropAsset : AssetBase
+    public class PropAsset : AssetBase, IInstantiableProp
     {
         public override bool isExclusive => false;
 
@@ -110,6 +110,27 @@ namespace Lilium.LiveStudio
         }
 
         public override void CaptureState() => _loaded.Capture(this);
+
+        // --- IInstantiableProp: spawn as scene instances from the live scene "+" ---
+
+        // Only *.prop.lsb avatar props are re-instantiable prefabs. A free-standing glTF prop is covered by
+        // the GLTF Model host, and a preset references a source rather than being one, so both are excluded.
+        public bool supportsInstancing => _isAvatarAttached && !_isPreset;
+
+        // The portable, project-relative reference is the @prefab key; on restore the deferred prefab
+        // provider resolves it back to this asset via ExternalAssetManager.FindAssetByReference.
+        public string instanceKey
+        {
+            get
+            {
+                var source = sourceFilePath;
+                if (string.IsNullOrEmpty(source)) return source;
+                var relative = PropPreset.Relativize(source, ProjectManager.projectPath);
+                return string.IsNullOrEmpty(relative) ? source : relative;
+            }
+        }
+
+        public Task<GameObject> LoadInstancePrefabAsync() => PropBundleLoader.GetPrefabAsync(sourceFilePath);
 
         // --- Avatar prop (*.prop.lsb) ---
 

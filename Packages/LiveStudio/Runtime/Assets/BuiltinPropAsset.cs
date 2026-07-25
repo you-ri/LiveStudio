@@ -26,7 +26,7 @@ namespace Lilium.LiveStudio
     /// </summary>
     [Serializable]
     [ExposedClass("BuiltinPropAsset", Category = "Asset", Icon = "deployed_code")]
-    public class BuiltinPropAsset : AssetBase
+    public class BuiltinPropAsset : AssetBase, IInstantiableProp
     {
         /// <summary>
         /// The catalog GUID this entry loads. The stable identity persisted to the live scene (the runtime
@@ -89,5 +89,17 @@ namespace Lilium.LiveStudio
         }
 
         public override void CaptureState() => _loaded.Capture(this);
+
+        // --- IInstantiableProp: spawn as scene instances from the live scene "+" ---
+
+        public bool supportsInstancing => true;
+
+        // The catalog GUID doubles as the @prefab key; PrefabRegistry's built-in resolver
+        // (BuiltinAssetRegistry.LoadPrefab) resolves it synchronously on restore, so a built-in prop
+        // never needs the deferred prefab store.
+        public string instanceKey => guid;
+
+        public Task<GameObject> LoadInstancePrefabAsync()
+            => Task.FromResult(BuiltinAssetRegistry.LoadPrefab(guid));
     }
 }

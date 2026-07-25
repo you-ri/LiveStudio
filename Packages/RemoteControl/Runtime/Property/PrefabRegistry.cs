@@ -15,10 +15,26 @@ namespace Lilium.RemoteControl
         private static readonly Dictionary<string, GameObject> _registry
             = new Dictionary<string, GameObject>();
 
+        // Optional fallback used when a guid is not in _registry: lets a lazily-loaded source (e.g. a
+        // Resources-backed built-in catalog) resolve a prefab on demand instead of pre-registering — and
+        // still be found by @prefab restore after a restart. Not cleared by _Clear (the dictionary is
+        // per-run, but the resolver is a stable function the owner registers once).
+        private static System.Func<string, GameObject> _resolver;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void _Clear()
         {
             _registry.Clear();
+        }
+
+        /// <summary>
+        /// Registers a fallback that resolves a prefab from its asset GUID when it is not pre-registered via
+        /// <see cref="Register"/>. Consulted by <see cref="TryFind"/> / <see cref="Instantiate"/> on a miss,
+        /// so a prefab kept out of memory until first use still resolves for @prefab restore.
+        /// </summary>
+        public static void RegisterResolver(System.Func<string, GameObject> resolver)
+        {
+            _resolver = resolver;
         }
 
         public static void Register(string guid, GameObject prefab)
@@ -39,7 +55,14 @@ namespace Lilium.RemoteControl
                 prefab = null;
                 return false;
             }
-            return _registry.TryGetValue(guid, out prefab);
+            if (_registry.TryGetValue(guid, out prefab)) return true;
+            if (_resolver != null)
+            {
+                prefab = _resolver(guid);
+                return prefab != null;
+            }
+            prefab = null;
+            return false;
         }
 
         /// <summary>

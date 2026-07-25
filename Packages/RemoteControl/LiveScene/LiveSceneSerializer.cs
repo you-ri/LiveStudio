@@ -174,6 +174,9 @@ namespace Lilium.RemoteControl.LiveScene
             // Bound entries were removed from the store on ApplyFor, and a loaded object re-emits its own
             // diff above, so an entry already present here is never re-added.
             _AppendUnconsumedPendingEntries(jArray);
+            // Re-emit deferred @prefab entries whose instance was never created this session (their asset
+            // never registered), so a load→save cycle does not drop them.
+            _AppendUnconsumedPrefabEntries(jArray);
 
             fileResolver.SetCurrentRoot(null);
             jRoot["objects"] = jArray;
@@ -201,6 +204,30 @@ namespace Lilium.RemoteControl.LiveScene
                     }
                 }
                 if (!emitted.Add(source)) continue;
+                jArray.Add(pendingEntry.DeepClone());
+            }
+        }
+
+        // Appends deferred @prefab entries (PendingPrefabStore) whose @id is not already output. These carry
+        // @id + @prefab (no @source), so they are keyed and deduplicated by @id — distinct from the @source
+        // keying above. Cloned because a JObject cannot be attached to two parents.
+        private static void _AppendUnconsumedPrefabEntries(JArray jArray)
+        {
+            HashSet<string> emittedIds = null;
+            foreach (var pendingEntry in PendingPrefabStore.UnconsumedEntries)
+            {
+                var id = pendingEntry["@id"]?.Value<string>();
+                if (string.IsNullOrEmpty(id)) continue;
+
+                if (emittedIds == null)
+                {
+                    emittedIds = new HashSet<string>();
+                    foreach (var item in jArray)
+                    {
+                        if (item is JObject o && o["@id"]?.Value<string>() is string s) emittedIds.Add(s);
+                    }
+                }
+                if (!emittedIds.Add(id)) continue;
                 jArray.Add(pendingEntry.DeepClone());
             }
         }
@@ -270,6 +297,8 @@ namespace Lilium.RemoteControl.LiveScene
             // 同じく、未解決エントリの遅延バインドキューも読み込みごとに初期化する。
             // 解決できなかったエントリは以降のパスで再登録される。
             LiveScenePendingStore.Clear();
+            // Deferred prefab instantiation queue (external props whose asset is not registered yet).
+            PendingPrefabStore.Clear();
 
             // 復元は 4 パスで行う（各パスは jArray を順走査する。詳細は各メソッド参照）。
             _InstantiatePrefabs(jArray, resolver);   // Pass 1: @prefab からインスタンス化
@@ -326,7 +355,12 @@ namespace Lilium.RemoteControl.LiveScene
                     go = PrefabRegistry.Instantiate(prefabKey);
                     if (go == null)
                     {
-                        Debug.LogWarning($"[RemoteControl] Failed to instantiate prefab (guid='{prefabKey}')");
+                        // The prefab is not resolvable now — e.g. an external prop whose owning asset is
+                        // discovered by the project crawl only AFTER this restore finishes. Queue for a
+                        // deferred instantiation (drained once the asset registers) instead of dropping it,
+                        // so it is not silently lost on the next save (its @prefab entry carries no @source,
+                        // which the property pending-store re-emit keys on).
+                        PendingPrefabStore.Add(id, prefabKey, jObject);
                         continue;
                     }
                     // @name が保存されていればインスタンス名に反映する
@@ -380,6 +414,9 @@ namespace Lilium.RemoteControl.LiveScene
                 var typeName = jObject["@type"]?.Value<string>();
                 var id = _GetEntryKey(jObject);
                 if (string.IsNullOrEmpty(typeName) || string.IsNullOrEmpty(id)) continue;
+                // A deferred @prefab entry is instantiated later on drain; do not let the type-name
+                // fallback below mis-bind it to an unrelated same-typed object.
+                if (PendingPrefabStore.Contains(id)) continue;
                 if (resolver.FindById(id) != null) continue;
 
                 var exposedClass = ExposedClass.Find(typeName);
@@ -476,6 +513,10 @@ namespace Lilium.RemoteControl.LiveScene
                     ApplyPendingEntry(entryKey, jObject, resolver);
                     continue;
                 }
+
+                // A deferred @prefab root: its instance (and this entry's application) happen on drain, and
+                // the store owns re-emitting it on save — so do NOT also queue it in the property store.
+                if (PendingPrefabStore.Contains(entryKey)) continue;
 
                 // ルート上書き or 新規 (Pass 1/2 で登録済み): entryKey で引いて適用
                 var exposedObject = resolver.FindById(entryKey);
@@ -801,6 +842,67 @@ namespace Lilium.RemoteControl.LiveScene
         /// </summary>
         /// <param name="claimedTarget">このエントリで「消費」したUnityObject（Component または GameObject）。Pass 1での重複検出に使用。</param>
         /// <returns>コンテナに追加すべきExposedUnityObjectBase。Component型の場合はnull。</returns>
+        /// <summary>
+        /// Instantiates one deferred @prefab entry (queued by Pass 1 because its prefab was not resolvable
+        /// then) now that <paramref name="prefab"/> is available: registers a fresh instance under the saved
+        /// <paramref name="id"/>, moves it into the base scene, and applies the entry's own plus its child
+        /// (component) overrides. Mirrors the Pass 1 + Pass 3 handling for a single entry. Returns false when
+        /// it still cannot be registered, so <see cref="PendingPrefabStore"/> keeps it queued.
+        /// </summary>
+        internal static bool TryInstantiateDeferredPrefab(string id, string prefabKey, JObject jObject, GameObject prefab)
+        {
+            if (prefab == null || string.IsNullOrEmpty(id) || jObject == null) return false;
+            var typeName = jObject["@type"]?.Value<string>();
+            if (string.IsNullOrEmpty(typeName)) return false;
+
+#if UNITY_2022_3_OR_NEWER
+            var host = UnityEngine.Object.FindFirstObjectByType<RemoteControlBehaviour>();
+#else
+            var host = UnityEngine.Object.FindObjectOfType<RemoteControlBehaviour>();
+#endif
+            var resolver = host != null ? host.objectContainer : null;
+            if (resolver == null) return false;
+            if (resolver.FindById(id) != null) return true; // already restored (e.g. a raced drain)
+
+            var go = UnityEngine.Object.Instantiate(prefab);
+            var savedName = jObject["@name"]?.Value<string>();
+            if (!string.IsNullOrEmpty(savedName)) go.name = savedName;
+
+            // Place the instance in the base scene (its RemoteControlContainer's scene), not the active scene
+            // which may be an additively-loaded set-bundle scene that would take the instance on unload.
+            var sceneContainer = _ResolveSceneContainer();
+            if (sceneContainer != null)
+                UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(go, sceneContainer.gameObject.scene);
+
+            var wrapper = _RegisterComponentExposedObject(go, typeName, id, prefabKey, out _);
+            if (wrapper == null)
+            {
+                UnityEngine.Object.Destroy(go);
+                return false;
+            }
+            wrapper.OnEnable();
+
+            if (sceneContainer != null)
+            {
+                if (!sceneContainer._objects.Contains(wrapper)) sceneContainer._objects.Add(wrapper);
+            }
+            else if (!resolver._objects.Contains(wrapper))
+            {
+                resolver._objects.Add(wrapper);
+            }
+
+            // Apply this entry's own saved properties, then its deferred child (component) overrides, then
+            // re-baseline so the restored values are not reported as unsaved changes at quit time.
+            var handle = resolver.FindById(id);
+            if (handle != null)
+            {
+                ExposedPropertySerializer.FromJson(jObject.ToString(), handle.Value, resolver, captureDefaults: false);
+                LiveScenePendingStore.ApplyFor(id, resolver);
+                handle.Value.MarkClean();
+            }
+            return true;
+        }
+
         private static ExposedUnityObjectBase _RegisterComponentExposedObject(GameObject go, string typeName, string id, string prefabKey, out UnityEngine.Object claimedTarget)
         {
             claimedTarget = null;
