@@ -1,6 +1,16 @@
 # Changelog
 
-## [0.25.3] - 2026-07-22
+## [Unreleased]
+
+### Added
+
+- `GET /exposed/changes` reports which exposed objects changed since a revision, as ids only. `ExposedChangeLog` keeps the latest revision per object id rather than a queue of events, so memory is bounded by the number of distinct objects and a client that has been away for any length of time still gets exactly the set it missed — there is no "cursor fell off the end" case to recover from.
+
+### Changed
+
+- Property changes are no longer pushed over SSE. `ExposedPropertyBroadcast` records the changed object's id in `ExposedChangeLog` instead of serializing the value and fanning it out to every connected client. A broadcast went to all clients regardless of what each was looking at, and the value was serialized once per change even when nobody displayed it; now a client polls the change feed and refetches only the objects it holds. The entry points and their call sites are unchanged.
+- `types_update` and `ui_update` events are replaced by the pseudo ids `@types` and `@ui` in the same change feed, so cache invalidation travels the same path as everything else.
+- The SSE stream (`/api/stream`) now carries only system notifications and confirmation prompts — the events that are genuinely one-shot and cannot be recovered by polling.
 <!-- changelog-sha: ead5a500c2674f81ae92f66e88e1b3eacac8bd4f -->
 
 ### Added

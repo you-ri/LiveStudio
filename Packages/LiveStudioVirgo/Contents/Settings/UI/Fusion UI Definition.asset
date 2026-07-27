@@ -14,13 +14,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   menuItems:
   - id: fusion
-    icon: person
+    icon: merge
     editorIcon: {fileID: 2800000, guid: 02f5db26e2e852545949f535b0807669, type: 3}
-    label: Fusion
+    label: MENU_FUSION
     page:
       rid: 938060011343446166
     position: 0
-    order: 100
+    order: 200
     accessLevel: 0
   - id: capture
     icon: photo_camera_front

@@ -710,6 +710,60 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
+        public void PlaceControlOnFreeCell_SkipsOccupiedCells()
+        {
+            var manager = new OperationManager();
+            var deck = manager.AddDeck();
+            var occupying = manager.AddFunctionOperation("obj", "A", "A", "");
+            manager.PlaceControl(occupying, deck, 0, 0);
+            var id = manager.AddFunctionOperation("obj", "B", "B", "");
+
+            manager.PlaceControlOnFreeCell(id, deck);
+
+            var control = manager.operationSets[1].control;
+            Assert.AreEqual(deck, control.deckName);
+            Assert.AreEqual(1, control.x, "an added tile takes the first free cell instead of overlapping");
+            Assert.AreEqual(0, control.y);
+        }
+
+        [Test]
+        public void PlaceControlOnFreeCell_SliderSkipsGapNarrowerThanItsSpan()
+        {
+            var manager = new OperationManager();
+            var deck = manager.AddDeck();
+            var left = manager.AddFunctionOperation("obj", "A", "A", "");
+            var right = manager.AddFunctionOperation("obj", "B", "B", "");
+            manager.PlaceControl(left, deck, 0, 0);
+            manager.PlaceControl(right, deck, 2, 0);
+            var slider = manager.AddPropertyOperation("obj", "weight", "Value", "Weight", "", "");
+
+            manager.PlaceControlOnFreeCell(slider, deck);
+
+            var control = manager.operationSets[2].control;
+            Assert.AreEqual(2, control.w, "a slider tile is 2 cells wide");
+            Assert.AreEqual(3, control.x,
+                "the single free cell between the two tiles cannot hold a 2-wide tile");
+            Assert.AreEqual(0, control.y);
+        }
+
+        [Test]
+        public void PlaceControlOnFreeCell_EmptyDeckName_UsesDefaultPage()
+        {
+            var manager = new OperationManager();
+            var id = manager.AddFunctionOperation("obj", "DoThing", "Do Thing", "");
+            var defaultDeckName = manager.decks[0].name;
+            manager.PlaceControl(id, "deck-1", 1, 1);
+
+            manager.PlaceControlOnFreeCell(id, "");
+
+            var control = manager.operationSets[0].control;
+            Assert.AreEqual(defaultDeckName, control.deckName,
+                "an empty deck name falls back to the default page (no unplaced state)");
+            Assert.AreEqual(0, control.x);
+            Assert.AreEqual(0, control.y);
+        }
+
+        [Test]
         public void SetControlType_SwapsKindPreservingPlacement()
         {
             var manager = new OperationManager();

@@ -60,8 +60,9 @@ namespace Lilium.RemoteControl.UI
             if (added) _RegisterDefinition(definition);
             else _UnregisterDefinition(definition);
 
-            // Empty payload; the receiver refetches /ui/sidemenu (consistent with types_update).
-            _server?.BroadcastMessage(new Dictionary<string, object> { ["type"] = "ui_update" }, "ui_update");
+            // Recorded, not sent: the client notices it while polling /exposed/changes and refetches
+            // /ui/sidemenu (consistent with how the types tables are published).
+            ExposedChangeLog.Record(ExposedChangeLog.kUiId);
         }
 
         // Registers the selector/factory exposed objects for one definition's menu items.

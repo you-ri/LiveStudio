@@ -264,6 +264,41 @@ paths:
               schema:
                 $ref: "#/components/schemas/BatchResponse"
 
+  /exposed/changes:
+    get:
+      summary: Get the ids of exposed objects that changed since a revision.
+      description: >
+        Property changes are not pushed. The server records only the id of each changed
+        object; a client polls this endpoint and refetches the objects it actually holds,
+        so nobody receives data for a page they are not looking at. Omit `since` to get
+        the current revision with an empty change list — how a client syncs up on connect
+        without being handed every id recorded so far. The pseudo ids `@types` and `@ui`
+        mean "refetch the type tables" and "refetch the side menu".
+      parameters:
+        - in: query
+          name: since
+          required: false
+          schema:
+            type: integer
+            format: int64
+          example: 57
+          description: "Optional: the revision the client last saw. Omitted means sync-up only."
+      responses:
+        '200':
+          description: Current revision and the ids changed after `since`.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revision:
+                    type: integer
+                    format: int64
+                  changes:
+                    type: array
+                    items:
+                      type: string
+
   /exposed/import:
     post:
       summary: Import exposed objects and their properties.

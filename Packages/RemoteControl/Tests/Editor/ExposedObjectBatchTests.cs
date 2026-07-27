@@ -88,6 +88,99 @@ namespace Lilium.RemoteControl.Tests
 
         static JArray RunBatchRaw(string json) => RunBatchRaw(EmptyContainer(), json);
 
+        // ---- 変更フィード (/exposed/changes) ----
+        // クライアントは毎サイクル、表示中プロパティの GET と同じバッチに変更フィードを 1 件載せる。
+        // ここが 404 に落ちると値の追従だけが動き、一覧や他クライアントの変更が永久に届かなくなる
+        // (症状が出るのが遅く、原因も遠いので必ずテストで押さえる)。
+
+        [Test]
+        public void Batch_Changes_WithoutSince_ReturnsRevisionAndNoIds()
+        {
+            ExposedChangeLog.Clear();
+            ExposedChangeLog.Record("obj-1");
+
+            var requests = new JObject
+            {
+                ["requests"] = new JArray
+                {
+                    new JObject { ["id"] = 1, ["method"] = "GET", ["path"] = "/exposed/changes" },
+                }
+            };
+
+            var responses = RunBatch(requests);
+
+            Assert.AreEqual(200, (int)responses[0]["status"]);
+            Assert.AreEqual(1, (long)responses[0]["body"]["revision"]);
+            Assert.IsEmpty((JArray)responses[0]["body"]["changes"], "sync-up call reports no ids");
+            ExposedChangeLog.Clear();
+        }
+
+        [Test]
+        public void Batch_Changes_WithSince_ReturnsIdsRecordedAfterIt()
+        {
+            ExposedChangeLog.Clear();
+            ExposedChangeLog.Record("obj-1");
+            ExposedChangeLog.Record("obj-2");
+
+            var requests = new JObject
+            {
+                ["requests"] = new JArray
+                {
+                    new JObject { ["id"] = 1, ["method"] = "GET", ["path"] = "/exposed/changes?since=1" },
+                }
+            };
+
+            var responses = RunBatch(requests);
+
+            Assert.AreEqual(200, (int)responses[0]["status"]);
+            Assert.AreEqual(2, (long)responses[0]["body"]["revision"]);
+            var changes = ((JArray)responses[0]["body"]["changes"]).Select(t => (string)t).ToArray();
+            CollectionAssert.AreEqual(new[] { "obj-2" }, changes);
+            ExposedChangeLog.Clear();
+        }
+
+        [Test]
+        public void Batch_Changes_AlongsidePropertyReads_BothSucceed()
+        {
+            ExposedChangeLog.Clear();
+            var comp = CreateTarget(out var id);
+            comp.a = 7;
+
+            var requests = new JObject
+            {
+                ["requests"] = new JArray
+                {
+                    new JObject { ["id"] = -1, ["method"] = "GET", ["path"] = "/exposed/changes" },
+                    new JObject { ["id"] = 0, ["method"] = "GET", ["path"] = $"/exposed/object/{id}/a" },
+                }
+            };
+
+            var responses = RunBatch(requests);
+
+            Assert.AreEqual(2, responses.Count);
+            Assert.AreEqual(-1, (int)responses[0]["id"], "negative ids echo back unchanged");
+            Assert.AreEqual(200, (int)responses[0]["status"]);
+            Assert.AreEqual(200, (int)responses[1]["status"]);
+            Assert.AreEqual(7, (int)responses[1]["body"]["value"]);
+            ExposedChangeLog.Clear();
+        }
+
+        [Test]
+        public void Batch_Changes_WithNonGetMethod_Returns405()
+        {
+            var requests = new JObject
+            {
+                ["requests"] = new JArray
+                {
+                    new JObject { ["id"] = 1, ["method"] = "PUT", ["path"] = "/exposed/changes" },
+                }
+            };
+
+            var responses = RunBatch(requests);
+
+            Assert.AreEqual(405, (int)responses[0]["status"]);
+        }
+
         [Test]
         public void Batch_MultiplePropertySets_AllAppliedAndEchoed()
         {

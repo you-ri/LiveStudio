@@ -60,9 +60,9 @@ namespace Lilium.LiveStudio
         }
 
         // Polling interval (milliseconds) used by the remote app to keep the values of the properties
-        // currently shown on the active page in sync with Studio. Studio-side values can change through
-        // paths that do not raise the SSE property_update event (operations/gamepad, physics/animation,
-        // getter-only computed values), so the remote app periodically batch-GETs the visible properties.
+        // currently shown on the active page in sync with Studio. This batch GET is the only path that
+        // keeps displayed values fresh: Studio changes them from anywhere (operations/gamepad,
+        // physics/animation, getter-only computed values) without notifying anyone.
         // Kept per project like the camera preview intervals above.
         [ExposedField(persistScope = PersistScope.Project), Hide]
         [FormerlyExposedAs("realtimePropertyIntervalMs")]

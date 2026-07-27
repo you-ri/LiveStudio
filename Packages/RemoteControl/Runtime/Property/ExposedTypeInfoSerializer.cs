@@ -284,21 +284,10 @@ namespace Lilium.RemoteControl
             _WriteVisibility(jObject, propertyType.visibilityConditions);
 
             // section情報を追加（セクションがある場合のみ）
-            if (propertyType.sectionAttribute != null)
-            {
-                var sectionAttr = propertyType.sectionAttribute;
-                var section = new JObject
-                {
-                    ["icon"] = sectionAttr.icon,
-                    ["title"] = LocalizationSystem.Translate(sectionAttr.title),
-                    ["accessLevel"] = (int)propertyType.sectionAccessLevel,
-                };
-                if (!string.IsNullOrEmpty(sectionAttr.subtitle))
-                {
-                    section["subtitle"] = LocalizationSystem.Translate(sectionAttr.subtitle);
-                }
-                jObject["section"] = section;
-            }
+            _WriteSection(jObject, propertyType.sectionAttribute, propertyType.sectionAccessLevel);
+
+            // layout: セクション内の縦横グループ（[Layout] がある場合のみ付与）
+            _WriteLayout(jObject, propertyType.layoutAttribute, propertyType.name);
 
             // collapsed: RemoteApp が配列・構造体を初期折りたたみで描画するヒント（true のときのみ付与）
             if (propertyType.collapsed)
@@ -350,6 +339,12 @@ namespace Lilium.RemoteControl
                 jObject["label"] = LocalizationSystem.Translate(functionType.label);
             }
 
+            // icon項目を追加（nullでない場合のみ）。ボタンのアイコン表示に使う。
+            if (!string.IsNullOrEmpty(functionType.icon))
+            {
+                jObject["icon"] = functionType.icon;
+            }
+
             // help項目を追加（nullでない場合のみ）
             if (!string.IsNullOrEmpty(functionType.help))
             {
@@ -359,7 +354,103 @@ namespace Lilium.RemoteControl
             // visibility条件を追加（ShowIf/HideIf。プロパティと同じスキーマで出力）
             _WriteVisibility(jObject, functionType.visibilityConditions);
 
+            // layout: セクション内の縦横グループ（プロパティと同じスキーマ。ボタンの横並びに使う）
+            _WriteLayout(jObject, functionType.layoutAttribute, functionType.name);
+
+            // section: ボタンだけで構成されるセクション（プロパティと同じスキーマ）
+            _WriteSection(jObject, functionType.sectionAttribute, functionType.sectionAccessLevel);
+
             return jObject;
+        }
+
+        /// <summary>
+        /// セクション情報を JObject に書き込む。属性が無ければ何も書かない
+        /// （= セクションを持たないメンバーの出力は従来と byte 単位で一致する）。
+        /// プロパティと関数で同じスキーマを共有する。
+        /// </summary>
+        private static void _WriteSection(JObject jObject, SectionAttribute sectionAttr, AccessLevel accessLevel)
+        {
+            if (sectionAttr == null) return;
+
+            var section = new JObject
+            {
+                ["icon"] = sectionAttr.icon,
+                ["title"] = LocalizationSystem.Translate(sectionAttr.title),
+                ["accessLevel"] = (int)accessLevel,
+            };
+            if (!string.IsNullOrEmpty(sectionAttr.subtitle))
+            {
+                section["subtitle"] = LocalizationSystem.Translate(sectionAttr.subtitle);
+            }
+            jObject["section"] = section;
+        }
+
+        /// <summary>
+        /// [Layout] のグループ情報を JObject に書き込む。属性が無い / パスが空なら何も書かない
+        /// （= 未使用の型の出力は従来と byte 単位で一致する）。
+        /// direction の Auto はここで深さから解決して確定値を出し、解決ロジックを一箇所に閉じる。
+        /// </summary>
+        private static void _WriteLayout(JObject jObject, LayoutAttribute layout, string memberName)
+        {
+            if (layout == null) return;
+
+            var path = _NormalizeLayoutPath(layout.path, out var depth);
+            if (path == null)
+            {
+                Debug.LogWarning($"[RemoteControl] [Layout] on '{memberName}' has an empty path and is ignored.");
+                return;
+            }
+
+            var jLayout = new JObject
+            {
+                ["path"] = path,
+                ["direction"] = _ResolveLayoutDirection(layout.direction, depth),
+            };
+            if (layout.columns > 0)
+            {
+                jLayout["columns"] = layout.columns;
+            }
+            if (layout.grow != 1)
+            {
+                jLayout["grow"] = layout.grow;
+            }
+            jObject["layout"] = jLayout;
+        }
+
+        /// <summary>
+        /// グループパスを正規化する。区切りごとに空白と空セグメントを落とし、"/" で連結し直す
+        /// ("/row//left/" → "row/left")。有効なセグメントが無ければ null を返す。
+        /// </summary>
+        private static string _NormalizeLayoutPath(string path, out int depth)
+        {
+            depth = 0;
+            if (string.IsNullOrEmpty(path)) return null;
+
+            var segments = path.Split('/');
+            var kept = new List<string>(segments.Length);
+            for (int i = 0; i < segments.Length; i++)
+            {
+                var segment = segments[i].Trim();
+                if (segment.Length == 0) continue;
+                kept.Add(segment);
+            }
+            if (kept.Count == 0) return null;
+
+            depth = kept.Count;
+            return string.Join("/", kept);
+        }
+
+        /// <summary>
+        /// Auto を深さから解決する。セクション直下（深さ0）は縦積みなので、深さ1で横、深さ2で縦、と交互になる。
+        /// </summary>
+        private static string _ResolveLayoutDirection(LayoutDirection direction, int depth)
+        {
+            switch (direction)
+            {
+                case LayoutDirection.Horizontal: return "horizontal";
+                case LayoutDirection.Vertical: return "vertical";
+                default: return (depth % 2) == 1 ? "horizontal" : "vertical";
+            }
         }
 
         /// <summary>

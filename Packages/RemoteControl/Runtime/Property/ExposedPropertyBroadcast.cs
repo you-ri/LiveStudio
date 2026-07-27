@@ -1,133 +1,75 @@
 // Copyright (c) You-Ri, 2026
-using Newtonsoft.Json.Linq;
-using Lilium.RemoteControl.Server;
-
 namespace Lilium.RemoteControl
 {
     /// <summary>
-    /// ExposedObjectのプロパティ変更をSSE経由で全クライアントに通知するユーティリティ
+    /// Publishes ExposedObject property changes to connected remote apps.
+    ///
+    /// Publishing records the changed object's id in <see cref="ExposedChangeLog"/>; it does not send
+    /// the value anywhere. Remote apps poll the change log and refetch only the objects they actually
+    /// hold, so a client is never handed data for a page it is not looking at, and a change costs the
+    /// same whether zero or five clients are connected.
+    ///
+    /// Call these whenever a property changes through a path the remote app cannot observe by writing
+    /// it itself — Studio-side edits, operations, deserialization, computed values.
     /// </summary>
     public static class ExposedPropertyBroadcast
     {
         /// <summary>
-        /// True when at least one SSE client is connected to any running server. Property
-        /// broadcasts serialize the changed value into JSON before fan-out; when nobody is
-        /// listening (headless run, or no RemoteApp connected) that work is pure waste, so the
-        /// broadcast entry points bail out early. Cheap: reads an int per server (usually one).
-        /// </summary>
-        private static bool _HasConnectedClients()
-        {
-            foreach (var instance in RemoteControlServerManager.servers.Values)
-            {
-                if (instance.server != null && instance.server.GetConnectionCount() > 0)
-                    return true;
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// ターゲットオブジェクトの指定プロパティをSSEでブロードキャストする。
-        /// <paramref name="propertyPath"/> にはトップレベル名 (例: "meshPaths") だけでなく、
-        /// DotBracket 形式のネストパス (例: "animationParameterOverrides[0].type") も指定できる。
+        /// Publishes a change to the given property of <paramref name="target"/>.
+        /// <paramref name="propertyPath"/> is accepted for call-site clarity but is not transmitted:
+        /// the change log works per object, and the client refetches what it needs.
         /// </summary>
         public static void BroadcastProperty(object target, string propertyPath)
         {
-            if (!_HasConnectedClients()) return;
             if (!ExposedObjectRegistry.TryFindByTarget(target, out var exposedObj)) return;
             BroadcastProperty(exposedObj, propertyPath);
         }
 
         /// <summary>
-        /// 未登録の UnityEngine.Object ターゲットのプロパティを instanceID キーで SSE ブロードキャストする。
-        /// Registry 検索は行わず、その場で <see cref="ExposedObjectHandle.CreateUnregistered"/> して使う。
-        /// RemoteApp 側は selector 配下のインライン要素の <c>@id</c> を instanceID で受信しているため、
-        /// 同じ instanceID でルーティングすれば該当要素が更新される。
+        /// Publishes a change to a property of an unregistered <see cref="UnityEngine.Object"/> target,
+        /// keyed by instanceID. RemoteApp holds inline elements under a selector by their instanceID,
+        /// so recording the same instanceID reaches the element that needs refreshing.
         /// </summary>
         public static void BroadcastProperty(UnityEngine.Object target, string propertyPath)
         {
             if (target == null || string.IsNullOrEmpty(propertyPath)) return;
-            if (!_HasConnectedClients()) return;
-
-            var exposedClass = ExposedClass.Find(target.GetType());
-            if (exposedClass == null) return;
-
-            var exposedObject = ExposedObjectHandle.CreateUnregistered(exposedClass, target);
-            var property = exposedObject.FindProperty(propertyPath);
-            if (property == null) return;
-
-            // ToJson(string) → JObject.Parse の往復を避け、JObject を直接受け取る。
-            var jObject = ExposedPropertySerializer.ToJObject(
-                property.Value, DefaultExposedObjectResolver.Instance);
-            jObject["type"] = "exposed_object_updated";
-            jObject["id"] = ExposedObjectUtility.GetInstanceID(target).ToString();
-
-            foreach (var instance in RemoteControlServerManager.servers.Values)
-            {
-                _ = instance.server?.BroadcastMessage(jObject, "exposed_object_updated");
-            }
+            ExposedChangeLog.Record(ExposedObjectUtility.GetInstanceID(target).ToString());
         }
 
         /// <summary>
-        /// ExposedObjectの指定プロパティをSSEでブロードキャストする。
-        /// <paramref name="propertyPath"/> にはトップレベル名だけでなく、DotBracket 形式の
-        /// ネストパス (例: "animationParameterOverrides[0].type") も指定できる。
+        /// Publishes a change to the given property of <paramref name="exposedObj"/>.
         /// </summary>
         public static void BroadcastProperty(ExposedObjectHandle exposedObj, string propertyPath)
         {
-            if (exposedObj == null) return;
-            if (!_HasConnectedClients()) return;
-
-            var property = exposedObj.FindProperty(propertyPath);
-            if (property == null) return;
-
-            // ToJson(string) → JObject.Parse の往復を避け、JObject を直接受け取る。
-            var jObject = ExposedPropertySerializer.ToJObject(
-                property.Value, DefaultExposedObjectResolver.Instance);
-            jObject["type"] = "exposed_object_updated";
-
-            foreach (var instance in RemoteControlServerManager.servers.Values)
-            {
-                _ = instance.server?.BroadcastMessage(jObject, "exposed_object_updated");
-            }
+            // An unregistered handle has no id to key the change on; the client could not address it.
+            if (!exposedObj.hasId) return;
+            ExposedChangeLog.Record(exposedObj.id);
         }
 
         /// <summary>
-        /// Broadcasts a property of a static <see cref="ExposedClass"/> over SSE. A static class has no
-        /// target instance to look the handle up by, so it is resolved through the registry id assigned
-        /// at registration time (the exposed type name).
+        /// Publishes a change to a property of a static <see cref="ExposedClass"/>. A static class has
+        /// no target instance to look the handle up by, so it is keyed by the registry id assigned at
+        /// registration time (the exposed type name).
         /// </summary>
         public static void BroadcastStaticProperty(System.Type staticType, string propertyPath)
         {
             if (staticType == null || string.IsNullOrEmpty(propertyPath)) return;
-            if (!_HasConnectedClients()) return;
 
             var exposedClass = ExposedClass.Find(staticType);
             if (exposedClass == null) return;
+            // Skip types that were never registered — the client has no object under that id.
+            if (ExposedObjectRegistry.FindById(exposedClass.typeName) == null) return;
 
-            var exposedObject = ExposedObjectRegistry.FindById(exposedClass.typeName);
-            if (exposedObject == null) return;
-
-            // Passing the nullable handle as-is would bind to the object overload, so unwrap it.
-            BroadcastProperty(exposedObject.Value, propertyPath);
+            ExposedChangeLog.Record(exposedClass.typeName);
         }
 
         /// <summary>
-        /// Notify connected clients that the ExposedClass / ExposedEnum tables have been
-        /// rebuilt and they should refetch /exposed/types and /exposed/enums.
-        /// Payload is intentionally empty — the receiver pulls fresh data via REST so that
-        /// types and enums stay consistent.
+        /// Publishes that the ExposedClass / ExposedEnum tables have been rebuilt. Remote apps refetch
+        /// /exposed/types and /exposed/enums together so the two stay consistent.
         /// </summary>
         public static void BroadcastTypesUpdate()
         {
-            var jObject = new JObject
-            {
-                ["type"] = "types_update"
-            };
-
-            foreach (var instance in RemoteControlServerManager.servers.Values)
-            {
-                _ = instance.server?.BroadcastMessage(jObject, "types_update");
-            }
+            ExposedChangeLog.Record(ExposedChangeLog.kTypesId);
         }
     }
 }

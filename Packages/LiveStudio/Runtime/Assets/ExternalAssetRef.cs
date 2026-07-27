@@ -9,7 +9,7 @@ namespace Lilium.LiveStudio
 {
     /// <summary>
     /// Runtime resolution state for a single reference to an asset that lives inside an external bundle
-    /// (e.g. an <see cref="AnimationClip"/> in a <c>*.anim.lsb</c>). Such an asset does not exist until
+    /// (e.g. an <see cref="AnimationClip"/> in a <c>*.pack.lsb</c>). Such an asset does not exist until
     /// its bundle is loaded asynchronously, so the durable reference is a key string (resolved via a
     /// supplied async resolver), not a live <see cref="UnityEngine.Object"/>. This type owns the small
     /// state machine that keeps a resolved asset in sync with a changing key — the caller keeps only the

@@ -20,18 +20,18 @@ namespace Lilium.LiveStudio
     ///
     /// <c>GET /api/assets?type=&lt;TypeName&gt;</c> returns
     /// <c>{ "type", "assets": [{ "key", "name", "type" }, ...] }</c>, where <c>key</c> is the unified
-    /// asset reference — a bare GUID for a baked/in-app asset, or a <c>file:&lt;path&gt;#&lt;clip&gt;</c>
-    /// reference for a clip inside an external <c>*.anim.lsb</c> bundle. The list is drawn from
+    /// asset reference — a bare GUID for a baked/in-app asset, or a <c>file:&lt;path&gt;#&lt;name&gt;</c>
+    /// reference for a member of an external <c>*.pack.lsb</c> pack. The list is drawn from
     /// <see cref="AssetRegistry"/>, so baked and external assets are unified behind one endpoint.
     ///
-    /// AnimationClips live inside bundles that are not opened until needed, so for that type every
-    /// animation bundle in the current project is opened once (cached, via <see cref="AnimationBundleLoader"/>)
-    /// first, registering its clips so they appear. Other types read straight from the registry.
+    /// Pack members live inside files that are not opened until needed, and a pack declares no payload kind
+    /// in its name, so which packs could hold the requested type is unknowable without opening them: every
+    /// pack in the current project is opened once (cached, via <see cref="PackBundleLoader"/>) before the
+    /// registry is read, registering its members so they appear. The cache makes that a once-per-session
+    /// cost regardless of how many types are queried.
     /// </summary>
     public class AssetsHandler : BaseRemoteControlApiHandler
     {
-        const string kAnimationClipType = "AnimationClip";
-
         public AssetsHandler(RemoteControlServerCore server)
             : base(server, new RouteRule("/api/assets", RouteMatch.Exact))
         {
@@ -43,13 +43,10 @@ namespace Lilium.LiveStudio
         {
             var type = context.Request.QueryString["type"];
 
-            // AnimationClips only enter the registry once their bundle is opened; open every animation
-            // bundle in the catalog once so its clips are registered and listed. Skipped for other types.
-            if (string.IsNullOrEmpty(type) ||
-                string.Equals(type, kAnimationClipType, StringComparison.OrdinalIgnoreCase))
-            {
-                await _PrewarmAnimationBundles();
-            }
+            // Pack members only enter the registry once their pack is opened, and a pack's name says nothing
+            // about what it holds — so there is no type for which this can be skipped. Open every pack in
+            // the catalog once (cached) so its members are registered and listed.
+            await _PrewarmPackBundles();
 
             // Snapshot the registry (touches UnityEngine.Object) on the main thread and build the list.
             var assets = await ExecuteOnMainThread<JArray>(() =>
@@ -85,33 +82,33 @@ namespace Lilium.LiveStudio
             await WriteResponse(context.Response, info.ToString(Formatting.None));
         }
 
-        // Opens every animation bundle in the current catalog once (cached), so LoadClipsAsync registers
-        // its clips in AssetRegistry and they appear in the listing. A per-bundle open failure is logged by
-        // the loader and skipped, so one bad bundle does not fail the whole listing.
-        async Task _PrewarmAnimationBundles()
+        // Opens every asset pack in the current catalog once (cached), so LoadMembersAsync registers its
+        // members in AssetRegistry and they appear in the listing. A per-pack open failure is logged by the
+        // loader and skipped, so one bad pack does not fail the whole listing.
+        async Task _PrewarmPackBundles()
         {
-            var bundles = await ExecuteOnMainThread<List<AnimationBundleAsset>>(() =>
+            var packs = await ExecuteOnMainThread<List<PackBundleAsset>>(() =>
             {
-                var result = new List<AnimationBundleAsset>();
+                var result = new List<PackBundleAsset>();
                 var mgr = ExternalAssetManager.current;
                 if (mgr != null)
                 {
                     var view = mgr.assetsView;
                     for (int i = 0; i < view.Count; i++)
                     {
-                        if (view[i] is AnimationBundleAsset ab) result.Add(ab);
+                        if (view[i] is PackBundleAsset pack) result.Add(pack);
                     }
                 }
                 return result;
             });
 
-            for (int i = 0; i < bundles.Count; i++)
+            for (int i = 0; i < packs.Count; i++)
             {
-                // GetClipNamesAsync must START on the main thread (Unity AssetBundle API); post it there and
-                // await the returned Task off the main thread so the server does not stall.
-                var namesTask = await ExecuteOnMainThread<Task<string[]>>(() => bundles[i].GetClipNamesAsync());
+                // GetMemberNamesAsync must START on the main thread (Unity AssetBundle API); post it there
+                // and await the returned Task off the main thread so the server does not stall.
+                var namesTask = await ExecuteOnMainThread<Task<string[]>>(() => packs[i].GetMemberNamesAsync());
                 try { await namesTask; }
-                catch { /* the loader logs bundle-open failures; skip this bundle */ }
+                catch { /* the loader logs pack-open failures; skip this pack */ }
             }
         }
     }

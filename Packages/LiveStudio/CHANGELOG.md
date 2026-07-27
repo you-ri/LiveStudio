@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- The animation bundle is now a general-purpose **asset pack**: `*.anim.lsb` becomes `*.pack.lsb`, and a pack may hold assets of any type rather than `AnimationClip` only. The kind-bearing extensions are unchanged — `*.set.lsb`, `*.avatar.lsb` and `*.prop.lsb` each name what they contain, and renaming them would delete the only content-free way to classify them — so the pack takes the catch-all slot instead: its name deliberately says nothing about its payload. `PackBundleLoader` (was `AnimationBundleLoader`) therefore loads members untyped and registers each under its `file:<path>#<assetName>` key, letting the runtime type of each member decide which selectors offer it; because `GET /api/assets?type=` already filters the registry by type name, a new selectable asset type needs no change here. Since a pack's name no longer hints at its contents, that endpoint can no longer skip the pre-warm for non-clip types and now opens every pack once per session (the existing per-file cache keeps that a one-time cost). Existing `*.anim.lsb` files keep working as legacy input — the extension stays registered, so neither the files nor the `file:` references saved against them need touching — and the export menu is now `Assets/Lilium Live Studio/Export Asset Pack (.pack.lsb)`, accepting any selected main asset (folders and scenes excluded) with the pack-wide unique-name requirement now applied across types. Imported packs land in `Packs/` rather than `Animations/`; the project crawl is recursive, so files already under `Animations/` are still found. `AnimationBundleAsset` is renamed `PackBundleAsset` and carries `[FormerlyExposedAs("AnimationBundleAsset")]` so scenes saved under the old `@type` still restore, and `ExternalAssetKey.BuildClipKey` / `TryParseClipKey` are renamed `BuildMemberKey` / `TryParseMemberKey` (the key format itself is unchanged). `GET /api/animation/clips` keeps its route and `clips` response field verbatim for remote-app compatibility, and now lists every member of a pack whatever its type.
+
 ## [0.25.3] - 2026-07-22
 <!-- changelog-sha: ead5a500c2674f81ae92f66e88e1b3eacac8bd4f -->
 

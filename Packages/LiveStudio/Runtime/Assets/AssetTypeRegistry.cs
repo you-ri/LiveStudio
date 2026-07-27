@@ -264,16 +264,18 @@ namespace Lilium.LiveStudio
                 importSubfolder = "Props",
             });
 
-            // Animation bundles (*.anim.lsb): a catalog entry whose clips are selectable (e.g. for the
-            // avatar body-override slot). Same priority as the other prefab bundles; the compound-suffix
-            // matcher is mutually exclusive with theirs.
+            // Asset packs (*.pack.lsb, plus the legacy *.anim.lsb accepted on input): a catalog entry
+            // whose members are selectable (e.g. a clip for the avatar body-override slot). Same priority
+            // as the other prefab bundles; the compound-suffix matcher is mutually exclusive with theirs.
+            // What a pack holds is deliberately NOT encoded in its name — the members are typed only once
+            // the pack is opened, which keeps this classification content-free like every other kind.
             Register(new AssetTypeDescriptor
             {
                 priority = 10,
-                suffixes = new[] { LiveStudioBundle.AnimationExtension },
-                matches = LiveStudioBundle.IsAnimationBundle,
-                create = _ => new AnimationBundleAsset(),
-                importSubfolder = "Animations",
+                suffixes = new[] { LiveStudioBundle.PackExtension, LiveStudioBundle.LegacyPackExtension },
+                matches = LiveStudioBundle.IsPackBundle,
+                create = _ => new PackBundleAsset(),
+                importSubfolder = "Packs",
             });
         }
     }

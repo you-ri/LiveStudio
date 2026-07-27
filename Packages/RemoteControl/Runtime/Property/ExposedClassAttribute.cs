@@ -275,6 +275,11 @@ namespace Lilium.RemoteControl
         /// </summary>
         public int order { get; set; } = 0;
 
+        /// <summary>
+        /// RemoteApp のボタンに表示するアイコン名 (Material Icons)。未設定ならアイコンなし。
+        /// </summary>
+        public string icon { get; set; }
+
         public ExposedFunctionAttribute()
         {
             this.name = null;
@@ -526,6 +531,79 @@ namespace Lilium.RemoteControl
     }
 
     /// <summary>
+    /// Control attribute for an <see cref="ExposedFunctionAttribute"/> that must not fire the instant the
+    /// button is pressed. The client opens a modal, counts down, and only then invokes the function, so the
+    /// operator has time to get into position (calibration, staged captures, and similar).
+    ///
+    /// The countdown is a client-side presentation concern: the server still exposes a plain function and
+    /// receives a single ordinary invocation once the countdown reaches zero. Cancelling never reaches
+    /// the server.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
+    public class CountdownAttribute : ControlAttribute
+    {
+        /// <summary>Countdown length in seconds. 0 defers to the client's configured default.</summary>
+        public int seconds { get; }
+
+        /// <summary>Localization key for the instruction shown while counting down.</summary>
+        public string message { get; set; }
+
+        /// <summary>Localization key for the text shown while the invocation is in flight.</summary>
+        public string runningMessage { get; set; }
+
+        /// <summary>Material Icons name shown in the modal. Falls back to a client default when unset.</summary>
+        public string icon { get; set; }
+
+        public CountdownAttribute(int seconds = 0)
+            : base("Countdown")
+        {
+            this.seconds = seconds;
+        }
+
+        // message / runningMessage は表示文字列なので、他の翻訳対象 (label / help / section title) と同じく
+        // ここで解決してから送る。LocalizationSystem は同一アセンブリ内にある。
+        public override JObject ToJObject()
+        {
+            var obj = new JObject
+            {
+                ["type"] = controlName,
+            };
+            if (seconds > 0) obj["seconds"] = seconds;
+            if (!string.IsNullOrEmpty(message)) obj["message"] = LocalizationSystem.Translate(message);
+            if (!string.IsNullOrEmpty(runningMessage)) obj["runningMessage"] = LocalizationSystem.Translate(runningMessage);
+            if (!string.IsNullOrEmpty(icon)) obj["icon"] = icon;
+            return obj;
+        }
+    }
+
+    /// <summary>
+    /// Control attribute that renders a read-only <c>string</c> member as a button which opens its value
+    /// as a URL in the operator's external browser. Use it for documentation and support links so the page
+    /// can declare them instead of the client hard-coding them.
+    ///
+    /// The value is the URL itself; the button caption comes from the member's label. Return a
+    /// <see cref="LocalizationSystem.Translate"/>d key from the getter when the destination differs per language.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
+    public class UrlButtonAttribute : ControlAttribute
+    {
+        /// <summary>Material Icons name shown on the button.</summary>
+        public string icon { get; set; } = "open_in_new";
+
+        public UrlButtonAttribute() : base("UrlButton") { }
+
+        public override JObject ToJObject()
+        {
+            var obj = new JObject
+            {
+                ["type"] = controlName,
+            };
+            if (!string.IsNullOrEmpty(icon)) obj["icon"] = icon;
+            return obj;
+        }
+    }
+
+    /// <summary>
     /// アセット参照フィールド (AnimationClip 等の UnityEngine.Object 派生) 用のセレクタ属性。
     /// 値はアセット GUID (<see cref="AssetRegistry"/> 経由) でシリアライズされるため、
     /// 対象アセットは AssetRegistry に登録されている必要がある。
@@ -759,7 +837,7 @@ namespace Lilium.RemoteControl
     /// <see cref="SectionAttribute"/> と併用するとセクションの <c>accessLevel</c> を
     /// <see cref="AccessLevel.Experimental"/> に上書きする。
     /// </summary>
-    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Method, AllowMultiple = false)]
     public class ExperimentalAttribute : Attribute
     {
     }
@@ -769,17 +847,18 @@ namespace Lilium.RemoteControl
     /// <see cref="SectionAttribute"/> と併用するとセクションの <c>accessLevel</c> を
     /// <see cref="AccessLevel.Development"/> に上書きする。
     /// </summary>
-    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Method, AllowMultiple = false)]
     public class DevelopmentAttribute : Attribute
     {
     }
 
     /// <summary>
-    /// プロパティをセクションの開始としてマークする属性。
+    /// メンバーをセクションの開始としてマークする属性。
     /// NavigatePageでのセクション表示に使用される。
-    /// 次のSectionAttributeが出現するまで、後続プロパティは同じセクションに属する。
+    /// 次のSectionAttributeが出現するまで、後続メンバーは同じセクションに属する。
+    /// 関数にも付与できるので、ボタンだけで構成されるセクションも宣言できる。
     /// </summary>
-    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Method, AllowMultiple = false)]
     public class SectionAttribute : Attribute
     {
         /// <summary>
@@ -807,6 +886,74 @@ namespace Lilium.RemoteControl
             this.icon = icon;
             this.title = title;
             this.subtitle = subtitle;
+        }
+    }
+
+    /// <summary>
+    /// Flow direction of a <see cref="LayoutAttribute"/> group.
+    /// <see cref="Auto"/> resolves from the group's nesting depth: a section's members flow
+    /// vertically by default, so depth 1 becomes <see cref="Horizontal"/>, depth 2
+    /// <see cref="Vertical"/>, and so on alternately.
+    /// </summary>
+    public enum LayoutDirection
+    {
+        Auto = 0,
+        Vertical = 1,
+        Horizontal = 2,
+    }
+
+    /// <summary>
+    /// Groups consecutive members into a layout container so the remote client can arrange them
+    /// vertically or horizontally instead of stacking everything in one column.
+    ///
+    /// Groups are addressed by a <c>/</c>-separated <see cref="path"/>, so nesting needs no
+    /// begin/end markers: a two-column row is just <c>[Layout("row/left")]</c> on one set of members
+    /// and <c>[Layout("row/right")]</c> on the other. Members that share a path render inside the
+    /// same container, in declaration order; a member without the attribute stays at the section root.
+    ///
+    /// A group's container is created the first time a member references it, so grouped and
+    /// ungrouped members keep their relative declaration order.
+    /// </summary>
+    /// <example>
+    /// [Section("videocam", "Camera")]
+    /// [ExposedProperty, ImagePreview]
+    /// [Layout("row/right")]
+    /// public static string cameraPreview => "/api/camera/image";
+    ///
+    /// [ExposedProperty]
+    /// [Layout("row/left")]
+    /// public static string webcamDevice { get; set; }
+    /// </example>
+    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Method, AllowMultiple = false)]
+    public class LayoutAttribute : Attribute
+    {
+        /// <summary>
+        /// Group path. <c>/</c> separates nesting levels (e.g. <c>"row/left"</c>).
+        /// Empty or malformed paths are ignored (the member falls back to the section root).
+        /// </summary>
+        public string path { get; }
+
+        /// <summary>
+        /// Flow direction of the group this member belongs to (the last path segment).
+        /// Defaults to <see cref="LayoutDirection.Auto"/>, which alternates by depth.
+        /// The first member that declares a direction for a path wins.
+        /// </summary>
+        public LayoutDirection direction { get; set; } = LayoutDirection.Auto;
+
+        /// <summary>
+        /// Lay the group out as a grid of this many columns. 0 (default) keeps the plain flow layout.
+        /// </summary>
+        public int columns { get; set; }
+
+        /// <summary>
+        /// Relative weight when this group shares a horizontal parent (CSS <c>flex-grow</c>).
+        /// Default 1; 0 makes the group keep its content width instead of stretching.
+        /// </summary>
+        public int grow { get; set; } = 1;
+
+        public LayoutAttribute(string path)
+        {
+            this.path = path;
         }
     }
 

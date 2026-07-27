@@ -559,6 +559,22 @@ namespace Lilium.LiveStudio
             _Broadcast();
         }
 
+        /// <summary>Places the control of the operation set with the given id onto the deck named
+        /// <paramref name="deckName"/> at that deck's first free grid cell (row-major scan), so an added tile
+        /// never lands on top of one already there. An empty <paramref name="deckName"/> means the default
+        /// page. This is the "add a tile to this deck" entry point; <see cref="PlaceControl"/> takes an
+        /// explicit cell and stays the drag-and-drop move. No-op for an unknown id.</summary>
+        [ExposedFunction]
+        public void PlaceControlOnFreeCell(string operationSetId, string deckName)
+        {
+            int index = _IndexOf(operationSetId);
+            if (index < 0) return;
+            var control = operationSets[index]?.control;
+            if (control == null) return;
+            _PlaceOnFreeCell(control, deckName);
+            _Broadcast();
+        }
+
         /// <summary>Swaps the control kind (<c>DeckButton</c> / <c>DeckToggle</c> / <c>DeckSlider</c>) of
         /// the operation set with the given id, preserving its placement (deck and grid cell/span). No-op for
         /// an unknown id or type name.</summary>
@@ -629,12 +645,17 @@ namespace Lilium.LiveStudio
         }
 
         // Places the control on the default page at the first free grid cell (row-major scan).
-        private void _PlaceOnDefaultDeck(DeckControl control)
+        private void _PlaceOnDefaultDeck(DeckControl control) => _PlaceOnFreeCell(control, null);
+
+        // Places the control on the deck named deckName at its first free grid cell (row-major scan), so a
+        // tile never lands on top of one already there. An empty name means the default page (created on
+        // demand), which keeps "no unplaced state" true whatever the caller passes.
+        private void _PlaceOnFreeCell(DeckControl control, string deckName)
         {
             if (control == null) return;
-            string deckName = _EnsureDefaultDeckName();
-            _FindFreeCell(deckName, control, out int x, out int y);
-            control.deckName = deckName;
+            string target = string.IsNullOrEmpty(deckName) ? _EnsureDefaultDeckName() : deckName;
+            _FindFreeCell(target, control, out int x, out int y);
+            control.deckName = target;
             control.x = x;
             control.y = y;
         }

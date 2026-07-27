@@ -15,6 +15,11 @@ namespace Lilium.LiveStudio
     ///   <item><c>*.scene.lsb</c> — legacy set bundle, kept for input compatibility.</item>
     ///   <item><c>*.avatar.lsb</c> — an avatar bundle (a single root prefab).</item>
     ///   <item><c>*.prop.lsb</c> — a prop bundle (a single root prefab; avatar prop or stage prop).</item>
+    ///   <item><c>*.pack.lsb</c> — an asset pack: several loose assets of any type, with no single
+    ///   payload kind implied by the name. The catch-all for content the kind-specific bundles above
+    ///   do not cover.</item>
+    ///   <item><c>*.anim.lsb</c> — legacy asset pack (formerly animation-clip only), kept for input
+    ///   compatibility.</item>
     ///   <item><c>*.lsavatar</c> — legacy avatar bundle, kept for input compatibility.</item>
     /// </list>
     ///
@@ -38,12 +43,21 @@ namespace Lilium.LiveStudio
         public const string PropExtension = ".prop.lsb";
 
         /// <summary>
-        /// Suffix of an animation bundle file (case-insensitive). Unlike the prop / avatar bundles
-        /// (a single root prefab), an animation bundle packs one or more <see cref="UnityEngine.AnimationClip"/>
-        /// assets so a curated set of clips (e.g. a dance pack) ships as one file. Individual clips are
-        /// addressed by <c>file:&lt;relative-path&gt;#&lt;clipName&gt;</c> (see <see cref="ExternalAssetKey"/>).
+        /// Suffix of an asset pack file (case-insensitive). Unlike the prop / avatar bundles (a single
+        /// root prefab of a known kind), a pack holds one or more loose assets of ANY type — a curated
+        /// set of animation clips, materials, audio, … — so a whole set ships as one file. The name
+        /// therefore encodes no payload kind: what a pack contains is only known once it is opened.
+        /// Individual members are addressed by <c>file:&lt;relative-path&gt;#&lt;assetName&gt;</c>
+        /// (see <see cref="ExternalAssetKey"/>).
         /// </summary>
-        public const string AnimationExtension = ".anim.lsb";
+        public const string PackExtension = ".pack.lsb";
+
+        /// <summary>
+        /// Legacy asset pack suffix, from when a pack could only hold <see cref="UnityEngine.AnimationClip"/>
+        /// assets. Accepted on input for backward compatibility (existing files keep working, and the
+        /// <c>file:</c> keys saved against them keep resolving), no longer produced on export.
+        /// </summary>
+        public const string LegacyPackExtension = ".anim.lsb";
 
         /// <summary>Legacy avatar bundle suffix. Accepted on input, no longer produced on export.</summary>
         public const string LegacyAvatarExtension = ".lsavatar";
@@ -58,8 +72,12 @@ namespace Lilium.LiveStudio
         /// <summary>True if <paramref name="path"/> names a prop bundle (<c>*.prop.lsb</c>).</summary>
         public static bool IsPropBundle(string path) => _HasSuffix(path, PropExtension);
 
-        /// <summary>True if <paramref name="path"/> names an animation bundle (<c>*.anim.lsb</c>).</summary>
-        public static bool IsAnimationBundle(string path) => _HasSuffix(path, AnimationExtension);
+        /// <summary>
+        /// True if <paramref name="path"/> names an asset pack, either the current <c>*.pack.lsb</c>
+        /// form or the legacy <c>*.anim.lsb</c> form.
+        /// </summary>
+        public static bool IsPackBundle(string path)
+            => _HasSuffix(path, PackExtension) || _HasSuffix(path, LegacyPackExtension);
 
         /// <summary>
         /// True if <paramref name="path"/> names an avatar bundle, either the current

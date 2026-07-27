@@ -1988,10 +1988,27 @@ namespace Lilium.RemoteControl.Tests
                 ]
             }";
 
-            // Act & Assert - 例外なく処理される（警告ログは出る）
+            // Act & Assert - 例外なく処理され、プレハブ未解決の警告だけが出る
             LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(".*Prefab not found.*"));
-            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(".*Failed to instantiate prefab.*"));
             Assert.DoesNotThrow(() => LiveSceneSerializer.LiveSceneFromJson(json, _resolver));
+
+            try
+            {
+                // 解決できなかった @prefab エントリは破棄されず PendingPrefabStore へ退避され、次の保存で
+                // そのまま書き戻される。@prefab エントリは @source を持たないためプロパティ側の pending
+                // 再出力では拾えず、退避しないと load→save で黙って失われる (それが以前の挙動だった)。
+                var saved = JObject.Parse(LiveSceneSerializer.LiveSceneToJson(
+                    new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver));
+                var reEmitted = saved["objects"]?
+                    .FirstOrDefault(t => t["@id"]?.Value<string>() == "ghost-comp-1");
+                Assert.IsNotNull(reEmitted, "未解決の @prefab エントリが保存時に失われている");
+                Assert.AreEqual("77777777777777777777777777777777", reEmitted["@prefab"]?.Value<string>());
+            }
+            finally
+            {
+                // 退避キューは静的なので、後続テストの保存に混ざらないよう明示的に空にする。
+                PendingPrefabStore.Clear();
+            }
         }
 
         [Test]

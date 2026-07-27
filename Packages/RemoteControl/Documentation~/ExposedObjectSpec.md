@@ -137,7 +137,9 @@ ExposedObject周りの仕様の要約や方向性を記述する。機能実装�
 - リフレクションは `ExposedObjectUtility.InstanceIDToObject` にまとめる
 - REST API の単一 ExposedObject ToJson は従来どおりの形式（`@ref + @id + @name`）を維持する。file-scope の `@source` 付きエントリは SceneToJson 経由のときのみ有効
 
-### SSE
+### 変更通知
 
-- `exposed_object_updated` でプロパティ変更を通知する
-- パス形式は REST API と同一（Slash 形式）
+- プロパティ変更は値を送らず、`ExposedChangeLog` に**変更されたオブジェクトの id だけ**を記録する
+- クライアントは `GET /exposed/changes?since={revision}` をポーリングし、自分が保持している id だけを再取得する
+- `since` 省略時は現在の revision のみを返す（接続直後の同期用）
+- 擬似 id `@types` / `@ui` はそれぞれ型テーブルとサイドメニューの再取得を意味する

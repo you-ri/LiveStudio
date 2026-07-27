@@ -229,7 +229,7 @@ namespace Lilium.LiveStudio
         // _bodyOverrideClip のアセット GUID (未選択は空文字)。ランタイムでは AssetDatabase を使えないため
         // エディタの OnValidate で焼き込み、選択中クリップ自身を AssetRegistry へ登録して往復解決に使う。
         // 選択肢のカタログは AvatarController が持たない。組み込み (Resources) クリップは
-        // BuiltinAssetRegistry、外部バンドル (*.anim.lsb) は AnimationBundleLoader が AssetRegistry へ
+        // BuiltinAssetRegistry、外部アセットパック (*.pack.lsb) は PackBundleLoader が AssetRegistry へ
         // 登録し、GET /api/assets?type=AnimationClip が一覧化してセレクタの候補を供給する。
         [SerializeField, HideInInspector]
         private string _bodyOverrideClipGuid = string.Empty;
@@ -246,10 +246,10 @@ namespace Lilium.LiveStudio
         // 一度こちらで上書きした後に空へ戻された場合は解除 (null) を一度だけ転送するための状態。
         private bool _bodyOverrideClipApplied;
 
-        // 外部アニメーションバンドル (*.anim.lsb) 内のクリップを body override に選ぶための参照キー
-        // (file:<相対パス>#<clipName>)。空 = 未使用で、ベイク済みの _bodyOverrideClip (Object) を使う
-        // (既存挙動)。非空のときはこちらが優先される。実体はバンドルを非同期ロードするまで存在しないため
-        // Object でなくキー文字列で保持し、AnimationBundleLoader がロード→AssetRegistry 登録→解決する。
+        // 外部アセットパック (*.pack.lsb) 内のクリップを body override に選ぶための参照キー
+        // (file:<相対パス>#<アセット名>)。空 = 未使用で、ベイク済みの _bodyOverrideClip (Object) を使う
+        // (既存挙動)。非空のときはこちらが優先される。実体はパックを非同期ロードするまで存在しないため
+        // Object でなくキー文字列で保持し、PackBundleLoader がロード→AssetRegistry 登録→解決する。
         // 旧シーンにこのフィールドは無い (=空=既存挙動) ので live.json はバイト不変。Hide でジェネリック
         // インスペクタから隠し、RemoteApp の専用 2 段セレクタが読み書きする。
         [ExposedField, Hide]
@@ -258,7 +258,7 @@ namespace Lilium.LiveStudio
         // _bodyOverrideClipRef の非同期解決状態 (解決済みクリップ / 適用済みキー / 解決中キー / supersede)
         // をまとめて持つ。キーが変わるたび Sync で解決を回し、完了時に再適用する。
         private readonly ExternalAssetRef<AnimationClip> _bodyOverrideExternal =
-            new ExternalAssetRef<AnimationClip>(AnimationBundleLoader.ResolveClipAsync);
+            new ExternalAssetRef<AnimationClip>(PackBundleLoader.ResolveAsync<AnimationClip>);
 
         // 下半身の位置をロックするフラグ。ON の間、AvatarBodyDriver を使う対応アバター
         // (VRM1Avatar / VRCFTAvatar / VRCAvatar) は hips を body override クリップの腰位置
@@ -668,7 +668,7 @@ namespace Lilium.LiveStudio
 
         // 選択中クリップ (_bodyOverrideClip) 自身を AssetRegistry へ登録する。AssetSelector の GUID
         // シリアライズと GET /api/asset の解決は、この登録を前提とする。選択肢のカタログは
-        // 組み込み (BuiltinAssetRegistry) / 外部バンドル (AnimationBundleLoader) が別途登録する。
+        // 組み込み (BuiltinAssetRegistry) / 外部アセットパック (PackBundleLoader) が別途登録する。
         private void _RegisterBodyOverrideClips()
         {
             if (_bodyOverrideClip != null && !string.IsNullOrEmpty(_bodyOverrideClipGuid))

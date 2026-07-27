@@ -975,6 +975,11 @@ namespace Lilium.RemoteControl
         public readonly SectionAttribute sectionAttribute;
 
         /// <summary>
+        /// レイアウトグループ属性（セクション内での縦横配置用）。未指定なら null。
+        /// </summary>
+        public readonly LayoutAttribute layoutAttribute;
+
+        /// <summary>
         /// [Collapsed] が付いていれば true。RemoteApp が配列・構造体を初期折りたたみで描画するヒント。
         /// </summary>
         public readonly bool collapsed;
@@ -1270,6 +1275,9 @@ namespace Lilium.RemoteControl
             // Section属性を読み取り
             this.sectionAttribute = TypeReflectionSystem.GetCustomAttribute<SectionAttribute>(info);
 
+            // Layout属性を読み取り（セクション内の縦横グループ）
+            this.layoutAttribute = TypeReflectionSystem.GetCustomAttribute<LayoutAttribute>(info);
+
             // [Collapsed] を読み取り（RemoteApp の初期折りたたみヒント）
             this.collapsed = TypeReflectionSystem.GetCustomAttribute<CollapsedAttribute>(info) != null;
 
@@ -1414,6 +1422,7 @@ namespace Lilium.RemoteControl
             this.defaultValue = null;
             this.visibilityConditions = Array.Empty<ExposedVisibilityCondition>();
             this.sectionAttribute = null;
+            this.layoutAttribute = null;
             this.sectionAccessLevel = AccessLevel.Public;
             this.collapsed = false;
             this.formerNames = Array.Empty<string>();
@@ -1458,9 +1467,31 @@ namespace Lilium.RemoteControl
         public readonly string label;
 
         /// <summary>
+        /// RemoteApp のボタンに表示するアイコン名 (Material Icons)。未指定なら null。
+        /// </summary>
+        public readonly string icon;
+
+        /// <summary>
         /// コントローラー属性
         /// </summary>
         public readonly ControlAttribute controlAttribute;
+
+        /// <summary>
+        /// レイアウトグループ属性（セクション内での縦横配置用）。未指定なら null。
+        /// ボタンを横一列に並べる用途で、プロパティと同じ仕組みを関数にも適用する。
+        /// </summary>
+        public readonly LayoutAttribute layoutAttribute;
+
+        /// <summary>
+        /// セクション属性。関数にも付与でき、ボタンだけで構成されるセクションを宣言できる。
+        /// </summary>
+        public readonly SectionAttribute sectionAttribute;
+
+        /// <summary>
+        /// セクションに適用される最終アクセスレベル。プロパティ側と同じ解決規則
+        /// ([Development] > [Experimental] > Section.accessLevel > Public)。
+        /// </summary>
+        public readonly AccessLevel sectionAccessLevel;
 
         /// <summary>
         /// 条件付き表示の条件一覧 (ShowIf/HideIf)。複数指定時は AND で評価される。
@@ -1484,12 +1515,32 @@ namespace Lilium.RemoteControl
             var helpAttr = TypeReflectionSystem.GetCustomAttribute<ExposedHelpAttribute>(methodInfo);
             this.help = helpAttr?.text;
 
-            // ExposedFunctionAttribute からlabelを読み取り
+            // ExposedFunctionAttribute から label / icon を読み取り
             var funcAttr = TypeReflectionSystem.GetCustomAttribute<ExposedFunctionAttribute>(methodInfo);
             this.label = funcAttr?.label;
+            this.icon = funcAttr?.icon;
 
             // ControlAttribute属性を読み取り
             this.controlAttribute = TypeReflectionSystem.GetCustomAttribute<ControlAttribute>(methodInfo);
+
+            // Layout属性を読み取り（セクション内の縦横グループ）
+            this.layoutAttribute = TypeReflectionSystem.GetCustomAttribute<LayoutAttribute>(methodInfo);
+
+            // Section属性を読み取り（ボタンだけのセクション用）。アクセスレベルの解決規則は
+            // ExposedPropertyType と同一に揃える。
+            this.sectionAttribute = TypeReflectionSystem.GetCustomAttribute<SectionAttribute>(methodInfo);
+            if (TypeReflectionSystem.GetCustomAttribute<DevelopmentAttribute>(methodInfo) != null)
+            {
+                this.sectionAccessLevel = AccessLevel.Development;
+            }
+            else if (TypeReflectionSystem.GetCustomAttribute<ExperimentalAttribute>(methodInfo) != null)
+            {
+                this.sectionAccessLevel = AccessLevel.Experimental;
+            }
+            else
+            {
+                this.sectionAccessLevel = this.sectionAttribute?.accessLevel ?? AccessLevel.Public;
+            }
 
             // ShowIf/HideIf属性を読み取り (複数付与可、AND 評価)。プロパティと同じく AND 評価する。
             this.visibilityConditions = ExposedPropertyType._CollectVisibilityConditions(methodInfo, methodInfo.DeclaringType);

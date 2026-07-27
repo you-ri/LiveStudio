@@ -7,7 +7,7 @@ namespace Lilium.LiveStudio
     /// <summary>
     /// Shared base for a catalog entry describing a reference-only app-embedded (built-in) asset shipped
     /// inside the app under a <c>Resources</c> folder (baked into <see cref="BuiltinAssetCatalog"/>). Like
-    /// <see cref="AnimationBundleAsset"/> such an entry is a reference resource, not scene content: it has
+    /// <see cref="PackBundleAsset"/> such an entry is a reference resource, not scene content: it has
     /// no load/unload toggle and instantiates nothing. It exists in the catalog so the asset is listed on
     /// the project's asset page and selectable; the asset itself is registered in
     /// <see cref="Lilium.RemoteControl.AssetRegistry"/> under its GUID by <see cref="BuiltinAssetRegistry"/>.

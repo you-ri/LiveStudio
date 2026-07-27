@@ -12,8 +12,8 @@ namespace Lilium.RemoteControl.UI
     /// its pages at runtime (e.g. embedded capture) without owning a server or a second
     /// <c>/ui/sidemenu</c> route.
     ///
-    /// A live <see cref="UIHandler"/> registers the added definition's selectors and broadcasts a
-    /// <c>ui_update</c> event so connected clients refetch the side menu.
+    /// A live <see cref="UIHandler"/> registers the added definition's selectors and records a UI
+    /// change in <see cref="ExposedChangeLog"/> so polling clients refetch the side menu.
     /// </summary>
     public static class UIDefinitionRegistry
     {

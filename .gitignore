@@ -58,3 +58,9 @@ crashlytics-build.properties
 # OS
 .DS_Store
 Thumbs.db
+
+# Windows null-device artifact: a tool that passes "/dev/null" as a path makes
+# Git for Windows resolve it relative to the repo, so git-lfs installs its hooks
+# into a literal dev/null/ directory. Junk (identical to .git/hooks), and it has
+# been swept into a commit by "git add -A" before.
+/dev/

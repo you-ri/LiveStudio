@@ -163,7 +163,7 @@ namespace Lilium.LiveStudio
         private static void _RegisterBuiltIns()
         {
             // Animation clips (*.anim in Resources): reference resources selectable from the avatar
-            // body-override slot, alongside the clips of an external *.anim.lsb bundle. Reference-only:
+            // body-override slot, alongside the clips of an external *.pack.lsb asset pack. Reference-only:
             // registered in AssetRegistry at startup, never instantiated.
             _descriptors.Add(new BuiltinAssetTypeDescriptor
             {

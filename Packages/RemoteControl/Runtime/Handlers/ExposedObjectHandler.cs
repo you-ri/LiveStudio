@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
+using System.Text;
 using System.Threading.Tasks;
 using System.Linq;
 using UnityEngine;
@@ -61,6 +62,7 @@ namespace Lilium.RemoteControl
                 new EndpointRoute("/exposed/object/", RouteMatch.Prefix, HandleGetObject),
                 new EndpointRoute("/exposed/types", RouteMatch.Exact, HandleGetTypes),
                 new EndpointRoute("/exposed/enums", RouteMatch.Exact, HandleGetEnums),
+                new EndpointRoute("/exposed/changes", RouteMatch.Exact, HandleGetChanges),
             };
             _putRoutes = new[]
             {
@@ -96,6 +98,7 @@ namespace Lilium.RemoteControl
             new RouteRule("/exposed/types", RouteMatch.Prefix),
             new RouteRule("/exposed/enums", RouteMatch.Prefix),
             new RouteRule("/exposed/batch", RouteMatch.Exact),
+            new RouteRule("/exposed/changes", RouteMatch.Exact),
         };
 
         protected override IReadOnlyList<RouteRule> Routes => _kRoutes;
@@ -135,6 +138,104 @@ namespace Lilium.RemoteControl
             var exposedObjects = await ExecuteOnMainThread(() => _CollectExposedObjects(typeName, category));
             var json = await ExecuteOnMainThread(() => ExposedPropertySerializer.ToJson(exposedObjects, GetResolver(), maxDepth));
             await WriteResponse(200, context.Response, json);
+        }
+
+        /// <summary>The change-feed path, without query. Shared by the single and batch routes.</summary>
+        private const string kChangesPath = "/exposed/changes";
+
+        // Per-thread scratch for the changes response. The endpoint is polled continuously by every
+        // connected remote app, so the steady state (nothing changed) must not allocate beyond the
+        // response string itself. The single route runs on a worker thread and the batch route on the
+        // main thread, so these are per-thread rather than shared.
+        [ThreadStatic] private static List<string> _changeBuffer;
+        [ThreadStatic] private static StringBuilder _changeJson;
+
+        /// <summary>
+        /// Reports which exposed objects changed since the client's last poll:
+        /// <c>{"revision":57,"changes":["id", ...]}</c>.
+        ///
+        /// Without <c>since</c> the response carries an empty change list and the current revision —
+        /// how a client syncs up on connect without being handed every id recorded so far.
+        /// With <c>?since=N</c> it carries the ids recorded after revision N. Only ids travel; the
+        /// client refetches the objects it actually holds, which is what keeps this cheap.
+        /// </summary>
+        private async Task HandleGetChanges(HttpListenerContext context)
+        {
+            var sinceRaw = context.Request.QueryString["since"];
+            var hasSince = long.TryParse(sinceRaw, out var since);
+            await WriteResponse(200, context.Response, _BuildChangesJson(hasSince, since));
+        }
+
+        /// <summary>
+        /// Builds the change-feed response body. Unity-independent, so both the worker-thread single
+        /// route and the main-thread batch route can call it.
+        /// </summary>
+        private static string _BuildChangesJson(bool hasSince, long since)
+        {
+            var buffer = _changeBuffer ?? (_changeBuffer = new List<string>(64));
+            long revision;
+            if (hasSince)
+            {
+                revision = ExposedChangeLog.GetChangesSince(since, buffer);
+            }
+            else
+            {
+                buffer.Clear();
+                revision = ExposedChangeLog.revision;
+            }
+
+            var sb = _changeJson ?? (_changeJson = new StringBuilder(256));
+            sb.Clear();
+            sb.Append("{\"revision\":").Append(revision).Append(",\"changes\":[");
+            for (int i = 0; i < buffer.Count; i++)
+            {
+                if (i > 0) sb.Append(',');
+                // Ids come from the registry (type names, GUIDs, instance IDs) and never contain
+                // characters needing escapes, but go through the encoder so a hand-registered id
+                // cannot produce malformed JSON.
+                sb.Append(JsonConvert.ToString(buffer[i]));
+            }
+            sb.Append("]}");
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// True when a batch sub-request path targets the change feed (with or without a query).
+        /// </summary>
+        private static bool _IsChangesPath(string absolutePath)
+        {
+            if (absolutePath == null) return false;
+            if (!absolutePath.StartsWith(kChangesPath, StringComparison.Ordinal)) return false;
+            return absolutePath.Length == kChangesPath.Length
+                || absolutePath[kChangesPath.Length] == '?';
+        }
+
+        /// <summary>
+        /// Reads <c>?since=N</c> off a batch sub-request path. Batch items carry the raw path string
+        /// rather than a parsed query collection, and this runs on every poll of every client, so it
+        /// scans in place instead of splitting the string.
+        /// </summary>
+        private static bool _TryParseChangesSince(string absolutePath, out long since)
+        {
+            since = 0;
+            int query = absolutePath.IndexOf('?');
+            if (query < 0) return false;
+            int at = absolutePath.IndexOf("since=", query, StringComparison.Ordinal);
+            if (at < 0) return false;
+
+            at += "since=".Length;
+            long value = 0;
+            bool anyDigit = false;
+            for (; at < absolutePath.Length; at++)
+            {
+                char c = absolutePath[at];
+                if (c < '0' || c > '9') break;
+                value = value * 10 + (c - '0');
+                anyDigit = true;
+            }
+            if (!anyDigit) return false;
+            since = value;
+            return true;
         }
 
         /// <summary>
@@ -470,10 +571,8 @@ namespace Lilium.RemoteControl
             var json = ExposedPropertySerializer.ToJson(property.Value, resolver);
 
             // onPropertyChanged で親要素の他フィールドが書き換わる場合に備え、
-            // 親が配列要素ならその要素全体を SSE でブロードキャストする。
-            // 親インスタンスは property.obj で既に手元にあるので、登録済み ExposedObjectHandle を
-            // 検索するのではなく、その場で CreateUnregistered で ExposedObjectHandle を作って使う。
-            _BroadcastParentElement(ctx.id, ctx.slashPath, property.Value);
+            // 親が配列要素ならそのオブジェクトを変更ログに記録して他クライアントに再取得させる。
+            _RecordArrayElementChange(ctx.id, ctx.slashPath);
 
             return PropertyResult.Success(json);
         }
@@ -840,6 +939,18 @@ namespace Lilium.RemoteControl
 
             bool isPost = string.Equals(m, "POST", StringComparison.OrdinalIgnoreCase);
 
+            // 変更フィード。表示中プロパティの GET と同じ 1 往復に相乗りさせるため、単発ルートだけでなく
+            // バッチからも引けるようにする（クライアントは毎サイクル必ずこれを 1 件載せる）。
+            if (_IsChangesPath(absolutePath))
+            {
+                if (!string.Equals(m, "GET", StringComparison.OrdinalIgnoreCase))
+                {
+                    return PropertyResult.Error(405, "Method not allowed");
+                }
+                var hasSince = _TryParseChangesSince(absolutePath, out var since);
+                return PropertyResult.Success(_BuildChangesJson(hasSince, since));
+            }
+
             // 関数呼び出し
             if (isPost && MatchPattern(absolutePath, "/exposed/function/*", RouteMatch.Wildcard))
             {
@@ -1159,7 +1270,8 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// PUT /exposed/object/{id}/@parent: ExposedObjectHandle 同士の親子関係を変更する。
         /// body: { "parentId": "...id..." | null }
-        /// 成功時は child 全体のフルシリアライズを返しつつ SSE で exposed_object_updated を broadcast。
+        /// 成功時は child 全体のフルシリアライズを返しつつ、変更ログに child を記録して
+        /// 他クライアントに再取得させる。
         /// </summary>
         private async Task HandleSetParent(HttpListenerContext context)
         {
@@ -1199,7 +1311,7 @@ namespace Lilium.RemoteControl
                 {
                     value = ExposedPropertySerializer.SerializeFullToJObject(
                         child.Value, GetResolver());
-                    _BroadcastParentChanged(id, value);
+                    _RecordParentChanged(id);
                 }
                 return (ok: true, error: (string)null, value: value);
             });
@@ -1217,43 +1329,21 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// exposed_object_updated メッセージを生成する。キー挿入順
-        /// [type,id,path,value,changed] は Newtonsoft 直列化バイトに影響するため厳守。
+        /// Publishes a @parent change so other clients rebuild their tree. Only the child's id is
+        /// recorded; whoever holds that object refetches it and reads the new parent from it.
         /// </summary>
-        private static JObject _CreateExposedObjectUpdatedMessage(string id, string path, JObject value, bool changed)
+        private static void _RecordParentChanged(string childId)
         {
-            return new JObject
-            {
-                ["type"] = "exposed_object_updated",
-                ["id"] = id,
-                ["path"] = path,
-                ["value"] = value,
-                ["changed"] = changed
-            };
+            ExposedChangeLog.Record(childId);
         }
 
         /// <summary>
-        /// @parent 変更を SSE で broadcast する。child 全体のフルシリアライズを送り、
-        /// 受信側 (RemoteApp) はツリー表示を再構築する。
+        /// Publishes that a leaf inside an array element changed, so dependent fields rewritten through
+        /// onPropertyChanged (ShowIf targets and the like) reach other clients. Writes to a leaf outside
+        /// an array need no record: the client that issued the PUT already knows, and any other client
+        /// displaying that property reads it back through the live property poll.
         /// </summary>
-        private static void _BroadcastParentChanged(string childId, JObject valueJObject)
-        {
-            var message = _CreateExposedObjectUpdatedMessage(childId, "", valueJObject, true);
-
-            foreach (var instance in RemoteControlServerManager.servers.Values)
-            {
-                _ = instance.server?.BroadcastMessage(message, "exposed_object_updated");
-            }
-        }
-
-        /// <summary>
-        /// SetProperty 完了後、変更された葉プロパティが配列要素内のフィールドだった場合、
-        /// その要素全体を exposed_object_updated SSE でブロードキャストする。
-        /// 目的は、onPropertyChanged を介して書き換わった依存フィールド（ShowIf 参照先など）を
-        /// 他クライアントに伝播させること。親インスタンスは property.obj から直接取得し、
-        /// その場で CreateUnregistered の ExposedObjectHandle を生成してシリアライズする。
-        /// </summary>
-        private static void _BroadcastParentElement(string requestId, string slashPath, ExposedProperty property)
+        private static void _RecordArrayElementChange(string requestId, string slashPath)
         {
             if (string.IsNullOrEmpty(slashPath)) return;
 
@@ -1263,23 +1353,7 @@ namespace Lilium.RemoteControl
             // 葉の一つ上のセグメントが数値なら、親は配列要素。
             if (!int.TryParse(parts[parts.Length - 2], out _)) return;
 
-            var parentInstance = property.obj;
-            if (parentInstance == null) return;
-
-            var parentClass = ExposedClass.Find(parentInstance.GetType());
-            if (parentClass == null) return;
-
-            var parentSlashPath = string.Join("/", parts, 0, parts.Length - 1);
-            var parentExposed = ExposedObjectHandle.CreateUnregistered(parentClass, parentInstance);
-            var valueJObject = ExposedPropertySerializer.SerializeFullToJObject(
-                parentExposed, DefaultExposedObjectResolver.Instance);
-
-            var message = _CreateExposedObjectUpdatedMessage(requestId, parentSlashPath, valueJObject, true);
-
-            foreach (var instance in RemoteControlServerManager.servers.Values)
-            {
-                _ = instance.server?.BroadcastMessage(message, "exposed_object_updated");
-            }
+            ExposedChangeLog.Record(requestId);
         }
 
     }
