@@ -95,7 +95,7 @@ namespace Lilium.RemoteControl.Utility
         /// <summary>
         /// URLパスから指定したインデックスのセグメントを取得
         /// </summary>
-        /// <param name="path">URLパス（例: "/exposed/object/123/property/name"）</param>
+        /// <param name="path">URLパス（例: "/live/object/123/property/name"）</param>
         /// <param name="index">取得するセグメントのインデックス（0から開始）</param>
         /// <returns>指定したインデックスのセグメント（存在しない場合はnull）</returns>
         public static string GetPathSegment(string path, int index)

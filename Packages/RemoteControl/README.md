@@ -2,7 +2,7 @@
 
 Remote-control framework for Unity Editor and runtime over **REST polling** — nothing is pushed.
 
-- Mark properties, fields, and methods with `[ExposedProperty]` / `[ExposedFunction]` to expose them to a remote client
+- Mark properties, fields, and methods with `[LiveProperty]` / `[LiveFunction]` to expose them to a remote client
 - REST API for read / write / invoke; a change feed and a per-client event inbox the client polls
 - Works in Edit mode and Play mode
 - No Virgo Motion dependency — usable as standalone Unity remote-control infrastructure
@@ -65,17 +65,17 @@ https://github.com/you-ri/LiveStudio.git?path=/Packages/RemoteControl#beta
    using Lilium.RemoteControl;
    using UnityEngine;
 
-   [ExposedClass]
+   [LiveClass]
    public class MySettings : MonoBehaviour
    {
-       [ExposedProperty]
+       [LiveProperty]
        public float volume { get; set; } = 1.0f;
 
-       [ExposedProperty]
+       [LiveProperty]
        [Slider(0, 100)]
        public int brightness { get; set; } = 50;
 
-       [ExposedFunction]
+       [LiveFunction]
        public void Reset()
        {
            volume = 1.0f;

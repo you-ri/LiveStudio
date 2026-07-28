@@ -10,18 +10,18 @@ using UnityEngine;
 
 namespace Lilium.LiveStudio
 {
-    [ExposedClass(Icon = "deployed_code", Category = "Prop")]
-    [FormerlyExposedAs("GLTFModelLoader")]
+    [LiveClass(Icon = "deployed_code", Category = "Prop")]
+    [FormerlyNamedAs("GLTFModelLoader")]
     public class GltfModel : MonoBehaviour
     {
-        [ExposedField, Hide]
-        [FormerlyExposedAs("path")]
+        [LiveField, Hide]
+        [FormerlyNamedAs("path")]
         private string _path;
 
 
-        [ExposedProperty("path", label = "GLTF_MODELFILEPATH")]
+        [LiveProperty("path", label = "GLTF_MODELFILEPATH")]
         [GLTFFileSelector("gltf", "glb")]
-        [ExposedHelp("GLTF_MODELFILEPATH_HELP")]
+        [Help("GLTF_MODELFILEPATH_HELP")]
         public string path
         {
             get => _path;

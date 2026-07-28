@@ -10,24 +10,24 @@ using Klak.Spout;
 
 namespace Lilium.LiveStudio
 {
-    [ExposedEnum("BackgroundType")]
+    [LiveEnum("BackgroundType")]
     public enum BackgroundType
     {
         SolidColor,
         Skybox,
     }
 
-    [ExposedClass("Screen", Category = "Screen", Icon = "monitor")]
+    [LiveClass("Screen", Category = "Screen", Icon = "monitor")]
     [RequireComponent(typeof(Camera))]
     [RequireComponent(typeof(CinemachineBrain))]
-    public class ScreenController : MonoBehaviour, IExposedDeserializeCallback
+    public class ScreenController : MonoBehaviour, ILiveDeserializeCallback
     {
         // 出力解像度はどのシーンを開いても共通の出力設定なので Project scope で永続化する。
-        [ExposedField(persistScope = PersistScope.Project), Hide]
-        [FormerlyExposedAs("width")]
+        [LiveField(persistScope = PersistScope.Project), Hide]
+        [FormerlyNamedAs("width")]
         private int _width = 1920;
 
-        [ExposedProperty]
+        [LiveProperty]
         public int width
         {
             get
@@ -45,11 +45,11 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [ExposedField(persistScope = PersistScope.Project), Hide]
-        [FormerlyExposedAs("height")]
+        [LiveField(persistScope = PersistScope.Project), Hide]
+        [FormerlyNamedAs("height")]
         private int _height = 1080;
 
-        [ExposedProperty]
+        [LiveProperty]
         public int height
         {
             get
@@ -67,11 +67,11 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [ExposedField(persistScope = PersistScope.Project), Hide]
-        [FormerlyExposedAs("isFullScreen")]
+        [LiveField(persistScope = PersistScope.Project), Hide]
+        [FormerlyNamedAs("isFullScreen")]
         private bool _isFullScreen;
 
-        [ExposedProperty]
+        [LiveProperty]
         public bool isFullScreen
         {
             get => Screen.fullScreen;
@@ -82,11 +82,11 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [ExposedField, Hide]
-        [FormerlyExposedAs("backgroundType")]
+        [LiveField, Hide]
+        [FormerlyNamedAs("backgroundType")]
         private BackgroundType _backgroundType = BackgroundType.Skybox;
 
-        [ExposedProperty]
+        [LiveProperty]
         public BackgroundType backgroundType
         {
             get => _backgroundType;
@@ -97,11 +97,11 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [ExposedField, Hide]
-        [FormerlyExposedAs("backgroundColor")]
+        [LiveField, Hide]
+        [FormerlyNamedAs("backgroundColor")]
         private Color _backgroundColor = Color.black;
 
-        [ExposedProperty, ShowIf(nameof(backgroundType), (int)BackgroundType.SolidColor)]
+        [LiveProperty, ShowIf(nameof(backgroundType), (int)BackgroundType.SolidColor)]
         public Color backgroundColor
         {
             get => _backgroundColor;
@@ -149,13 +149,13 @@ namespace Lilium.LiveStudio
         SpoutSender _spoutSender;
 #endif
 
-        [SerializeField, ExposedField(persistScope = PersistScope.Project), Hide]
-        [FormerlyExposedAs("useSpout")]
+        [SerializeField, LiveField(persistScope = PersistScope.Project), Hide]
+        [FormerlyNamedAs("useSpout")]
         private bool _useSpout;
 
 #if KEIJIRO_KLAK_SPOUT
-        [ExposedProperty]
-        [ExposedHelp("SCREEN_USESPOUT")]
+        [LiveProperty]
+        [Help("SCREEN_USESPOUT")]
         public bool useSpout
         {
             get => _spoutSender != null && _spoutSender.enabled;
@@ -182,7 +182,7 @@ namespace Lilium.LiveStudio
             _ApplyAll();
         }
 
-        public void OnAfterExposedDeserialize() => _ApplyAll();
+        public void OnAfterLiveDeserialize() => _ApplyAll();
 
         void _ApplyAll()
         {

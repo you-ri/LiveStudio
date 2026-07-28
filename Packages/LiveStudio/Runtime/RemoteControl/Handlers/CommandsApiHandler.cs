@@ -11,7 +11,7 @@ using Lilium.LiveStudio;
 namespace Lilium.LiveStudio
 {
 
-    [Obsolete("CommandsApiHandler is deprecated and will be removed in future versions. repleace with ExposedFunctions.")]
+    [Obsolete("CommandsApiHandler is deprecated and will be removed in future versions. repleace with LiveFunctions.")]
     public class CommandsApiHandler : BaseRemoteControlApiHandler
     {
         [System.Serializable]

@@ -21,7 +21,7 @@ namespace Lilium.RemoteControl.Server
         public RemoteControlServerCore server => _server;
 
         private readonly RemoteControlServerConfig _serverConfig;
-        private readonly ExposedObjectContainer _container;
+        private readonly LiveObjectContainer _container;
 
         private RemoteControlServerCore _server;
 
@@ -29,7 +29,7 @@ namespace Lilium.RemoteControl.Server
         // is allowed to shut it down.
         private bool _isServerOwner;
 
-        public RemoteControlServerRunner(RemoteControlServerConfig serverConfig, ExposedObjectContainer container)
+        public RemoteControlServerRunner(RemoteControlServerConfig serverConfig, LiveObjectContainer container)
         {
             _serverConfig = serverConfig;
             _container = container;

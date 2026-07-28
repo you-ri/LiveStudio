@@ -25,66 +25,66 @@ namespace Lilium.RemoteControl.Tests
             public int port;
         }
 
-        [ExposedClass("TestReceiver")]
+        [LiveClass("TestReceiver")]
         public class TestReceiver : TestReceiverBase
         {
-            [ExposedField]
+            [LiveField]
             public int value;
         }
 
-        [ExposedClass("TestOtherComponent")]
+        [LiveClass("TestOtherComponent")]
         public class TestOtherComponent : MonoBehaviour
         {
-            [ExposedField]
+            [LiveField]
             public string label;
         }
 
-        [ExposedClass("TestHolder")]
+        [LiveClass("TestHolder")]
         public class TestHolder : MonoBehaviour
         {
-            [SerializeField, ExposedField, ObjectSelector]
+            [SerializeField, LiveField, ObjectSelector]
             public TestReceiverBase receiver;
         }
 
         // A nested (inline-expanded) exposed object that carries the ObjectSelector field, used to
-        // guard the SerializeExposedObject selector dispatch on the nested path (the mirror of the
+        // guard the SerializeLiveObject selector dispatch on the nested path (the mirror of the
         // AssetSelector fix). Without it, a nested ObjectSelector field falls through to generic
         // UnityEngine.Object serialization instead of emitting the "wrapperId.components[N]" @ref.
-        [ExposedClass("NestedReceiverData")]
+        [LiveClass("NestedReceiverData")]
         public class NestedReceiverData
         {
-            [ExposedField, ObjectSelector]
+            [LiveField, ObjectSelector]
             public TestReceiverBase receiver;
         }
 
-        [ExposedClass("TestNestedHolder")]
+        [LiveClass("TestNestedHolder")]
         public class TestNestedHolder : MonoBehaviour
         {
-            [ExposedField]
+            [LiveField]
             public NestedReceiverData inner = new NestedReceiverData();
         }
 
         #endregion
 
-        private TestExposedObjectResolver _resolver;
+        private TestLiveObjectResolver _resolver;
         private readonly List<GameObject> _createdGameObjects = new List<GameObject>();
 
         [SetUp]
         public void SetUp()
         {
-            ExposedClass.Clear();
+            LiveClass.Clear();
 
-            var toRemove = ExposedObjectRegistry.instances.ToList();
+            var toRemove = LiveObjectRegistry.instances.ToList();
             foreach (var obj in toRemove) obj.Unregister();
 
-            ExposedClass.RegisterFromAttributes<ExposedGameObject>();
-            ExposedClass.RegisterFromAttributes<TestReceiver>();
-            ExposedClass.RegisterFromAttributes<TestOtherComponent>();
-            ExposedClass.RegisterFromAttributes<TestHolder>();
-            ExposedClass.RegisterFromAttributes<NestedReceiverData>();
-            ExposedClass.RegisterFromAttributes<TestNestedHolder>();
+            LiveClass.RegisterFromAttributes<LiveGameObject>();
+            LiveClass.RegisterFromAttributes<TestReceiver>();
+            LiveClass.RegisterFromAttributes<TestOtherComponent>();
+            LiveClass.RegisterFromAttributes<TestHolder>();
+            LiveClass.RegisterFromAttributes<NestedReceiverData>();
+            LiveClass.RegisterFromAttributes<TestNestedHolder>();
 
-            _resolver = new TestExposedObjectResolver();
+            _resolver = new TestLiveObjectResolver();
         }
 
         [TearDown]
@@ -96,7 +96,7 @@ namespace Lilium.RemoteControl.Tests
             }
             _createdGameObjects.Clear();
 
-            var toRemove = ExposedObjectRegistry.instances.ToList();
+            var toRemove = LiveObjectRegistry.instances.ToList();
             foreach (var obj in toRemove) obj.Unregister();
         }
 
@@ -107,9 +107,9 @@ namespace Lilium.RemoteControl.Tests
             return go;
         }
 
-        private ExposedGameObject _WrapGameObject(GameObject go)
+        private LiveGameObject _WrapGameObject(GameObject go)
         {
-            var wrapper = new ExposedGameObject(go);
+            var wrapper = new LiveGameObject(go);
             wrapper.OnEnable();
             return wrapper;
         }
@@ -119,7 +119,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Serialize_ComponentValue_EmitsComponentsPathRef()
         {
-            // Arrange: receiver GameObject (ExposedGameObject wrapper) with TestReceiver component
+            // Arrange: receiver GameObject (LiveGameObject wrapper) with TestReceiver component
             var receiverGo = _CreateGameObject("ReceiverGO");
             var receiverWrapper = _WrapGameObject(receiverGo);
             var receiver = receiverGo.AddComponent<TestReceiver>();
@@ -128,10 +128,10 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = receiver;
-            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderLive = new LiveObjectHandle("holder-id", LiveClass.Find(typeof(TestHolder)), holder);
 
             // Act
-            var fullJson = ExposedPropertySerializer.ToJson(holderExposed, _resolver);
+            var fullJson = LivePropertySerializer.ToJson(holderLive, _resolver);
             var root = JObject.Parse(fullJson);
 
             // Assert
@@ -151,9 +151,9 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = null;
-            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderLive = new LiveObjectHandle("holder-id", LiveClass.Find(typeof(TestHolder)), holder);
 
-            var fullJson = ExposedPropertySerializer.ToJson(holderExposed, _resolver);
+            var fullJson = LivePropertySerializer.ToJson(holderLive, _resolver);
             var root = JObject.Parse(fullJson);
 
             Assert.AreEqual(JTokenType.Null, root["receiver"].Type);
@@ -171,13 +171,13 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = receiver;
-            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderLive = new LiveObjectHandle("holder-id", LiveClass.Find(typeof(TestHolder)), holder);
 
             // Act
-            var fullJson = ExposedPropertySerializer.ToJson(holderExposed, _resolver);
+            var fullJson = LivePropertySerializer.ToJson(holderLive, _resolver);
             var root = JObject.Parse(fullJson);
 
-            // Assert: path の index は ExposedGameObject._components のフィルタ済み配列に揃う
+            // Assert: path の index は LiveGameObject._components のフィルタ済み配列に揃う
             var refKey = root["receiver"]?["@ref"]?.Value<string>();
             Assert.IsNotNull(refKey);
             Assert.AreEqual($"{wrapper.id}.components[1]", refKey);
@@ -187,7 +187,7 @@ namespace Lilium.RemoteControl.Tests
         public void SerializeNested_ObjectSelector_EmitsComponentsPathRef()
         {
             // Regression: an [ObjectSelector] field on a NESTED (inline-expanded) exposed object must be
-            // serialized as a "wrapperId.components[N]" @ref by SerializeExposedObject, mirroring the
+            // serialized as a "wrapperId.components[N]" @ref by SerializeLiveObject, mirroring the
             // top-level path. Without the nested selector dispatch it falls through to generic
             // UnityEngine.Object serialization (wrong @ref format or full inline expansion).
             var receiverGo = _CreateGameObject("ReceiverGO");
@@ -197,9 +197,9 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("NestedHolderGO");
             var holder = holderGo.AddComponent<TestNestedHolder>();
             holder.inner.receiver = receiver;
-            var holderExposed = new ExposedObjectHandle("nested-holder-id", ExposedClass.Find(typeof(TestNestedHolder)), holder);
+            var holderLive = new LiveObjectHandle("nested-holder-id", LiveClass.Find(typeof(TestNestedHolder)), holder);
 
-            var root = JObject.Parse(ExposedPropertySerializer.ToJson(holderExposed, _resolver));
+            var root = JObject.Parse(LivePropertySerializer.ToJson(holderLive, _resolver));
 
             var innerToken = root["inner"] as JObject;
             Assert.IsNotNull(innerToken, "nested inner object should expand inline");
@@ -228,14 +228,14 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = null;
-            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderLive = new LiveObjectHandle("holder-id", LiveClass.Find(typeof(TestHolder)), holder);
 
             var payload = "{\"value\":{\"@type\":\"TestReceiver\",\"@ref\":\"" + receiverWrapper.id + ".components[0]\"}}";
-            var property = holderExposed.FindProperty("receiver");
+            var property = holderLive.FindProperty("receiver");
             Assert.IsTrue(property.HasValue);
 
             // Act
-            var ok = ExposedPropertySerializer.FromJson(payload, property.Value, _resolver);
+            var ok = LivePropertySerializer.FromJson(payload, property.Value, _resolver);
 
             // Assert
             Assert.IsTrue(ok);
@@ -252,12 +252,12 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = receiver;
-            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderLive = new LiveObjectHandle("holder-id", LiveClass.Find(typeof(TestHolder)), holder);
 
-            var property = holderExposed.FindProperty("receiver");
+            var property = holderLive.FindProperty("receiver");
             Assert.IsTrue(property.HasValue);
 
-            var ok = ExposedPropertySerializer.FromJson("{\"value\":null}", property.Value, _resolver);
+            var ok = LivePropertySerializer.FromJson("{\"value\":null}", property.Value, _resolver);
 
             Assert.IsTrue(ok);
             Assert.IsNull(holder.receiver);
@@ -274,12 +274,12 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = receiver;
-            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderLive = new LiveObjectHandle("holder-id", LiveClass.Find(typeof(TestHolder)), holder);
 
-            var property = holderExposed.FindProperty("receiver");
+            var property = holderLive.FindProperty("receiver");
 
             var payload = "{\"value\":{\"@type\":\"TestReceiver\",\"@ref\":\"non-existent-id.components[0]\"}}";
-            ExposedPropertySerializer.FromJson(payload, property.Value, _resolver);
+            LivePropertySerializer.FromJson(payload, property.Value, _resolver);
 
             Assert.IsNull(holder.receiver, "unresolved @ref should null out the field (v1 behavior)");
         }
@@ -301,7 +301,7 @@ namespace Lilium.RemoteControl.Tests
             goB.AddComponent<TestReceiver>();
 
             // Act: types JSON を取得
-            var typeJson = ExposedTypeInfoSerializer.ToJson(ExposedClass.Find(typeof(TestHolder)));
+            var typeJson = LiveTypeInfoSerializer.ToJson(LiveClass.Find(typeof(TestHolder)));
             var parsed = JObject.Parse(typeJson);
             var properties = parsed["properties"] as JArray;
             var receiverProp = properties.First(p => p["name"]?.Value<string>() == "receiver") as JObject;
@@ -331,7 +331,7 @@ namespace Lilium.RemoteControl.Tests
             _WrapGameObject(goB);
             goB.AddComponent<TestOtherComponent>(); // 型ミスマッチ
 
-            var typeJson = ExposedTypeInfoSerializer.ToJson(ExposedClass.Find(typeof(TestHolder)));
+            var typeJson = LiveTypeInfoSerializer.ToJson(LiveClass.Find(typeof(TestHolder)));
             var parsed = JObject.Parse(typeJson);
             var receiverProp = (parsed["properties"] as JArray)
                 .First(p => p["name"]?.Value<string>() == "receiver") as JObject;
@@ -354,18 +354,18 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = receiver;
-            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderLive = new LiveObjectHandle("holder-id", LiveClass.Find(typeof(TestHolder)), holder);
 
             // Serialize full object, extract receiver token, wrap in {value:...}, and apply back after clearing
-            var fullJson = ExposedPropertySerializer.ToJson(holderExposed, _resolver);
+            var fullJson = LivePropertySerializer.ToJson(holderLive, _resolver);
             var fullRoot = JObject.Parse(fullJson);
             var receiverToken = fullRoot["receiver"].DeepClone();
 
             holder.receiver = null;
-            var property = holderExposed.FindProperty("receiver");
+            var property = holderLive.FindProperty("receiver");
             var payload = new JObject { ["value"] = receiverToken };
 
-            var ok = ExposedPropertySerializer.FromJson(payload.ToString(), property.Value, _resolver);
+            var ok = LivePropertySerializer.FromJson(payload.ToString(), property.Value, _resolver);
             Assert.IsTrue(ok);
             Assert.AreEqual(receiver, holder.receiver);
         }
@@ -385,16 +385,16 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = receiver;
-            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderLive = new LiveObjectHandle("holder-id", LiveClass.Find(typeof(TestHolder)), holder);
 
             // Act: デフォルト値をキャプチャ（Play開始相当）
-            ExposedPropertyUtility.SetDefault(holderExposed);
+            LivePropertyUtility.SetDefault(holderLive);
 
             // Assert: 値を変更していないのでdirtyではない
-            Assert.IsFalse(holderExposed.IsPropertyDirty("receiver"),
+            Assert.IsFalse(holderLive.IsPropertyDirty("receiver"),
                 "ObjectSelector field should not be dirty immediately after capture");
-            Assert.IsFalse(ExposedObjectDefaultRegistry.HasDirtyChildProperty(
-                holderExposed, "receiver", _resolver),
+            Assert.IsFalse(LiveObjectDefaultRegistry.HasDirtyChildProperty(
+                holderLive, "receiver", _resolver),
                 "HasDirtyChildProperty should return false immediately after capture");
         }
 
@@ -413,15 +413,15 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = receiverA;
-            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderLive = new LiveObjectHandle("holder-id", LiveClass.Find(typeof(TestHolder)), holder);
 
-            ExposedPropertyUtility.SetDefault(holderExposed);
+            LivePropertyUtility.SetDefault(holderLive);
 
             // Act: receiverB に変更
             holder.receiver = receiverB;
 
             // Assert: dirty になるべき
-            Assert.IsTrue(holderExposed.IsPropertyDirty("receiver"),
+            Assert.IsTrue(holderLive.IsPropertyDirty("receiver"),
                 "receiver should be dirty after changing to a different component");
         }
 
@@ -440,13 +440,13 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = receiver;
-            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderLive = new LiveObjectHandle("holder-id", LiveClass.Find(typeof(TestHolder)), holder);
 
-            ExposedPropertyUtility.SetDefault(holderExposed);
+            LivePropertyUtility.SetDefault(holderLive);
 
             // Act: 値を変更 (None = null) してから Revert
             holder.receiver = null;
-            var reverted = holderExposed.Revert("receiver");
+            var reverted = holderLive.Revert("receiver");
 
             // Assert: 初期値 (receiver) に戻ること
             Assert.IsTrue(reverted, "Revert should return true");
@@ -468,13 +468,13 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = receiverA;
-            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderLive = new LiveObjectHandle("holder-id", LiveClass.Find(typeof(TestHolder)), holder);
 
-            ExposedPropertyUtility.SetDefault(holderExposed);
+            LivePropertyUtility.SetDefault(holderLive);
 
             // Act: receiverB に変更してから Revert
             holder.receiver = receiverB;
-            var reverted = holderExposed.Revert("receiver");
+            var reverted = holderLive.Revert("receiver");
 
             // Assert: receiverA に戻ること
             Assert.IsTrue(reverted);
@@ -492,13 +492,13 @@ namespace Lilium.RemoteControl.Tests
             var holderGo = _CreateGameObject("HolderGO");
             var holder = holderGo.AddComponent<TestHolder>();
             holder.receiver = null;
-            var holderExposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestHolder)), holder);
+            var holderLive = new LiveObjectHandle("holder-id", LiveClass.Find(typeof(TestHolder)), holder);
 
-            ExposedPropertyUtility.SetDefault(holderExposed);
+            LivePropertyUtility.SetDefault(holderLive);
 
             // Act: receiver をセットしてから Revert
             holder.receiver = receiver;
-            var reverted = holderExposed.Revert("receiver");
+            var reverted = holderLive.Revert("receiver");
 
             // Assert: null に戻ること
             Assert.IsTrue(reverted);

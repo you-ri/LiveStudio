@@ -12,11 +12,11 @@ namespace Lilium.LiveStudio
     ///
     /// Named <c>OperationBase</c> (not bare <c>Operation</c>) so the abstract base and its concrete kinds read
     /// distinctly, mirroring <see cref="InputSource"/> / <see cref="ICameraController"/>; the user-facing
-    /// concept is "Operation". <c>[ExposedClass]</c> on the base lets the owning field's <c>[TypeSelector]</c>
+    /// concept is "Operation". <c>[LiveClass]</c> on the base lets the owning field's <c>[TypeSelector]</c>
     /// enumerate the concrete kinds; only the concrete kinds are ever instantiated.
     /// </summary>
     [Serializable]
-    [ExposedClass]
+    [LiveClass]
     public abstract class OperationBase
     {
         /// <summary>Runs the operation for the current frame's input state.</summary>

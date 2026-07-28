@@ -26,34 +26,34 @@ namespace Lilium.LiveStudio
     /// buttons. <see cref="WarpTo"/>'s argument is a dropdown sourced from <see cref="marks"/>.
     /// </summary>
     [Serializable]
-    [ExposedClass]
+    [LiveClass]
     public struct SetBundleEntry
     {
         // Identity / state fields are hidden from the generic object UI used by the stage detail page:
         // there they would be noise, and load / activate are driven from the Stage page's cards. They
         // are still serialized (Hide does not skip serialization), so the card list keeps reading them.
-        [ExposedField, Hide]
+        [LiveField, Hide]
         public string id;
 
-        [ExposedField]
+        [LiveField]
         public string name;
 
-        [ExposedField, Hide]
+        [LiveField, Hide]
         public string filePath;
 
         /// <summary>
         /// Desired state. Toggling this loads (true) or unloads (false) the set. Mirrored to the
         /// backing <see cref="SetBundleAsset"/>, which is where the state is actually persisted.
         /// </summary>
-        [ExposedField]
+        [LiveField]
         public bool enabled;
 
         /// <summary>Actual state, projected from the backing <see cref="SetBundleAsset"/>.</summary>
-        [ExposedField(persistable = false), Hide]
+        [LiveField(persistable = false), Hide]
         public bool isLoaded;
 
         /// <summary>True when this set is the active set.</summary>
-        [ExposedField, Hide]
+        [LiveField, Hide]
         public bool isActive;
 
         /// <summary>
@@ -61,7 +61,7 @@ namespace Lilium.LiveStudio
         /// present and loaded, and cannot be unloaded or removed; only activation is allowed.
         /// Rebuilt at runtime, so it is not persisted.
         /// </summary>
-        [ExposedField(persistable = false), Hide]
+        [LiveField(persistable = false), Hide]
         public bool isPersistent;
 
         /// <summary>
@@ -69,7 +69,7 @@ namespace Lilium.LiveStudio
         /// The source of <see cref="WarpTo"/>'s dropdown options; not shown as its own control. Empty
         /// when the set is not loaded. Derived view data, so not persisted.
         /// </summary>
-        [ExposedField(persistable = false), Hide]
+        [LiveField(persistable = false), Hide]
         public string[] marks;
 
         /// <summary>
@@ -78,12 +78,12 @@ namespace Lilium.LiveStudio
         /// sourced from <see cref="marks"/>. Runs on a boxed copy of the entry, so it only reads its own
         /// fields and delegates to the live <see cref="StageManager"/> singleton.
         /// </summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void WarpTo([StringSelector(nameof(marks))] string markLabel)
             => StageManager.current?.WarpTo(id, markLabel);
 
         /// <summary>Warps the current avatar to the origin (doubling as a "reset to zero").</summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void WarpToOrigin() => StageManager.current?.WarpTo(id, string.Empty);
     }
 
@@ -103,9 +103,9 @@ namespace Lilium.LiveStudio
     /// bundle sets reconcile through one path.
     /// </summary>
     [Serializable]
-    [ExposedClass(Icon = "public", Category = "Stage", HideInScene = true)]
+    [LiveClass(Icon = "public", Category = "Stage", HideInScene = true)]
     [MovedFrom(false, null, null, "WorldManager")]
-    public class StageManager : IExposedObject
+    public class StageManager : ILiveObject
     {
         const string kId = "b2f7c9a1-3d4e-4f8a-9c1b-7e2d5a6f8c30";
 
@@ -143,7 +143,7 @@ namespace Lilium.LiveStudio
 
         public string name { get; set; } = "Stage Manager";
 
-        public ExposedObjectHandle? exposedObject => ExposedObjectRegistry.FindByTarget(this);
+        public LiveObjectHandle? liveObject => LiveObjectRegistry.FindByTarget(this);
 
         public string id => kId;
 
@@ -151,7 +151,7 @@ namespace Lilium.LiveStudio
         // followed by each SetBundleAsset in ExternalAssetManager. Not persisted — the SetBundleAsset
         // entries are the persisted source of truth — so it is rebuilt whenever the asset list changes.
         [NonSerialized]
-        [ExposedField(persistable = false)]
+        [LiveField(persistable = false)]
         private SetBundleEntry[] sets = Array.Empty<SetBundleEntry>();
 
         // The scene that was active when this manager started (the bootstrap / persistent set).
@@ -173,8 +173,8 @@ namespace Lilium.LiveStudio
         {
             _current = this;
 
-            ExposedObjectRegistry.Create<StageManager>(this, kId);
-            ExposedClass.Get<StageManager>().onPropertyChanged += _OnPropertyChanged;
+            LiveObjectRegistry.Create<StageManager>(this, kId);
+            LiveClass.Get<StageManager>().onPropertyChanged += _OnPropertyChanged;
 
             // The active scene at startup is the bootstrap / persistent set. Surface it as the
             // first, non-removable entry so the remote app can see and re-activate it.
@@ -201,7 +201,7 @@ namespace Lilium.LiveStudio
 
             StageMarkRegistry.onChanged -= _OnMarksChanged;
 
-            ExposedClass.Get<StageManager>().onPropertyChanged -= _OnPropertyChanged;
+            LiveClass.Get<StageManager>().onPropertyChanged -= _OnPropertyChanged;
 
             // ExternalAssetManager owns the loaded set bundles and unloads them in its own teardown;
             // here we only drop our subscription.
@@ -211,7 +211,7 @@ namespace Lilium.LiveStudio
                 _subscribedManager = null;
             }
 
-            ExposedObjectRegistry.FindByTarget(this)?.Unregister();
+            LiveObjectRegistry.FindByTarget(this)?.Unregister();
 
             if (_current == this) _current = null;
         }
@@ -251,7 +251,7 @@ namespace Lilium.LiveStudio
         /// creates the backing <see cref="SetBundleAsset"/>; the projected view rebuilds on the resulting
         /// assets-changed notification.
         /// </summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void AddSet(string filePath)
         {
             if (string.IsNullOrEmpty(filePath))
@@ -283,7 +283,7 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>Unloads (if loaded) and removes the entry with the given id.</summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void RemoveSet(string setId)
         {
             if (string.IsNullOrEmpty(setId)) return;
@@ -301,7 +301,7 @@ namespace Lilium.LiveStudio
         /// sets stay loaded and only the active one changes here. (A stage-switch operation wanting a complete
         /// replace uses <see cref="SwitchToSetByName"/> instead.)
         /// </summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void SetActiveSet(string setId)
         {
             if (string.IsNullOrEmpty(setId)) return;
@@ -456,7 +456,7 @@ namespace Lilium.LiveStudio
         /// Forwards remote-app edits of <c>sets</c> (an entry's <see cref="SetBundleEntry.enabled"/>
         /// flag) to the backing <see cref="SetBundleAsset"/>, which drives the actual load/unload.
         /// </summary>
-        private void _OnPropertyChanged(ExposedProperty property, object oldValue)
+        private void _OnPropertyChanged(LiveProperty property, object oldValue)
         {
             if (!_initialized) return;
             if (!property.PathContains(nameof(sets))) return;
@@ -649,9 +649,9 @@ namespace Lilium.LiveStudio
         private void _Broadcast()
         {
             // Pass the target instance (not the nullable handle): the (object) overload resolves the
-            // handle via the registry. Passing an ExposedObjectHandle? would box to object and fail
+            // handle via the registry. Passing an LiveObjectHandle? would box to object and fail
             // the registry lookup.
-            ExposedPropertyBroadcast.BroadcastProperty(this, "sets");
+            LivePropertyBroadcast.BroadcastProperty(this, "sets");
         }
     }
 }

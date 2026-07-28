@@ -17,20 +17,20 @@ namespace Lilium.LiveStudio
     /// <see cref="OperationBase"/>s. Each frame every enabled set evaluates its input and runs its operations in
     /// order.
     ///
-    /// A plain serializable <see cref="IExposedObject"/> (like <see cref="StageManager"/> /
+    /// A plain serializable <see cref="ILiveObject"/> (like <see cref="StageManager"/> /
     /// <see cref="ExternalAssetManager"/>), stored in the scene's <c>RemoteControlBehaviour._objects</c>
     /// through its <c>[SerializeReference]</c> list, so the authored sets persist in the scene.
     /// </summary>
     [Serializable]
-    [ExposedClass(Icon = "bolt", Category = "Operation", HideInScene = true)]
+    [LiveClass(Icon = "bolt", Category = "Operation", HideInScene = true)]
     // Renamed from ActionManager (and earlier TriggerManager). MovedFrom restores the
-    // [SerializeReference] managed type in old scene/prefab YAML; FormerlyExposedAs restores the
+    // [SerializeReference] managed type in old scene/prefab YAML; FormerlyNamedAs restores the
     // RemoteControl @type discriminator from old *.live.json. MovedFrom allows only one source, so it
     // names the most recent prior type (ActionManager); the @type history keeps both old names.
     [MovedFrom(false, null, null, "ActionManager")]
-    [FormerlyExposedAs("ActionManager")]
-    [FormerlyExposedAs("TriggerManager")]
-    public class OperationManager : IExposedObject, IExposedDeserializeCallback
+    [FormerlyNamedAs("ActionManager")]
+    [FormerlyNamedAs("TriggerManager")]
+    public class OperationManager : ILiveObject, ILiveDeserializeCallback
     {
         const string kId = "c4e8b2d6-7a91-4f53-8e0c-1d9a6b3f2e74";
 
@@ -46,14 +46,14 @@ namespace Lilium.LiveStudio
 
         public string name { get; set; } = "Operation Manager";
 
-        public ExposedObjectHandle? exposedObject => ExposedObjectRegistry.FindByTarget(this);
+        public LiveObjectHandle? liveObject => LiveObjectRegistry.FindByTarget(this);
 
         public string id => kId;
 
         /// <summary>The authored operation sets. Polymorphic input/operations serialize via SerializeReference.</summary>
         [SerializeReference, Select]
-        [ExposedField]
-        [FormerlyExposedAs("actionSets")]
+        [LiveField]
+        [FormerlyNamedAs("actionSets")]
         [FormerlySerializedAs("actionSets")]
         public List<OperationSet> operationSets = new List<OperationSet>();
 
@@ -61,7 +61,7 @@ namespace Lilium.LiveStudio
         /// out, each operating an <see cref="OperationSet"/> by id. Persisted with the manager in the scene.
         /// Tiles are added/removed/moved through the generic array REST; only whole decks need add/remove
         /// functions here.</summary>
-        [ExposedField]
+        [LiveField]
         public List<Deck> decks = new List<Deck>();
 
         // The shared input map all KeyInputSources create their input actions in. Rebuilt when the set of
@@ -81,8 +81,8 @@ namespace Lilium.LiveStudio
         {
             _current = this;
 
-            ExposedObjectRegistry.Create<OperationManager>(this, kId);
-            ExposedClass.Get<OperationManager>().onPropertyChanged += _OnPropertyChanged;
+            LiveObjectRegistry.Create<OperationManager>(this, kId);
+            LiveClass.Get<OperationManager>().onPropertyChanged += _OnPropertyChanged;
 
             _EnsureOperationSetIds();
             _RebuildInputMap();
@@ -94,11 +94,11 @@ namespace Lilium.LiveStudio
         {
             _initialized = false;
 
-            ExposedClass.Get<OperationManager>().onPropertyChanged -= _OnPropertyChanged;
+            LiveClass.Get<OperationManager>().onPropertyChanged -= _OnPropertyChanged;
 
             _TeardownInputMap();
 
-            ExposedObjectRegistry.FindByTarget(this)?.Unregister();
+            LiveObjectRegistry.FindByTarget(this)?.Unregister();
 
             if (_current == this) _current = null;
         }
@@ -228,7 +228,7 @@ namespace Lilium.LiveStudio
         /// poll and light its cards while an input (or the manual hold) is firing. Read-only and hidden;
         /// reflects the value recorded by the most recent <see cref="Update"/>. Polled rather than pushed
         /// to every client, so it costs nothing while the Operations page is not open.</summary>
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public float[] operationSetValues
         {
             get
@@ -244,7 +244,7 @@ namespace Lilium.LiveStudio
 
         public void Reset() { }
 
-        public void OnAfterExposedDeserialize()
+        public void OnAfterLiveDeserialize()
         {
             // A live-scene restore replaces the operation sets list; make sure every set is addressable
             // before anything reads it by id (see _EnsureOperationSetIds).
@@ -269,7 +269,7 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>Adds a new operation set (default key input, no operations) and rebuilds the input map.</summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void AddOperationSet() => AddOperationSet(new KeyInputSource());
 
         /// <summary>Adds a pre-built operation set from the given input and operations, rebuilds the input map and
@@ -332,7 +332,7 @@ namespace Lilium.LiveStudio
             return input;
         }
 
-        /// <summary>Creates an operation set that invokes the <c>[ExposedFunction]</c> (named
+        /// <summary>Creates an operation set that invokes the <c>[LiveFunction]</c> (named
         /// <paramref name="functionName"/>) on the object with id <paramref name="targetId"/>, bound to the
         /// momentary key <paramref name="binding"/> (a control path; empty = unbound). The set is named
         /// <paramref name="name"/> (the function's display name; falls back to the generic default when empty).
@@ -342,7 +342,7 @@ namespace Lilium.LiveStudio
         /// the target object directly (a nested exposed function); empty = on the target itself. Both are
         /// trailing optionals, so callers of the no-argument / non-nested overload are unaffected. Returns the
         /// new set's id. Drives the "bind this function button to a key" flow.</summary>
-        [ExposedFunction]
+        [LiveFunction]
         public string AddFunctionOperation(string targetId, string functionName, string name, string binding, string argsJson = "", string propertyPath = "")
         {
             var set = _AddOperationSet(
@@ -362,7 +362,7 @@ namespace Lilium.LiveStudio
         /// For a Value-mode (slider) control, <paramref name="min"/> and <paramref name="max"/> are inherited
         /// from the source slider so the drag maps its 0..1 onto that range; they are ignored for non-slider
         /// kinds. Returns the new set's id. Drives the "bind this control to a key" flow.</summary>
-        [ExposedFunction]
+        [LiveFunction]
         public string AddPropertyOperation(string targetId, string propertyPath, string mode, string name, string binding, string group, float min = 0f, float max = 1f)
         {
             var inputMode = System.Enum.TryParse<InputMode>(mode, ignoreCase: true, out var m)
@@ -392,7 +392,7 @@ namespace Lilium.LiveStudio
         /// tap switches the avatar. The avatar name and label are resolved from
         /// <see cref="ExternalAssetManager"/> so the remote app only supplies the id. Returns the new set's id.
         /// Drives the remote app's "add this avatar as a switch tile" affordance on the Avatar page.</summary>
-        [ExposedFunction]
+        [LiveFunction]
         public string AddSwitchAvatarOperation(string avatarAssetId)
         {
             // Resolve the avatar's display name from the asset (SwitchAvatarOperation matches avatars by name,
@@ -417,14 +417,14 @@ namespace Lilium.LiveStudio
         /// <summary>The control path captured by the most recent <see cref="StartKeyCapture"/> (empty while
         /// waiting, or if it was cancelled / timed out). The remote app's add-operation dialog polls this to show
         /// the captured key before committing the new set. Runtime-only.</summary>
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public string capturedBinding => _capturedBinding;
 
         /// <summary>Listens for the next key/button on the Studio machine and stores it in
         /// <see cref="capturedBinding"/>, creating no operation set. Lets the add-operation dialog capture an input
         /// before the user commits (Add), so the set can be born already bound. Hidden so the generic UI does
         /// not surface it as a bare button (it needs the dialog's key-capture feedback).</summary>
-        [ExposedFunction, Hide]
+        [LiveFunction, Hide]
         public void StartKeyCapture() => _StartKeyCaptureAsync();
 
         // Captures into a throwaway map/action so no operation set is created and the shared input map is left
@@ -454,7 +454,7 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>Removes the operation set with the given id and rebuilds the input map.</summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void RemoveOperationSet(string operationSetId)
         {
             int index = _IndexOf(operationSetId);
@@ -466,7 +466,7 @@ namespace Lilium.LiveStudio
 
         /// <summary>Adds a new control deck with a unique auto-generated name and returns that name. The
         /// remote app then adds tiles by placing controls' <see cref="DeckControl.deckName"/> onto it.</summary>
-        [ExposedFunction]
+        [LiveFunction]
         public string AddDeck()
         {
             var deck = new Deck { name = _UniqueDeckName("Deck", null) };
@@ -478,7 +478,7 @@ namespace Lilium.LiveStudio
         /// <summary>Removes the deck with the given name and moves any controls that were on it to the default
         /// page (no unplaced state; a fresh default page is created if this was the last deck). No-op if the
         /// name is unknown.</summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void RemoveDeck(string deckName)
         {
             if (string.IsNullOrEmpty(deckName)) return;
@@ -505,7 +505,7 @@ namespace Lilium.LiveStudio
         /// auto-suffixing on collision so deck names stay unique, and updates every control placed on it so the
         /// reference follows the rename. Returns the resulting (possibly suffixed) name; returns the original
         /// name unchanged for an unknown current name, an empty new name, or a no-op rename.</summary>
-        [ExposedFunction]
+        [LiveFunction]
         public string RenameDeck(string deckName, string newName)
         {
             if (string.IsNullOrEmpty(deckName) || string.IsNullOrEmpty(newName)) return deckName;
@@ -537,7 +537,7 @@ namespace Lilium.LiveStudio
         /// <paramref name="deckName"/> at grid cell (<paramref name="x"/>, <paramref name="y"/>). An empty
         /// <paramref name="deckName"/> falls back to the default page at a free cell (no unplaced state).
         /// No-op for an unknown id.</summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void PlaceControl(string operationSetId, string deckName, int x, int y)
         {
             int index = _IndexOf(operationSetId);
@@ -564,7 +564,7 @@ namespace Lilium.LiveStudio
         /// never lands on top of one already there. An empty <paramref name="deckName"/> means the default
         /// page. This is the "add a tile to this deck" entry point; <see cref="PlaceControl"/> takes an
         /// explicit cell and stays the drag-and-drop move. No-op for an unknown id.</summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void PlaceControlOnFreeCell(string operationSetId, string deckName)
         {
             int index = _IndexOf(operationSetId);
@@ -578,7 +578,7 @@ namespace Lilium.LiveStudio
         /// <summary>Swaps the control kind (<c>DeckButton</c> / <c>DeckToggle</c> / <c>DeckSlider</c>) of
         /// the operation set with the given id, preserving its placement (deck and grid cell/span). No-op for
         /// an unknown id or type name.</summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void SetControlType(string operationSetId, string typeName)
         {
             int index = _IndexOf(operationSetId);
@@ -772,7 +772,7 @@ namespace Lilium.LiveStudio
         /// from <see cref="Update"/> as if its input were held active (independent of
         /// <see cref="OperationSet.enabled"/>); toggling off releases it. Lets the remote app fire a set from
         /// its card without a bound input. The broadcast lets the card reflect the new hold state.</summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void ToggleOperationSet(string operationSetId)
         {
             int index = _IndexOf(operationSetId);
@@ -791,7 +791,7 @@ namespace Lilium.LiveStudio
         /// remote app's momentary (Button-mode) card, which holds on press and releases on pointer-up: an
         /// idempotent set avoids the desync a flip (<see cref="ToggleOperationSet"/>) would suffer if a press
         /// or release event were missed. No-op (and no broadcast) when already in the requested state.</summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void SetOperationSetHeld(string operationSetId, bool held)
         {
             int index = _IndexOf(operationSetId);
@@ -811,7 +811,7 @@ namespace Lilium.LiveStudio
         /// No broadcast: <see cref="OperationSet"/>'s manual value is <c>[NonSerialized]</c> (absent from the
         /// operationSets payload), and the slider reads its value back through the polled
         /// <see cref="operationSetValues"/>; broadcasting per drag frame would be pure overhead.</summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void SetOperationSetValue(string operationSetId, float value)
         {
             int index = _IndexOf(operationSetId);
@@ -828,7 +828,7 @@ namespace Lilium.LiveStudio
 
         // Rebuilds enabled-set property edits that change input wiring (input type / binding) into a
         // fresh input map. Operation edits do not affect input, so they are ignored here.
-        private void _OnPropertyChanged(ExposedProperty property, object oldValue)
+        private void _OnPropertyChanged(LiveProperty property, object oldValue)
         {
             if (!_initialized) return;
             if (!property.PathContains("input")) return;
@@ -922,8 +922,8 @@ namespace Lilium.LiveStudio
             return -1;
         }
 
-        private void _Broadcast() => ExposedPropertyBroadcast.BroadcastProperty(this, "operationSets");
+        private void _Broadcast() => LivePropertyBroadcast.BroadcastProperty(this, "operationSets");
 
-        private void _BroadcastDecks() => ExposedPropertyBroadcast.BroadcastProperty(this, "decks");
+        private void _BroadcastDecks() => LivePropertyBroadcast.BroadcastProperty(this, "decks");
     }
 }

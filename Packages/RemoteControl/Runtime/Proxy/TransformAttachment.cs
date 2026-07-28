@@ -26,7 +26,7 @@ namespace Lilium.RemoteControl
 
             var target = reference.Resolve();
 
-            // 親が指定されているのに解決できない = 親 ExposedObjectHandle がまだ registry に未登録の未解決状態。
+            // 親が指定されているのに解決できない = 親 LiveObjectHandle がまだ registry に未登録の未解決状態。
             // Unity hierarchy の現状を維持し、親が登録された後の再評価に委ねる。
             // (Play mode 突入時の OnEnable 順で親が後から登録されるケース対策)
             if (target == null && reference.hasOwner)
@@ -36,7 +36,7 @@ namespace Lilium.RemoteControl
 
             if (attached != null && attached != target)
             {
-                GameObjectUtility.SetTransformParent(self, null, "Reparent ExposedObjectHandle");
+                GameObjectUtility.SetTransformParent(self, null, "Reparent LiveObjectHandle");
                 attached = null;
             }
 
@@ -44,14 +44,14 @@ namespace Lilium.RemoteControl
             {
                 // parentId 未指定 = 明示的な root 配置の意図
                 if (self.parent != null)
-                    GameObjectUtility.SetTransformParent(self, null, "Reparent ExposedObjectHandle");
+                    GameObjectUtility.SetTransformParent(self, null, "Reparent LiveObjectHandle");
                 return;
             }
 
             if (attached == target) return;
 
             attached = target;
-            GameObjectUtility.SetTransformParent(self, target, "Reparent ExposedObjectHandle");
+            GameObjectUtility.SetTransformParent(self, target, "Reparent LiveObjectHandle");
         }
 
         /// <summary>
@@ -61,7 +61,7 @@ namespace Lilium.RemoteControl
         {
             if (attached == null) return;
             if (self != null)
-                GameObjectUtility.SetTransformParent(self, null, "Detach ExposedObjectHandle");
+                GameObjectUtility.SetTransformParent(self, null, "Detach LiveObjectHandle");
             attached = null;
         }
     }

@@ -18,7 +18,7 @@ namespace Lilium.LiveStudio
     /// loadable built-in such as <see cref="BuiltinPropAsset"/> extends <see cref="AssetBase"/> directly
     /// instead, because it DOES instantiate and persist its in-use state.)
     ///
-    /// Deliberately NOT marked <c>[ExposedClass]</c> (like <see cref="AssetBase"/>): each concrete kind
+    /// Deliberately NOT marked <c>[LiveClass]</c> (like <see cref="AssetBase"/>): each concrete kind
     /// registers its own, so the polymorphic <c>@type</c> discriminator never names this abstract type.
     /// A kind that only needs the default no-op behavior is therefore just an empty subclass carrying the
     /// attribute.

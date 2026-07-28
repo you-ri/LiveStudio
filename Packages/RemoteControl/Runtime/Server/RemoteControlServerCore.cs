@@ -15,7 +15,7 @@ namespace Lilium.RemoteControl.Server
         public RemoteControlContext context { get; private set; }
         private EventQueue _eventQueue;
         private RestApiConnectionManager _connectionManager;
-        private ExposedObjectHandler _exposedObjectHandler;
+        private LiveObjectHandler _liveObjectHandler;
         private EventsHandler _eventsHandler;
         private StatusHandler _statusHandler;
         private PerformanceHandler _performanceHandler;
@@ -47,8 +47,8 @@ namespace Lilium.RemoteControl.Server
         
         public void RegisterDefaultRoutes()
         {
-            _exposedObjectHandler = new ExposedObjectHandler(this);
-            RegisterRoute(_exposedObjectHandler);
+            _liveObjectHandler = new LiveObjectHandler(this);
+            RegisterRoute(_liveObjectHandler);
             // Standalone route for the per-client event inbox. The remote app collects it through
             // the batch endpoint instead, but a non-batching client needs somewhere to ask.
             _eventsHandler = new EventsHandler(this);
@@ -70,8 +70,8 @@ namespace Lilium.RemoteControl.Server
         public void UnregisterDefaultRoutes()
         {
             // UnregisterRoute calls handler.Cleanup() internally.
-            UnregisterRoute(_exposedObjectHandler);
-            _exposedObjectHandler = null;
+            UnregisterRoute(_liveObjectHandler);
+            _liveObjectHandler = null;
             UnregisterRoute(_eventsHandler);
             _eventsHandler = null;
             UnregisterRoute(_statusHandler);

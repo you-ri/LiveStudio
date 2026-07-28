@@ -266,7 +266,7 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
-        public void OnAfterExposedDeserialize_BackfillsIdOnSetAuthoredWithoutOne()
+        public void OnAfterLiveDeserialize_BackfillsIdOnSetAuthoredWithoutOne()
         {
             // A set authored directly in a scene / prop bundle (not via AddOperationSet) loads with the
             // default empty id, which makes every id-addressed function a silent no-op. Restore must
@@ -276,7 +276,7 @@ namespace Lilium.LiveStudio.EditorTests
             Assert.AreEqual(string.Empty, set.id, "an authored set starts with the default empty id");
             manager.operationSets.Add(set);
 
-            manager.OnAfterExposedDeserialize();
+            manager.OnAfterLiveDeserialize();
 
             Assert.IsFalse(string.IsNullOrEmpty(set.id), "restore assigns a stable id to the set");
         }
@@ -288,7 +288,7 @@ namespace Lilium.LiveStudio.EditorTests
             // id never matched in _IndexOf. After the id backfill, deleting by the assigned id works.
             var manager = new OperationManager();
             manager.operationSets.Add(new OperationSet { enabled = true, control = new DeckToggle() });
-            manager.OnAfterExposedDeserialize();
+            manager.OnAfterLiveDeserialize();
 
             var id = manager.operationSets[0].id;
             manager.RemoveOperationSet(id);
@@ -886,28 +886,28 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
-        public void OnAfterExposedDeserialize_PlacesUnplacedControls()
+        public void OnAfterLiveDeserialize_PlacesUnplacedControls()
         {
             var manager = new OperationManager();
             var id = manager.AddFunctionOperation("obj", "DoThing", "Do Thing", "");
             // Simulate a restored/older scene where the control carries no deck.
             manager.operationSets[0].control.deckName = string.Empty;
 
-            manager.OnAfterExposedDeserialize();
+            manager.OnAfterLiveDeserialize();
 
             Assert.IsFalse(string.IsNullOrEmpty(manager.operationSets[0].control.deckName),
                 "a control with no deck is placed on the default page after restore");
         }
 
         [Test]
-        public void OnAfterExposedDeserialize_UnknownDeckName_RecreatesDeck()
+        public void OnAfterLiveDeserialize_UnknownDeckName_RecreatesDeck()
         {
             var manager = new OperationManager();
             manager.AddFunctionOperation("obj", "DoThing", "Do Thing", "");
             // Simulate pasted serialized action data referencing a deck that does not exist yet.
             manager.operationSets[0].control.deckName = "Combat";
 
-            manager.OnAfterExposedDeserialize();
+            manager.OnAfterLiveDeserialize();
 
             Assert.IsTrue(manager.decks.Exists(p => p.name == "Combat"),
                 "a missing referenced deck is recreated by name so pasted data brings its deck along");
@@ -916,7 +916,7 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
-        public void OnAfterExposedDeserialize_DuplicateUnknownName_CreatesOneDeck()
+        public void OnAfterLiveDeserialize_DuplicateUnknownName_CreatesOneDeck()
         {
             var manager = new OperationManager();
             manager.AddFunctionOperation("obj", "A", "A", "");
@@ -924,7 +924,7 @@ namespace Lilium.LiveStudio.EditorTests
             manager.operationSets[0].control.deckName = "Combat";
             manager.operationSets[1].control.deckName = "Combat";
 
-            manager.OnAfterExposedDeserialize();
+            manager.OnAfterLiveDeserialize();
 
             Assert.AreEqual(1, manager.decks.FindAll(p => p.name == "Combat").Count,
                 "controls referencing the same missing deck create exactly one deck");

@@ -21,7 +21,7 @@ namespace Lilium.LiveStudio
     /// <c>state</c> snapshot machinery of <see cref="AssetBase"/> is unused here.
     /// </summary>
     [Serializable]
-    [ExposedClass("SetBundleAsset", Category = "Asset", Icon = "public")]
+    [LiveClass("SetBundleAsset", Category = "Asset", Icon = "public")]
     public class SetBundleAsset : AssetBase, ISetAsset
     {
         public override bool isExclusive => false;
@@ -33,7 +33,7 @@ namespace Lilium.LiveStudio
         /// active set changes; only one set asset is active at a time (an invariant the manager
         /// enforces).
         /// </summary>
-        [ExposedField]
+        [LiveField]
         public bool isActive;
 
         // ISetAsset.isActive delegates to the exposed field (a field cannot implement the property

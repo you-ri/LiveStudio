@@ -11,12 +11,12 @@ namespace Lilium.RemoteControl.LiveScene
 {
     /// <summary>
     /// Single MonoBehaviour that owns the full Remote Control runtime: HTTP server,
-    /// the ExposedObjectHandle container, and scene save/load. Apps register their own
+    /// the LiveObjectHandle container, and scene save/load. Apps register their own
     /// route handlers by subclassing this and overriding the OnRegister*/OnUpdateHandlers hooks.
     /// </summary>
     /// <remarks>
     /// Replaces the four-component combo of <see cref="RemoteControlServerRunner"/>,
-    /// <see cref="ExposedObjectContainer"/>, <see cref="LiveSceneSaveSystem"/>, plus the
+    /// <see cref="LiveObjectContainer"/>, <see cref="LiveSceneSaveSystem"/>, plus the
     /// optional UI add-on.
     /// </remarks>
     [DefaultExecutionOrder(-32760)]
@@ -36,12 +36,12 @@ namespace Lilium.RemoteControl.LiveScene
         private bool _persistAcrossScenes;
 
         [SerializeReference, Select]
-        [ExposedField(persistable = false)]
-        public List<IExposedObject> _objects = new List<IExposedObject>();
+        [LiveField(persistable = false)]
+        public List<ILiveObject> _objects = new List<ILiveObject>();
 
         // --- Runtime helpers ---
 
-        private ExposedObjectContainer _container;
+        private LiveObjectContainer _container;
         private RemoteControlServerRunner _serverRunner;
         private LiveSceneSaveSystem _sceneSave;
         private LiveSceneIoHandler _sceneIoHandler;
@@ -95,7 +95,7 @@ namespace Lilium.RemoteControl.LiveScene
 
         public RemoteControlServerConfig serverConfig => _serverConfig;
         public RemoteControlServerCore server => _serverRunner?.server;
-        public ExposedObjectContainer objectContainer => _container;
+        public LiveObjectContainer objectContainer => _container;
         public LiveSceneSaveSystem sceneSave => _sceneSave;
 
         public bool autoSaveOnQuit
@@ -261,7 +261,7 @@ namespace Lilium.RemoteControl.LiveScene
         protected virtual void Start()
         {
             // Start runs after all OnEnables of all enabled components, so by now any
-            // scene-side targets referenced by ExposedObjectHandle items have finished their
+            // scene-side targets referenced by LiveObjectHandle items have finished their
             // own Awake/OnEnable. Safe to load the scene JSON.
             if (_isDuplicate) return;
             if (!Application.isPlaying) return;
@@ -378,7 +378,7 @@ namespace Lilium.RemoteControl.LiveScene
         private void _BuildHelpers()
         {
             if (_container == null)
-                _container = new ExposedObjectContainer(gameObject.name, _objects, this);
+                _container = new LiveObjectContainer(gameObject.name, _objects, this);
             if (_serverRunner == null)
                 _serverRunner = new RemoteControlServerRunner(_serverConfig, _container);
             if (_sceneSave == null)
@@ -397,7 +397,7 @@ namespace Lilium.RemoteControl.LiveScene
 
             // Built-in scene import/export handler. Registered here (not via the virtual
             // OnRegisterHandlers hook) so subclasses that override the hook without calling
-            // base still get scene I/O. ExposedObjectHandler no longer claims these routes.
+            // base still get scene I/O. LiveObjectHandler no longer claims these routes.
             if (_sceneIoHandler == null) _sceneIoHandler = new LiveSceneIoHandler(srv);
             srv.RegisterRoute(_sceneIoHandler);
 

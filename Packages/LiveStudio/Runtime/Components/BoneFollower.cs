@@ -27,22 +27,22 @@ namespace Lilium.LiveStudio
     /// strategy; the difference is that this component moves itself instead of assigning a camera target.
     /// </summary>
     [DefaultExecutionOrder(20)] // after the avatar (VRCFTAvatar order 10) has posed its bones this frame
-    [ExposedClass("BoneFollower", Category = "Camera", Icon = "my_location")]
+    [LiveClass("BoneFollower", Category = "Camera", Icon = "my_location")]
     public class BoneFollower : MonoBehaviour
     {
-        [ExposedProperty("name"), Hide]
+        [LiveProperty("name"), Hide]
         public string displayName => this.name;
 
         // Bone reference (owner name + bone name / path). Defaults to the main avatar's head, matching
         // LookAtCameraController, since a head anchor is the common look-at case.
-        [SerializeField, ExposedField]
+        [SerializeField, LiveField]
         TransformRef _target = new TransformRef("Main Avatar", "S_Head", TransformRef.SearchType.Name);
 
         public TransformRef target => _target;
 
         // Copy the bone rotation as well as its position. Off by default: a look-at target only needs
         // position, but a follow anchor that frames by orientation can opt in.
-        [SerializeField, ExposedField]
+        [SerializeField, LiveField]
         bool _followRotation = false;
 
         // Cached resolved bone. The follow runs every frame, so the allocating Resolve() must not run per

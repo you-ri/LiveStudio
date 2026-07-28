@@ -15,12 +15,12 @@ namespace Lilium.LiveStudio
     /// rising/falling edges into an <see cref="OperationContext"/>. The mode is not stored here: the control
     /// kind is the single behaviour axis (see <see cref="DeckControl.mode"/>), passed in to <see cref="Evaluate"/>.
     ///
-    /// Marked <c>[ExposedClass]</c> on the abstract base (like <see cref="ICameraController"/>) so the
+    /// Marked <c>[LiveClass]</c> on the abstract base (like <see cref="ICameraController"/>) so the
     /// <c>[TypeSelector]</c> on the owning field can enumerate the concrete kinds; the base itself is
     /// never instantiated (the field always defaults to a concrete kind and @type only ever names one).
     /// </summary>
     [Serializable]
-    [ExposedClass]
+    [LiveClass]
     public abstract class InputSource
     {
         protected const float kThreshold = 0.5f;

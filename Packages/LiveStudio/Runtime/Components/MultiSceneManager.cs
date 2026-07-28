@@ -15,25 +15,25 @@ using Lilium.RemoteControl;
 namespace Lilium.LiveStudio
 {
     [Serializable]
-    [ExposedClass]
+    [LiveClass]
     public struct SceneInfo
     {
-        [ExposedField]
+        [LiveField]
         public string name;
 
-        [ExposedField]
+        [LiveField]
         public int buildIndex;
 
-        [ExposedField]
+        [LiveField]
         public bool isLoaded;
 
-        [ExposedField]
+        [LiveField]
         public bool isActive;
     }
 
     [Serializable]
-    [ExposedClass(Icon = "layers", Category = "Scene")]
-    public class MultiSceneManager : IExposedObject
+    [LiveClass(Icon = "layers", Category = "Scene")]
+    public class MultiSceneManager : ILiveObject
     {
         const string kId = "f8a3b1c7-4e2d-4a9f-b6d5-8c1e3f7a2b90";
 
@@ -56,13 +56,13 @@ namespace Lilium.LiveStudio
 
         public string name { get; set; } = "Scene Manager";
 
-        public ExposedObjectHandle? exposedObject => ExposedObjectRegistry.FindByTarget(this);
+        public LiveObjectHandle? liveObject => LiveObjectRegistry.FindByTarget(this);
 
         public string id => kId;
 
         [NonSerialized]
-        [ExposedField, Hide]
-        [FormerlyExposedAs("scenes")]
+        [LiveField, Hide]
+        [FormerlyNamedAs("scenes")]
         private SceneInfo[] _scenes = Array.Empty<SceneInfo>();
 
         [NonSerialized]
@@ -71,21 +71,21 @@ namespace Lilium.LiveStudio
         [NonSerialized]
         private bool _initialized;
 
-        [ExposedProperty]
+        [LiveProperty]
         public SceneInfo[] scenes
         {
             get => _scenes;
             set => _scenes = value;
         }
 
-        [ExposedProperty]
+        [LiveProperty]
         public string activeSceneName => SceneManager.GetActiveScene().name;
 
         public void OnEnable()
         {
-            ExposedObjectRegistry.Create<MultiSceneManager>(this, kId);
+            LiveObjectRegistry.Create<MultiSceneManager>(this, kId);
 
-            ExposedClass.Get<MultiSceneManager>().onPropertyChanged += _OnPropertyChanged;
+            LiveClass.Get<MultiSceneManager>().onPropertyChanged += _OnPropertyChanged;
 
             SceneManager.sceneLoaded += _OnSceneLoaded;
             SceneManager.sceneUnloaded += _OnSceneUnloaded;
@@ -106,13 +106,13 @@ namespace Lilium.LiveStudio
             _scenesDirty = false;
             _initialized = false;
 
-            ExposedClass.Get<MultiSceneManager>().onPropertyChanged -= _OnPropertyChanged;
+            LiveClass.Get<MultiSceneManager>().onPropertyChanged -= _OnPropertyChanged;
 
             SceneManager.sceneLoaded -= _OnSceneLoaded;
             SceneManager.sceneUnloaded -= _OnSceneUnloaded;
             SceneManager.activeSceneChanged -= _OnActiveSceneChanged;
 
-            ExposedObjectRegistry.FindByTarget(this)?.Unregister();
+            LiveObjectRegistry.FindByTarget(this)?.Unregister();
         }
 
         public void OnDispose()
@@ -139,7 +139,7 @@ namespace Lilium.LiveStudio
         /// RemoteAppからscenes配列が変更されたときにdirtyフラグを立てる。
         /// 実際のシーン操作はUpdate()で遅延実行する。
         /// </summary>
-        private void _OnPropertyChanged(ExposedProperty property, object oldValue)
+        private void _OnPropertyChanged(LiveProperty property, object oldValue)
         {
             if (property.path.Value != nameof(scenes)) return;
             if (!_initialized) return;
@@ -298,14 +298,14 @@ namespace Lilium.LiveStudio
 
         private void _BroadcastScenes()
         {
-            var obj = exposedObject;
+            var obj = liveObject;
             if (obj != null)
             {
-                ExposedPropertyBroadcast.BroadcastProperty(obj, "scenes");
+                LivePropertyBroadcast.BroadcastProperty(obj, "scenes");
             }
         }
 
-        [ExposedFunction]
+        [LiveFunction]
         public void CreateScene(string sceneName)
         {
             if (string.IsNullOrEmpty(sceneName))
@@ -325,7 +325,7 @@ namespace Lilium.LiveStudio
             Debug.Log($"[RemoteControl] Scene created: {sceneName}");
         }
 
-        [ExposedFunction]
+        [LiveFunction]
         public void UnloadScene(string sceneName)
         {
             if (string.IsNullOrEmpty(sceneName))
@@ -351,7 +351,7 @@ namespace Lilium.LiveStudio
             Debug.Log($"[RemoteControl] Scene unloading: {sceneName}");
         }
 
-        [ExposedFunction]
+        [LiveFunction]
         public void SetActiveScene(string sceneName)
         {
             if (string.IsNullOrEmpty(sceneName))

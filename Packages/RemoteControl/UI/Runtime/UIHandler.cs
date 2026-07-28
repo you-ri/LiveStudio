@@ -30,8 +30,8 @@ namespace Lilium.RemoteControl.UI
 
         private sealed class DefinitionRegistration
         {
-            public readonly List<ExposedObjectHandle> selectors = new List<ExposedObjectHandle>();
-            public readonly List<ExposedObjectHandle> factories = new List<ExposedObjectHandle>();
+            public readonly List<LiveObjectHandle> selectors = new List<LiveObjectHandle>();
+            public readonly List<LiveObjectHandle> factories = new List<LiveObjectHandle>();
         }
 
         public UIHandler(RemoteControlServerCore server, UIDefinition definition) : base(server)
@@ -60,9 +60,9 @@ namespace Lilium.RemoteControl.UI
             if (added) _RegisterDefinition(definition);
             else _UnregisterDefinition(definition);
 
-            // Recorded, not sent: the client notices it while polling /exposed/changes and refetches
+            // Recorded, not sent: the client notices it while polling /live/changes and refetches
             // /ui/sidemenu (consistent with how the types tables are published).
-            ExposedChangeLog.Record(ExposedChangeLog.kUiId);
+            LiveChangeLog.Record(LiveChangeLog.kUiId);
         }
 
         // Registers the selector/factory exposed objects for one definition's menu items.
@@ -104,11 +104,11 @@ namespace Lilium.RemoteControl.UI
                 if (selector != null)
                 {
                     var selectorId = $"ui.selector.{item.id}";
-                    var selectorExposedClass = ExposedClass.Find(typeof(ObjectSelectorBase));
-                    if (selectorExposedClass != null)
+                    var selectorLiveClass = LiveClass.Find(typeof(ObjectSelectorBase));
+                    if (selectorLiveClass != null)
                     {
-                        var exposedObject = ExposedObjectRegistry.GetOrCreate(selectorId, selectorExposedClass, selector);
-                        registration.selectors.Add(exposedObject);
+                        var liveObject = LiveObjectRegistry.GetOrCreate(selectorId, selectorLiveClass, selector);
+                        registration.selectors.Add(liveObject);
                     }
                 }
 
@@ -124,11 +124,11 @@ namespace Lilium.RemoteControl.UI
                     factory.RegisterPrefabs();
 
                     var factoryId = $"ui.factory.{item.id}";
-                    var factoryExposedClass = ExposedClass.Find(typeof(ObjectFactoryBase));
-                    if (factoryExposedClass != null)
+                    var factoryLiveClass = LiveClass.Find(typeof(ObjectFactoryBase));
+                    if (factoryLiveClass != null)
                     {
-                        var factoryExposedObject = ExposedObjectRegistry.GetOrCreate(factoryId, factoryExposedClass, factory);
-                        registration.factories.Add(factoryExposedObject);
+                        var factoryLiveObject = LiveObjectRegistry.GetOrCreate(factoryId, factoryLiveClass, factory);
+                        registration.factories.Add(factoryLiveObject);
                     }
                 }
             }

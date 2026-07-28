@@ -7,10 +7,10 @@ using Lilium.RemoteControl;
 
 namespace Lilium.LiveStudio
 {
-    [ExposedClass(Icon = "settings")]
+    [LiveClass(Icon = "settings")]
     public static class LiveSceneManager
     {
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public static string scenePath
         {
             get
@@ -29,7 +29,7 @@ namespace Lilium.LiveStudio
         // ビルド設定 (enabled なシーンのみ) を SceneInfo[] として返す。
         // RemoteApp が NewScene のダイアログでベースシーン候補一覧を表示するために使用。
         // ビルド済みアプリでも動作するよう EditorBuildSettings は使わず SceneUtility 経由で取得する。
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public static SceneInfo[] availableScenes
         {
             get
@@ -54,7 +54,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [ExposedFunction(label = "LIVESCENE_OPEN_SAVE_FOLDER"), Hide]
+        [LiveFunction(label = "LIVESCENE_OPEN_SAVE_FOLDER"), Hide]
         public static void OpenSaveFolder()
         {
             // 現在開いているプロジェクトフォルダ (既定保存先) を開く。未オープン時はベースディレクトリ。
@@ -76,7 +76,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [ExposedFunction(label = "LIVESCENE_SAVE_SCENE"), Hide]
+        [LiveFunction(label = "LIVESCENE_SAVE_SCENE"), Hide]
         public static void SaveScene(string filePath = null)
         {
             var providers = Object.FindObjectsOfType<Lilium.RemoteControl.LiveScene.RemoteControlBehaviour>();
@@ -93,7 +93,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [ExposedFunction(label = "LIVESCENE_LOAD_SCENE"), Hide]
+        [LiveFunction(label = "LIVESCENE_LOAD_SCENE"), Hide]
         public static void LoadScene(string filePath)
         {
             if (string.IsNullOrEmpty(filePath)) return;
@@ -173,10 +173,10 @@ namespace Lilium.LiveStudio
             // unsaved-changes confirmation is answered), so push the new value instead of leaving them
             // to poll for it. currentFilePath is already set above; the pending base-scene reload does
             // not change it.
-            ExposedPropertyBroadcast.BroadcastStaticProperty(typeof(LiveSceneManager), nameof(scenePath));
+            LivePropertyBroadcast.BroadcastStaticProperty(typeof(LiveSceneManager), nameof(scenePath));
         }
 
-        [ExposedFunction(label = "LIVESCENE_NEW_SCENE"), Hide]
+        [LiveFunction(label = "LIVESCENE_NEW_SCENE"), Hide]
         public static void NewScene(string sceneName = null)
         {
             var providers = Object.FindObjectsOfType<Lilium.RemoteControl.LiveScene.RemoteControlBehaviour>();

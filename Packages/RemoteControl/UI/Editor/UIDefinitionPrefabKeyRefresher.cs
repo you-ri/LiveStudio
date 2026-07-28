@@ -6,7 +6,7 @@ namespace Lilium.RemoteControl.UI.Editor
 {
     /// <summary>
     /// Walks every IPage under the given UIDefinition, finds StandardObjectFactory instances,
-    /// and re-resolves the prefab Asset GUID held by each IExposedObjectFactory from the AssetDatabase.
+    /// and re-resolves the prefab Asset GUID held by each ILiveObjectFactory from the AssetDatabase.
     /// Invoked from the UI Designer Reset button so the update is explicit and does not depend on OnValidate.
     /// </summary>
     public static class UIDefinitionPrefabKeyRefresher

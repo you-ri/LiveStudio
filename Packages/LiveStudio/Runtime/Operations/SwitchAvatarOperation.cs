@@ -12,16 +12,16 @@ namespace Lilium.LiveStudio
     /// via <see cref="ExternalAssetManager"/>.
     /// </summary>
     [Serializable]
-    [ExposedClass(Category = "Operation", Icon = "face")]
+    [LiveClass(Category = "Operation", Icon = "face")]
     [MovedFrom(false, null, null, "SwitchAvatarAction")]
-    [FormerlyExposedAs("SwitchAvatarAction")]
+    [FormerlyNamedAs("SwitchAvatarAction")]
     public class SwitchAvatarOperation : OperationBase
     {
-        [ExposedField, StringSelector(nameof(avatarNames))]
+        [LiveField, StringSelector(nameof(avatarNames))]
         public string avatar = string.Empty;
 
         /// <summary>Registered avatar names (empty entry = default avatar) — the dropdown source.</summary>
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public string[] avatarNames
             => ExternalAssetManager.current?.GetAvatarNames() ?? Array.Empty<string>();
 

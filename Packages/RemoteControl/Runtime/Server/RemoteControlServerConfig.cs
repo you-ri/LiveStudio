@@ -44,7 +44,7 @@ namespace Lilium.RemoteControl.Server
             return CreateServer(null);
         }
 
-        public RemoteControlServerCore CreateServer(ExposedObjectContainer container)
+        public RemoteControlServerCore CreateServer(LiveObjectContainer container)
         {
             if (RemoteControlServerManager.servers.TryGetValue(port, out var existing))
             {

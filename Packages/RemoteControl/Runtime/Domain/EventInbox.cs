@@ -18,7 +18,7 @@ namespace Lilium.RemoteControl
     /// for what comes next.
     ///
     /// Reachable two ways, both resolving to the same body: on its own as
-    /// <c>GET /api/events</c>, and as a sub-request of <c>POST /exposed/batch</c>, which is how the
+    /// <c>GET /api/events</c>, and as a sub-request of <c>POST /live/batch</c>, which is how the
     /// remote app actually collects it — riding the poll it already sends for displayed values
     /// costs no extra round trip.
     /// </summary>

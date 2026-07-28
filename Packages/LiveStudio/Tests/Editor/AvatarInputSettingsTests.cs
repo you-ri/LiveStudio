@@ -21,7 +21,7 @@ namespace Lilium.LiveStudio.EditorTests
         [SetUp]
         public void SetUp()
         {
-            ExposedClass.Reset();
+            LiveClass.Reset();
 
             // OnEnable (ExecuteAlways) で _inputActionMap.Enable() が呼ばれるので、
             // 先に無効化した状態で AddComponent → フィールド設定 → 再有効化する。
@@ -72,15 +72,15 @@ namespace Lilium.LiveStudio.EditorTests
             Assert.IsNotNull(action);
             action.AddBinding("<Keyboard>/space");
 
-            var exposedClass = ExposedClass.Find(typeof(AvatarInput));
-            Assert.IsNotNull(exposedClass, "AvatarInput must have ExposedClass registered");
+            var liveClass = LiveClass.Find(typeof(AvatarInput));
+            Assert.IsNotNull(liveClass, "AvatarInput must have LiveClass registered");
 
-            var exposedObject = new ExposedObjectHandle("test-input-actions", exposedClass, _controller);
+            var liveObject = new LiveObjectHandle("test-input-actions", liveClass, _controller);
             try
             {
                 var json = LiveSceneSerializer.LiveSceneToJson(
-                    new System.Collections.Generic.List<ExposedObjectHandle> { exposedObject },
-                    DefaultExposedObjectResolver.Instance,
+                    new System.Collections.Generic.List<LiveObjectHandle> { liveObject },
+                    DefaultLiveObjectResolver.Instance,
                     SerializeMode.Snapshot);
 
                 StringAssert.Contains("\"settings\"", json);
@@ -89,7 +89,7 @@ namespace Lilium.LiveStudio.EditorTests
             }
             finally
             {
-                exposedObject.Unregister();
+                liveObject.Unregister();
             }
         }
 
@@ -99,19 +99,19 @@ namespace Lilium.LiveStudio.EditorTests
             // Save → 別のコントローラに Load → バインディングが復元されること。
             // SetDefault は空状態でキャプチャし、その後にバインディングを追加して
             // delta に bindings を載せる。
-            var exposedClass = ExposedClass.Find(typeof(AvatarInput));
-            var source = new ExposedObjectHandle("test-input-actions-rt", exposedClass, _controller);
+            var liveClass = LiveClass.Find(typeof(AvatarInput));
+            var source = new LiveObjectHandle("test-input-actions-rt", liveClass, _controller);
             try
             {
-                ExposedPropertyUtility.SetDefault(source);
+                LivePropertyUtility.SetDefault(source);
 
                 var action = InputActionMapUtils.SafeCreateAction(_controller.inputActionMap, "Crouch");
                 Assert.IsNotNull(action);
                 action.AddBinding("<Keyboard>/c");
 
                 var json = LiveSceneSerializer.LiveSceneToJson(
-                    new System.Collections.Generic.List<ExposedObjectHandle> { source },
-                    DefaultExposedObjectResolver.Instance,
+                    new System.Collections.Generic.List<LiveObjectHandle> { source },
+                    DefaultLiveObjectResolver.Instance,
                     SerializeMode.Delta);
 
                 // 復元先の別コントローラを用意
@@ -125,10 +125,10 @@ namespace Lilium.LiveStudio.EditorTests
                 field.SetValue(target, new InputActionMap("TargetMap"));
                 targetGo.SetActive(true);
 
-                var targetExposed = new ExposedObjectHandle("test-input-actions-rt", exposedClass, target);
+                var targetLive = new LiveObjectHandle("test-input-actions-rt", liveClass, target);
                 try
                 {
-                    LiveSceneSerializer.LiveSceneFromJson(json, DefaultExposedObjectResolver.Instance);
+                    LiveSceneSerializer.LiveSceneFromJson(json, DefaultLiveObjectResolver.Instance);
 
                     var restoredAction = target.inputActionMap.FindAction("Crouch");
                     Assert.IsNotNull(restoredAction, "Crouch action should be restored");
@@ -137,13 +137,13 @@ namespace Lilium.LiveStudio.EditorTests
                 }
                 finally
                 {
-                    targetExposed.Unregister();
+                    targetLive.Unregister();
                     Object.DestroyImmediate(targetGo);
                 }
             }
             finally
             {
-                var rtObj = ExposedObjectRegistry.FindById("test-input-actions-rt");
+                var rtObj = LiveObjectRegistry.FindById("test-input-actions-rt");
                 if (rtObj != null)
                 {
                     rtObj.Value.Unregister();
@@ -156,19 +156,19 @@ namespace Lilium.LiveStudio.EditorTests
         {
             // Delta モードでバインディング変更を反映した settings が出力されること。
             // SetDefault で空状態を固定してから追加し、差分として現れることを確認する。
-            var exposedClass = ExposedClass.Find(typeof(AvatarInput));
-            var exposedObject = new ExposedObjectHandle("test-input-actions-delta", exposedClass, _controller);
+            var liveClass = LiveClass.Find(typeof(AvatarInput));
+            var liveObject = new LiveObjectHandle("test-input-actions-delta", liveClass, _controller);
             try
             {
-                ExposedPropertyUtility.SetDefault(exposedObject);
+                LivePropertyUtility.SetDefault(liveObject);
 
                 var action = InputActionMapUtils.SafeCreateAction(_controller.inputActionMap, "Fire");
                 Assert.IsNotNull(action);
                 action.AddBinding("<Mouse>/leftButton");
 
                 var json = LiveSceneSerializer.LiveSceneToJson(
-                    new System.Collections.Generic.List<ExposedObjectHandle> { exposedObject },
-                    DefaultExposedObjectResolver.Instance,
+                    new System.Collections.Generic.List<LiveObjectHandle> { liveObject },
+                    DefaultLiveObjectResolver.Instance,
                     SerializeMode.Delta);
 
                 StringAssert.Contains("\"settings\"", json);
@@ -177,7 +177,7 @@ namespace Lilium.LiveStudio.EditorTests
             }
             finally
             {
-                exposedObject.Unregister();
+                liveObject.Unregister();
             }
         }
 
@@ -186,15 +186,15 @@ namespace Lilium.LiveStudio.EditorTests
         {
             // SetDefault 後に何も変更しなければ delta から settings が消え、
             // objects[] が空になること (delta 空化の回帰テスト)。
-            var exposedClass = ExposedClass.Find(typeof(AvatarInput));
-            var exposedObject = new ExposedObjectHandle("test-input-actions-no-change", exposedClass, _controller);
+            var liveClass = LiveClass.Find(typeof(AvatarInput));
+            var liveObject = new LiveObjectHandle("test-input-actions-no-change", liveClass, _controller);
             try
             {
-                ExposedPropertyUtility.SetDefault(exposedObject);
+                LivePropertyUtility.SetDefault(liveObject);
 
                 var json = LiveSceneSerializer.LiveSceneToJson(
-                    new System.Collections.Generic.List<ExposedObjectHandle> { exposedObject },
-                    DefaultExposedObjectResolver.Instance,
+                    new System.Collections.Generic.List<LiveObjectHandle> { liveObject },
+                    DefaultLiveObjectResolver.Instance,
                     SerializeMode.Delta);
 
                 StringAssert.DoesNotContain("\"settings\"", json);
@@ -202,7 +202,7 @@ namespace Lilium.LiveStudio.EditorTests
             }
             finally
             {
-                exposedObject.Unregister();
+                liveObject.Unregister();
             }
         }
     }

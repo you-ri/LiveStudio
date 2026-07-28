@@ -40,11 +40,11 @@ namespace Lilium.LiveStudio
     /// <see cref="AvatarAsset"/>) carry the format-specific load behavior; this base holds the data
     /// the manager and the live-scene JSON share.
     ///
-    /// Deliberately NOT marked <c>[ExposedClass]</c>: the array element type is this abstract base,
+    /// Deliberately NOT marked <c>[LiveClass]</c>: the array element type is this abstract base,
     /// and registering it would let the deserializer try to <c>Activator.CreateInstance</c> the
-    /// abstract type. Instead each concrete subclass is its own <c>[ExposedClass]</c>; the array is
+    /// abstract type. Instead each concrete subclass is its own <c>[LiveClass]</c>; the array is
     /// serialized polymorphically via the per-element <c>@type</c> discriminator, and the base fields
-    /// below are still collected onto each subclass because <see cref="ExposedClass"/> walks the base
+    /// below are still collected onto each subclass because <see cref="LiveClass"/> walks the base
     /// type chain when gathering exposed members.
     /// </summary>
     public abstract class AssetBase
@@ -60,10 +60,10 @@ namespace Lilium.LiveStudio
         /// <see cref="path"/> instead and this is reconstructed from it on load. Still exposed to the
         /// remote app, which uses it as the durable handle for load/remove calls within a session.
         /// </summary>
-        [ExposedField(persistable = false), Hide]
+        [LiveField(persistable = false), Hide]
         public string id;
 
-        [ExposedField]
+        [LiveField]
         public string name;
 
         /// <summary>
@@ -71,7 +71,7 @@ namespace Lilium.LiveStudio
         /// the portable project-relative <see cref="path"/> is persisted instead and this is reconstructed
         /// from it on load. Still exposed to the remote app for display.
         /// </summary>
-        [ExposedField(persistable = false), Hide]
+        [LiveField(persistable = false), Hide]
         public string filePath;
 
         /// <summary>
@@ -82,15 +82,15 @@ namespace Lilium.LiveStudio
         /// Legacy scenes without this field restore from the absolute <see cref="id"/> / <see cref="filePath"/>
         /// they stored instead. Maintained by <see cref="ExternalAssetManager"/> at (de)serialization.
         /// </summary>
-        [ExposedField, Hide]
+        [LiveField, Hide]
         public string path;
 
         /// <summary>Desired state. Toggling loads (true) / unloads (false) the asset. Persisted.</summary>
-        [ExposedField, Hide]
+        [LiveField, Hide]
         public bool enabled;
 
         /// <summary>Actual state, synced after a load/unload completes. Not persisted.</summary>
-        [ExposedField(persistable = false), Hide]
+        [LiveField(persistable = false), Hide]
         public bool isLoaded;
 
         /// <summary>
@@ -99,7 +99,7 @@ namespace Lilium.LiveStudio
         /// persisted. Unused by kinds that do not wrap a fresh exposed object (e.g. avatars, which are
         /// exposed through the existing <c>AvatarController</c>).
         /// </summary>
-        [ExposedField, Hide]
+        [LiveField, Hide]
         public string objectId;
 
         /// <summary>
@@ -111,7 +111,7 @@ namespace Lilium.LiveStudio
         /// loaded. Legacy scenes that stored <c>state</c> still read it harmlessly (the top-level diff
         /// supersedes it). Hidden from the editor; [RawJson] keeps the (JSON) value inline.
         /// </summary>
-        [ExposedField(persistable = false), Hide, RawJson]
+        [LiveField(persistable = false), Hide, RawJson]
         public string state;
 
         /// <summary>True while a load/unload is in flight; the manager skips re-entrant requests.</summary>
@@ -220,7 +220,7 @@ namespace Lilium.LiveStudio
 
     /// <summary>
     /// Builds and applies the aggregate JSON snapshot of an exposed object: the GameObject wrapper plus
-    /// each <c>[ExposedClass]</c> component on the root. Components are keyed by their exposed type name
+    /// each <c>[LiveClass]</c> component on the root. Components are keyed by their exposed type name
     /// (stable across reloads, unlike the per-load object id), so edited parameter values persist across
     /// an unload/reload cycle and into presets. Object-generic: it works for any exposed GameObject
     /// (a freshly created prop wrapper, or a pre-existing scene wrapper such as the avatar's
@@ -235,40 +235,40 @@ namespace Lilium.LiveStudio
         // --- Entry points for callers that already hold the wrapper object (props) ---
 
         /// <summary>Captures the full parameter values of the wrapper and components.</summary>
-        public static string Capture(ExposedGameObject exposed, GameObject instance)
-            => _Build(_WrapperHandle(exposed), instance, ExposedObjectSnapshot.Capture, skipEmpty: false);
+        public static string Capture(LiveGameObject exposed, GameObject instance)
+            => _Build(_WrapperHandle(exposed), instance, LiveObjectSnapshot.Capture, skipEmpty: false);
 
         /// <summary>
         /// Captures only the values that differ from the captured defaults (the delta). Components with
         /// no changes are omitted to keep the snapshot lean. Requires
-        /// <see cref="CaptureDefaults(ExposedGameObject, GameObject)"/> to have run on the same live
+        /// <see cref="CaptureDefaults(LiveGameObject, GameObject)"/> to have run on the same live
         /// objects beforehand.
         /// </summary>
-        public static string CaptureDelta(ExposedGameObject exposed, GameObject instance)
-            => _Build(_WrapperHandle(exposed), instance, ExposedObjectSnapshot.CaptureDelta, skipEmpty: true);
+        public static string CaptureDelta(LiveGameObject exposed, GameObject instance)
+            => _Build(_WrapperHandle(exposed), instance, LiveObjectSnapshot.CaptureDelta, skipEmpty: true);
 
         /// <summary>
         /// Records the current values of the wrapper and components as the baseline used for delta
         /// capture. Call this right after a load and BEFORE applying any saved state, so the baseline
         /// represents the source asset's defaults rather than already-overridden values.
         /// </summary>
-        public static void CaptureDefaults(ExposedGameObject exposed, GameObject instance)
+        public static void CaptureDefaults(LiveGameObject exposed, GameObject instance)
             => _CaptureDefaults(_WrapperHandle(exposed), instance);
 
-        public static void Restore(string json, ExposedGameObject exposed, GameObject instance)
+        public static void Restore(string json, LiveGameObject exposed, GameObject instance)
             => _Restore(json, _WrapperHandle(exposed), instance);
 
         // --- Object-generic entry points: resolve the wrapper from the GameObject ---
         // For objects exposed through a pre-existing scene wrapper (e.g. the avatar's AvatarController
-        // GameObject) the caller does not hold the ExposedGameObject, only the live GameObject.
+        // GameObject) the caller does not hold the LiveGameObject, only the live GameObject.
 
         /// <summary>Delta-captures the wrapper + components of <paramref name="instance"/>, resolving its
-        /// exposed wrapper from the registry. See <see cref="CaptureDelta(ExposedGameObject, GameObject)"/>.</summary>
+        /// exposed wrapper from the registry. See <see cref="CaptureDelta(LiveGameObject, GameObject)"/>.</summary>
         public static string CaptureDelta(GameObject instance)
-            => _Build(_WrapperHandleForGameObject(instance), instance, ExposedObjectSnapshot.CaptureDelta, skipEmpty: true);
+            => _Build(_WrapperHandleForGameObject(instance), instance, LiveObjectSnapshot.CaptureDelta, skipEmpty: true);
 
         /// <summary>Records the delta baseline for <paramref name="instance"/>. See
-        /// <see cref="CaptureDefaults(ExposedGameObject, GameObject)"/>.</summary>
+        /// <see cref="CaptureDefaults(LiveGameObject, GameObject)"/>.</summary>
         public static void CaptureDefaults(GameObject instance)
             => _CaptureDefaults(_WrapperHandleForGameObject(instance), instance);
 
@@ -279,7 +279,7 @@ namespace Lilium.LiveStudio
 
         // --- Core implementation (wrapper handle + instance) ---
 
-        private static void _CaptureDefaults(ExposedObjectHandle? wrapperHandle, GameObject instance)
+        private static void _CaptureDefaults(LiveObjectHandle? wrapperHandle, GameObject instance)
         {
             foreach (var entry in _EnumerateHandles(wrapperHandle, instance))
             {
@@ -289,11 +289,11 @@ namespace Lilium.LiveStudio
                 // applied values as defaults and silently drop them from the next save. Overridden
                 // properties keep their previous default and stay dirty; freshly instantiated objects
                 // (props) have no previous baseline, so this behaves exactly like CaptureDefaults.
-                ExposedObjectDefaultRegistry.CaptureDefaultsPreservingOverrides(entry.handle, DefaultExposedObjectResolver.Instance);
+                LiveObjectDefaultRegistry.CaptureDefaultsPreservingOverrides(entry.handle, DefaultLiveObjectResolver.Instance);
             }
         }
 
-        private static void _Restore(string json, ExposedObjectHandle? wrapperHandle, GameObject instance)
+        private static void _Restore(string json, LiveObjectHandle? wrapperHandle, GameObject instance)
         {
             if (instance == null || string.IsNullOrEmpty(json)) return;
 
@@ -310,9 +310,9 @@ namespace Lilium.LiveStudio
             {
                 JObject value = entry.key == kWrapperKey
                     ? root["wrapper"] as JObject
-                    : _ResolveComponentValue(components, entry.key, entry.exposedClass);
+                    : _ResolveComponentValue(components, entry.key, entry.liveClass);
                 if (value == null) continue;
-                ExposedObjectSnapshot.Restore(value.ToString(Formatting.None), entry.handle);
+                LiveObjectSnapshot.Restore(value.ToString(Formatting.None), entry.handle);
             }
         }
 
@@ -328,10 +328,10 @@ namespace Lilium.LiveStudio
             => _MarkAllClean(_WrapperHandleForGameObject(instance), instance);
 
         /// <inheritdoc cref="MarkAllClean(GameObject)"/>
-        public static void MarkAllClean(ExposedGameObject exposed, GameObject instance)
+        public static void MarkAllClean(LiveGameObject exposed, GameObject instance)
             => _MarkAllClean(_WrapperHandle(exposed), instance);
 
-        private static void _MarkAllClean(ExposedObjectHandle? wrapperHandle, GameObject instance)
+        private static void _MarkAllClean(LiveObjectHandle? wrapperHandle, GameObject instance)
         {
             if (instance == null) return;
             foreach (var entry in _EnumerateHandles(wrapperHandle, instance))
@@ -347,7 +347,7 @@ namespace Lilium.LiveStudio
         // are omitted. No format version is embedded: the preset file's formatVersion is the single
         // source of version truth (see PropPreset).
         private static string _Build(
-            ExposedObjectHandle? wrapperHandle, GameObject instance, Func<ExposedObjectHandle, string> serialize, bool skipEmpty)
+            LiveObjectHandle? wrapperHandle, GameObject instance, Func<LiveObjectHandle, string> serialize, bool skipEmpty)
         {
             if (instance == null) return null;
 
@@ -367,12 +367,12 @@ namespace Lilium.LiveStudio
                 {
                     obj.Remove("@parent");
                     obj.Remove("components");
-                    if (skipEmpty && !ExposedPropertySerializer.HasNonMetaProperties(obj)) continue;
+                    if (skipEmpty && !LivePropertySerializer.HasNonMetaProperties(obj)) continue;
                     root["wrapper"] = obj;
                 }
                 else
                 {
-                    if (skipEmpty && !ExposedPropertySerializer.HasNonMetaProperties(obj)) continue;
+                    if (skipEmpty && !LivePropertySerializer.HasNonMetaProperties(obj)) continue;
                     components[entry.key] = obj;
                 }
             }
@@ -381,18 +381,18 @@ namespace Lilium.LiveStudio
             return root.ToString(Formatting.None);
         }
 
-        // (Non-metadata-property check is shared via ExposedPropertySerializer.HasNonMetaProperties.)
+        // (Non-metadata-property check is shared via LivePropertySerializer.HasNonMetaProperties.)
 
         // Looks up a component's saved JSON by its current exposed type name, falling back to any former
-        // names ([FormerlyExposedAs]) so a preset written before a type rename still restores. The value
+        // names ([FormerlyNamedAs]) so a preset written before a type rename still restores. The value
         // payload's own @type / member names are resolved by the serializer; this covers the envelope KEY,
         // which is the current type name and would otherwise miss a snapshot keyed by the old name.
-        private static JObject _ResolveComponentValue(JObject components, string currentKey, ExposedClass exposedClass)
+        private static JObject _ResolveComponentValue(JObject components, string currentKey, LiveClass liveClass)
         {
             if (components == null) return null;
             if (components[currentKey] is JObject current) return current;
 
-            var formers = exposedClass?.formerTypeNames;
+            var formers = liveClass?.formerTypeNames;
             if (formers != null)
             {
                 for (int i = 0; i < formers.Length; i++)
@@ -404,19 +404,19 @@ namespace Lilium.LiveStudio
         }
 
         // The wrapper handle for a prop-style caller: the registered handle whose target is the wrapper.
-        private static ExposedObjectHandle? _WrapperHandle(ExposedGameObject exposed)
-            => exposed != null ? ExposedObjectRegistry.FindByTarget(exposed) : null;
+        private static LiveObjectHandle? _WrapperHandle(LiveGameObject exposed)
+            => exposed != null ? LiveObjectRegistry.FindByTarget(exposed) : null;
 
         // The wrapper handle for an object exposed through a pre-existing scene wrapper: the registered
-        // handle whose target is an ExposedUnityObjectBase referencing this GameObject (matches how
+        // handle whose target is an LiveUnityObjectBase referencing this GameObject (matches how
         // AvatarAsset resolves the AvatarController's wrapper). Null when the GameObject has no wrapper
         // (e.g. the default avatar with no scene wrapper) — components are still enumerated directly.
-        private static ExposedObjectHandle? _WrapperHandleForGameObject(GameObject go)
+        private static LiveObjectHandle? _WrapperHandleForGameObject(GameObject go)
         {
             if (go == null) return null;
-            foreach (var handle in ExposedObjectRegistry.instances)
+            foreach (var handle in LiveObjectRegistry.instances)
             {
-                if (handle.target is ExposedUnityObjectBase proxy
+                if (handle.target is LiveUnityObjectBase proxy
                     && proxy.reference is GameObject wrappedGo
                     && wrappedGo == go)
                 {
@@ -427,11 +427,11 @@ namespace Lilium.LiveStudio
         }
 
         // Enumerates the exposed handles that make up an object's snapshot: the GameObject wrapper
-        // (keyed by kWrapperKey, null ExposedClass) followed by each [ExposedClass] component on the root
+        // (keyed by kWrapperKey, null LiveClass) followed by each [LiveClass] component on the root
         // (keyed by its exposed type name, which is stable across reloads unlike the per-load object id).
-        // The ExposedClass is carried so Restore can fall back to the component's former type names.
-        private static IEnumerable<(string key, ExposedObjectHandle handle, ExposedClass exposedClass)> _EnumerateHandles(
-            ExposedObjectHandle? wrapperHandle, GameObject instance)
+        // The LiveClass is carried so Restore can fall back to the component's former type names.
+        private static IEnumerable<(string key, LiveObjectHandle handle, LiveClass liveClass)> _EnumerateHandles(
+            LiveObjectHandle? wrapperHandle, GameObject instance)
         {
             if (wrapperHandle.HasValue) yield return (kWrapperKey, wrapperHandle.Value, null);
 
@@ -440,16 +440,16 @@ namespace Lilium.LiveStudio
             {
                 if (comp == null) continue;
                 var type = comp.GetType();
-                if (!ExposedClass.Has(type)) continue;
-                var exposedClass = ExposedClass.Find(type);
-                if (exposedClass == null) continue;
+                if (!LiveClass.Has(type)) continue;
+                var liveClass = LiveClass.Find(type);
+                if (liveClass == null) continue;
                 // Take an id-less handle: the snapshot keys components by exposed type name (above) and
-                // its consumers key by target reference (ExposedObjectDefaultRegistry) or operate on the
-                // handle directly (ExposedObjectSnapshot), so no registry id is needed. Registering the
-                // component with an id would make ExposedGameObject._components serialize it as an @ref,
+                // its consumers key by target reference (LiveObjectDefaultRegistry) or operate on the
+                // handle directly (LiveObjectSnapshot), so no registry id is needed. Registering the
+                // component with an id would make LiveGameObject._components serialize it as an @ref,
                 // which the remote app then fetches as a stray top-level scene object (a duplicate entry).
-                var handle = ExposedObjectRegistry.GetOrCreateWithoutId(exposedClass, comp);
-                yield return (exposedClass.typeName, handle, exposedClass);
+                var handle = LiveObjectRegistry.GetOrCreateWithoutId(liveClass, comp);
+                yield return (liveClass.typeName, handle, liveClass);
             }
         }
 

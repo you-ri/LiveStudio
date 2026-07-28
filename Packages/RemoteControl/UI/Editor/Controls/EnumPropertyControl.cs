@@ -13,11 +13,11 @@ namespace Lilium.RemoteControl.UI.Editor
         public VisualElement CreateControl(PropertyControlContext ctx)
         {
             var valueType = ctx.propType.valueType;
-            var exposedEnum = ExposedEnum.all.ContainsKey(valueType) ? ExposedEnum.all[valueType] : null;
+            var liveEnum = LiveEnum.all.ContainsKey(valueType) ? LiveEnum.all[valueType] : null;
 
-            if (exposedEnum != null && exposedEnum.values != null && exposedEnum.values.Length > 0)
+            if (liveEnum != null && liveEnum.values != null && liveEnum.values.Length > 0)
             {
-                return _CreatePopupField(ctx, exposedEnum, valueType);
+                return _CreatePopupField(ctx, liveEnum, valueType);
             }
 
             if (ctx.currentValue is Enum enumVal)
@@ -40,16 +40,16 @@ namespace Lilium.RemoteControl.UI.Editor
             }
         }
 
-        private VisualElement _CreatePopupField(PropertyControlContext ctx, ExposedEnum exposedEnum, Type valueType)
+        private VisualElement _CreatePopupField(PropertyControlContext ctx, LiveEnum liveEnum, Type valueType)
         {
-            var names = exposedEnum.values.Select(v => v.displayName).ToList();
+            var names = liveEnum.values.Select(v => v.displayName).ToList();
             var currentIndex = 0;
             if (ctx.currentValue != null)
             {
                 var intVal = Convert.ToInt32(ctx.currentValue);
-                for (int i = 0; i < exposedEnum.values.Length; i++)
+                for (int i = 0; i < liveEnum.values.Length; i++)
                 {
-                    if (exposedEnum.values[i].value == intVal) { currentIndex = i; break; }
+                    if (liveEnum.values[i].value == intVal) { currentIndex = i; break; }
                 }
             }
 
@@ -59,7 +59,7 @@ namespace Lilium.RemoteControl.UI.Editor
             {
                 var prop = ctx.prop;
                 var isUpdatingUI = ctx.isUpdatingUI;
-                var capturedEnum = exposedEnum;
+                var capturedEnum = liveEnum;
                 var capturedType = valueType;
                 popup.RegisterValueChangedCallback(evt =>
                 {
@@ -96,15 +96,15 @@ namespace Lilium.RemoteControl.UI.Editor
         {
             if (value == null) return;
 
-            // PopupFieldからvalueTypeを特定するためExposedEnumを検索
+            // PopupFieldからvalueTypeを特定するためLiveEnumを検索
             var valueType = value.GetType();
-            var exposedEnum = ExposedEnum.all.ContainsKey(valueType) ? ExposedEnum.all[valueType] : null;
-            if (exposedEnum == null) return;
+            var liveEnum = LiveEnum.all.ContainsKey(valueType) ? LiveEnum.all[valueType] : null;
+            if (liveEnum == null) return;
 
             var intVal = Convert.ToInt32(value);
-            for (int idx = 0; idx < exposedEnum.values.Length; idx++)
+            for (int idx = 0; idx < liveEnum.values.Length; idx++)
             {
-                if (exposedEnum.values[idx].value == intVal)
+                if (liveEnum.values[idx].value == intVal)
                 {
                     popup.index = idx;
                     break;

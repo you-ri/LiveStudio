@@ -12,22 +12,22 @@ namespace Lilium.RemoteControl.Tests
 {
     // Source Generator がアクセサを生成する対象。トップレベル internal なので、
     // 同アセンブリに emit される生成コード (自由関数) から public メンバーにアクセス可能。
-    [ExposedClass]
+    [LiveClass]
     internal class BenchTarget
     {
-        [ExposedProperty]
+        [LiveProperty]
         public float speed { get; set; }
 
-        [ExposedField]
+        [LiveField]
         public int count;
 
         // 参照型メンバー: getter/setter ともボックス化が無いので GC alloc ゼロを検証できる。
-        [ExposedProperty]
+        [LiveProperty]
         public string label { get; set; }
     }
 
     /// <summary>
-    /// Phase 1b 検証: ExposedClass の公開メンバーに対し Source Generator が生成した
+    /// Phase 1b 検証: LiveClass の公開メンバーに対し Source Generator が生成した
     /// get/set アクセサが登録され、reflection より高速であることを確認する。
     /// </summary>
     public class MemberAccessBenchmark
@@ -39,13 +39,13 @@ namespace Lilium.RemoteControl.Tests
         public void GeneratedAccessor_IsRegistered()
         {
             Assert.IsTrue(
-                ExposedMemberAccessorTable.TryGet(typeof(BenchTarget), "speed", out var pg, out var ps),
+                LiveMemberAccessorTable.TryGet(typeof(BenchTarget), "speed", out var pg, out var ps),
                 "property 'speed' accessor should be generated");
             Assert.IsNotNull(pg, "property getter");
             Assert.IsNotNull(ps, "property setter");
 
             Assert.IsTrue(
-                ExposedMemberAccessorTable.TryGet(typeof(BenchTarget), "count", out var fg, out var fs),
+                LiveMemberAccessorTable.TryGet(typeof(BenchTarget), "count", out var fg, out var fs),
                 "field 'count' accessor should be generated");
             Assert.IsNotNull(fg, "field getter");
             Assert.IsNotNull(fs, "field setter");
@@ -62,9 +62,9 @@ namespace Lilium.RemoteControl.Tests
         public void GeneratedSetter_DoesNotAllocate()
         {
             var obj = new BenchTarget();
-            ExposedMemberAccessorTable.TryGet(typeof(BenchTarget), "speed", out _, out var setSpeed);
-            ExposedMemberAccessorTable.TryGet(typeof(BenchTarget), "count", out _, out var setCount);
-            ExposedMemberAccessorTable.TryGet(typeof(BenchTarget), "label", out _, out var setLabel);
+            LiveMemberAccessorTable.TryGet(typeof(BenchTarget), "speed", out _, out var setSpeed);
+            LiveMemberAccessorTable.TryGet(typeof(BenchTarget), "count", out _, out var setCount);
+            LiveMemberAccessorTable.TryGet(typeof(BenchTarget), "label", out _, out var setLabel);
 
             // 値型の set はボックス済みの値を渡すため、setter 自体は unbox のみで alloc しない。
             object boxedFloat = 2.5f;
@@ -88,7 +88,7 @@ namespace Lilium.RemoteControl.Tests
         public void GeneratedGetter_ReferenceType_DoesNotAllocate()
         {
             var obj = new BenchTarget { label = "hello" };
-            ExposedMemberAccessorTable.TryGet(typeof(BenchTarget), "label", out var getLabel, out _);
+            LiveMemberAccessorTable.TryGet(typeof(BenchTarget), "label", out var getLabel, out _);
 
             object sink = getLabel(obj); // warmup
             Assert.That(() => { sink = getLabel(obj); }, ConstraintIs.Not.AllocatingGCMemory(),
@@ -105,7 +105,7 @@ namespace Lilium.RemoteControl.Tests
             var obj = new BenchTarget { speed = 1.5f, count = 7 };
 
             var prop = typeof(BenchTarget).GetProperty("speed");
-            ExposedMemberAccessorTable.TryGet(typeof(BenchTarget), "speed", out var del, out var setDel);
+            LiveMemberAccessorTable.TryGet(typeof(BenchTarget), "speed", out var del, out var setDel);
 
             object boxed = 2.5f;
             object sink = null;

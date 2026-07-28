@@ -6,7 +6,7 @@ namespace Lilium.LiveStudio.EditorTests
 {
     // An input source whose raw value is set by the test, bypassing any real input device. Top-level and
     // non-private because the RemoteControl source generator enumerates every concrete subclass of an
-    // [ExposedClass] base (InputSource) in declaration-order code and cannot reference a private type.
+    // [LiveClass] base (InputSource) in declaration-order code and cannot reference a private type.
     internal sealed class FakeInputSource : InputSource
     {
         public float raw;

@@ -7,7 +7,7 @@ namespace Lilium.LiveStudio
     /// <summary>
     /// How an <see cref="InputSource"/> turns its raw input into the output value its operations read.
     /// </summary>
-    [ExposedEnum]
+    [LiveEnum]
     public enum InputMode
     {
         /// <summary>Output follows the raw input: 1 (or the analog value) while held, 0 when released.</summary>

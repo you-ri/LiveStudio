@@ -7,14 +7,14 @@ using UnityEngine;
 namespace Lilium.LiveStudio
 {
 
-    [ExposedEnum]
+    [LiveEnum]
     public enum BackgroundMode
     {
         Cubemap,
         Image,
     }
 
-    [ExposedEnum]
+    [LiveEnum]
     public enum ImageFitMode
     {
         AutoFit,
@@ -23,8 +23,8 @@ namespace Lilium.LiveStudio
     }
 
     [Serializable]
-    [ExposedClass(Category = "Background", Icon = "landscape")]
-    public class SkyboxBackground : IExposedObject, IExposedDeserializeCallback
+    [LiveClass(Category = "Background", Icon = "landscape")]
+    public class SkyboxBackground : ILiveObject, ILiveDeserializeCallback
     {
         const string kId = "93258b4a-7f2a-40ac-8d0d-0782f155e364";
 
@@ -34,7 +34,7 @@ namespace Lilium.LiveStudio
 
         public string name { get; set; } = "Skybox Background";
 
-        public ExposedObjectHandle? exposedObject => ExposedObjectRegistry.FindByTarget(this);
+        public LiveObjectHandle? liveObject => LiveObjectRegistry.FindByTarget(this);
 
         public string id => kId;
 
@@ -49,7 +49,7 @@ namespace Lilium.LiveStudio
         }
 
 
-        [ExposedProperty]
+        [LiveProperty]
         public BackgroundMode backgroundMode
         {
             get => _backgroundMode;
@@ -61,12 +61,12 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [ExposedField, Hide]
-        [FormerlyExposedAs("backgroundMode")]
+        [LiveField, Hide]
+        [FormerlyNamedAs("backgroundMode")]
         BackgroundMode _backgroundMode = BackgroundMode.Cubemap;
 
-        [ExposedProperty]
-        [ExposedHelp("BACKGROUND_TEXTURE")]
+        [LiveProperty]
+        [Help("BACKGROUND_TEXTURE")]
         public ExternalTexture backgroundTexture
         {
             get => _backgroundTexture;
@@ -91,17 +91,17 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [ExposedField, Hide]
-        [FormerlyExposedAs("backgroundTexture")]
+        [LiveField, Hide]
+        [FormerlyNamedAs("backgroundTexture")]
         private ExternalTexture _backgroundTexture;
 
         // --- Cubemap mode ---
 
-        [ExposedField, Hide]
-        [FormerlyExposedAs("skyboxRotation")]
+        [LiveField, Hide]
+        [FormerlyNamedAs("skyboxRotation")]
         private float _skyboxRotation = 0f;
 
-        [ExposedProperty, Slider(-180f, 180f, 1f), ShowIf(nameof(backgroundMode), (int)BackgroundMode.Cubemap)]
+        [LiveProperty, Slider(-180f, 180f, 1f), ShowIf(nameof(backgroundMode), (int)BackgroundMode.Cubemap)]
         public float skyboxRotation
         {
             get => _skyboxRotation;
@@ -112,11 +112,11 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [ExposedField, Hide]
-        [FormerlyExposedAs("skyboxExposure")]
+        [LiveField, Hide]
+        [FormerlyNamedAs("skyboxExposure")]
         private float _skyboxExposure = 1f;
 
-        [ExposedProperty, Slider(0f, 8f, 0.1f), ShowIf(nameof(backgroundMode), (int)BackgroundMode.Cubemap)]
+        [LiveProperty, Slider(0f, 8f, 0.1f), ShowIf(nameof(backgroundMode), (int)BackgroundMode.Cubemap)]
         public float skyboxExposure
         {
             get => _skyboxExposure;
@@ -129,7 +129,7 @@ namespace Lilium.LiveStudio
 
         // --- Image mode ---
 
-        [ExposedProperty, ShowIf(nameof(backgroundMode), (int)BackgroundMode.Image)]
+        [LiveProperty, ShowIf(nameof(backgroundMode), (int)BackgroundMode.Image)]
         public ImageFitMode imageFitMode
         {
             get => _imageFitMode;
@@ -140,8 +140,8 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [ExposedField, Hide]
-        [FormerlyExposedAs("imageFitMode")]
+        [LiveField, Hide]
+        [FormerlyNamedAs("imageFitMode")]
         ImageFitMode _imageFitMode = ImageFitMode.AutoFit;
 
         static bool _HasMaterialProperty(Material mat, string name)
@@ -157,14 +157,14 @@ namespace Lilium.LiveStudio
                 : BackgroundMode.Cubemap;
 
             _InitializeMaterials();
-            ExposedObjectRegistry.Create<SkyboxBackground>(this, kId);
+            LiveObjectRegistry.Create<SkyboxBackground>(this, kId);
 
             Lilium.RemoteControl.LiveScene.RemoteControlBehaviour.onBaseSceneReloaded += _OnBaseSceneReloaded;
 
             _ApplyAll();
         }
 
-        public void OnAfterExposedDeserialize() => _ApplyAll();
+        public void OnAfterLiveDeserialize() => _ApplyAll();
 
         // After a base-scene switch (persistent host), Unity reset RenderSettings to the new scene's
         // authored skybox. Re-capture it as the default and re-apply our background on top, so the
@@ -179,7 +179,7 @@ namespace Lilium.LiveStudio
 
         void _ApplyAll()
         {
-            // Ensure materials exist: OnAfterExposedDeserialize can run before OnEnable,
+            // Ensure materials exist: OnAfterLiveDeserialize can run before OnEnable,
             // so we cannot rely on _InitializeMaterials() having been called yet.
             _InitializeMaterials();
 
@@ -199,7 +199,7 @@ namespace Lilium.LiveStudio
 
             _DestroyMaterials();
 
-            ExposedObjectRegistry.FindByTarget(this)?.Unregister();
+            LiveObjectRegistry.FindByTarget(this)?.Unregister();
         }
 
         public void OnDispose()
@@ -232,7 +232,7 @@ namespace Lilium.LiveStudio
                 // Skybox/Cubemap is a built-in shader; in player builds it is stripped unless it is
                 // referenced by a scene material or listed in Graphics > Always Included Shaders.
                 // Guard against a null shader so a missing skybox shader does not abort the caller
-                // (this runs from ExposedObjectContainer.Initialize and must not throw).
+                // (this runs from LiveObjectContainer.Initialize and must not throw).
                 var cubemapShader = Shader.Find("Skybox/Cubemap");
                 if (cubemapShader == null)
                 {

@@ -19,7 +19,7 @@ namespace Lilium.RemoteControl.LiveScene
     /// The on-disk shape mirrors the live scene file (<c>{ format, formatVersion, objects:[] }</c>)
     /// but every entry belongs to a single class and carries only Project-scoped members.
     ///
-    /// Besides the top-level registered objects, this also walks the <c>[ExposedClass]</c> components
+    /// Besides the top-level registered objects, this also walks the <c>[LiveClass]</c> components
     /// of each exposed GameObject. Such components (e.g. ScreenController = "Screen") are not
     /// registered as standalone handles; in the live scene they are saved as inline-reference pending
     /// entries via <see cref="LiveSceneSerializer"/>. Here they are re-linked to their owning
@@ -40,7 +40,7 @@ namespace Lilium.RemoteControl.LiveScene
         /// A full snapshot (not a delta) is taken so each settings file is self-contained and
         /// independent of the per-object default baseline.
         /// </summary>
-        public static Dictionary<string, string> BuildPerClassJson(IReadOnlyList<ExposedObjectHandle> objects, IExposedObjectResolver resolver)
+        public static Dictionary<string, string> BuildPerClassJson(IReadOnlyList<LiveObjectHandle> objects, ILiveObjectResolver resolver)
         {
             var entriesByClass = new Dictionary<string, JArray>(StringComparer.Ordinal);
             if (objects == null) return new Dictionary<string, string>(StringComparer.Ordinal);
@@ -49,20 +49,20 @@ namespace Lilium.RemoteControl.LiveScene
             {
                 if (obj == null) continue;
                 // Container 自身は live.json と同様に書き出さない。
-                if (obj.target is ExposedObjectContainer) continue;
+                if (obj.target is LiveObjectContainer) continue;
 
                 // 1. オブジェクト自身の Project メンバー (id を持つもののみ — 復元時に @id で再解決する)。
                 if (obj.hasId && _HasProjectScopedMember(obj))
                 {
-                    var jObj = JObject.Parse(ExposedPropertySerializer.ToJson(
+                    var jObj = JObject.Parse(LivePropertySerializer.ToJson(
                         obj, resolver, isDirtyOnly: false, forPersistence: true, scopeFilter: PersistScope.Project));
-                    if (ExposedPropertySerializer.HasNonMetaProperties(jObj))
+                    if (LivePropertySerializer.HasNonMetaProperties(jObj))
                     {
                         _AddEntry(entriesByClass, obj.targetTypeName, jObj);
                     }
                 }
 
-                // 2. 公開 GameObject の [ExposedClass] component を辿る (ScreenController="Screen" など)。
+                // 2. 公開 GameObject の [LiveClass] component を辿る (ScreenController="Screen" など)。
                 _CollectComponentEntries(obj, resolver, entriesByClass);
             }
 
@@ -83,7 +83,7 @@ namespace Lilium.RemoteControl.LiveScene
         /// (the owning GameObject's id) + <c>@type</c> + <c>@componentIndex</c>. Project-scoped values
         /// are written through. Idempotent: re-applying the same document re-sets the same values.
         /// </summary>
-        public static void ApplyJson(string json, IExposedObjectResolver resolver)
+        public static void ApplyJson(string json, ILiveObjectResolver resolver)
         {
             if (string.IsNullOrEmpty(json)) return;
 
@@ -117,7 +117,7 @@ namespace Lilium.RemoteControl.LiveScene
 
         // Applies a top-level entry resolved by @id. Skips (with a warning) when the id is missing from
         // the live scene — e.g. the owning object is not present this session.
-        private static void _ApplyRootEntry(JObject jObject, IExposedObjectResolver resolver)
+        private static void _ApplyRootEntry(JObject jObject, ILiveObjectResolver resolver)
         {
             var id = jObject["@id"]?.Value<string>();
             if (string.IsNullOrEmpty(id)) return;
@@ -127,13 +127,13 @@ namespace Lilium.RemoteControl.LiveScene
                 Debug.LogWarning($"[RemoteControl] Project settings: object '{id}' not found; entry skipped.");
                 return;
             }
-            ExposedPropertySerializer.FromJson(jObject.ToString(), handle.Value, resolver, captureDefaults: false);
+            LivePropertySerializer.FromJson(jObject.ToString(), handle.Value, resolver, captureDefaults: false);
         }
 
-        // Walks the [ExposedClass] components of the GameObject behind an exposed object proxy and
+        // Walks the [LiveClass] components of the GameObject behind an exposed object proxy and
         // emits a Project-scoped settings entry for each component that owns Project members.
         // Entries are linked to the owning GameObject by @parent so they can be re-resolved on apply.
-        private static void _CollectComponentEntries(ExposedObjectHandle obj, IExposedObjectResolver resolver, Dictionary<string, JArray> entriesByClass)
+        private static void _CollectComponentEntries(LiveObjectHandle obj, ILiveObjectResolver resolver, Dictionary<string, JArray> entriesByClass)
         {
             if (!obj.hasId) return; // 親 id が無いと apply 時に component を再解決できない。
             var go = LiveSceneObjectUtil.GetGameObject(obj);
@@ -145,7 +145,7 @@ namespace Lilium.RemoteControl.LiveScene
             {
                 if (comp == null) continue;
                 var compType = comp.GetType();
-                if (!ExposedClass.TryGet(compType, out var compClass)) continue;
+                if (!LiveClass.TryGet(compType, out var compClass)) continue;
 
                 int idx = typeIndex.TryGetValue(compType, out var n) ? n : 0;
                 typeIndex[compType] = idx + 1;
@@ -153,12 +153,12 @@ namespace Lilium.RemoteControl.LiveScene
                 // 既に独立ハンドルとして登録済みの component は top-level 経路で処理されるので二重出力を避ける。
                 if (resolver.FindByTarget(comp) != null) continue;
 
-                var ch = ExposedObjectHandle.CreateUnregistered(compClass, comp);
+                var ch = LiveObjectHandle.CreateUnregistered(compClass, comp);
                 if (!_HasProjectScopedMember(ch)) continue;
 
-                var cObj = JObject.Parse(ExposedPropertySerializer.ToJson(
+                var cObj = JObject.Parse(LivePropertySerializer.ToJson(
                     ch, resolver, isDirtyOnly: false, forPersistence: true, scopeFilter: PersistScope.Project));
-                if (!ExposedPropertySerializer.HasNonMetaProperties(cObj)) continue;
+                if (!LivePropertySerializer.HasNonMetaProperties(cObj)) continue;
 
                 cObj.Remove("@id");
                 cObj.Remove("@source");
@@ -168,7 +168,7 @@ namespace Lilium.RemoteControl.LiveScene
             }
         }
 
-        private static void _ApplyComponentEntry(JObject jObject, string parentId, IExposedObjectResolver resolver)
+        private static void _ApplyComponentEntry(JObject jObject, string parentId, ILiveObjectResolver resolver)
         {
             var parent = resolver.FindById(parentId);
             if (parent == null)
@@ -181,7 +181,7 @@ namespace Lilium.RemoteControl.LiveScene
 
             var typeName = jObject["@type"]?.Value<string>();
             if (string.IsNullOrEmpty(typeName)) return;
-            var compClass = ExposedClass.Find(typeName);
+            var compClass = LiveClass.Find(typeName);
             if (compClass == null || compClass.type == null)
             {
                 Debug.LogWarning($"[RemoteControl] Project settings: unknown component type '{typeName}' (deleted/renamed class?); entry skipped.");
@@ -196,8 +196,8 @@ namespace Lilium.RemoteControl.LiveScene
                 return;
             }
 
-            var ch = ExposedObjectHandle.CreateUnregistered(compClass, matches[wantIdx]);
-            ExposedPropertySerializer.FromJson(jObject.ToString(), ch, resolver, captureDefaults: false);
+            var ch = LiveObjectHandle.CreateUnregistered(compClass, matches[wantIdx]);
+            LivePropertySerializer.FromJson(jObject.ToString(), ch, resolver, captureDefaults: false);
         }
 
         private static void _AddEntry(Dictionary<string, JArray> entriesByClass, string className, JObject entry)
@@ -212,7 +212,7 @@ namespace Lilium.RemoteControl.LiveScene
         }
 
 
-        private static bool _HasProjectScopedMember(ExposedObjectHandle obj)
+        private static bool _HasProjectScopedMember(LiveObjectHandle obj)
         {
             var props = obj.propertyTypes;
             if (props == null) return false;

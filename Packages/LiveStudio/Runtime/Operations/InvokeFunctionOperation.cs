@@ -7,8 +7,8 @@ using Lilium.RemoteControl;
 namespace Lilium.LiveStudio
 {
     /// <summary>
-    /// Invokes an <c>[ExposedFunction]</c> on a target exposed object (addressed by its stable
-    /// <see cref="ExposedObjectRegistry"/> id) when the input triggers — the generic counterpart of the
+    /// Invokes an <c>[LiveFunction]</c> on a target exposed object (addressed by its stable
+    /// <see cref="LiveObjectRegistry"/> id) when the input triggers — the generic counterpart of the
     /// feature-specific switch operations. Created from the remote app's "bind to key" affordance next to a
     /// function button, so the button's owning object (<see cref="targetId"/>) and method
     /// (<see cref="functionName"/>) are known at creation. Bound to <see cref="InputMode.Button"/> by the
@@ -25,34 +25,34 @@ namespace Lilium.LiveStudio
     /// from <see cref="OperationSet.enabled"/> (the user's on/off): the set can be enabled yet dangling.
     /// </summary>
     [Serializable]
-    [ExposedClass(Category = "Operation", Icon = "bolt")]
+    [LiveClass(Category = "Operation", Icon = "bolt")]
     [MovedFrom(false, null, null, "InvokeFunctionAction")]
-    [FormerlyExposedAs("InvokeFunctionAction")]
+    [FormerlyNamedAs("InvokeFunctionAction")]
     public class InvokeFunctionOperation : OperationBase
     {
         /// <summary>Stable id of the exposed object that owns the function.</summary>
-        [ExposedField]
+        [LiveField]
         public string targetId = string.Empty;
 
-        /// <summary>Name of the <c>[ExposedFunction]</c> to invoke.</summary>
-        [ExposedField]
+        /// <summary>Name of the <c>[LiveFunction]</c> to invoke.</summary>
+        [LiveField]
         public string functionName = string.Empty;
 
         /// <summary>Path (remote-app slash transport form; e.g. "sets/0") of the property whose value owns the
         /// function, when it is not on <see cref="targetId"/> directly — e.g. a StageManager set element's
         /// <c>WarpTo</c>. Empty means the function is on the target object itself (the common case). Resolved
         /// the same way the REST invoke resolves a nested function.</summary>
-        [ExposedField]
+        [LiveField]
         public string propertyPath = string.Empty;
 
         /// <summary>Positional call arguments as a JSON array string (e.g. <c>[0.5,"hello"]</c>), in the
         /// function's parameter order — the same representation the REST invoke body carries. Empty means no
         /// arguments (the original behaviour). Not editing this by hand is expected: it is captured from the
         /// function argument dialog when the operation is created.</summary>
-        [ExposedField]
+        [LiveField]
         public string argsJson = string.Empty;
 
-        // Functions are keyed by their lower-cased apiName (ExposedFunctionType.apiName), mirroring the REST
+        // Functions are keyed by their lower-cased apiName (LiveFunctionType.apiName), mirroring the REST
         // layer that lower-cases the path segment. The stored name keeps its original case for readability,
         // so it is normalized here at lookup.
         private string _ApiName() => functionName?.ToLowerInvariant();
@@ -61,12 +61,12 @@ namespace Lilium.LiveStudio
         /// <see cref="propertyPath"/> when set). Read-only and computed (never serialized): the remote app
         /// surfaces it so a dangling operation reads as invalid, separate from
         /// <see cref="OperationSet.enabled"/>.</summary>
-        [ExposedProperty]
+        [LiveProperty]
         public bool valid
         {
             get
             {
-                var handle = ExposedObjectRegistry.FindById(targetId);
+                var handle = LiveObjectRegistry.FindById(targetId);
                 return handle != null && handle.Value.ResolveFunction(propertyPath, _ApiName(), out _) != null;
             }
         }
@@ -75,7 +75,7 @@ namespace Lilium.LiveStudio
         {
             if (!context.triggered) return;
             // Guard the id lookup so a dangling target is a silent no-op rather than logging every press.
-            var handle = ExposedObjectRegistry.FindById(targetId);
+            var handle = LiveObjectRegistry.FindById(targetId);
             if (handle == null) return;
             // Resolve the function on the target directly, or on the value at propertyPath for a nested member
             // (e.g. a StageManager set's WarpTo). A dangling path/function is a silent no-op: valid surfaces it.
@@ -86,9 +86,9 @@ namespace Lilium.LiveStudio
             // is a discrete user action (key-up / rising edge), so parsing here is not on a per-frame hot path.
             var args = string.IsNullOrEmpty(argsJson)
                 ? null
-                : ExposedPropertySerializer.BuildInvokeArgumentsFromJson(function, argsJson);
+                : LivePropertySerializer.BuildInvokeArgumentsFromJson(function, argsJson);
             // Guard the invoke so a throwing bound function does not break the OperationManager update loop
-            // (the same protection ExposedObjectHandle.InvokeFunction provides for the direct path).
+            // (the same protection LiveObjectHandle.InvokeFunction provides for the direct path).
             try
             {
                 function.Invoke(function.isStatic ? null : functionTarget, args);

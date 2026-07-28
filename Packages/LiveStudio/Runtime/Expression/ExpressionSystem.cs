@@ -63,31 +63,31 @@ namespace Lilium.LiveStudio
     }
 
     [System.Serializable]
-    [ExposedClass(Icon = "tune")]
-    [ExposedHelp("https://www.notion.so/WeightAdjustmentData-2999e258bd3d80999682ea2ed6092106")]
+    [LiveClass(Icon = "tune")]
+    [Help("https://www.notion.so/WeightAdjustmentData-2999e258bd3d80999682ea2ed6092106")]
     public struct WeightAdjustmentData
     {
         static WeightAdjustmentData() => CompilerUtility.CheckUnmanaged<WeightAdjustmentData>();
 
-        [ExposedField("name")]
+        [LiveField("name")]
         public ARKitBlendShapeLocation location;
 
-        [ExposedField]
+        [LiveField]
         public bool isSymmetric;
 
-        [ExposedField, Slider(0, 1)]
+        [LiveField, Slider(0, 1)]
         public float inputValueMin;
 
-        [ExposedField, Slider(0, 1)]
+        [LiveField, Slider(0, 1)]
         public float inputValueMax;
 
-        [ExposedField, Slider(0, 1)]
+        [LiveField, Slider(0, 1)]
         public float outputValueMin;
 
-        [ExposedField, Slider(0, 1)]
+        [LiveField, Slider(0, 1)]
         public float outputValueMax;
 
-        [ExposedDefault]
+        [LiveDefault]
         public static WeightAdjustmentData Default => new WeightAdjustmentData
         {
             location = ARKitBlendShapeLocation.JawOpen,
@@ -101,34 +101,34 @@ namespace Lilium.LiveStudio
     }
 
     [System.Serializable]
-    [ExposedClass(Icon = "sentiment_satisfied")]
+    [LiveClass(Icon = "sentiment_satisfied")]
     public struct ExpressionData
     {
-        [ExposedField]
+        [LiveField]
         public string name;
 
-        [ExposedField, Slider(0, 1)]
+        [LiveField, Slider(0, 1)]
         public float blendTime;
 
-        [ExposedField, Slider(0, 1)]
+        [LiveField, Slider(0, 1)]
         public float blinkWeightInfluence;
 
-        [ExposedField, Slider(0, 1)]
+        [LiveField, Slider(0, 1)]
         public float eyesWeightInfluence;
 
-        [ExposedField, Slider(0, 1)]
+        [LiveField, Slider(0, 1)]
         public float mouthWeightInfluence;
 
-        [ExposedField, Slider(0, 1)]
+        [LiveField, Slider(0, 1)]
         public float browWeightInfluence;
 
-        [ExposedField, Slider(0, 1)]
+        [LiveField, Slider(0, 1)]
         public float cheekWeightInfluence;
 
-        [ExposedField]
+        [LiveField]
         public WeightAdjustmentData[] adjustments;
 
-        [ExposedDefault]
+        [LiveDefault]
         public static ExpressionData Default => new ExpressionData
         {
             name = "",
@@ -146,13 +146,13 @@ namespace Lilium.LiveStudio
     }
 
     [System.Serializable]
-    [ExposedClass(Icon = "tune")]
+    [LiveClass(Icon = "tune")]
     public struct ARKitWeightAdjustmentData
     {
-        [ExposedField]
+        [LiveField]
         public WeightAdjustmentData[] adjustments;
 
-        [ExposedDefault]
+        [LiveDefault]
         public static ARKitWeightAdjustmentData Default => new ARKitWeightAdjustmentData
         {
             adjustments = new WeightAdjustmentData[0],

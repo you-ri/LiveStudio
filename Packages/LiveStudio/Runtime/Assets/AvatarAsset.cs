@@ -24,7 +24,7 @@ namespace Lilium.LiveStudio
     /// its own wrapper. Preset state is still captured/restored on the AvatarController.
     /// </summary>
     [Serializable]
-    [ExposedClass("AvatarAsset", Category = "Asset", Icon = "person")]
+    [LiveClass("AvatarAsset", Category = "Asset", Icon = "person")]
     public class AvatarAsset : AvatarAssetBase
     {
         // Selectable service id of the avatar slot to drive. "current" is the id AvatarController

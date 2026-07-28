@@ -26,7 +26,7 @@ namespace Lilium.RemoteControl.RestApi
         protected readonly SynchronizationContext _mainThreadContext;
 
         // Routes supplied through the params constructor. Null when a handler
-        // overrides Routes itself (e.g. ExposedObjectHandler, whose route table
+        // overrides Routes itself (e.g. LiveObjectHandler, whose route table
         // is a static shared with its endpoint dispatch).
         private readonly RouteRule[] _routesField;
 
@@ -49,20 +49,20 @@ namespace Lilium.RemoteControl.RestApi
         }
 
         /// <summary>
-        /// コンテキストからExposedObjectContainerを取得
+        /// コンテキストからLiveObjectContainerを取得
         /// </summary>
-        protected ExposedObjectContainer GetObjectContainer()
+        protected LiveObjectContainer GetObjectContainer()
         {
             return _context?.objectContainer;
         }
 
         /// <summary>
-        /// ExposedObjectHandle 解決用リゾルバを取得。
+        /// LiveObjectHandle 解決用リゾルバを取得。
         /// ObjectContainer があればそれを、無ければ既定リゾルバを返す。
         /// </summary>
-        protected IExposedObjectResolver GetResolver()
+        protected ILiveObjectResolver GetResolver()
         {
-            return GetObjectContainer() ?? (IExposedObjectResolver)DefaultExposedObjectResolver.Instance;
+            return GetObjectContainer() ?? (ILiveObjectResolver)DefaultLiveObjectResolver.Instance;
         }
 
         // Virtual no-op so handlers without teardown work don't need an empty override.

@@ -21,35 +21,35 @@ namespace Lilium.RemoteControl.Tests
     public class RawJsonSerializationTests
     {
         [Serializable]
-        [ExposedClass("TestRawJsonClass")]
+        [LiveClass("TestRawJsonClass")]
         public class TestRawJsonClass
         {
             // The value is itself a JSON document.
-            [ExposedField, RawJson]
+            [LiveField, RawJson]
             public string state;
 
             // A plain string field (control): must stay an escaped string.
-            [ExposedField]
+            [LiveField]
             public string plain;
         }
 
         private const string kStateJson = "{\"version\":1,\"nested\":{\"x\":2},\"list\":[1,2,3]}";
 
-        private TestExposedObjectResolver _resolver;
+        private TestLiveObjectResolver _resolver;
 
         [SetUp]
         public void SetUp()
         {
-            ExposedClass.Clear();
-            foreach (var obj in ExposedObjectRegistry.instances.ToList()) obj.Unregister();
-            _resolver = new TestExposedObjectResolver();
-            ExposedClass.RegisterFromAttributes<TestRawJsonClass>();
+            LiveClass.Clear();
+            foreach (var obj in LiveObjectRegistry.instances.ToList()) obj.Unregister();
+            _resolver = new TestLiveObjectResolver();
+            LiveClass.RegisterFromAttributes<TestRawJsonClass>();
         }
 
         [TearDown]
         public void TearDown()
         {
-            foreach (var obj in ExposedObjectRegistry.instances.ToList()) obj.Unregister();
+            foreach (var obj in LiveObjectRegistry.instances.ToList()) obj.Unregister();
         }
 
         private static JToken StateOf(JObject value) => value["state"];
@@ -63,7 +63,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var obj = new TestRawJsonClass { state = kStateJson, plain = "{\"a\":1}" };
 
-            var root = JObject.Parse(ExposedPropertySerializer.ToJson(obj));
+            var root = JObject.Parse(LivePropertySerializer.ToJson(obj));
             var value = (JObject)root["value"];
 
             // state is embedded as a real object (not double-encoded), with its structure preserved.
@@ -80,8 +80,8 @@ namespace Lilium.RemoteControl.Tests
         {
             var obj = new TestRawJsonClass { state = kStateJson };
 
-            var json = ExposedPropertySerializer.ToJson(obj);
-            var restored = ExposedPropertySerializer.FromJson<TestRawJsonClass>(json);
+            var json = LivePropertySerializer.ToJson(obj);
+            var restored = LivePropertySerializer.FromJson<TestRawJsonClass>(json);
 
             // The restored string is semantically the same JSON document (formatting/order aside).
             Assert.IsTrue(JToken.DeepEquals(JToken.Parse(kStateJson), JToken.Parse(restored.state)));
@@ -100,7 +100,7 @@ namespace Lilium.RemoteControl.Tests
                 },
             };
 
-            var restored = ExposedPropertySerializer.FromJson<TestRawJsonClass>(legacy.ToString());
+            var restored = LivePropertySerializer.FromJson<TestRawJsonClass>(legacy.ToString());
 
             Assert.AreEqual(kStateJson, restored.state);
         }
@@ -111,11 +111,11 @@ namespace Lilium.RemoteControl.Tests
             // A [RawJson] value that is not parseable JSON must not throw; it falls back to a plain string.
             var obj = new TestRawJsonClass { state = "not json at all" };
 
-            var json = ExposedPropertySerializer.ToJson(obj);
+            var json = LivePropertySerializer.ToJson(obj);
             var value = (JObject)JObject.Parse(json)["value"];
             Assert.AreEqual(JTokenType.String, StateOf(value).Type);
 
-            var restored = ExposedPropertySerializer.FromJson<TestRawJsonClass>(json);
+            var restored = LivePropertySerializer.FromJson<TestRawJsonClass>(json);
             Assert.AreEqual("not json at all", restored.state);
         }
 
@@ -130,11 +130,11 @@ namespace Lilium.RemoteControl.Tests
             // save embeds in-use assets as @op:new array elements, whose element serialization shares the
             // same [RawJson] handling covered by the ToJson (JToken) tests above.
             var obj = new TestRawJsonClass { state = kStateJson };
-            var exposedClass = ExposedClass.Find(typeof(TestRawJsonClass));
-            new ExposedObjectHandle("rawjson-1", exposedClass, obj);
+            var liveClass = LiveClass.Find(typeof(TestRawJsonClass));
+            new LiveObjectHandle("rawjson-1", liveClass, obj);
 
             var json = LiveSceneSerializer.LiveSceneToJson(
-                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Snapshot);
+                new List<LiveObjectHandle>(LiveObjectRegistry.instances), _resolver, SerializeMode.Snapshot);
             var entry = (JObject)((JArray)JObject.Parse(json)["objects"])[0];
 
             Assert.AreEqual(JTokenType.Object, entry["state"].Type);
@@ -145,8 +145,8 @@ namespace Lilium.RemoteControl.Tests
         public void LiveSceneFromJson_RawJsonObject_RestoresCompactString()
         {
             var obj = new TestRawJsonClass { state = null };
-            var exposedClass = ExposedClass.Find(typeof(TestRawJsonClass));
-            new ExposedObjectHandle("rawjson-1", exposedClass, obj);
+            var liveClass = LiveClass.Find(typeof(TestRawJsonClass));
+            new LiveObjectHandle("rawjson-1", liveClass, obj);
 
             var json = new JObject
             {
@@ -170,8 +170,8 @@ namespace Lilium.RemoteControl.Tests
         public void LiveSceneFromJson_LegacyEscapedString_RestoresVerbatim()
         {
             var obj = new TestRawJsonClass { state = null };
-            var exposedClass = ExposedClass.Find(typeof(TestRawJsonClass));
-            new ExposedObjectHandle("rawjson-1", exposedClass, obj);
+            var liveClass = LiveClass.Find(typeof(TestRawJsonClass));
+            new LiveObjectHandle("rawjson-1", liveClass, obj);
 
             // Legacy live scene stored state as an escaped string.
             var json = new JObject

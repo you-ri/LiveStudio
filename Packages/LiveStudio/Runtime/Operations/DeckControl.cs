@@ -18,33 +18,33 @@ namespace Lilium.LiveStudio
     /// name; empty/unknown = treated as unplaced and re-placed on the default page). The remote
     /// app draws a deck's tiles as the operation sets whose control points at that deck. Polymorphic via
     /// <c>[SerializeReference]</c> + the RemoteControl <c>@type</c> discriminator, exactly like
-    /// <see cref="OperationBase"/>. <c>[ExposedClass]</c> on the abstract base lets the owning field's
+    /// <see cref="OperationBase"/>. <c>[LiveClass]</c> on the abstract base lets the owning field's
     /// derived-type enumeration surface the concrete kinds; the base itself is never instantiated.
     /// </summary>
     [Serializable]
-    [ExposedClass]
+    [LiveClass]
     public abstract class DeckControl
     {
         /// <summary>Name of the <see cref="Deck"/> this control is placed on (deck names are kept unique),
         /// or empty when unplaced. An empty or unknown name is normalized to the default page on load.</summary>
-        [ExposedField]
+        [LiveField]
         public string deckName = string.Empty;
 
         /// <summary>Grid column of the tile's top-left cell (0-based). Driven by the deck's drag layout,
         /// not hand-edited, so it is hidden from the generic editor.</summary>
-        [ExposedField, Hide]
+        [LiveField, Hide]
         public int x;
 
         /// <summary>Grid row of the tile's top-left cell (0-based). Hidden from the generic editor.</summary>
-        [ExposedField, Hide]
+        [LiveField, Hide]
         public int y;
 
         /// <summary>Column span (cells). Hidden from the generic editor.</summary>
-        [ExposedField, Hide]
+        [LiveField, Hide]
         public int w = 1;
 
         /// <summary>Row span (cells). Hidden from the generic editor.</summary>
-        [ExposedField, Hide]
+        [LiveField, Hide]
         public int h = 1;
 
         /// <summary>Optional asset id whose preview thumbnail (served by <c>/api/avatar/image?id=</c>) the
@@ -52,7 +52,7 @@ namespace Lilium.LiveStudio
         /// plain glass face). Set by the remote app's "add avatar switch tile" affordance to the switched
         /// avatar's id so the deck tile shows that avatar. Hidden from the generic editor (an asset id is not
         /// hand-edited) but still sent over the wire and persisted, like <see cref="OperationSet.id"/>.</summary>
-        [ExposedField, Hide]
+        [LiveField, Hide]
         public string backgroundAssetId = string.Empty;
 
         /// <summary>The fixed column span this tile kind occupies. <see cref="OperationManager"/> enforces
@@ -70,7 +70,7 @@ namespace Lilium.LiveStudio
     /// <summary>Momentary tile: held on while pressed, released on pointer-up
     /// (<see cref="OperationManager.SetOperationSetHeld"/>). Drives its input in <see cref="InputMode.Button"/>.</summary>
     [Serializable]
-    [ExposedClass(Category = "Operation", Icon = "bolt")]
+    [LiveClass(Category = "Operation", Icon = "bolt")]
     public class DeckButton : DeckControl
     {
     }
@@ -78,7 +78,7 @@ namespace Lilium.LiveStudio
     /// <summary>Latching tile: each tap flips the operation set on/off
     /// (<see cref="OperationManager.ToggleOperationSet"/>). Drives its input in <see cref="InputMode.Toggle"/>.</summary>
     [Serializable]
-    [ExposedClass(Category = "Operation", Icon = "check_box")]
+    [LiveClass(Category = "Operation", Icon = "check_box")]
     public class DeckToggle : DeckControl
     {
         /// <summary>Each tap latches on/off.</summary>
@@ -88,7 +88,7 @@ namespace Lilium.LiveStudio
     /// <summary>Continuous tile: drag sets a 0..1 manual value
     /// (<see cref="OperationManager.SetOperationSetValue"/>). Drives its input in <see cref="InputMode.Value"/>.</summary>
     [Serializable]
-    [ExposedClass(Category = "Operation", Icon = "sliders")]
+    [LiveClass(Category = "Operation", Icon = "sliders")]
     public class DeckSlider : DeckControl
     {
         /// <summary>Sliders span 2 cells so the gauge stays legible.</summary>
@@ -100,13 +100,13 @@ namespace Lilium.LiveStudio
         /// <summary>Low end of the value range the drag maps onto. Inherited from the source slider control's
         /// min when the tile is created from the remote app's "bind to key" affordance. Defaults to 0, which
         /// (with <see cref="max"/> = 1) is the identity range, so the raw 0..1 value is written unchanged.</summary>
-        [ExposedField]
+        [LiveField]
         public float min = 0f;
 
         /// <summary>High end of the value range. Inherited from the source slider control's max. Defaults to 1.
         /// The normalized 0..1 drag is written to the target property as <c>min + (max - min) * value</c>
         /// (see <see cref="OperationContext.MappedValue"/>).</summary>
-        [ExposedField]
+        [LiveField]
         public float max = 1f;
     }
 }

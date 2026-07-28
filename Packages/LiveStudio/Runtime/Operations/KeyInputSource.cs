@@ -13,21 +13,21 @@ namespace Lilium.LiveStudio
     /// (the remote app cannot capture the host's keys) and persisted as <see cref="binding"/>.
     /// </summary>
     [Serializable]
-    [ExposedClass(Category = "Operation", Icon = "keyboard")]
+    [LiveClass(Category = "Operation", Icon = "keyboard")]
     public class KeyInputSource : InputSource
     {
         // The bound control path, e.g. "<Keyboard>/a" or "<Gamepad>/buttonSouth". Persisted; restored
         // into the input action on Setup. This is the shadow field backing the read-only `binding`
-        // property: [FormerlyExposedAs("binding")] pairs it with that property so it persists under the
+        // property: [FormerlyNamedAs("binding")] pairs it with that property so it persists under the
         // `binding` name and is excluded from the exposed member list (no separate, editable
         // `controlPath` surfaces in the remote app). (Re)assigned through the rebind button, not by hand.
-        [SerializeField, ExposedField, Hide]
-        [FormerlyExposedAs("binding")]
+        [SerializeField, LiveField, Hide]
+        [FormerlyNamedAs("binding")]
         private string _controlPath = string.Empty;
 
         /// <summary>The bound control path (empty when unbound), surfaced read-only to the remote app.
         /// Persisted via the <see cref="_controlPath"/> shadow field.</summary>
-        [ExposedProperty]
+        [LiveProperty]
         public string binding => _controlPath;
 
         /// <summary>Sets the initial bound control path before the source is wired into the input map, so a
@@ -68,7 +68,7 @@ namespace Lilium.LiveStudio
         /// drives it through the Actions page's dedicated "Assign Input" button, which shows the key-capture
         /// modal and polls for the result. A bare generic button would fire it with no such feedback.
         /// </summary>
-        [ExposedFunction, Hide]
+        [LiveFunction, Hide]
         public void StartRebind() => _StartRebindAsync();
 
         private async void _StartRebindAsync()

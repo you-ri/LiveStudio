@@ -15,17 +15,17 @@ namespace Lilium.LiveStudio
     /// <summary>
     /// 入力デバイスの情報を保持するためのコンポーネント
     /// </summary>
-    [ExposedClass("InputActions", Category = "Input", Icon = "keyboard", HideInScene = true)]
+    [LiveClass("InputActions", Category = "Input", Icon = "keyboard", HideInScene = true)]
     [DisallowMultipleComponent]
     [ExecuteAlways]
     public sealed class AvatarInput : MonoBehaviour, IInputActionProvider,
-        IExposedSerializeCallback, IExposedDeserializeCallback
+        ILiveSerializeCallback, ILiveDeserializeCallback
     {
         /// <summary>
         /// デバイスフィルタ
         /// </summary>
-        [SerializeField, ExposedField, Hide]
-        [FormerlyExposedAs("deviceName")]
+        [SerializeField, LiveField, Hide]
+        [FormerlyNamedAs("deviceName")]
         internal string _deviceName;
 
         [NonSerialized] private InputUser _inputUser;
@@ -35,9 +35,9 @@ namespace Lilium.LiveStudio
         [SerializeField]
         private InputActionMap _inputActionMap;
 
-        // --- Exposed Properties ---
+        // --- Live Properties ---
 
-        [ExposedProperty]
+        [LiveProperty]
         public string deviceName
         {
             get => _deviceName;
@@ -52,19 +52,19 @@ namespace Lilium.LiveStudio
         }
 
         // Shadow Field: serialization buffer for the InputActionMap state.
-        // Refreshed from the live InputActionMap in OnBeforeExposedSerialize and
-        // applied back to the InputActionMap in OnAfterExposedDeserialize. The
+        // Refreshed from the live InputActionMap in OnBeforeLiveSerialize and
+        // applied back to the InputActionMap in OnAfterLiveDeserialize. The
         // property getter intentionally returns a fresh snapshot rather than
         // this field so live API queries reflect the current map.
-        [SerializeField, HideInInspector, ExposedField, Hide]
-        [FormerlyExposedAs("settings")]
+        [SerializeField, HideInInspector, LiveField, Hide]
+        [FormerlyNamedAs("settings")]
         private AvatarInputSettings _settings;
 
         /// <summary>
         /// InputActionMapの設定をシリアライズ可能な形で公開する。
         /// LiveSceneToJson/LiveSceneFromJson経由で保存/復元される。
         /// </summary>
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public AvatarInputSettings settings
         {
             get => AvatarInputSettingsUtils.CreateSettingsFromAvatarInput(this);
@@ -78,13 +78,13 @@ namespace Lilium.LiveStudio
             }
         }
 
-        public void OnBeforeExposedSerialize()
+        public void OnBeforeLiveSerialize()
         {
             // shadow field を最新 InputActionMap state から refresh してから JSON 化する
             _settings = AvatarInputSettingsUtils.CreateSettingsFromAvatarInput(this);
         }
 
-        public void OnAfterExposedDeserialize()
+        public void OnAfterLiveDeserialize()
         {
             // SetValueRaw は Property setter をバイパスするので、shadow field に書かれた
             // _settings を InputActionMap に反映するためここで apply する
@@ -94,7 +94,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [ExposedProperty]
+        [LiveProperty]
         public IEnumerable<string> actionNames
         {
             get
@@ -220,7 +220,7 @@ namespace Lilium.LiveStudio
         /// すべてのバインディングをリセット
         /// </summary>
         [Preserve]
-        [ExposedFunction(label = "INPUTACTIONS_RESETBINDINGS")]
+        [LiveFunction(label = "INPUTACTIONS_RESETBINDINGS")]
         public void ResetAllBindings()
         {
             if (_inputActionMap != null)

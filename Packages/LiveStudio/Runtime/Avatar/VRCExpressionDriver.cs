@@ -23,15 +23,15 @@ namespace Lilium.LiveStudio
     /// パラメータ群 (AnimationParameterOverride) のペア。VRChat の FX レイヤーが
     /// Animator パラメータ値で表情を切り替える仕組みに合わせる。
     /// </summary>
-    [ExposedClass]
+    [LiveClass]
     [Serializable]
     public class VRCExpression
     {
-        [ExposedField]
+        [LiveField]
         [Tooltip("表情名 (FacialKey.name)。AvatarExpression の \"Expression.<name>\" InputAction と紐付く")]
         public string name;
 
-        [ExposedField(label = "VRCAVATAR_EXPRESSION_PARAMETERS")]
+        [LiveField(label = "VRCAVATAR_EXPRESSION_PARAMETERS")]
         [Tooltip("この表情がアクティブな間に Animator に書き込むパラメータ")]
         public AnimationParameterOverride[] parameters = Array.Empty<AnimationParameterOverride>();
     }

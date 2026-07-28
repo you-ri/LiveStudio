@@ -4,7 +4,7 @@ using Lilium.RemoteControl;
 namespace Lilium.LiveStudio
 {
 
-    public interface IExposedTimeline
+    public interface ILiveTimeline
     {
         public System.Guid guid { get; }
 
@@ -26,14 +26,14 @@ namespace Lilium.LiveStudio
 
     public static class TimelineService
     {
-        public static IExposedTimeline GetTimeline(System.Guid id)
+        public static ILiveTimeline GetTimeline(System.Guid id)
         {
-            return Service<IExposedTimeline>.subjects.FirstOrDefault(t => t.guid == id);
+            return Service<ILiveTimeline>.subjects.FirstOrDefault(t => t.guid == id);
         }
 
-        public static IExposedTimeline GetTimeline(string name)
+        public static ILiveTimeline GetTimeline(string name)
         {
-            return Service<IExposedTimeline>.subjects.FirstOrDefault(t => t.name == name);
+            return Service<ILiveTimeline>.subjects.FirstOrDefault(t => t.name == name);
         }
 
         public static void PlayTimeline(System.Guid id)
@@ -44,7 +44,7 @@ namespace Lilium.LiveStudio
 
         public static void PlayTimeline(string name)
         {
-            var timeline = Service<IExposedTimeline>.subjects.FirstOrDefault(t => t.name == name);
+            var timeline = Service<ILiveTimeline>.subjects.FirstOrDefault(t => t.name == name);
             timeline?.Play();
         }
 
@@ -72,9 +72,9 @@ namespace Lilium.LiveStudio
             timeline?.SetTime(time);
         }
 
-        public static IExposedTimeline[] GetTimelines()
+        public static ILiveTimeline[] GetTimelines()
         {
-            return Service<IExposedTimeline>.subjects.ToArray();
+            return Service<ILiveTimeline>.subjects.ToArray();
         }
 
         public static double? GetTimelineCurrentTime(System.Guid id)

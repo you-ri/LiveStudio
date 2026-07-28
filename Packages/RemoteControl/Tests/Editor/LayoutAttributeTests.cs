@@ -11,7 +11,7 @@ namespace Lilium.RemoteControl.Tests
     /// - Auto はグループ深さから horizontal/vertical に解決される
     /// - 明示指定は深さより優先される
     /// - columns / grow は既定値のときは出力しない
-    /// - 関数 ([ExposedFunction]) にも同じスキーマで出る
+    /// - 関数 ([LiveFunction]) にも同じスキーマで出る
     /// - 属性を付けていないメンバーには layout キー自体が出ない (既存出力の byte 不変)
     /// </summary>
     [TestFixture]
@@ -19,46 +19,46 @@ namespace Lilium.RemoteControl.Tests
     {
         #region Test Classes
 
-        [ExposedClass("LayoutStub")]
+        [LiveClass("LayoutStub")]
         public class LayoutStub
         {
             /// 深さ1: Auto → horizontal
-            [ExposedProperty, Layout("row")]
+            [LiveProperty, Layout("row")]
             public int depth1 { get; set; }
 
             /// 深さ2: Auto → vertical
-            [ExposedProperty, Layout("row/left")]
+            [LiveProperty, Layout("row/left")]
             public int depth2 { get; set; }
 
             /// 深さ3: Auto → horizontal
-            [ExposedProperty, Layout("row/left/inner")]
+            [LiveProperty, Layout("row/left/inner")]
             public int depth3 { get; set; }
 
             /// 明示指定は深さより優先
-            [ExposedProperty, Layout("row/right", direction = LayoutDirection.Horizontal)]
+            [LiveProperty, Layout("row/right", direction = LayoutDirection.Horizontal)]
             public int explicitDirection { get; set; }
 
             /// columns / grow は既定値以外のときだけ出す
-            [ExposedProperty, Layout("row/right/fps", columns = 2, grow = 0)]
+            [LiveProperty, Layout("row/right/fps", columns = 2, grow = 0)]
             public int tuned { get; set; }
 
             /// 前後・重複スラッシュは正規化される
-            [ExposedProperty, Layout("/row//left/")]
+            [LiveProperty, Layout("/row//left/")]
             public int messyPath { get; set; }
 
             /// [Layout] 無し → layout キーを出さない
-            [ExposedProperty]
+            [LiveProperty]
             public int plain { get; set; }
 
             /// 関数にも同じスキーマで出る (ボタンの横並び用)
-            [ExposedFunction, Layout("row/actions")]
+            [LiveFunction, Layout("row/actions")]
             public void DoSomething() { }
 
-            [ExposedFunction]
+            [LiveFunction]
             public void PlainAction() { }
 
             /// 関数がセクションを開始できる (ボタンだけのセクション)
-            [ExposedFunction]
+            [LiveFunction]
             [Section("bolt", "ACTIONS"), Experimental]
             public void SectionStartingAction() { }
         }
@@ -70,15 +70,15 @@ namespace Lilium.RemoteControl.Tests
         [SetUp]
         public void SetUp()
         {
-            ExposedClass.Clear();
-            ExposedClass.RegisterFromAttributes<LayoutStub>();
-            _typeJson = JObject.Parse(ExposedTypeInfoSerializer.ToJson(ExposedClass.Get<LayoutStub>()));
+            LiveClass.Clear();
+            LiveClass.RegisterFromAttributes<LayoutStub>();
+            _typeJson = JObject.Parse(LiveTypeInfoSerializer.ToJson(LiveClass.Get<LayoutStub>()));
         }
 
         [TearDown]
         public void TearDown()
         {
-            ExposedClass.Clear();
+            LiveClass.Clear();
         }
 
         JObject _Property(string name)
@@ -136,7 +136,7 @@ namespace Lilium.RemoteControl.Tests
         public void Functions_CarryTheSameSchema()
         {
             var layout = _Function("DoSomething")["layout"];
-            Assert.IsNotNull(layout, "[Layout] on an [ExposedFunction] must be emitted");
+            Assert.IsNotNull(layout, "[Layout] on an [LiveFunction] must be emitted");
             Assert.AreEqual("row/actions", (string)layout["path"]);
             Assert.AreEqual("vertical", (string)layout["direction"]);
         }

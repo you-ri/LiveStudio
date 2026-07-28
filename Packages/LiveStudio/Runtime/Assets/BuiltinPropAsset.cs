@@ -25,7 +25,7 @@ namespace Lilium.LiveStudio
     /// wiring are shared with <see cref="PropAsset"/> through <see cref="LoadedProp"/>.
     /// </summary>
     [Serializable]
-    [ExposedClass("BuiltinPropAsset", Category = "Asset", Icon = "deployed_code")]
+    [LiveClass("BuiltinPropAsset", Category = "Asset", Icon = "deployed_code")]
     public class BuiltinPropAsset : AssetBase, IInstantiableProp
     {
         /// <summary>
@@ -33,7 +33,7 @@ namespace Lilium.LiveStudio
         /// <see cref="AssetBase.id"/> is reconstructed from it on restore) and the key
         /// <see cref="BuiltinAssetRegistry.LoadPrefab"/> resolves the Resources prefab by.
         /// </summary>
-        [ExposedField, Hide]
+        [LiveField, Hide]
         public string guid;
 
         public override bool isExclusive => false;
@@ -76,7 +76,7 @@ namespace Lilium.LiveStudio
             // authored state lives there, not on the GameObject transform — identical to an external
             // *.prop.lsb avatar prop. LoadAsync is synchronous (Resources.Load), so there is no concurrent
             // half-load window and no duplicate-instance guard is needed.
-            _loaded.Register(context, new ExposedGameObject(instance), instance, this);
+            _loaded.Register(context, new LiveGameObject(instance), instance, this);
             return Task.CompletedTask;
         }
 

@@ -19,22 +19,22 @@ namespace Lilium.RemoteControl.Tests
     public class MultiContainerSaveLoadTests
     {
         [Serializable]
-        [ExposedClass("MultiContainerTestObject", Icon = "test")]
-        public class TestObject : IExposedObject
+        [LiveClass("MultiContainerTestObject", Icon = "test")]
+        public class TestObject : ILiveObject
         {
             private string _id;
-            private ExposedObjectHandle? _handle;
+            private LiveObjectHandle? _handle;
 
             public TestObject(string id) { _id = id; }
 
-            [ExposedField]
+            [LiveField]
             public int value;
 
             public string name { get => _id; set => _id = value; }
             public string id => _id;
-            public ExposedObjectHandle? exposedObject => _handle;
+            public LiveObjectHandle? liveObject => _handle;
 
-            public void OnEnable() { _handle = ExposedObjectRegistry.Create<TestObject>(this, _id); }
+            public void OnEnable() { _handle = LiveObjectRegistry.Create<TestObject>(this, _id); }
             public void OnDisable() { _handle?.Unregister(); _handle = null; }
             public void OnDispose() { }
             public void Update() { }
@@ -44,9 +44,9 @@ namespace Lilium.RemoteControl.Tests
         [SetUp]
         public void SetUp()
         {
-            ExposedClass.Clear();
-            ExposedClass.RegisterFromAttributes<ExposedObjectContainer>();
-            ExposedClass.RegisterFromAttributes<TestObject>();
+            LiveClass.Clear();
+            LiveClass.RegisterFromAttributes<LiveObjectContainer>();
+            LiveClass.RegisterFromAttributes<TestObject>();
             _ClearRegistry();
         }
 
@@ -58,18 +58,18 @@ namespace Lilium.RemoteControl.Tests
 
         private static void _ClearRegistry()
         {
-            foreach (var obj in ExposedObjectRegistry.instances.ToList())
+            foreach (var obj in LiveObjectRegistry.instances.ToList())
                 obj.Unregister();
         }
 
         [Test]
         public void BuildLiveSceneJson_MainOnly_UnaffectedByEmptySource()
         {
-            var container = new ExposedObjectContainer("c", new List<IExposedObject> { new TestObject("main-1") });
+            var container = new LiveObjectContainer("c", new List<ILiveObject> { new TestObject("main-1") });
             container.Initialize();
 
             var json1 = LiveSceneSerializer.BuildLiveSceneJson(container, "BaseScene");
-            container.AddSource(new List<IExposedObject>(), new object());
+            container.AddSource(new List<ILiveObject>(), new object());
             var json2 = LiveSceneSerializer.BuildLiveSceneJson(container, "BaseScene");
 
             // An empty source must not perturb the serialized bytes (backward compatibility).
@@ -81,12 +81,12 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void BuildLiveSceneJson_IncludesSourceObjects()
         {
-            var container = new ExposedObjectContainer("c", new List<IExposedObject>());
+            var container = new LiveObjectContainer("c", new List<ILiveObject>());
             container.Initialize();
 
             var owner = new object();
             var worldObj = new TestObject("world-1");
-            container.AddSource(new List<IExposedObject> { worldObj }, owner);
+            container.AddSource(new List<ILiveObject> { worldObj }, owner);
             container.InitializeSource(owner); // captures default value = 0
 
             worldObj.value = 7; // dirty relative to default
@@ -105,11 +105,11 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void BuildLiveSceneJson_OrdersMainBeforeSources()
         {
-            var container = new ExposedObjectContainer("c", new List<IExposedObject> { new TestObject("main-1") });
+            var container = new LiveObjectContainer("c", new List<ILiveObject> { new TestObject("main-1") });
             container.Initialize();
 
             var owner = new object();
-            container.AddSource(new List<IExposedObject> { new TestObject("world-1") }, owner);
+            container.AddSource(new List<ILiveObject> { new TestObject("world-1") }, owner);
             container.InitializeSource(owner);
 
             // Make both dirty so both appear.
@@ -135,12 +135,12 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void LiveSceneFromJson_SourceObject_AppliesValue()
         {
-            var container = new ExposedObjectContainer("c", new List<IExposedObject>());
+            var container = new LiveObjectContainer("c", new List<ILiveObject>());
             container.Initialize();
 
             var owner = new object();
             var worldObj = new TestObject("world-1");
-            container.AddSource(new List<IExposedObject> { worldObj }, owner);
+            container.AddSource(new List<ILiveObject> { worldObj }, owner);
             container.InitializeSource(owner);
 
             var json = @"{

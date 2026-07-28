@@ -25,7 +25,7 @@ namespace Lilium.LiveStudio
     internal sealed class LoadedProp
     {
         private GameObject _instance;
-        private ExposedGameObject _exposed;
+        private LiveGameObject _exposed;
         private RemoteControlContainer _container;
 
         /// <summary>The loaded instance, or null when nothing is loaded.</summary>
@@ -40,7 +40,7 @@ namespace Lilium.LiveStudio
         /// it in the container, and reapplies saved state. Sets <see cref="AssetBase.isLoaded"/> on the
         /// owner. Mirrors the former <c>PropAsset._Register</c> verbatim, only parameterized by owner.
         /// </summary>
-        public void Register(AssetLoadContext context, ExposedGameObject exposed, GameObject instance, AssetBase owner)
+        public void Register(AssetLoadContext context, LiveGameObject exposed, GameObject instance, AssetBase owner)
         {
             var container = context?.container;
             if (container == null)
@@ -71,7 +71,7 @@ namespace Lilium.LiveStudio
             // and the state carrier — so the persisted overrides land on top without polluting the delta
             // baseline used by "save as preset". Keyed by objectId, the id the wrapper was just re-keyed to.
             if (!string.IsNullOrEmpty(owner.objectId))
-                LiveScenePendingStore.ApplyFor(owner.objectId, DefaultExposedObjectResolver.Instance);
+                LiveScenePendingStore.ApplyFor(owner.objectId, DefaultLiveObjectResolver.Instance);
 
             // The load is complete and everything applied above came from disk, not from the user.
             // Re-baseline the dirty tracking (delta baseline untouched) so a prop that finishes loading
@@ -110,8 +110,8 @@ namespace Lilium.LiveStudio
             {
                 foreach (var comp in _instance.GetComponents<Component>())
                 {
-                    if (comp == null || !ExposedClass.Has(comp.GetType())) continue;
-                    ExposedObjectRegistry.FindByTarget(comp)?.Unregister();
+                    if (comp == null || !LiveClass.Has(comp.GetType())) continue;
+                    LiveObjectRegistry.FindByTarget(comp)?.Unregister();
                 }
                 UnityEngine.Object.Destroy(_instance);
             }

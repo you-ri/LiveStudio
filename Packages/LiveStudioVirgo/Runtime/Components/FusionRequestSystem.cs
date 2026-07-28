@@ -19,9 +19,9 @@ namespace Lilium.LiveStudio.Virgo
         public static IEnumerator BuildAvatar(AvatarBuildData data, System.Action<bool, string> onComplete = null)
         {
             string baseUrl = FusionNetwork.BaseURL;
-            var body = ExposedTypeInfoSerializer.ToJsonForFunctionArgs(data, DefaultExposedObjectResolver.Instance);
+            var body = LiveTypeInfoSerializer.ToJsonForFunctionArgs(data, DefaultLiveObjectResolver.Instance);
 
-            string requestUrl = baseUrl + "/exposed/function/347f14d4-bca0-48fc-9f41-c6979afdacef/buildavatar";
+            string requestUrl = baseUrl + "/live/function/347f14d4-bca0-48fc-9f41-c6979afdacef/buildavatar";
             using (UnityWebRequest request = UnityWebRequest.Post(requestUrl, body, "application/json"))
             {
                 yield return request.SendWebRequest();
@@ -32,7 +32,7 @@ namespace Lilium.LiveStudio.Virgo
         }
 
         /// <summary>
-        /// Fusion 側 LicenseSettings.EnterLicense を ExposedFunction REST で呼び出す (永続化あり)。
+        /// Fusion 側 LicenseSettings.EnterLicense を LiveFunction REST で呼び出す (永続化あり)。
         /// onComplete のレスポンス本文 (<c>{ "result": LicenseSnapshot }</c>) は呼び出し側で parse する。
         /// </summary>
         public static IEnumerator EnterLicense(string key, System.Action<bool, string> onComplete = null)
@@ -41,7 +41,7 @@ namespace Lilium.LiveStudio.Virgo
         }
 
         /// <summary>
-        /// Fusion 側 LicenseSettings.EnterSessionLicense を ExposedFunction REST で呼び出す
+        /// Fusion 側 LicenseSettings.EnterSessionLicense を LiveFunction REST で呼び出す
         /// (永続化なし、プロセス内のみ有効)。Studio 起動時の自動セッションライセンス送信用。
         /// </summary>
         public static IEnumerator EnterSessionLicense(string key, System.Action<bool, string> onComplete = null)
@@ -50,7 +50,7 @@ namespace Lilium.LiveStudio.Virgo
         }
 
         /// <summary>
-        /// Fusion 側 LicenseSettings.ClearLicense を ExposedFunction REST で呼び出す。
+        /// Fusion 側 LicenseSettings.ClearLicense を LiveFunction REST で呼び出す。
         /// </summary>
         public static IEnumerator ClearLicense(System.Action<bool, string> onComplete = null)
         {
@@ -60,9 +60,9 @@ namespace Lilium.LiveStudio.Virgo
         private static IEnumerator _PostLicenseFunction(string functionName, string keyArg, System.Action<bool, string> onComplete)
         {
             string baseUrl = FusionNetwork.BaseURL;
-            string requestUrl = baseUrl + "/exposed/function/LicenseSettings/" + functionName;
+            string requestUrl = baseUrl + "/live/function/LicenseSettings/" + functionName;
             string body = keyArg != null
-                ? ExposedTypeInfoSerializer.ToJsonForFunctionArgs(keyArg, DefaultExposedObjectResolver.Instance)
+                ? LiveTypeInfoSerializer.ToJsonForFunctionArgs(keyArg, DefaultLiveObjectResolver.Instance)
                 : "{\"args\":[]}";
 
             UnityWebRequest request = UnityWebRequest.Post(requestUrl, body, "application/json");

@@ -8,8 +8,8 @@ namespace Lilium.RemoteControl
     /// <summary>
     /// 値型メンバーの getter が返す boxing の割り当てを抑えるための正規箱ヘルパー。
     /// 取り得る値が有限な型 (bool / enum) は、事前確保・キャッシュした箱を使い回すことで、
-    /// <see cref="ExposedPropertyUtility.GetValueRaw"/> のたびに新しい箱を確保するのを避ける。
-    /// Source Generator が生成する高速 getter (<see cref="ExposedMemberAccessorTable"/> 登録) から呼ばれる。
+    /// <see cref="LivePropertyUtility.GetValueRaw"/> のたびに新しい箱を確保するのを避ける。
+    /// Source Generator が生成する高速 getter (<see cref="LiveMemberAccessorTable"/> 登録) から呼ばれる。
     /// float / Vector3 等の値が無限な struct は正規化できないため対象外 (従来どおり box する)。
     /// </summary>
     public static class BoxedValues

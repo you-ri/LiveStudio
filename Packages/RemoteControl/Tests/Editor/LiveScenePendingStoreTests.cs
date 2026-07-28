@@ -25,44 +25,44 @@ namespace Lilium.RemoteControl.Tests
     public class LiveScenePendingStoreTests
     {
         // A stand-in for a prop's bone-driven component (e.g. AvatarChair): a MonoBehaviour with exposed
-        // fields, discovered by ExposedGameObject._components and serialized as a top-level pending entry.
-        [ExposedClass("TestChair")]
+        // fields, discovered by LiveGameObject._components and serialized as a top-level pending entry.
+        [LiveClass("TestChair")]
         public class TestChairComponent : MonoBehaviour
         {
-            [ExposedField] public int restYaw;
-            [ExposedField] public float offset;
+            [LiveField] public int restYaw;
+            [LiveField] public float offset;
         }
 
-        private TestExposedObjectResolver _resolver;
+        private TestLiveObjectResolver _resolver;
         private readonly List<GameObject> _spawned = new List<GameObject>();
 
         [SetUp]
         public void SetUp()
         {
-            ExposedClass.Clear();
-            foreach (var obj in ExposedObjectRegistry.instances.ToList()) obj.Unregister();
+            LiveClass.Clear();
+            foreach (var obj in LiveObjectRegistry.instances.ToList()) obj.Unregister();
             LiveScenePendingStore.Clear();
-            ExposedObjectFileRegistry.Clear();
+            LiveObjectFileRegistry.Clear();
 
-            ExposedClass.RegisterFromAttributes<ExposedGameObject>();
-            ExposedClass.RegisterFromAttributes<TestChairComponent>();
+            LiveClass.RegisterFromAttributes<LiveGameObject>();
+            LiveClass.RegisterFromAttributes<TestChairComponent>();
 
-            _resolver = new TestExposedObjectResolver();
+            _resolver = new TestLiveObjectResolver();
         }
 
         [TearDown]
         public void TearDown()
         {
-            foreach (var obj in ExposedObjectRegistry.instances.ToList()) obj.Unregister();
+            foreach (var obj in LiveObjectRegistry.instances.ToList()) obj.Unregister();
             LiveScenePendingStore.Clear();
-            ExposedObjectFileRegistry.Clear();
+            LiveObjectFileRegistry.Clear();
             foreach (var go in _spawned) if (go != null) Object.DestroyImmediate(go);
             _spawned.Clear();
         }
 
-        // Builds a prop-like wrapper: a GameObject with the test component, wrapped by an ExposedGameObject
+        // Builds a prop-like wrapper: a GameObject with the test component, wrapped by an LiveGameObject
         // re-keyed to objectId (mirrors PropAsset._Register's ctor -> ReplaceId -> OnEnable).
-        private (ExposedGameObject wrapper, TestChairComponent comp) _BuildProp(string objectId, int restYaw, float offset)
+        private (LiveGameObject wrapper, TestChairComponent comp) _BuildProp(string objectId, int restYaw, float offset)
         {
             var go = new GameObject("TestProp");
             _spawned.Add(go);
@@ -70,14 +70,14 @@ namespace Lilium.RemoteControl.Tests
             comp.restYaw = restYaw;
             comp.offset = offset;
 
-            var wrapper = new ExposedGameObject(go);
+            var wrapper = new LiveGameObject(go);
             wrapper.ReplaceId(objectId);
             wrapper.OnEnable();
             return (wrapper, comp);
         }
 
         private string _Save() =>
-            LiveSceneSerializer.LiveSceneToJson(new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver);
+            LiveSceneSerializer.LiveSceneToJson(new List<LiveObjectHandle>(LiveObjectRegistry.instances), _resolver);
 
         private static JObject _FindEntry(string json, string sourceKey)
         {
@@ -88,7 +88,7 @@ namespace Lilium.RemoteControl.Tests
         // --- Phase 1: source key naming ---
 
         [Test]
-        public void Save_ComponentReference_UsesExposedTypeNameKey_NotIndex()
+        public void Save_ComponentReference_UsesLiveTypeNameKey_NotIndex()
         {
             _BuildProp("prop-1", restYaw: 42, offset: 1.5f);
 
@@ -134,7 +134,7 @@ namespace Lilium.RemoteControl.Tests
             // Save an edited prop, then tear it down so the restore cannot resolve it.
             _BuildProp("prop-1", restYaw: 99, offset: 3.25f);
             var saved = _Save();
-            foreach (var obj in ExposedObjectRegistry.instances.ToList()) obj.Unregister();
+            foreach (var obj in LiveObjectRegistry.instances.ToList()) obj.Unregister();
             foreach (var go in _spawned) Object.DestroyImmediate(go);
             _spawned.Clear();
 
@@ -159,7 +159,7 @@ namespace Lilium.RemoteControl.Tests
             _BuildProp("prop-1", restYaw: 11, offset: 0f);
             _BuildProp("prop-2", restYaw: 22, offset: 0f);
             var saved = _Save();
-            foreach (var obj in ExposedObjectRegistry.instances.ToList()) obj.Unregister();
+            foreach (var obj in LiveObjectRegistry.instances.ToList()) obj.Unregister();
             foreach (var go in _spawned) Object.DestroyImmediate(go);
             _spawned.Clear();
 
@@ -182,7 +182,7 @@ namespace Lilium.RemoteControl.Tests
         {
             _BuildProp("prop-1", restYaw: 55, offset: 0f);
             var saved = _Save();
-            foreach (var obj in ExposedObjectRegistry.instances.ToList()) obj.Unregister();
+            foreach (var obj in LiveObjectRegistry.instances.ToList()) obj.Unregister();
             foreach (var go in _spawned) Object.DestroyImmediate(go);
             _spawned.Clear();
 
@@ -204,7 +204,7 @@ namespace Lilium.RemoteControl.Tests
             // Save an edited prop, tear it down.
             _BuildProp("avatar-1", restYaw: 7, offset: 0f);
             var saved = _Save();
-            foreach (var obj in ExposedObjectRegistry.instances.ToList()) obj.Unregister();
+            foreach (var obj in LiveObjectRegistry.instances.ToList()) obj.Unregister();
             foreach (var go in _spawned) Object.DestroyImmediate(go);
             _spawned.Clear();
 
@@ -217,11 +217,11 @@ namespace Lilium.RemoteControl.Tests
             // The asset's load-complete re-baseline (AssetStateSnapshot.CaptureDefaults) runs AFTER the
             // restore. With a blind CaptureDefaults the just-applied 7 became the default and vanished
             // from the next delta save; the preserving variant must keep it dirty.
-            var handle = ExposedObjectHandle.CreateUnregistered(ExposedClass.Find(typeof(TestChairComponent)), comp);
-            ExposedObjectDefaultRegistry.CaptureDefaultsPreservingOverrides(handle, _resolver);
+            var handle = LiveObjectHandle.CreateUnregistered(LiveClass.Find(typeof(TestChairComponent)), comp);
+            LiveObjectDefaultRegistry.CaptureDefaultsPreservingOverrides(handle, _resolver);
 
             var delta = LiveSceneSerializer.LiveSceneToJson(
-                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+                new List<LiveObjectHandle>(LiveObjectRegistry.instances), _resolver, SerializeMode.Delta);
             var entry = _FindEntry(delta, "avatar-1.components[TestChair]");
             Assert.IsNotNull(entry, "the restore-applied override must survive the load-complete re-baseline");
             Assert.AreEqual(7, entry["restYaw"]?.Value<int>());
@@ -231,16 +231,16 @@ namespace Lilium.RemoteControl.Tests
         public void CaptureDefaultsPreservingOverrides_KeepsDirtyDefaults_RebaselinesCleanOnes()
         {
             var (_, comp) = _BuildProp("prop-1", restYaw: 0, offset: 1f);
-            var handle = ExposedObjectHandle.CreateUnregistered(ExposedClass.Find(typeof(TestChairComponent)), comp);
-            ExposedObjectDefaultRegistry.CaptureDefaults(handle, _resolver); // baseline: restYaw=0, offset=1
+            var handle = LiveObjectHandle.CreateUnregistered(LiveClass.Find(typeof(TestChairComponent)), comp);
+            LiveObjectDefaultRegistry.CaptureDefaults(handle, _resolver); // baseline: restYaw=0, offset=1
 
             comp.restYaw = 7; // overridden since the baseline (dirty)
 
-            ExposedObjectDefaultRegistry.CaptureDefaultsPreservingOverrides(handle, _resolver);
+            LiveObjectDefaultRegistry.CaptureDefaultsPreservingOverrides(handle, _resolver);
 
-            Assert.AreEqual(0, ExposedObjectDefaultRegistry.GetDefaultToken(handle, "restYaw")?.Value<int>(),
+            Assert.AreEqual(0, LiveObjectDefaultRegistry.GetDefaultToken(handle, "restYaw")?.Value<int>(),
                 "an overridden property must keep its pre-override default");
-            Assert.AreEqual(1f, ExposedObjectDefaultRegistry.GetDefaultToken(handle, "offset")?.Value<float>() ?? -1f, 1e-4f,
+            Assert.AreEqual(1f, LiveObjectDefaultRegistry.GetDefaultToken(handle, "offset")?.Value<float>() ?? -1f, 1e-4f,
                 "an unchanged property keeps (re-adopts) its current value as the default");
         }
 
@@ -248,12 +248,12 @@ namespace Lilium.RemoteControl.Tests
         public void CaptureDefaultsPreservingOverrides_NoPriorBaseline_BehavesLikeCaptureDefaults()
         {
             var (_, comp) = _BuildProp("prop-1", restYaw: 3, offset: 0.5f);
-            var handle = ExposedObjectHandle.CreateUnregistered(ExposedClass.Find(typeof(TestChairComponent)), comp);
+            var handle = LiveObjectHandle.CreateUnregistered(LiveClass.Find(typeof(TestChairComponent)), comp);
 
             // Freshly instantiated object (prop load path): no previous baseline exists.
-            ExposedObjectDefaultRegistry.CaptureDefaultsPreservingOverrides(handle, _resolver);
+            LiveObjectDefaultRegistry.CaptureDefaultsPreservingOverrides(handle, _resolver);
 
-            Assert.AreEqual(3, ExposedObjectDefaultRegistry.GetDefaultToken(handle, "restYaw")?.Value<int>(),
+            Assert.AreEqual(3, LiveObjectDefaultRegistry.GetDefaultToken(handle, "restYaw")?.Value<int>(),
                 "without a prior baseline the current values become the defaults, like CaptureDefaults");
         }
 
@@ -263,7 +263,7 @@ namespace Lilium.RemoteControl.Tests
             // Save an edited prop and tear it down.
             _BuildProp("prop-1", restYaw: 8, offset: 0f);
             var saved = _Save();
-            foreach (var obj in ExposedObjectRegistry.instances.ToList()) obj.Unregister();
+            foreach (var obj in LiveObjectRegistry.instances.ToList()) obj.Unregister();
             foreach (var go in _spawned) Object.DestroyImmediate(go);
             _spawned.Clear();
 
@@ -277,7 +277,7 @@ namespace Lilium.RemoteControl.Tests
             // A delta save must still show restYaw=8 as a diff — proving ApplyFor applied with
             // captureDefaults:false and did not bake the applied value into the delta baseline.
             var delta = LiveSceneSerializer.LiveSceneToJson(
-                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver, SerializeMode.Delta);
+                new List<LiveObjectHandle>(LiveObjectRegistry.instances), _resolver, SerializeMode.Delta);
             var entry = _FindEntry(delta, "prop-1.components[TestChair]");
             Assert.IsNotNull(entry, "delta should still contain the component entry (value differs from baseline)");
             Assert.AreEqual(8, entry["restYaw"]?.Value<int>(),

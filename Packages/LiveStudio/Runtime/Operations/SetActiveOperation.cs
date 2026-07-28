@@ -13,12 +13,12 @@ namespace Lilium.LiveStudio
     /// <c>[ObjectSelector]</c> dropdown.
     /// </summary>
     [Serializable]
-    [ExposedClass(Category = "Operation", Icon = "visibility")]
+    [LiveClass(Category = "Operation", Icon = "visibility")]
     [MovedFrom(false, null, null, "SetActiveAction")]
-    [FormerlyExposedAs("SetActiveAction")]
+    [FormerlyNamedAs("SetActiveAction")]
     public class SetActiveOperation : OperationBase
     {
-        [ExposedField, ObjectSelector]
+        [LiveField, ObjectSelector]
         public GameObject target;
 
         public override void Apply(in OperationContext context)

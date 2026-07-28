@@ -11,7 +11,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var a = new JValue(42);
             var b = new JValue(42);
-            Assert.IsNull(ExposedPropertySerializer.JsonDiff(a, b));
+            Assert.IsNull(LivePropertySerializer.JsonDiff(a, b));
         }
 
         [Test]
@@ -19,7 +19,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var a = new JValue(1);
             var b = new JValue(2);
-            var diff = ExposedPropertySerializer.JsonDiff(a, b);
+            var diff = LivePropertySerializer.JsonDiff(a, b);
             Assert.IsNotNull(diff);
             Assert.AreEqual(2, diff.Value<int>());
         }
@@ -29,7 +29,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var a = new JValue("hello");
             var b = new JValue("hello");
-            Assert.IsNull(ExposedPropertySerializer.JsonDiff(a, b));
+            Assert.IsNull(LivePropertySerializer.JsonDiff(a, b));
         }
 
         [Test]
@@ -37,7 +37,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var a = new JValue("hello");
             var b = new JValue("world");
-            var diff = ExposedPropertySerializer.JsonDiff(a, b);
+            var diff = LivePropertySerializer.JsonDiff(a, b);
             Assert.IsNotNull(diff);
             Assert.AreEqual("world", diff.Value<string>());
         }
@@ -47,7 +47,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var a = JObject.Parse(@"{""x"":1, ""y"":2}");
             var b = JObject.Parse(@"{""x"":1, ""y"":2}");
-            Assert.IsNull(ExposedPropertySerializer.JsonDiff(a, b));
+            Assert.IsNull(LivePropertySerializer.JsonDiff(a, b));
         }
 
         [Test]
@@ -55,7 +55,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var a = JObject.Parse(@"{""x"":1, ""y"":2}");
             var b = JObject.Parse(@"{""x"":1, ""y"":5}");
-            var diff = ExposedPropertySerializer.JsonDiff(a, b) as JObject;
+            var diff = LivePropertySerializer.JsonDiff(a, b) as JObject;
             Assert.IsNotNull(diff);
             Assert.IsNull(diff["x"], "Unchanged property should not appear");
             Assert.AreEqual(5, diff["y"].Value<int>());
@@ -66,7 +66,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var a = JObject.Parse(@"{""x"":1}");
             var b = JObject.Parse(@"{""x"":1, ""y"":2}");
-            var diff = ExposedPropertySerializer.JsonDiff(a, b) as JObject;
+            var diff = LivePropertySerializer.JsonDiff(a, b) as JObject;
             Assert.IsNotNull(diff);
             Assert.AreEqual(2, diff["y"].Value<int>());
         }
@@ -76,7 +76,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var a = JObject.Parse(@"{""@type"":""Foo"", ""x"":1}");
             var b = JObject.Parse(@"{""@type"":""Foo"", ""x"":2}");
-            var diff = ExposedPropertySerializer.JsonDiff(a, b) as JObject;
+            var diff = LivePropertySerializer.JsonDiff(a, b) as JObject;
             Assert.IsNotNull(diff);
             Assert.AreEqual("Foo", diff["@type"].Value<string>(), "@type metadata should be preserved");
             Assert.AreEqual(2, diff["x"].Value<int>());
@@ -88,7 +88,7 @@ namespace Lilium.RemoteControl.Tests
             // メタデータのみが異なる場合、非メタプロパティに差分がないのでnull
             var a = JObject.Parse(@"{""@type"":""Foo"", ""x"":1}");
             var b = JObject.Parse(@"{""@type"":""Bar"", ""x"":1}");
-            Assert.IsNull(ExposedPropertySerializer.JsonDiff(a, b));
+            Assert.IsNull(LivePropertySerializer.JsonDiff(a, b));
         }
 
         [Test]
@@ -96,7 +96,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var a = JArray.Parse("[1, 2, 3]");
             var b = JArray.Parse("[1, 2, 3]");
-            Assert.IsNull(ExposedPropertySerializer.JsonDiff(a, b));
+            Assert.IsNull(LivePropertySerializer.JsonDiff(a, b));
         }
 
         [Test]
@@ -104,7 +104,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var a = JArray.Parse("[1, 2, 3]");
             var b = JArray.Parse("[1, 2, 4]");
-            var diff = ExposedPropertySerializer.JsonDiff(a, b) as JArray;
+            var diff = LivePropertySerializer.JsonDiff(a, b) as JArray;
             Assert.IsNotNull(diff);
             Assert.AreEqual(3, diff.Count);
             Assert.AreEqual(4, diff[2].Value<int>());
@@ -115,7 +115,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var a = JArray.Parse(@"[{""id"":1, ""name"":""A""}, {""id"":2, ""name"":""B""}]");
             var b = JArray.Parse(@"[{""id"":1, ""name"":""A""}, {""id"":2, ""name"":""Changed""}]");
-            var diff = ExposedPropertySerializer.JsonDiff(a, b) as JArray;
+            var diff = LivePropertySerializer.JsonDiff(a, b) as JArray;
             Assert.IsNotNull(diff);
             Assert.AreEqual(2, diff.Count);
 
@@ -136,11 +136,11 @@ namespace Lilium.RemoteControl.Tests
         {
             var a = JArray.Parse(@"[{""id"":1, ""name"":""A""}, {""id"":2, ""name"":""B""}, {""id"":3, ""name"":""C""}]");
             var b = JArray.Parse(@"[{""id"":1, ""name"":""Modified""}, {""id"":2, ""name"":""B""}, {""id"":3, ""name"":""C""}]");
-            var diff = ExposedPropertySerializer.JsonDiff(a, b) as JArray;
+            var diff = LivePropertySerializer.JsonDiff(a, b) as JArray;
             Assert.IsNotNull(diff);
             // 末尾の未変更要素は省略されるが、デルタ形式の識別のため空マーカーが1つ追加される
             Assert.AreEqual(2, diff.Count, "Should have changed element + one empty delta marker");
-            Assert.IsTrue(ExposedPropertySerializer.IsArrayDeltaFormat(diff), "Result should be detectable as delta format");
+            Assert.IsTrue(LivePropertySerializer.IsArrayDeltaFormat(diff), "Result should be detectable as delta format");
         }
 
         [Test]
@@ -148,7 +148,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var a = JArray.Parse(@"[{""id"":1, ""name"":""First""}]");
             var b = JArray.Parse(@"[{""id"":1, ""name"":""First""}, {""id"":10, ""name"":""New""}]");
-            var diff = ExposedPropertySerializer.JsonDiff(a, b) as JArray;
+            var diff = LivePropertySerializer.JsonDiff(a, b) as JArray;
             Assert.IsNotNull(diff);
 
             // 新規要素に@op: "new"がある
@@ -172,7 +172,7 @@ namespace Lilium.RemoteControl.Tests
             // 既存要素の位置マーカー（空{}）は不要なので出力に含めない。
             var a = JArray.Parse(@"[{""id"":1, ""name"":""A""}, {""id"":2, ""name"":""B""}]");
             var b = JArray.Parse(@"[{""id"":1, ""name"":""A""}, {""id"":2, ""name"":""B""}, {""id"":3, ""name"":""C""}]");
-            var diff = ExposedPropertySerializer.JsonDiff(a, b) as JArray;
+            var diff = LivePropertySerializer.JsonDiff(a, b) as JArray;
 
             Assert.IsNotNull(diff);
             Assert.AreEqual(1, diff.Count, "Only the appended element should remain — leading empty stubs should be omitted");
@@ -189,7 +189,7 @@ namespace Lilium.RemoteControl.Tests
             // forPersistence=true でも append-only ケースでは leading empty stubs を省略する。
             var a = JArray.Parse(@"[{""id"":1, ""name"":""A""}, {""id"":2, ""name"":""B""}]");
             var b = JArray.Parse(@"[{""id"":1, ""name"":""A""}, {""id"":2, ""name"":""B""}, {""id"":3, ""name"":""C""}]");
-            var diff = ExposedPropertySerializer.JsonDiff(a, b, forPersistence: true) as JArray;
+            var diff = LivePropertySerializer.JsonDiff(a, b, forPersistence: true) as JArray;
 
             Assert.IsNotNull(diff);
             Assert.AreEqual(1, diff.Count, "forPersistence append-only should not include empty stubs");
@@ -205,7 +205,7 @@ namespace Lilium.RemoteControl.Tests
             // その後の未変更要素の位置マーカーは不要。
             var a = JArray.Parse(@"[{""id"":1, ""name"":""A""}, {""id"":2, ""name"":""B""}, {""id"":3, ""name"":""C""}]");
             var b = JArray.Parse(@"[{""id"":1, ""name"":""A""}, {""id"":2, ""name"":""Modified""}, {""id"":3, ""name"":""C""}, {""id"":4, ""name"":""D""}]");
-            var diff = ExposedPropertySerializer.JsonDiff(a, b, forPersistence: true) as JArray;
+            var diff = LivePropertySerializer.JsonDiff(a, b, forPersistence: true) as JArray;
 
             Assert.IsNotNull(diff);
             // 期待出力: [{}, {name:"Modified"}, {@op:new, id:4, name:"D"}]
@@ -222,10 +222,10 @@ namespace Lilium.RemoteControl.Tests
             // 省略版のデルタからロードしても結果が正しく復元できることを確認。
             var a = JArray.Parse(@"[{""id"":1, ""name"":""A""}, {""id"":2, ""name"":""B""}]");
             var b = JArray.Parse(@"[{""id"":1, ""name"":""A""}, {""id"":2, ""name"":""B""}, {""id"":3, ""name"":""C""}]");
-            var diff = ExposedPropertySerializer.JsonDiff(a, b, forPersistence: true) as JArray;
+            var diff = LivePropertySerializer.JsonDiff(a, b, forPersistence: true) as JArray;
 
             Assert.IsNotNull(diff);
-            Assert.IsTrue(ExposedPropertySerializer.IsArrayDeltaFormat(diff), "Result should be detectable as delta format");
+            Assert.IsTrue(LivePropertySerializer.IsArrayDeltaFormat(diff), "Result should be detectable as delta format");
         }
 
         [Test]
@@ -233,7 +233,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var a = JObject.Parse(@"{""nested"":{""x"":1, ""y"":2}, ""other"":""same""}");
             var b = JObject.Parse(@"{""nested"":{""x"":1, ""y"":5}, ""other"":""same""}");
-            var diff = ExposedPropertySerializer.JsonDiff(a, b) as JObject;
+            var diff = LivePropertySerializer.JsonDiff(a, b) as JObject;
             Assert.IsNotNull(diff);
             Assert.IsNull(diff["other"], "Unchanged property should not appear");
             var nestedDiff = diff["nested"] as JObject;
@@ -246,7 +246,7 @@ namespace Lilium.RemoteControl.Tests
         public void JsonDiff_NullDefault_ReturnsCurrentClone()
         {
             var b = new JValue(42);
-            var diff = ExposedPropertySerializer.JsonDiff(null, b);
+            var diff = LivePropertySerializer.JsonDiff(null, b);
             Assert.IsNotNull(diff);
             Assert.AreEqual(42, diff.Value<int>());
         }
@@ -255,7 +255,7 @@ namespace Lilium.RemoteControl.Tests
         public void JsonDiff_NullCurrent_ReturnsJNull()
         {
             var a = new JValue(42);
-            var diff = ExposedPropertySerializer.JsonDiff(a, null);
+            var diff = LivePropertySerializer.JsonDiff(a, null);
             Assert.IsNotNull(diff);
             Assert.AreEqual(JTokenType.Null, diff.Type);
         }
@@ -263,7 +263,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void JsonDiff_BothNull_ReturnsNull()
         {
-            Assert.IsNull(ExposedPropertySerializer.JsonDiff(null, null));
+            Assert.IsNull(LivePropertySerializer.JsonDiff(null, null));
         }
     }
 }

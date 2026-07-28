@@ -11,7 +11,7 @@ namespace Lilium.RemoteControl.UI
 {
     /// <summary>
     /// ScriptableObject defining the page structure of the Remote Control UI.
-    /// Declares the side menu items and their associated ExposedObjectHandle categories.
+    /// Declares the side menu items and their associated LiveObjectHandle categories.
     /// </summary>
     [CreateAssetMenu(fileName = "UIDefinition", menuName = "Remote Control/UI Definition")]
     [MovedFrom(true, "Lilium.RemoteControl.WebUI", "Lilium.RemoteControl.WebUI", "WebUIDefinition")]
@@ -30,7 +30,7 @@ namespace Lilium.RemoteControl.UI
 
         /// <summary>
         /// MenuItem.page 配下の StandardObjectFactory を再帰的に探し出し、
-        /// 各 IExposedObjectFactory の prefab Asset GUID を再解決する。
+        /// 各 ILiveObjectFactory の prefab Asset GUID を再解決する。
         /// CategoryPage だけでなく ScenePage など、factory フィールドを持つ任意の IPage 型に対応する。
         /// </summary>
         public static void _RefreshPrefabKeysInternal(UIDefinition def)

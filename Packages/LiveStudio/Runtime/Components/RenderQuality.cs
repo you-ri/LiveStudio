@@ -22,8 +22,8 @@ namespace Lilium.LiveStudio
     /// <c>{projectPath}/Settings/RenderQuality.settings.json</c> via <see cref="PersistScope.Project"/>.
     /// </summary>
     [Serializable]
-    [ExposedClass(Icon = "high_quality", HideInScene = true)]
-    public class RenderQuality : IExposedObject, IExposedDeserializeCallback
+    [LiveClass(Icon = "high_quality", HideInScene = true)]
+    public class RenderQuality : ILiveObject, ILiveDeserializeCallback
     {
         // Readable and stable so the settings NavigatePage can reference this object by name, the way
         // it referenced the static LiveSceneManager class this used to live on.
@@ -31,19 +31,19 @@ namespace Lilium.LiveStudio
 
         public string name { get; set; } = "Render Quality";
 
-        public ExposedObjectHandle? exposedObject => ExposedObjectRegistry.FindByTarget(this);
+        public LiveObjectHandle? liveObject => LiveObjectRegistry.FindByTarget(this);
 
         public string id => kId;
 
         /// <summary>The quality level names of the current project, in <c>QualitySettings</c> order.</summary>
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public string[] qualityNames => QualitySettings.names;
 
-        [ExposedField(persistScope = PersistScope.Project), Hide]
+        [LiveField(persistScope = PersistScope.Project), Hide]
         private string _quality;
 
         [Section("high_quality", "SECTION_QUALITY_TITLE", "SECTION_QUALITY_SUBTITLE")]
-        [ExposedProperty]
+        [LiveProperty]
         [StringSelector(nameof(qualityNames))]
         public string quality
         {
@@ -62,12 +62,12 @@ namespace Lilium.LiveStudio
             // reality for dirty detection.
             _quality = QualitySettings.names[QualitySettings.GetQualityLevel()];
 
-            ExposedObjectRegistry.Create<RenderQuality>(this, kId);
+            LiveObjectRegistry.Create<RenderQuality>(this, kId);
         }
 
         public void OnDisable()
         {
-            ExposedObjectRegistry.FindByTarget(this)?.Unregister();
+            LiveObjectRegistry.FindByTarget(this)?.Unregister();
         }
 
         public void OnDispose()
@@ -88,7 +88,7 @@ namespace Lilium.LiveStudio
         /// shadow field by raw reflection and bypasses the property setter, so the setter's side effect has
         /// to be redone here. Idempotent, which matters because this also fires on remote writes.
         /// </summary>
-        public void OnAfterExposedDeserialize()
+        public void OnAfterLiveDeserialize()
         {
             if (!string.IsNullOrEmpty(_quality)) SetQuality(_quality);
         }

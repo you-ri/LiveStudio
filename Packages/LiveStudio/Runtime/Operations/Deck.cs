@@ -16,19 +16,19 @@ namespace Lilium.LiveStudio
     /// A plain serializable type, persisted with the manager in the scene.
     /// </summary>
     [Serializable]
-    [ExposedClass(Category = "Operation", Icon = "grid_view")]
+    [LiveClass(Category = "Operation", Icon = "grid_view")]
     public class Deck
     {
         /// <summary>The deck's display name, also its identity: <see cref="OperationManager"/> keeps it unique
         /// (auto-suffixing on collision) so placed controls can reference it by name
         /// (<see cref="DeckControl.deckName"/>). Renaming goes through <see cref="OperationManager.RenameDeck"/>
         /// so referencing controls follow.</summary>
-        [ExposedField]
+        [LiveField]
         public string name = "Deck";
 
         /// <summary>Logical column count of the grid. The remote app keeps this fixed and lets the physical
         /// cell width follow the viewport; tile spans are expressed in these columns.</summary>
-        [ExposedField]
+        [LiveField]
         public int columns = 8;
     }
 }

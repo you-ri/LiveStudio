@@ -31,25 +31,25 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Exact_IsCaseInsensitiveEquality()
         {
-            Assert.IsTrue(Probe.Exact("/exposed/objects", "/exposed/objects"));
-            Assert.IsTrue(Probe.Exact("/EXPOSED/Objects", "/exposed/objects"));
-            Assert.IsFalse(Probe.Exact("/exposed/object", "/exposed/objects"));
-            Assert.IsFalse(Probe.Exact("/exposed/objects/1", "/exposed/objects"));
+            Assert.IsTrue(Probe.Exact("/live/objects", "/live/objects"));
+            Assert.IsTrue(Probe.Exact("/LIVE/Objects", "/live/objects"));
+            Assert.IsFalse(Probe.Exact("/live/object", "/live/objects"));
+            Assert.IsFalse(Probe.Exact("/live/objects/1", "/live/objects"));
         }
 
         [Test]
         public void Prefix_IsCaseInsensitivePrefix()
         {
-            Assert.IsTrue(Probe.Prefix("/exposed/object/123", "/exposed/object/"));
-            Assert.IsTrue(Probe.Prefix("/EXPOSED/OBJECT/123", "/exposed/object/"));
-            Assert.IsFalse(Probe.Prefix("/exposed/objects", "/exposed/object/"));
+            Assert.IsTrue(Probe.Prefix("/live/object/123", "/live/object/"));
+            Assert.IsTrue(Probe.Prefix("/LIVE/OBJECT/123", "/live/object/"));
+            Assert.IsFalse(Probe.Prefix("/live/objects", "/live/object/"));
         }
 
         [Test]
         public void Wildcard_AsteriskSpansSlashes()
         {
-            Assert.IsTrue(Probe.Wildcard("/exposed/object/123/foo", "/exposed/object/*/*"));
-            Assert.IsTrue(Probe.Wildcard("/EXPOSED/object/123/foo", "/exposed/object/*/*"));
+            Assert.IsTrue(Probe.Wildcard("/live/object/123/foo", "/live/object/*/*"));
+            Assert.IsTrue(Probe.Wildcard("/LIVE/object/123/foo", "/live/object/*/*"));
         }
 
         // --- ルート順序不変条件 (旧 if/else 連鎖の評価順を表で再現できる根拠) ---
@@ -57,20 +57,20 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Get_ObjectsExact_DoesNotCollideWithObjectWildcardOrPrefix()
         {
-            // "/exposed/objects" は Exact 専用。object/*/* にも object/ Prefix にも一致しない。
-            Assert.IsTrue(Probe.Exact("/exposed/objects", "/exposed/objects"));
-            Assert.IsFalse(Probe.Wildcard("/exposed/objects", "/exposed/object/*/*"));
-            Assert.IsFalse(Probe.Prefix("/exposed/objects", "/exposed/object/"));
+            // "/live/objects" は Exact 専用。object/*/* にも object/ Prefix にも一致しない。
+            Assert.IsTrue(Probe.Exact("/live/objects", "/live/objects"));
+            Assert.IsFalse(Probe.Wildcard("/live/objects", "/live/object/*/*"));
+            Assert.IsFalse(Probe.Prefix("/live/objects", "/live/object/"));
         }
 
         [Test]
         public void Get_SingleObject_FallsToPrefixNotPropertyWildcard()
         {
-            // プロパティ無し /exposed/object/{id} は object/*/* に不一致 → Prefix で GetObject。
-            Assert.IsFalse(Probe.Wildcard("/exposed/object/123", "/exposed/object/*/*"));
-            Assert.IsTrue(Probe.Prefix("/exposed/object/123", "/exposed/object/"));
+            // プロパティ無し /live/object/{id} は object/*/* に不一致 → Prefix で GetObject。
+            Assert.IsFalse(Probe.Wildcard("/live/object/123", "/live/object/*/*"));
+            Assert.IsTrue(Probe.Prefix("/live/object/123", "/live/object/"));
             // プロパティ付きは Wildcard 一致 → GetProperty。
-            Assert.IsTrue(Probe.Wildcard("/exposed/object/123/foo", "/exposed/object/*/*"));
+            Assert.IsTrue(Probe.Wildcard("/live/object/123/foo", "/live/object/*/*"));
         }
 
         [Test]
@@ -78,11 +78,11 @@ namespace Lilium.RemoteControl.Tests
         {
             // /reset 付きは reset ルートに一致し、かつ add の object/*/* にも一致するため
             // テーブル順で reset を先に置く必要がある(本テストはその前提を固定)。
-            Assert.IsTrue(Probe.Wildcard("/exposed/object/1/prop/reset", "/exposed/object/*/*/reset"));
-            Assert.IsTrue(Probe.Wildcard("/exposed/object/1/prop/reset", "/exposed/object/*/*"));
+            Assert.IsTrue(Probe.Wildcard("/live/object/1/prop/reset", "/live/object/*/*/reset"));
+            Assert.IsTrue(Probe.Wildcard("/live/object/1/prop/reset", "/live/object/*/*"));
             // /reset 無しは reset ルートに不一致 → add へ。
-            Assert.IsFalse(Probe.Wildcard("/exposed/object/1/prop", "/exposed/object/*/*/reset"));
-            Assert.IsTrue(Probe.Wildcard("/exposed/object/1/prop", "/exposed/object/*/*"));
+            Assert.IsFalse(Probe.Wildcard("/live/object/1/prop", "/live/object/*/*/reset"));
+            Assert.IsTrue(Probe.Wildcard("/live/object/1/prop", "/live/object/*/*"));
         }
 
         [Test]
@@ -90,16 +90,16 @@ namespace Lilium.RemoteControl.Tests
         {
             // @parent は専用ルートと汎用 object/*/* の両方に一致するため
             // テーブル順で @parent を先に置く必要がある。
-            Assert.IsTrue(Probe.Wildcard("/exposed/object/1/@parent", "/exposed/object/*/@parent"));
-            Assert.IsTrue(Probe.Wildcard("/exposed/object/1/@parent", "/exposed/object/*/*"));
+            Assert.IsTrue(Probe.Wildcard("/live/object/1/@parent", "/live/object/*/@parent"));
+            Assert.IsTrue(Probe.Wildcard("/live/object/1/@parent", "/live/object/*/*"));
         }
 
         [Test]
         public void Scene_ExportImport_AreExactAndDistinct()
         {
-            Assert.IsTrue(Probe.Exact("/exposed/export", "/exposed/export"));
-            Assert.IsTrue(Probe.Exact("/exposed/import", "/exposed/import"));
-            Assert.IsFalse(Probe.Exact("/exposed/export", "/exposed/import"));
+            Assert.IsTrue(Probe.Exact("/live/export", "/live/export"));
+            Assert.IsTrue(Probe.Exact("/live/import", "/live/import"));
+            Assert.IsFalse(Probe.Exact("/live/export", "/live/import"));
         }
     }
 }

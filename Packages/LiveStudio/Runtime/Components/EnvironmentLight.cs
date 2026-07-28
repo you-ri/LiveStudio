@@ -8,14 +8,14 @@ using System.Configuration;
 namespace Lilium.LiveStudio
 {
     [Serializable]
-    [ExposedClass(Category = "Light", Icon = "light_mode")]
-    public class EnvironmentLight : IExposedObject, IExposedDeserializeCallback
+    [LiveClass(Category = "Light", Icon = "light_mode")]
+    public class EnvironmentLight : ILiveObject, ILiveDeserializeCallback
     {
         const string kId = "d9714ab0-e81b-44c8-9e76-22f177864ebe";
 
         public string name { get; set; } = "Environment Light";
 
-        public ExposedObjectHandle? exposedObject => ExposedObjectRegistry.FindByTarget(this);
+        public LiveObjectHandle? liveObject => LiveObjectRegistry.FindByTarget(this);
 
         public string id => kId;
 
@@ -25,7 +25,7 @@ namespace Lilium.LiveStudio
 
         public void OnEnable()
         {
-            ExposedObjectRegistry.Create<EnvironmentLight>(this, kId);
+            LiveObjectRegistry.Create<EnvironmentLight>(this, kId);
 
             _ambientLightSource = RenderSettings.ambientMode == UnityEngine.Rendering.AmbientMode.Flat
                 ? BackgroundType.SolidColor
@@ -41,12 +41,12 @@ namespace Lilium.LiveStudio
         public void OnDisable()
         {
             Lilium.RemoteControl.LiveScene.RemoteControlBehaviour.onBaseSceneReloaded -= _OnBaseSceneReloaded;
-            ExposedObjectRegistry.FindByTarget(this)?.Unregister();
+            LiveObjectRegistry.FindByTarget(this)?.Unregister();
         }
 
         // After a base-scene switch (persistent host), Unity reset RenderSettings.ambient* to the new
         // scene's authored values. Re-assert our current settings so the user's ambient persists across
-        // the switch (a saved live scene still overrides these afterwards via OnAfterExposedDeserialize).
+        // the switch (a saved live scene still overrides these afterwards via OnAfterLiveDeserialize).
         private void _OnBaseSceneReloaded() => _ApplyAmbient();
 
         public void OnDispose()
@@ -61,11 +61,11 @@ namespace Lilium.LiveStudio
         {
         }
 
-        [ExposedField, Hide]
-        [FormerlyExposedAs("ambientLightSource")]
+        [LiveField, Hide]
+        [FormerlyNamedAs("ambientLightSource")]
         private BackgroundType _ambientLightSource = BackgroundType.SolidColor;
 
-        [ExposedProperty]
+        [LiveProperty]
         public BackgroundType ambientLightSource
         {
             get => _ambientLightSource;
@@ -76,11 +76,11 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [ExposedField, Hide]
-        [FormerlyExposedAs("ambientColor")]
+        [LiveField, Hide]
+        [FormerlyNamedAs("ambientColor")]
         private Color _ambientColor = Color.gray;
 
-        [ExposedProperty, ShowIf(nameof(ambientLightSource), (int)BackgroundType.SolidColor)]
+        [LiveProperty, ShowIf(nameof(ambientLightSource), (int)BackgroundType.SolidColor)]
         public Color ambientColor
         {
             get => _ambientColor;
@@ -91,11 +91,11 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [ExposedField, Hide]
-        [FormerlyExposedAs("ambientIntensity")]
+        [LiveField, Hide]
+        [FormerlyNamedAs("ambientIntensity")]
         private float _ambientIntensity = 1f;
 
-        [ExposedProperty, Slider(0, 8, 0.1f), ShowIf(nameof(ambientLightSource), (int)BackgroundType.Skybox)]
+        [LiveProperty, Slider(0, 8, 0.1f), ShowIf(nameof(ambientLightSource), (int)BackgroundType.Skybox)]
         public float ambientIntensity
         {
             get => _ambientIntensity;
@@ -115,7 +115,7 @@ namespace Lilium.LiveStudio
             RenderSettings.ambientIntensity = _ambientIntensity;
         }
 
-        public void OnAfterExposedDeserialize() => _ApplyAmbient();
+        public void OnAfterLiveDeserialize() => _ApplyAmbient();
     }
 
 }

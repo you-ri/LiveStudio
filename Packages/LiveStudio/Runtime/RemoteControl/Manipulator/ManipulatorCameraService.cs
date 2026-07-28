@@ -37,7 +37,7 @@ namespace Lilium.LiveStudio
             parentWorld = TransformValue.identity;
             targetLocal = TransformValue.identity;
             pivotWorld = Vector3.zero;
-            if (!ExposedObjectRegistry.TryFindById(objectId, out var exposed)) return false;
+            if (!LiveObjectRegistry.TryFindById(objectId, out var exposed)) return false;
 
             // 1) Property-relative target: the edited property at propertyPath IS the manipulated TransformValue
             //    (e.g. PropAttachment.offset, reached as a nested path like "attachment/offset" on the owning
@@ -48,7 +48,7 @@ namespace Lilium.LiveStudio
             if (!string.IsNullOrEmpty(propertyPath))
             {
                 // propertyPath はクライアント由来のスラッシュ形式 ("components/0/attachment/offset")。
-                // ExposedObjectHandle.FindProperty は DotBracket 形式を期待するため、REST ハンドラと同じ
+                // LiveObjectHandle.FindProperty は DotBracket 形式を期待するため、REST ハンドラと同じ
                 // PropertyPath.FromSlash 変換をかける (これを忘れると配列添字を解決できず NULL → GameObject
                 // フォールバックに落ちる)。
                 var dotBracketPath = Lilium.RemoteControl.Reflection.PropertyPath.FromSlash(propertyPath).Value;
@@ -72,7 +72,7 @@ namespace Lilium.LiveStudio
             }
 
             // 2) Default: edit the object's own GameObject transform (local TRS relative to its hierarchy parent).
-            //    Used by ExposedLight / ExposedUnityObject whose `transform` property is the GameObject's transform.
+            //    Used by LiveLight / LiveUnityObject whose `transform` property is the GameObject's transform.
             var go = _ResolveGameObject(exposed);
             if (go == null) return false;
             var t = go.transform;
@@ -84,13 +84,13 @@ namespace Lilium.LiveStudio
             return true;
         }
 
-        private static GameObject _ResolveGameObject(ExposedObjectHandle exposed)
+        private static GameObject _ResolveGameObject(LiveObjectHandle exposed)
         {
             var t = exposed.target;
             if (t == null) return null;
             if (t is GameObject go) return go;
             if (t is Component c) return c.gameObject;
-            if (t is ExposedUnityObjectBase b)
+            if (t is LiveUnityObjectBase b)
             {
                 if (b.reference is GameObject rgo) return rgo;
                 if (b.reference is Component rc) return rc.gameObject;
@@ -102,7 +102,7 @@ namespace Lilium.LiveStudio
     /// <summary>
     /// マニピュレーター編集用カメラのライフサイクル管理。
     /// Open でセッション作成・カメラ生成、Close で破棄。
-    /// ExposedCamera とは独立しており、画面には映らない専用 RenderTexture に描画する。
+    /// LiveCamera とは独立しており、画面には映らない専用 RenderTexture に描画する。
     /// </summary>
     public static class ManipulatorCameraService
     {

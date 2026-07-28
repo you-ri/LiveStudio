@@ -11,11 +11,11 @@ namespace Lilium.RemoteControl
     /// ファイル（シーン）スコープ専用のリゾルバー拡張。
     /// LiveSceneSerializer が保存時に利用し、プロパティ走査中の UnityEngine.Object 参照を
     /// fileid ベースの @ref に置き換えつつ、参照先を別エントリとして収集する。
-    /// REST API など file-scope 外の経路は通常の <see cref="IExposedObjectResolver"/> を使うため
+    /// REST API など file-scope 外の経路は通常の <see cref="ILiveObjectResolver"/> を使うため
     /// 既存挙動に影響しない。シーン保存内部専用のため internal（実装の唯一の利用者は
-    /// 同アセンブリの ExposedPropertySerializer のキャストと、IVT 経由の LiveSceneSerializer）。
+    /// 同アセンブリの LivePropertySerializer のキャストと、IVT 経由の LiveSceneSerializer）。
     /// </summary>
-    internal interface IFileScopedResolver : IExposedObjectResolver
+    internal interface IFileScopedResolver : ILiveObjectResolver
     {
         /// <summary>
         /// 現在のプロパティパスにセグメントを追加する（配列添字は "[i]" 形式）。
@@ -28,9 +28,9 @@ namespace Lilium.RemoteControl
         void PopPath();
 
         /// <summary>
-        /// 現在処理中の root ExposedObjectHandle を設定する。null で解除。
+        /// 現在処理中の root LiveObjectHandle を設定する。null で解除。
         /// </summary>
-        void SetCurrentRoot(ExposedObjectHandle? root);
+        void SetCurrentRoot(LiveObjectHandle? root);
 
         /// <summary>
         /// UnityEngine.Object 参照を fileid 付きの @ref トークンとしてエンコードし、
@@ -45,7 +45,7 @@ namespace Lilium.RemoteControl
     /// - プロパティ走査中のパスを追跡する
     /// - UnityEngine.Object 参照を source-key ベースの @ref にエンコードする
     /// - 未登録の UnityEngine.Object は @source (rootId+path) 付きエントリとして後で objects[] に書き出すようキューする
-    /// - 登録済み ExposedObjectHandle を持つ UnityEngine.Object は、その ExposedObjectHandle.id を source-key として再利用する
+    /// - 登録済み LiveObjectHandle を持つ UnityEngine.Object は、その LiveObjectHandle.id を source-key として再利用する
     /// </summary>
     internal sealed class FileScopedResolver : IFileScopedResolver
     {
@@ -58,22 +58,22 @@ namespace Lilium.RemoteControl
             public string path;          // root からのプロパティパス（DotBracket 形式）
         }
 
-        private readonly IExposedObjectResolver _inner;
+        private readonly ILiveObjectResolver _inner;
         private readonly List<string> _pathStack = new List<string>();
         private readonly Dictionary<UnityEngine.Object, string> _objectFileIds = new Dictionary<UnityEngine.Object, string>();
         private readonly List<PendingReference> _pending = new List<PendingReference>();
 
-        private ExposedObjectHandle? _currentRoot;
+        private LiveObjectHandle? _currentRoot;
 
-        public FileScopedResolver(IExposedObjectResolver inner)
+        public FileScopedResolver(ILiveObjectResolver inner)
         {
             _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         }
 
         public IReadOnlyList<PendingReference> pending => _pending;
 
-        public ExposedObjectHandle? FindById(string id) => _inner.FindById(id);
-        public ExposedObjectHandle? FindByTarget(object target) => _inner.FindByTarget(target);
+        public LiveObjectHandle? FindById(string id) => _inner.FindById(id);
+        public LiveObjectHandle? FindByTarget(object target) => _inner.FindByTarget(target);
 
         public void PushPath(string segment)
         {
@@ -87,7 +87,7 @@ namespace Lilium.RemoteControl
             _pathStack.RemoveAt(_pathStack.Count - 1);
         }
 
-        public void SetCurrentRoot(ExposedObjectHandle? root)
+        public void SetCurrentRoot(LiveObjectHandle? root)
         {
             _currentRoot = root;
             _pathStack.Clear();
@@ -128,7 +128,7 @@ namespace Lilium.RemoteControl
 
         /// <summary>
         /// 対象オブジェクトの source-key を採番（既に割当済みなら再利用）。
-        /// 登録済み ExposedObjectHandle を持つ target はその ExposedObjectHandle.id を再利用する。
+        /// 登録済み LiveObjectHandle を持つ target はその LiveObjectHandle.id を再利用する。
         /// 未登録 target には `rootId + 現在パス` を source-key として割り当てる。
         /// pending は未登録の UnityEngine.Object の場合にのみ追加する。
         /// </summary>
@@ -139,7 +139,7 @@ namespace Lilium.RemoteControl
                 return existing;
             }
 
-            // 登録済み ExposedObjectHandle がある場合はその id を source-key として再利用する
+            // 登録済み LiveObjectHandle がある場合はその id を source-key として再利用する
             string sourceKey;
             var rootId = overrideRootId ?? _currentRoot?.id;
             var path = overridePath ?? GetCurrentPath();
@@ -157,7 +157,7 @@ namespace Lilium.RemoteControl
                 path = _NameComponentPath(path, obj);
                 sourceKey = _ComposeSourceKey(rootId, path);
             }
-            ExposedObjectFileRegistry.Register(sourceKey, obj);
+            LiveObjectFileRegistry.Register(sourceKey, obj);
             _objectFileIds[obj] = sourceKey;
 
             if (registerPending)
@@ -179,7 +179,7 @@ namespace Lilium.RemoteControl
         {
             if (obj == null) return JValue.CreateNull();
 
-            // 登録済み ExposedObjectHandle を持つ場合: source-key 採番のみ、pending には積まない
+            // 登録済み LiveObjectHandle を持つ場合: source-key 採番のみ、pending には積まない
             // （root 側が別エントリとして出力済みになる）
             var registered = _inner.FindByTarget(obj);
             bool isRegisteredRoot = registered != null && registered.Value.hasId;
@@ -200,12 +200,12 @@ namespace Lilium.RemoteControl
             return path[0] == '[' ? rootId + path : rootId + "." + path;
         }
 
-        // The exposed property name of the GameObject wrapper's component list (see ExposedGameObject).
+        // The exposed property name of the GameObject wrapper's component list (see LiveGameObject).
         private const string kComponentsPrefix = "components[";
 
         /// <summary>
         /// If <paramref name="path"/> is a single top-level component element ("components[&lt;digits&gt;]")
-        /// and <paramref name="obj"/> is a <see cref="Component"/> with a registered <see cref="ExposedClass"/>,
+        /// and <paramref name="obj"/> is a <see cref="Component"/> with a registered <see cref="LiveClass"/>,
         /// replaces the numeric index with the exposed type name ("components[Chair]"). This keeps the
         /// composed source key stable when a bundle is re-exported and its component order changes — an
         /// index would then point at a different component. Any other path shape, non-component target, or
@@ -225,9 +225,9 @@ namespace Lilium.RemoteControl
                 if (inner[i] < '0' || inner[i] > '9') return path; // already named, or not a bare index
             }
 
-            var exposedClass = ExposedClass.Find(obj.GetType());
-            if (exposedClass == null || string.IsNullOrEmpty(exposedClass.typeName)) return path;
-            return kComponentsPrefix + exposedClass.typeName + "]";
+            var liveClass = LiveClass.Find(obj.GetType());
+            if (liveClass == null || string.IsNullOrEmpty(liveClass.typeName)) return path;
+            return kComponentsPrefix + liveClass.typeName + "]";
         }
     }
 }

@@ -9,7 +9,7 @@ namespace Lilium.RemoteControl.Tests
 {
     /// <summary>
     /// 型付きアクセサ (Source Generator が値型メンバーに生成する Func&lt;object,T&gt;/Action&lt;object,T&gt;) と、
-    /// それを使う <see cref="ExposedProperty.TryGetValue{T}"/> / <see cref="ExposedProperty.TrySetValue{T}(T)"/> の
+    /// それを使う <see cref="LiveProperty.TryGetValue{T}"/> / <see cref="LiveProperty.TrySetValue{T}(T)"/> の
     /// 正当性と「値型読み取りが boxing しない」ことを保証する。
     /// </summary>
     [TestFixture]
@@ -17,27 +17,27 @@ namespace Lilium.RemoteControl.Tests
     {
         public enum Mode { A, B, C }
 
-        [ExposedClass("TypedAccessorTarget")]
+        [LiveClass("TypedAccessorTarget")]
         public class TypedAccessorTarget
         {
-            [ExposedField] public bool flag;
-            [ExposedField] public float weight;
-            [ExposedField] public int count;
-            [ExposedField] public Vector3 position;
-            [ExposedField] public Mode mode;
-            [ExposedField] public string label;
-            [ExposedProperty] public float readOnlyFloat => 3.5f;
+            [LiveField] public bool flag;
+            [LiveField] public float weight;
+            [LiveField] public int count;
+            [LiveField] public Vector3 position;
+            [LiveField] public Mode mode;
+            [LiveField] public string label;
+            [LiveProperty] public float readOnlyFloat => 3.5f;
         }
 
-        ExposedObjectHandle _handle;
+        LiveObjectHandle _handle;
         TypedAccessorTarget _target;
 
         [SetUp]
         public void SetUp()
         {
-            ExposedObjectRegistry.ClearAll();
-            ExposedClass.Clear();
-            ExposedClass.RegisterFromAttributes<TypedAccessorTarget>();
+            LiveObjectRegistry.ClearAll();
+            LiveClass.Clear();
+            LiveClass.RegisterFromAttributes<TypedAccessorTarget>();
             _target = new TypedAccessorTarget
             {
                 flag = true,
@@ -47,17 +47,17 @@ namespace Lilium.RemoteControl.Tests
                 mode = Mode.B,
                 label = "hello",
             };
-            _handle = ExposedObjectRegistry.Create(_target, "typed_target").Value;
+            _handle = LiveObjectRegistry.Create(_target, "typed_target").Value;
         }
 
         [TearDown]
         public void TearDown()
         {
-            ExposedObjectRegistry.ClearAll();
-            ExposedClass.Clear();
+            LiveObjectRegistry.ClearAll();
+            LiveClass.Clear();
         }
 
-        ExposedProperty Prop(string name) => _handle.GetProperty(name).Value;
+        LiveProperty Prop(string name) => _handle.GetProperty(name).Value;
 
         // --- Source Generator が値型メンバーに型付き getter を生成している前提を確認 ---
         // (SG がこのテストアセンブリを処理していないと fast path が働かず、以降のゼロアロケーションが崩れる)
@@ -123,10 +123,10 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void TrySetValue_FiresPropertyChanged_WithOldValue()
         {
-            var cls = ExposedClass.Find(typeof(TypedAccessorTarget));
+            var cls = LiveClass.Find(typeof(TypedAccessorTarget));
             float oldSeen = float.NaN;
             int fired = 0;
-            ExposedClass.PropertyChangedDelegate handler = (p, old) =>
+            LiveClass.PropertyChangedDelegate handler = (p, old) =>
             {
                 fired++;
                 if (old is float o) oldSeen = o;

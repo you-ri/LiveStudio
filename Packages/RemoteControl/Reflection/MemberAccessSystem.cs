@@ -9,8 +9,8 @@ namespace Lilium.RemoteControl.Reflection
 {
     /// <summary>
     /// メンバーへのアクセス（get/set）と、型＋パスからの MemberInfo 解決を提供するユーティリティ。
-    /// 値アクセスは System.Reflection ベース。ExposedProperty の高速な値アクセスは
-    /// <see cref="ExposedPropertyUtility"/> 側 (Source Generator 生成アクセサ) が担う。
+    /// 値アクセスは System.Reflection ベース。LiveProperty の高速な値アクセスは
+    /// <see cref="LivePropertyUtility"/> 側 (Source Generator 生成アクセサ) が担う。
     /// </summary>
     public static class MemberAccessSystem
     {

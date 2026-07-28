@@ -70,10 +70,10 @@ namespace Lilium.RemoteControl.UI.Editor
                     if (isUpdatingUI()) return;
 
                     var selectedTypeName = evt.newValue;
-                    var exposedClass = ExposedClass.Find(selectedTypeName);
-                    if (exposedClass == null) return;
+                    var liveClass = LiveClass.Find(selectedTypeName);
+                    if (liveClass == null) return;
 
-                    var newInstance = Activator.CreateInstance(exposedClass.type);
+                    var newInstance = Activator.CreateInstance(liveClass.type);
                     prop.SetValue(newInstance);
 
                     // プロパティ領域を再構築（外部ターゲットがあればそちらに配置）
@@ -118,7 +118,7 @@ namespace Lilium.RemoteControl.UI.Editor
             var propsContainer = (nestedPropsTarget ?? control).Q("type-selector-props");
             if (propsContainer == null) return;
 
-            var parentProp = propsContainer.userData as ExposedProperty?;
+            var parentProp = propsContainer.userData as LiveProperty?;
             if (parentProp == null) return;
 
             foreach (var child in propsContainer.Children())
@@ -150,8 +150,8 @@ namespace Lilium.RemoteControl.UI.Editor
         private string _GetCurrentTypeName(object value)
         {
             if (value == null) return null;
-            var exposedClass = ExposedClass.Find(value.GetType());
-            return exposedClass != null ? exposedClass.typeName : null;
+            var liveClass = LiveClass.Find(value.GetType());
+            return liveClass != null ? liveClass.typeName : null;
         }
 
         private VisualElement _CreateNestedProperties(PropertyControlContext ctx, string typeName)
@@ -161,14 +161,14 @@ namespace Lilium.RemoteControl.UI.Editor
             if (string.IsNullOrEmpty(typeName) || !ctx.prop.isValid)
                 return container;
 
-            var exposedClass = ExposedClass.Find(typeName);
-            if (exposedClass == null)
+            var liveClass = LiveClass.Find(typeName);
+            if (liveClass == null)
                 return container;
 
             // UpdateValueで使用するためにpropを保持
-            container.userData = (ExposedProperty?)ctx.prop;
+            container.userData = (LiveProperty?)ctx.prop;
 
-            var childPropTypes = exposedClass.propertyTypes;
+            var childPropTypes = liveClass.propertyTypes;
             if (childPropTypes == null || childPropTypes.Length == 0)
                 return container;
 
@@ -207,7 +207,7 @@ namespace Lilium.RemoteControl.UI.Editor
                     isUpdatingUI = ctx.isUpdatingUI
                 };
 
-                if (childPropType.exposedValueClass != null && !childPropType.isExposedObjectReference)
+                if (childPropType.liveValueClass != null && !childPropType.isLiveObjectReference)
                 {
                     var refControl = new ReferencePropertyControl();
                     var childControl = refControl.CreateControl(childCtx);

@@ -27,7 +27,7 @@ namespace Lilium.LiveStudio
     /// time is an invariant StageManager enforces.
     /// </summary>
     [Serializable]
-    [ExposedClass("BuiltinSetAsset", Category = "Asset", Icon = "public")]
+    [LiveClass("BuiltinSetAsset", Category = "Asset", Icon = "public")]
     public class BuiltinSetAsset : AssetBase, ISetAsset
     {
         /// <summary>
@@ -35,14 +35,14 @@ namespace Lilium.LiveStudio
         /// the live scene (the runtime <see cref="AssetBase.id"/> is reconstructed from it) and the handle
         /// <see cref="SceneManager.LoadSceneAsync(string, LoadSceneParameters)"/> loads the scene by.
         /// </summary>
-        [ExposedField, Hide]
+        [LiveField, Hide]
         public string scenePath;
 
         /// <summary>
         /// True when this set is the active set. Persisted so the saved active set is reactivated on
         /// restore once it has loaded. Written by <see cref="StageManager"/>.
         /// </summary>
-        [ExposedField]
+        [LiveField]
         public bool isActive;
 
         public override bool isExclusive => false;

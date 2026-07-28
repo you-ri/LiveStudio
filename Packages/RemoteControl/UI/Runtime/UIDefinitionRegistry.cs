@@ -13,7 +13,7 @@ namespace Lilium.RemoteControl.UI
     /// <c>/ui/sidemenu</c> route.
     ///
     /// A live <see cref="UIHandler"/> registers the added definition's selectors and records a UI
-    /// change in <see cref="ExposedChangeLog"/> so polling clients refetch the side menu.
+    /// change in <see cref="LiveChangeLog"/> so polling clients refetch the side menu.
     /// </summary>
     public static class UIDefinitionRegistry
     {

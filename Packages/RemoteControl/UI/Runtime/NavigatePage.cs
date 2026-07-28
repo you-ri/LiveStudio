@@ -10,7 +10,7 @@ namespace Lilium.RemoteControl.UI
     /// <summary>
     /// UI page definition.
     /// Corresponds to the RemoteApp NavigatePage.
-    /// Displays ExposedObjects of static classes with sections.
+    /// Displays LiveObjects of static classes with sections.
     /// </summary>
     [Serializable]
     [MovedFrom(true, "Lilium.RemoteControl.WebUI", "Lilium.RemoteControl.WebUI")]
@@ -25,8 +25,8 @@ namespace Lilium.RemoteControl.UI
 
     /// <summary>
     /// NavigatePage用のオブジェクトセレクタ。
-    /// 指定されたIDのExposedObjectを参照として返す。
-    /// 静的クラスのExposedObjectはtargetがnullのため、ExposedObjectインスタンス自体を返し、
+    /// 指定されたIDのLiveObjectを参照として返す。
+    /// 静的クラスのLiveObjectはtargetがnullのため、LiveObjectインスタンス自体を返し、
     /// シリアライザが@refとして解決する。
     /// </summary>
     [Serializable]
@@ -34,8 +34,8 @@ namespace Lilium.RemoteControl.UI
     public class NavigateObjectSelector : ObjectSelectorBase
     {
         /// <summary>
-        /// 表示するExposedObjectのID一覧。
-        /// 各IDはExposedObjectRegistry上の静的クラスのtypeNameに対応する。
+        /// 表示するLiveObjectのID一覧。
+        /// 各IDはLiveObjectRegistry上の静的クラスのtypeNameに対応する。
         /// </summary>
         public string[] objectIds = new string[0];
 
@@ -47,19 +47,19 @@ namespace Lilium.RemoteControl.UI
             var result = new List<object>();
             for (int i = 0; i < objectIds.Length; i++)
             {
-                var exposedObject = ExposedObjectRegistry.FindById(objectIds[i]);
-                if (exposedObject == null)
+                var liveObject = LiveObjectRegistry.FindById(objectIds[i]);
+                if (liveObject == null)
                 {
                     // RuntimeInitializeOnLoad による static 登録が走る前や、
-                    // ExposedObjectRegistry のクリア後にアクセスされたケースを救済する。
-                    var exposedClass = ExposedClass.Find(objectIds[i]);
-                    if (exposedClass != null && exposedClass.isStatic)
+                    // LiveObjectRegistry のクリア後にアクセスされたケースを救済する。
+                    var liveClass = LiveClass.Find(objectIds[i]);
+                    if (liveClass != null && liveClass.isStatic)
                     {
-                        exposedObject = ExposedObjectRegistry.GetOrCreate(exposedClass.typeName, exposedClass, null);
+                        liveObject = LiveObjectRegistry.GetOrCreate(liveClass.typeName, liveClass, null);
                     }
                 }
-                if (exposedObject != null)
-                    result.Add(exposedObject);
+                if (liveObject != null)
+                    result.Add(liveObject);
             }
             return result.ToArray();
         }

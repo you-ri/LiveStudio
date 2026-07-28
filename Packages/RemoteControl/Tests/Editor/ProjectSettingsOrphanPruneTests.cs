@@ -20,11 +20,11 @@ namespace Lilium.RemoteControl.Tests
     public class ProjectSettingsOrphanPruneTests
     {
         // Registered test class with a class-level rename alias, to exercise the former-name branch.
-        [ExposedClass("OrphanPruneNew")]
-        [FormerlyExposedAs("OrphanPruneOld")]
+        [LiveClass("OrphanPruneNew")]
+        [FormerlyNamedAs("OrphanPruneOld")]
         public class OrphanPruneNew
         {
-            [ExposedField(persistScope = PersistScope.Project)]
+            [LiveField(persistScope = PersistScope.Project)]
             public int v;
         }
 

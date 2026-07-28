@@ -24,8 +24,8 @@ namespace Lilium.LiveStudio
     /// actually drills into is opened, to enumerate its member names (<see cref="GetMemberNamesAsync"/>).
     /// </summary>
     [Serializable]
-    [ExposedClass("PackBundleAsset", Category = "Asset", Icon = "animation")]
-    [FormerlyExposedAs("AnimationBundleAsset")]
+    [LiveClass("PackBundleAsset", Category = "Asset", Icon = "animation")]
+    [FormerlyNamedAs("AnimationBundleAsset")]
     public class PackBundleAsset : AssetBase
     {
         // Additive-style (not a single-selection group), though it never actually loads via the toggle.

@@ -17,7 +17,7 @@ namespace Lilium.LiveStudio
     /// The folder path is persisted to PlayerPrefs and the last project is re-opened automatically on
     /// startup.
     /// </summary>
-    [ExposedClass(Icon = "folder")]
+    [LiveClass(Icon = "folder")]
     public static class ProjectManager
     {
         // PlayerPrefs key mirroring the absolute project folder path (machine-global, not per-scene).
@@ -33,26 +33,26 @@ namespace Lilium.LiveStudio
         // selected camera is refreshed every _selectedCameraPreviewIntervalMs, while the other cameras
         // are cycled one-by-one every _unselectedCameraPreviewIntervalMs. Kept per project (any scene of
         // the same project shares the same polling cadence), so they use Project persist scope.
-        [ExposedField(persistScope = PersistScope.Project), Hide]
-        [FormerlyExposedAs("selectedCameraPreviewIntervalMs")]
+        [LiveField(persistScope = PersistScope.Project), Hide]
+        [FormerlyNamedAs("selectedCameraPreviewIntervalMs")]
         private static int _selectedCameraPreviewIntervalMs = 100;
 
-        [ExposedProperty]
+        [LiveProperty]
         [Slider(16, 1000, 1)]
-        [ExposedHelp("PROJECT_SELECTEDCAMERAPREVIEWINTERVAL")]
+        [Help("PROJECT_SELECTEDCAMERAPREVIEWINTERVAL")]
         public static int selectedCameraPreviewIntervalMs
         {
             get => _selectedCameraPreviewIntervalMs;
             set => _selectedCameraPreviewIntervalMs = Mathf.Max(1, value);
         }
 
-        [ExposedField(persistScope = PersistScope.Project), Hide]
-        [FormerlyExposedAs("unselectedCameraPreviewIntervalMs")]
+        [LiveField(persistScope = PersistScope.Project), Hide]
+        [FormerlyNamedAs("unselectedCameraPreviewIntervalMs")]
         private static int _unselectedCameraPreviewIntervalMs = 50;
 
-        [ExposedProperty]
+        [LiveProperty]
         [Slider(16, 1000, 1)]
-        [ExposedHelp("PROJECT_UNSELECTEDCAMERAPREVIEWINTERVAL")]
+        [Help("PROJECT_UNSELECTEDCAMERAPREVIEWINTERVAL")]
         public static int unselectedCameraPreviewIntervalMs
         {
             get => _unselectedCameraPreviewIntervalMs;
@@ -64,13 +64,13 @@ namespace Lilium.LiveStudio
         // keeps displayed values fresh: Studio changes them from anywhere (operations/gamepad,
         // physics/animation, getter-only computed values) without notifying anyone.
         // Kept per project like the camera preview intervals above.
-        [ExposedField(persistScope = PersistScope.Project), Hide]
-        [FormerlyExposedAs("realtimePropertyIntervalMs")]
+        [LiveField(persistScope = PersistScope.Project), Hide]
+        [FormerlyNamedAs("realtimePropertyIntervalMs")]
         private static int _realtimePropertyIntervalMs = 100;
 
-        [ExposedProperty]
+        [LiveProperty]
         [Slider(16, 1000, 1)]
-        [ExposedHelp("PROJECT_REALTIMEPROPERTYINTERVAL")]
+        [Help("PROJECT_REALTIMEPROPERTYINTERVAL")]
         public static int realtimePropertyIntervalMs
         {
             get => _realtimePropertyIntervalMs;
@@ -78,14 +78,14 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>Absolute path of the currently open project folder, or empty if none.</summary>
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public static string projectPath => _projectPath;
 
         /// <summary>
         /// Display name of the project: the open folder's name, or the configured initial name
         /// (<see cref="LiveStudioProjectSettings.defaultProjectName"/>) when no project is open.
         /// </summary>
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public static string projectName
         {
             get
@@ -150,7 +150,7 @@ namespace Lilium.LiveStudio
         /// Opens (or switches to) a project folder: persists the path and crawls it. Invoked from the
         /// remote app after the user picks a folder.
         /// </summary>
-        [ExposedFunction(label = "PROJECT_OPEN_FOLDER"), Hide]
+        [LiveFunction(label = "PROJECT_OPEN_FOLDER"), Hide]
         public static void OpenProject(string folderPath)
         {
             if (string.IsNullOrEmpty(folderPath))
@@ -230,7 +230,7 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>Re-scans the current project folder (e.g. after files were added on disk).</summary>
-        [ExposedFunction(label = "PROJECT_RECRAWL"), Hide]
+        [LiveFunction(label = "PROJECT_RECRAWL"), Hide]
         public static void RecrawlProject()
         {
             _Crawl();
@@ -240,7 +240,7 @@ namespace Lilium.LiveStudio
         /// Opens the current project folder in the OS file browser. Mirrors the live-scene
         /// "Open Save Folder" action; both resolve to the same project folder (the save destination).
         /// </summary>
-        [ExposedFunction(label = "PROJECT_OPEN_DEST_FOLDER"), Hide]
+        [LiveFunction(label = "PROJECT_OPEN_DEST_FOLDER"), Hide]
         public static void OpenProjectFolder()
         {
             if (string.IsNullOrEmpty(_projectPath) || !Directory.Exists(_projectPath))

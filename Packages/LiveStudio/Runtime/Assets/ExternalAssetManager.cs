@@ -38,8 +38,8 @@ namespace Lilium.LiveStudio
     /// holds no persisted file path of its own — it is just the loader the selected avatar asset drives.
     /// </summary>
     [Serializable]
-    [ExposedClass(Icon = "deployed_code", Category = "Asset", HideInScene = true)]
-    public class ExternalAssetManager : IExposedObject, IExposedDeserializeCallback, IExposedSerializeCallback
+    [LiveClass(Icon = "deployed_code", Category = "Asset", HideInScene = true)]
+    public class ExternalAssetManager : ILiveObject, ILiveDeserializeCallback, ILiveSerializeCallback
     {
         const string kId = "a7d3f1e2-9c4b-4e85-b6a1-2f8c5d3e7b91";
 
@@ -51,7 +51,7 @@ namespace Lilium.LiveStudio
 
         public string name { get; set; } = "Asset Manager";
 
-        public ExposedObjectHandle? exposedObject => ExposedObjectRegistry.FindByTarget(this);
+        public LiveObjectHandle? liveObject => LiveObjectRegistry.FindByTarget(this);
 
         public string id => kId;
 
@@ -63,19 +63,19 @@ namespace Lilium.LiveStudio
         // captured, marking the scene unsaved on every launch (and blocking quit) — the shadow exists to
         // keep the crawl-built catalog out of the persisted state.
         [NonSerialized]
-        [ExposedField(persistable = false)]
+        [LiveField(persistable = false)]
         private AssetBase[] assets = Array.Empty<AssetBase>();
 
         // Persistence shadow for `assets`: holds only the assets actually in use (enabled / loaded), so
         // the live scene JSON saves the selected avatar / loaded props / active world but NOT the
-        // disabled project catalog. Refreshed in OnBeforeExposedSerialize; applied back to `assets` in
-        // OnAfterExposedDeserialize (the catalog is then re-added by the project crawl).
+        // disabled project catalog. Refreshed in OnBeforeLiveSerialize; applied back to `assets` in
+        // OnAfterLiveDeserialize (the catalog is then re-added by the project crawl).
         [NonSerialized]
-        [ExposedField, Hide]
+        [LiveField, Hide]
         private AssetBase[] _persistedAssets = Array.Empty<AssetBase>();
 
         // The `_persistedAssets` reference this manager last applied to / produced for the live set.
-        // Lets OnAfterExposedDeserialize tell a real restore (FromJson replaces the reference) from an
+        // Lets OnAfterLiveDeserialize tell a real restore (FromJson replaces the reference) from an
         // unrelated property write (reference unchanged), so a plain enabled-toggle is not clobbered.
         [NonSerialized]
         private AssetBase[] _lastAppliedPersisted;
@@ -117,8 +117,8 @@ namespace Lilium.LiveStudio
             // Resolve deferred external-prop @prefab instances (queued by the live-scene restore before this
             // manager's crawl registered their asset) through this manager.
             PendingPrefabStore.SetProvider(_ResolveInstancePrefabForKey);
-            ExposedObjectRegistry.Create<ExternalAssetManager>(this, kId);
-            ExposedClass.Get<ExternalAssetManager>().onPropertyChanged += _OnPropertyChanged;
+            LiveObjectRegistry.Create<ExternalAssetManager>(this, kId);
+            LiveClass.Get<ExternalAssetManager>().onPropertyChanged += _OnPropertyChanged;
 
             if (Application.isPlaying)
             {
@@ -147,13 +147,13 @@ namespace Lilium.LiveStudio
 
             RemoteControlBehaviour.onBaseSceneReloaded -= _OnBaseSceneReloaded;
 
-            ExposedClass.Get<ExternalAssetManager>().onPropertyChanged -= _OnPropertyChanged;
+            LiveClass.Get<ExternalAssetManager>().onPropertyChanged -= _OnPropertyChanged;
             if (_avatarService != null) _avatarService.onAvatarChanged -= _OnAvatarChanged;
             _avatarService = null;
 
             _UnloadAllAdditive();
 
-            ExposedObjectRegistry.FindByTarget(this)?.Unregister();
+            LiveObjectRegistry.FindByTarget(this)?.Unregister();
 
             if (_current == this) _current = null;
         }
@@ -164,11 +164,11 @@ namespace Lilium.LiveStudio
         }
 
         // True when _persistedAssets was just replaced by a live-scene restore (FromJson deserializes a
-        // brand-new array) rather than left untouched by an unrelated property write. OnAfterExposedDeserialize
+        // brand-new array) rather than left untouched by an unrelated property write. OnAfterLiveDeserialize
         // fires on EVERY exposed-property write on this manager, not only after a full restore, so without
         // this guard a plain enabled-toggle would re-apply the persisted set and wipe the live assets (and
         // the just-toggled selection). Reference identity is the signal: a restore brings in an array this
-        // manager did not produce, whereas a property write leaves the reference OnBeforeExposedSerialize
+        // manager did not produce, whereas a property write leaves the reference OnBeforeLiveSerialize
         // last recorded into _lastAppliedPersisted.
         private bool _IsFreshRestore() => !ReferenceEquals(_persistedAssets, _lastAppliedPersisted);
 
@@ -177,7 +177,7 @@ namespace Lilium.LiveStudio
         /// <see cref="_persistedAssets"/>; make them the live set, schedule a diff to (un)load them, and
         /// re-arm the crawl so the project catalog is re-added on the next <see cref="Update"/>.
         /// </summary>
-        public void OnAfterExposedDeserialize()
+        public void OnAfterLiveDeserialize()
         {
             if (!Application.isPlaying) return;
 
@@ -208,7 +208,7 @@ namespace Lilium.LiveStudio
         /// live values, then captures only the in-use assets (enabled / loaded) into
         /// <see cref="_persistedAssets"/> so the saved live scene excludes the disabled project catalog.
         /// </summary>
-        public void OnBeforeExposedSerialize()
+        public void OnBeforeLiveSerialize()
         {
             for (int i = 0; i < _loaded.Count; i++) _loaded[i].CaptureState();
 
@@ -231,7 +231,7 @@ namespace Lilium.LiveStudio
                 used.Add(asset);
             }
             _persistedAssets = used.ToArray();
-            // We produced this reference (not a restore); record it so OnAfterExposedDeserialize does
+            // We produced this reference (not a restore); record it so OnAfterLiveDeserialize does
             // not re-apply it on a later property write.
             _lastAppliedPersisted = _persistedAssets;
         }
@@ -280,7 +280,7 @@ namespace Lilium.LiveStudio
         /// an external .bin / textures) are not yet bundled — that is a future per-extension conversion
         /// step. For now the import is a plain copy.
         /// </summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void AddAsset(string filePath)
         {
             if (string.IsNullOrEmpty(filePath))
@@ -492,7 +492,7 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>Unloads (if loaded) and removes the entry with the given id.</summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void RemoveAsset(string assetId)
         {
             if (string.IsNullOrEmpty(assetId)) return;
@@ -532,7 +532,7 @@ namespace Lilium.LiveStudio
         /// remote app is on a different machine. Restricted to preset files (<c>*.preset.json</c>) for
         /// now; other asset kinds are rejected.
         /// </summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void DeleteAssetFile(string assetId)
         {
             var asset = _Find(assetId);
@@ -568,7 +568,7 @@ namespace Lilium.LiveStudio
         /// re-arming the one-shot ready hook so the next <see cref="Update"/> re-runs the crawl once the
         /// restore has settled (same deferred path as startup).
         /// </summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void OpenLiveScene(string assetId)
         {
             if (string.IsNullOrEmpty(assetId)) return;
@@ -719,7 +719,7 @@ namespace Lilium.LiveStudio
         /// implemented: loaded props and the active avatar (both as delta state in the unified envelope).
         /// Objects without a supported strategy are rejected.
         /// </summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void SaveAsPreset(string objectId, string presetName)
         {
             var projectPath = ProjectManager.projectPath;
@@ -788,7 +788,7 @@ namespace Lilium.LiveStudio
             // Avatar strategy: avatars are exposed through the shared AvatarController (not a per-asset
             // wrapper), so delta-capture against its GameObject and pin the active avatar asset's source.
             // A preset-loaded avatar is eligible too — its sourceFilePath resolves to the underlying file.
-            var handle = ExposedObjectRegistry.FindById(objectId);
+            var handle = LiveObjectRegistry.FindById(objectId);
             if (handle.HasValue && handle.Value.target is AvatarController controller)
             {
                 for (int i = 0; i < assets.Length; i++)
@@ -848,7 +848,7 @@ namespace Lilium.LiveStudio
             _Broadcast();
         }
 
-        private void _OnPropertyChanged(ExposedProperty property, object oldValue)
+        private void _OnPropertyChanged(LiveProperty property, object oldValue)
         {
             if (!_initialized) return;
             if (!property.PathContains(nameof(assets))) return;
@@ -1191,7 +1191,7 @@ namespace Lilium.LiveStudio
 
         private void _Broadcast()
         {
-            ExposedPropertyBroadcast.BroadcastProperty(this, "assets");
+            LivePropertyBroadcast.BroadcastProperty(this, "assets");
             onAssetsChanged?.Invoke();
         }
     }

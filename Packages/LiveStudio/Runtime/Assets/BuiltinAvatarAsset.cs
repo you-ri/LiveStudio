@@ -30,7 +30,7 @@ namespace Lilium.LiveStudio
     /// are shared with <see cref="AvatarAsset"/> through <see cref="AvatarAssetSupport"/>.
     /// </summary>
     [Serializable]
-    [ExposedClass("BuiltinAvatarAsset", Category = "Asset", Icon = "person")]
+    [LiveClass("BuiltinAvatarAsset", Category = "Asset", Icon = "person")]
     public class BuiltinAvatarAsset : AvatarAssetBase
     {
         // Selectable service id of the avatar slot to drive (the id AvatarController registers under).
@@ -41,7 +41,7 @@ namespace Lilium.LiveStudio
         /// <see cref="AssetBase.id"/> is reconstructed from it on restore) and the key
         /// <see cref="BuiltinAssetRegistry.LoadPrefab"/> resolves the Resources prefab by.
         /// </summary>
-        [ExposedField, Hide]
+        [LiveField, Hide]
         public string guid;
 
         public override bool isBuiltin => true;

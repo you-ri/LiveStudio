@@ -19,34 +19,34 @@ namespace Lilium.RemoteControl.Tests
     {
         #region Test Classes
 
-        [ExposedClass("TestClipHolder")]
+        [LiveClass("TestClipHolder")]
         public class TestClipHolder : MonoBehaviour
         {
-            [ExposedProperty, Hide]
+            [LiveProperty, Hide]
             public string[] clipGuids => new[] { string.Empty, kClipGuid };
 
-            [SerializeField, ExposedField, AssetSelector(nameof(clipGuids))]
+            [SerializeField, LiveField, AssetSelector(nameof(clipGuids))]
             public AnimationClip clip;
         }
 
         // A nested (inline-expanded) exposed object that carries the AssetSelector field. Serializing
-        // the outer holder expands this via SerializeExposedObject — the nested path where the selector
+        // the outer holder expands this via SerializeLiveObject — the nested path where the selector
         // dispatch was previously missing, so an [AssetSelector] AnimationClip fell through to the
         // generic UnityEngine.Object serializer and threw. See the "Nested serialization" region.
-        [ExposedClass("InnerClipData")]
+        [LiveClass("InnerClipData")]
         public class InnerClipData
         {
-            [ExposedProperty, Hide]
+            [LiveProperty, Hide]
             public string[] clipGuids => new[] { string.Empty, kClipGuid };
 
-            [SerializeField, ExposedField, AssetSelector(nameof(clipGuids))]
+            [SerializeField, LiveField, AssetSelector(nameof(clipGuids))]
             public AnimationClip clip;
         }
 
-        [ExposedClass("TestNestedClipHolder")]
+        [LiveClass("TestNestedClipHolder")]
         public class TestNestedClipHolder : MonoBehaviour
         {
-            [ExposedField]
+            [LiveField]
             public InnerClipData inner = new InnerClipData();
         }
 
@@ -54,23 +54,23 @@ namespace Lilium.RemoteControl.Tests
 
         const string kClipGuid = "0123456789abcdef0123456789abcdef";
 
-        private TestExposedObjectResolver _resolver;
+        private TestLiveObjectResolver _resolver;
         private readonly List<Object> _createdObjects = new List<Object>();
 
         [SetUp]
         public void SetUp()
         {
-            ExposedClass.Clear();
+            LiveClass.Clear();
             AssetRegistry.Clear();
 
-            var toRemove = ExposedObjectRegistry.instances.ToList();
+            var toRemove = LiveObjectRegistry.instances.ToList();
             foreach (var obj in toRemove) obj.Unregister();
 
-            ExposedClass.RegisterFromAttributes<TestClipHolder>();
-            ExposedClass.RegisterFromAttributes<InnerClipData>();
-            ExposedClass.RegisterFromAttributes<TestNestedClipHolder>();
+            LiveClass.RegisterFromAttributes<TestClipHolder>();
+            LiveClass.RegisterFromAttributes<InnerClipData>();
+            LiveClass.RegisterFromAttributes<TestNestedClipHolder>();
 
-            _resolver = new TestExposedObjectResolver();
+            _resolver = new TestLiveObjectResolver();
         }
 
         [TearDown]
@@ -83,7 +83,7 @@ namespace Lilium.RemoteControl.Tests
             _createdObjects.Clear();
             AssetRegistry.Clear();
 
-            var toRemove = ExposedObjectRegistry.instances.ToList();
+            var toRemove = LiveObjectRegistry.instances.ToList();
             foreach (var obj in toRemove) obj.Unregister();
         }
 
@@ -94,21 +94,21 @@ namespace Lilium.RemoteControl.Tests
             return clip;
         }
 
-        private TestClipHolder _CreateHolder(out ExposedObjectHandle exposed)
+        private TestClipHolder _CreateHolder(out LiveObjectHandle exposed)
         {
             var go = new GameObject("HolderGO");
             _createdObjects.Add(go);
             var holder = go.AddComponent<TestClipHolder>();
-            exposed = new ExposedObjectHandle("holder-id", ExposedClass.Find(typeof(TestClipHolder)), holder);
+            exposed = new LiveObjectHandle("holder-id", LiveClass.Find(typeof(TestClipHolder)), holder);
             return holder;
         }
 
-        private TestNestedClipHolder _CreateNestedHolder(out ExposedObjectHandle exposed)
+        private TestNestedClipHolder _CreateNestedHolder(out LiveObjectHandle exposed)
         {
             var go = new GameObject("NestedHolderGO");
             _createdObjects.Add(go);
             var holder = go.AddComponent<TestNestedClipHolder>();
-            exposed = new ExposedObjectHandle("nested-holder-id", ExposedClass.Find(typeof(TestNestedClipHolder)), holder);
+            exposed = new LiveObjectHandle("nested-holder-id", LiveClass.Find(typeof(TestNestedClipHolder)), holder);
             return holder;
         }
 
@@ -123,7 +123,7 @@ namespace Lilium.RemoteControl.Tests
             var holder = _CreateHolder(out var exposed);
             holder.clip = clip;
 
-            var root = JObject.Parse(ExposedPropertySerializer.ToJson(exposed, _resolver));
+            var root = JObject.Parse(LivePropertySerializer.ToJson(exposed, _resolver));
 
             var token = root["clip"] as JObject;
             Assert.IsNotNull(token, "clip token should be JObject");
@@ -137,7 +137,7 @@ namespace Lilium.RemoteControl.Tests
             var holder = _CreateHolder(out var exposed);
             holder.clip = null;
 
-            var root = JObject.Parse(ExposedPropertySerializer.ToJson(exposed, _resolver));
+            var root = JObject.Parse(LivePropertySerializer.ToJson(exposed, _resolver));
 
             Assert.AreEqual(JTokenType.Null, root["clip"].Type);
         }
@@ -148,20 +148,20 @@ namespace Lilium.RemoteControl.Tests
             var holder = _CreateHolder(out var exposed);
             holder.clip = _CreateClip("Unregistered");
 
-            var root = JObject.Parse(ExposedPropertySerializer.ToJson(exposed, _resolver));
+            var root = JObject.Parse(LivePropertySerializer.ToJson(exposed, _resolver));
 
             Assert.AreEqual(JTokenType.Null, root["clip"].Type, "unregistered asset cannot round-trip; serialize as null");
         }
 
         #endregion
 
-        #region Nested serialization (regression: SerializeExposedObject selector dispatch)
+        #region Nested serialization (regression: SerializeLiveObject selector dispatch)
 
         // These guard the divergence fix: an [AssetSelector] field on a NESTED exposed object (one
-        // expanded inline via SerializeExposedObject, e.g. a component captured through a GameObject
+        // expanded inline via SerializeLiveObject, e.g. a component captured through a GameObject
         // wrapper's CaptureDefaults) must serialize as {@type,@guid} exactly like the top-level path.
         // Before the fix it fell through to the generic UnityEngine.Object serializer and logged
-        // "ExposedClass not found for type AnimationClip / JsonUtility does not support engine types".
+        // "LiveClass not found for type AnimationClip / JsonUtility does not support engine types".
 
         [Test]
         public void SerializeNested_RegisteredClip_EmitsGuid()
@@ -172,7 +172,7 @@ namespace Lilium.RemoteControl.Tests
             var holder = _CreateNestedHolder(out var exposed);
             holder.inner.clip = clip;
 
-            var root = JObject.Parse(ExposedPropertySerializer.ToJson(exposed, _resolver));
+            var root = JObject.Parse(LivePropertySerializer.ToJson(exposed, _resolver));
 
             var innerToken = root["inner"] as JObject;
             Assert.IsNotNull(innerToken, "nested inner object should expand inline as a JObject");
@@ -193,7 +193,7 @@ namespace Lilium.RemoteControl.Tests
             var holder = _CreateNestedHolder(out var exposed);
             holder.inner.clip = clip;
 
-            var root = ExposedPropertySerializer.SerializeFullToJObject(exposed, _resolver, forPersistence: true);
+            var root = LivePropertySerializer.SerializeFullToJObject(exposed, _resolver, forPersistence: true);
 
             var clipToken = root["inner"]?["clip"] as JObject;
             Assert.IsNotNull(clipToken, "nested AssetSelector clip must serialize under persistence (the CaptureDefaults path)");
@@ -207,7 +207,7 @@ namespace Lilium.RemoteControl.Tests
             var holder = _CreateNestedHolder(out var exposed);
             holder.inner.clip = null;
 
-            var root = JObject.Parse(ExposedPropertySerializer.ToJson(exposed, _resolver));
+            var root = JObject.Parse(LivePropertySerializer.ToJson(exposed, _resolver));
 
             Assert.AreEqual(JTokenType.Null, root["inner"]?["clip"]?.Type,
                 "null nested asset serializes as null without error");
@@ -228,7 +228,7 @@ namespace Lilium.RemoteControl.Tests
             Assert.IsTrue(property.HasValue);
 
             var payload = "{\"value\":{\"@type\":\"AnimationClip\",\"@guid\":\"" + kClipGuid + "\"}}";
-            var ok = ExposedPropertySerializer.FromJson(payload, property.Value, _resolver);
+            var ok = LivePropertySerializer.FromJson(payload, property.Value, _resolver);
 
             Assert.IsTrue(ok);
             Assert.AreEqual(clip, holder.clip);
@@ -243,7 +243,7 @@ namespace Lilium.RemoteControl.Tests
             var holder = _CreateHolder(out var exposed);
             var property = exposed.FindProperty("clip");
 
-            var ok = ExposedPropertySerializer.FromJson("{\"value\":\"" + kClipGuid + "\"}", property.Value, _resolver);
+            var ok = LivePropertySerializer.FromJson("{\"value\":\"" + kClipGuid + "\"}", property.Value, _resolver);
 
             Assert.IsTrue(ok);
             Assert.AreEqual(clip, holder.clip);
@@ -259,7 +259,7 @@ namespace Lilium.RemoteControl.Tests
             holder.clip = clip;
             var property = exposed.FindProperty("clip");
 
-            var ok = ExposedPropertySerializer.FromJson("{\"value\":null}", property.Value, _resolver);
+            var ok = LivePropertySerializer.FromJson("{\"value\":null}", property.Value, _resolver);
 
             Assert.IsTrue(ok);
             Assert.IsNull(holder.clip);
@@ -276,7 +276,7 @@ namespace Lilium.RemoteControl.Tests
             var property = exposed.FindProperty("clip");
 
             var payload = "{\"value\":{\"@guid\":\"ffffffffffffffffffffffffffffffff\"}}";
-            ExposedPropertySerializer.FromJson(payload, property.Value, _resolver);
+            LivePropertySerializer.FromJson(payload, property.Value, _resolver);
 
             Assert.IsNull(holder.clip, "unknown guid should null out the field (same as ObjectSelector v1 behavior)");
         }

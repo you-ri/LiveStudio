@@ -30,13 +30,13 @@ namespace Lilium.LiveStudio
     [DefaultExecutionOrder(20)] // after the avatar (VRCFTAvatar order 10) has written its params this frame
     [RequireComponent(typeof(Animator))]
     [MovedFrom(false, null, null, "AvatarProp")]
-    [ExposedClass("Item", Category = "Avatar", Icon = "inventory_2")]
+    [LiveClass("Item", Category = "Avatar", Icon = "inventory_2")]
     public class AvatarItem : MonoBehaviour, IProp
     {
         // Shared socket-attachment surface (socket name + offsets + follow math), exposed as a nested
         // "PropAttachment" under this component's @type. The item follows the socket itself (an item has
         // no sibling Prop).
-        [SerializeField, ExposedField]
+        [SerializeField, LiveField]
         public PropAttachment attachment = new PropAttachment();
 
         struct BridgedParameter
@@ -147,7 +147,7 @@ namespace Lilium.LiveStudio
         /// reads/writes through <see cref="ExpressionService"/> (the active avatar that drives this item).
         /// Collapsed by default since the list is long and only needed when binding.
         /// </summary>
-        [ExposedProperty, Collapsed]
+        [LiveProperty, Collapsed]
         public ExpressionEntry[] expressions
         {
             get

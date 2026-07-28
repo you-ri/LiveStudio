@@ -17,7 +17,7 @@ namespace Lilium.LiveStudio
     /// the remote app renders with the animation icon.
     /// </summary>
     [Serializable]
-    [ExposedClass("BuiltinAnimationAsset", Category = "Asset", Icon = "animation")]
+    [LiveClass("BuiltinAnimationAsset", Category = "Asset", Icon = "animation")]
     public class BuiltinAnimationAsset : BuiltinAssetBase
     {
     }

@@ -15,7 +15,7 @@ namespace Lilium.LiveStudio
     /// and axis are authored into the prop prefab; the deadzone / damping are editable from the remote app.
     /// </summary>
     [Serializable]
-    [ExposedClass("ChairAxis", Icon = "tune")]
+    [LiveClass("ChairAxis", Icon = "tune")]
     public class ChairAxis
     {
         /// <summary>Child transform this axis drives. Authoring data (baked into the prop prefab).</summary>
@@ -31,10 +31,10 @@ namespace Lilium.LiveStudio
         /// chair does not move (tremor around the current pose is absorbed); once the gap exceeds it the
         /// chair follows, trailing the source by this much slack. Larger = more tremor absorbed / more lag.
         /// </summary>
-        [ExposedField] public float deadzone;
+        [LiveField] public float deadzone;
 
         /// <summary>SmoothDamp time (seconds) applied after the deadzone. 0 = snap.</summary>
-        [ExposedField] public float damping;
+        [LiveField] public float damping;
 
         /// <summary>
         /// Operating range (degrees or units, relative to the rest pose) the tracked value is confined to.
@@ -42,8 +42,8 @@ namespace Lilium.LiveStudio
         /// so the default (both 0) LOCKS the axis (no movement) — set a range to allow motion. A
         /// <see cref="max"/> &lt; <see cref="min"/> disables the clamp (unlimited).
         /// </summary>
-        [ExposedField] public float min;
-        [ExposedField] public float max;
+        [LiveField] public float min;
+        [LiveField] public float max;
 
         /// <summary>Current smoothed value (degrees or units), relative to the rest pose.</summary>
         [NonSerialized] public float value;
@@ -102,7 +102,7 @@ namespace Lilium.LiveStudio
     /// parameters or drive expressions, and uses no Animator.
     /// </summary>
     [DefaultExecutionOrder(20)]
-    [ExposedClass("Chair", Category = "Avatar", Icon = "chair")]
+    [LiveClass("Chair", Category = "Avatar", Icon = "chair")]
     public class AvatarChair : MonoBehaviour, IProp
     {
         [Header("Rotation — follows hips orientation")]
@@ -119,15 +119,15 @@ namespace Lilium.LiveStudio
         // first frame as a provisional default. Persisted to the live scene (Hide: not directly edited),
         // so a recorded rest survives reload. The auto-captured first frame is unreliable (the avatar may
         // still be in a bind / transition pose), which is why an explicit Activate is provided.
-        [ExposedField, Hide] public bool restRecorded;
-        [ExposedField, Hide] public float restYaw;
-        [ExposedField, Hide] public float restPitch;
-        [ExposedField, Hide] public Vector3 restHipsLocal;
+        [LiveField, Hide] public bool restRecorded;
+        [LiveField, Hide] public float restYaw;
+        [LiveField, Hide] public float restPitch;
+        [LiveField, Hide] public Vector3 restHipsLocal;
 
         // Shared socket-attachment surface (socket name + offsets + socket resolution), exposed as a
         // nested "PropAttachment" under this component's @type. The chair reads the hips socket and its
         // body-placement offsets from here; for a chair the socketName selects the hips bone.
-        [SerializeField, ExposedField]
+        [SerializeField, LiveField]
         public PropAttachment attachment = new PropAttachment();
 
         [NonSerialized] bool _reparented;
@@ -186,7 +186,7 @@ namespace Lilium.LiveStudio
         /// the desired seated pose; every axis then measures its delta from this pose (so swivel / recline
         /// read 0 here). The recorded rest persists in the live scene. No-op until the avatar is loaded.
         /// </summary>
-        [ExposedFunction]
+        [LiveFunction]
         [ContextMenu("Activate (record rest pose)")]
         public void Activate()
         {

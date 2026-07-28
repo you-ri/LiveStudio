@@ -33,7 +33,7 @@ namespace Lilium.RemoteControl.UI.Editor
         private static readonly CameraControlPropertyControl _cameraControlControl = new CameraControlPropertyControl();
         private static readonly ReadOnlyLabelControl _readOnlyLabelControl = new ReadOnlyLabelControl();
 
-        public static IPropertyControl GetControl(ExposedPropertyType propType, bool hasProperty, Type valueType)
+        public static IPropertyControl GetControl(LivePropertyType propType, bool hasProperty, Type valueType)
         {
             if (!hasProperty || valueType == null)
                 return _readOnlyLabelControl;
@@ -59,7 +59,7 @@ namespace Lilium.RemoteControl.UI.Editor
                 return control;
 
             // 参照型/構造体の子プロパティ展開
-            if (propType.exposedValueClass != null && !propType.isExposedObjectReference)
+            if (propType.liveValueClass != null && !propType.isLiveObjectReference)
                 return _referenceControl;
 
             // フォールバック

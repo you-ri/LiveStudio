@@ -11,7 +11,7 @@ using Lilium.RemoteControl;
 namespace Lilium.LiveStudio
 {
     [DefaultExecutionOrder(250)]
-    [ExposedClass("PrefabAvatarSource", Category = "Avatar", Icon = "deployed_code")]
+    [LiveClass("PrefabAvatarSource", Category = "Avatar", Icon = "deployed_code")]
     public class PrefabAvatarSource : MonoBehaviour, IAvatarSource
     {
         public const string kNoneSelection = "None";
@@ -22,13 +22,13 @@ namespace Lilium.LiveStudio
         GameObject[] _avatarPrefabs = Array.Empty<GameObject>();
 
         [SerializeField]
-        [ExposedField(label = "AVATAR_SELECTEDPREFAB"), StringSelector(nameof(avatarPrefabNames))]
-        [ExposedHelp("AVATAR_SELECTEDPREFAB_HELP")]
+        [LiveField(label = "AVATAR_SELECTEDPREFAB"), StringSelector(nameof(avatarPrefabNames))]
+        [Help("AVATAR_SELECTEDPREFAB_HELP")]
         string _selectedAvatarPrefab = kNoneSelection;
 
         public string selectedAvatarPrefab => _selectedAvatarPrefab;
 
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public string[] avatarPrefabNames
         {
             get
@@ -49,12 +49,12 @@ namespace Lilium.LiveStudio
 
         void OnEnable()
         {
-            ExposedClass.Get<PrefabAvatarSource>().onPropertyChanged += OnPropertyChanged;
+            LiveClass.Get<PrefabAvatarSource>().onPropertyChanged += OnPropertyChanged;
         }
 
         void OnDisable()
         {
-            ExposedClass.Get<PrefabAvatarSource>().onPropertyChanged -= OnPropertyChanged;
+            LiveClass.Get<PrefabAvatarSource>().onPropertyChanged -= OnPropertyChanged;
         }
 
         void Start()
@@ -82,7 +82,7 @@ namespace Lilium.LiveStudio
             onAvatarReady?.Invoke(newTarget);
         }
 
-        void OnPropertyChanged(ExposedProperty property, object oldValue)
+        void OnPropertyChanged(LiveProperty property, object oldValue)
         {
             // Skip until Start() runs. The scene-JSON load fires this during
             // RemoteControlBehaviour.Start (well before our own Start), and

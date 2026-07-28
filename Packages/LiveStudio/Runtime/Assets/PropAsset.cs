@@ -24,7 +24,7 @@ namespace Lilium.LiveStudio
     /// </list>
     /// </summary>
     [Serializable]
-    [ExposedClass("PropAsset", Category = "Asset", Icon = "deployed_code")]
+    [LiveClass("PropAsset", Category = "Asset", Icon = "deployed_code")]
     public class PropAsset : AssetBase, IInstantiableProp
     {
         public override bool isExclusive => false;
@@ -163,7 +163,7 @@ namespace Lilium.LiveStudio
 
             // Wrap so the remote app can control the prop component. No transform is exposed: the pose
             // is socket-driven, so the authored state lives on Prop, not the GameObject transform.
-            _loaded.Register(context, new ExposedGameObject(instance), instance, this);
+            _loaded.Register(context, new LiveGameObject(instance), instance, this);
         }
 
         // --- Free-standing scene prop (*.glb / *.gltf) ---
@@ -186,7 +186,7 @@ namespace Lilium.LiveStudio
                 UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(host, baseContainer.gameObject.scene);
 
             // Expose the transform so the user can position the free-standing prop from the remote app.
-            _loaded.Register(context, new ExposedGameObjectWithTransform(host), host, this);
+            _loaded.Register(context, new LiveGameObjectWithTransform(host), host, this);
 
             host.SetActive(true);
 #else

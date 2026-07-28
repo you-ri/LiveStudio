@@ -28,7 +28,7 @@ namespace Lilium.LiveStudio.Virgo
     }
 
     [DefaultExecutionOrder(-100)]
-    [ExposedClass("VirgoMotionSource", Icon = "accessibility", Category = "Motion")]
+    [LiveClass("VirgoMotionSource", Icon = "accessibility", Category = "Motion")]
     [MovedFrom(false, "Lilium.Virgo.Studio", "Lilium.Virgo.Studio2", null)]
     public class VirgoMotionSource : MotionSourceBase, IAvatarBuildObserver
     {
@@ -54,7 +54,7 @@ namespace Lilium.LiveStudio.Virgo
         public bool isOpened => _udpConnection.isOpened;
 
         [SerializeField]
-        [ExposedField]
+        [LiveField]
         private int _port = 0;
 
         private UDPConnection _udpConnection = new UDPConnection();
@@ -68,7 +68,7 @@ namespace Lilium.LiveStudio.Virgo
         // 受信フレームより何秒遅延させて再生するか。補間先 (i0+1) を在庫させるための余裕。
         // 大きいほど最新フレームを追い越して hold する頻度が減るが、表示レイテンシは増える。
         [SerializeField]
-        [ExposedField]
+        [LiveField]
         private float _delaySeconds = 0.0167f; // 約1フレーム (60fps)
 
         // Height (meters) the capture camera sits above the subject (the warp mark). With cameraDistance it
@@ -76,14 +76,14 @@ namespace Lilium.LiveStudio.Virgo
         // at the assumed real camera location. When both match the real rig, the avatar — placed at its
         // captured offset from the camera — lands on the mark.
         [SerializeField]
-        [ExposedField]
+        [LiveField]
         private float _cameraHeight = 1.3f;
 
         // Horizontal distance (meters) from the subject anchor to the capture camera, along the anchor's
         // forward (+Z) axis. With cameraHeight this fully specifies the capture-camera origin
         // geometrically, so this GameObject's position is determined even before/without capture pose data.
         [SerializeField]
-        [ExposedField]
+        [LiveField]
         private float _cameraDistance = 0.7f;
 
         [SerializeField]
@@ -188,7 +188,7 @@ namespace Lilium.LiveStudio.Virgo
         }
 
 
-        [ExposedFunction]
+        [LiveFunction]
         public void Open()
         {
             if (_udpConnection.isOpened)
@@ -374,11 +374,11 @@ namespace Lilium.LiveStudio.Virgo
         /// rebuild from the new numbering and the next Update re-locks the offset. This also
         /// recovers from long stalls or clock jumps.
         ///
-        /// Runs on the main thread (ExposedFunction invocations are marshaled there); the
+        /// Runs on the main thread (LiveFunction invocations are marshaled there); the
         /// buffer's own lock keeps the reset safe against the receive thread.
         /// </summary>
         [ContextMenu("Resync Timing")]
-        [ExposedFunction]
+        [LiveFunction]
         public void ResyncTiming()
         {
             _animationFrameBuffer.Reset();
@@ -390,7 +390,7 @@ namespace Lilium.LiveStudio.Virgo
         }
 
         [ContextMenu("Reset Camera")]
-        [ExposedFunction]
+        [LiveFunction]
         public override void ResetCamera()
         {
             // Pin the capture camera (cam0) to the placement origin (_position = VirgoMotionSource, the camera

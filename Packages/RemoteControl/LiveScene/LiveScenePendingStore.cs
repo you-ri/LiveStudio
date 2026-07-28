@@ -73,7 +73,7 @@ namespace Lilium.RemoteControl.LiveScene
         /// applying any preset/carrier state, so the deferred top-level diff lands last and does not
         /// pollute the delta baseline used by "save as preset".
         /// </summary>
-        public static int ApplyFor(string rootId, IExposedObjectResolver resolver)
+        public static int ApplyFor(string rootId, ILiveObjectResolver resolver)
         {
             if (string.IsNullOrEmpty(rootId) || resolver == null) return 0;
 

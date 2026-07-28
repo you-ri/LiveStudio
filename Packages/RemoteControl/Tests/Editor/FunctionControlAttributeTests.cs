@@ -15,30 +15,30 @@ namespace Lilium.RemoteControl.Tests
     {
         #region Test Classes
 
-        [ExposedClass("ControlStub")]
+        [LiveClass("ControlStub")]
         public class ControlStub
         {
-            [ExposedFunction]
+            [LiveFunction]
             [Countdown(5, message = "GET_READY", runningMessage = "WORKING", icon = "person")]
             public void CountdownAction() { }
 
             /// 秒数・文言なし: seconds は省略され、クライアントの既定に委ねられる
-            [ExposedFunction, Countdown]
+            [LiveFunction, Countdown]
             public void BareCountdownAction() { }
 
-            [ExposedFunction]
+            [LiveFunction]
             public void PlainAction() { }
 
-            [ExposedFunction(icon = "restart_alt")]
+            [LiveFunction(icon = "restart_alt")]
             public void IconAction() { }
 
-            [ExposedProperty, UrlButton]
+            [LiveProperty, UrlButton]
             public string guideUrl => "https://example.com/guide";
 
-            [ExposedProperty, UrlButton(icon = "help")]
+            [LiveProperty, UrlButton(icon = "help")]
             public string helpUrl => "https://example.com/help";
 
-            [ExposedProperty]
+            [LiveProperty]
             public string plainString => "not a button";
         }
 
@@ -49,15 +49,15 @@ namespace Lilium.RemoteControl.Tests
         [SetUp]
         public void SetUp()
         {
-            ExposedClass.Clear();
-            ExposedClass.RegisterFromAttributes<ControlStub>();
-            _typeJson = JObject.Parse(ExposedTypeInfoSerializer.ToJson(ExposedClass.Get<ControlStub>()));
+            LiveClass.Clear();
+            LiveClass.RegisterFromAttributes<ControlStub>();
+            _typeJson = JObject.Parse(LiveTypeInfoSerializer.ToJson(LiveClass.Get<ControlStub>()));
         }
 
         [TearDown]
         public void TearDown()
         {
-            ExposedClass.Clear();
+            LiveClass.Clear();
         }
 
         JObject _Member(string collection, string name)

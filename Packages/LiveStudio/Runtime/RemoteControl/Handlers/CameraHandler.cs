@@ -189,7 +189,7 @@ namespace Lilium.LiveStudio
 
                 // クエリパラメータからカメラIDを取得
                 var cameraIdParam = context.Request.QueryString["camera"];
-                IExposedCamera targetCamera = null;
+                ILiveCamera targetCamera = null;
 
                 if (!string.IsNullOrEmpty(cameraIdParam) && Guid.TryParse(cameraIdParam, out Guid cameraId))
                 {
@@ -400,7 +400,7 @@ namespace Lilium.LiveStudio
             await _server?.BroadcastMessage(updateData, "camera_update");
         }
 
-        private async void SendCameraImage(IExposedCamera activeCamera)
+        private async void SendCameraImage(ILiveCamera activeCamera)
         {
             if (activeCamera?.image != null)
             {

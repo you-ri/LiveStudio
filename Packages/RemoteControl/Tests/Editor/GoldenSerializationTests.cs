@@ -11,19 +11,19 @@ namespace Lilium.RemoteControl.Tests
 {
     /// <summary>
     /// Byte-exact snapshot ("golden") pins for the object-level serialization surface of
-    /// <see cref="ExposedPropertySerializer"/>. A single fixture exercises every branch the
+    /// <see cref="LivePropertySerializer"/>. A single fixture exercises every branch the
     /// serializer refactor / GC work touches (metadata, full, delta, arrays, Unity scalar types,
     /// enums, scope filtering) and asserts the produced JSON string verbatim.
     ///
     /// The purpose is to guarantee the REST-invariance boundary: the JSON emitted for GET /
     /// scene persistence / project persistence must stay byte-for-byte identical across the
-    /// refactor. Exotic members (@ref, [RawJson], shadow fields, [FormerlyExposedAs]) keep their
+    /// refactor. Exotic members (@ref, [RawJson], shadow fields, [FormerlyNamedAs]) keep their
     /// own dedicated behavioural tests (RawJsonSerializationTests, ShadowFieldTests,
-    /// FormerlyExposedAsTests, ...); this file focuses on the byte-stable common surface.
+    /// FormerlyLiveAsTests, ...); this file focuses on the byte-stable common surface.
     ///
     /// The live.json / project settings wrapping (FormatHeader + object map) lives in
     /// LiveSceneSerializer / ProjectSettingsSerializer, which the refactor does not touch and which
-    /// ExposedPropertySceneSerializationTests / ProjectScopeSerializationTests already cover; the
+    /// LivePropertySceneSerializationTests / ProjectScopeSerializationTests already cover; the
     /// scope-filtered per-object output pinned here is the tightest net around the refactored code.
     /// </summary>
     [TestFixture]
@@ -32,61 +32,61 @@ namespace Lilium.RemoteControl.Tests
         public enum GoldenEnum { Alpha, Beta, Gamma }
 
         [Serializable]
-        [ExposedClass("GoldenNested")]
+        [LiveClass("GoldenNested")]
         public class GoldenNested
         {
-            [ExposedField] public int id;
-            [ExposedField] public string label;
+            [LiveField] public int id;
+            [LiveField] public string label;
         }
 
         [Serializable]
-        [ExposedClass("GoldenFixture")]
+        [LiveClass("GoldenFixture")]
         public class GoldenFixture
         {
-            [ExposedField] public int intValue;
-            [ExposedField] public float floatValue;
-            [ExposedField] public bool boolValue;
-            [ExposedField] public string stringValue;
-            [ExposedField] public double doubleValue;
-            [ExposedField] public Vector2 vector2Value;
-            [ExposedField] public Vector3 vector3Value;
-            [ExposedField] public Color colorValue;
-            [ExposedField] public Quaternion quaternionValue;
-            [ExposedField] public Rect rectValue;
-            [ExposedField] public GoldenEnum enumValue;
-            [ExposedField] public int[] intArray;
-            [ExposedField] public string[] stringArray;
-            [ExposedField] public List<int> intList;
-            [ExposedField] public GoldenNested nested;
-            [ExposedField(persistScope = PersistScope.Project)] public int projectValue;
+            [LiveField] public int intValue;
+            [LiveField] public float floatValue;
+            [LiveField] public bool boolValue;
+            [LiveField] public string stringValue;
+            [LiveField] public double doubleValue;
+            [LiveField] public Vector2 vector2Value;
+            [LiveField] public Vector3 vector3Value;
+            [LiveField] public Color colorValue;
+            [LiveField] public Quaternion quaternionValue;
+            [LiveField] public Rect rectValue;
+            [LiveField] public GoldenEnum enumValue;
+            [LiveField] public int[] intArray;
+            [LiveField] public string[] stringArray;
+            [LiveField] public List<int> intList;
+            [LiveField] public GoldenNested nested;
+            [LiveField(persistScope = PersistScope.Project)] public int projectValue;
         }
 
-        private TestExposedObjectResolver _resolver;
+        private TestLiveObjectResolver _resolver;
 
         [SetUp]
         public void SetUp()
         {
-            ExposedClass.Clear();
-            foreach (var obj in ExposedObjectRegistry.instances.ToList())
+            LiveClass.Clear();
+            foreach (var obj in LiveObjectRegistry.instances.ToList())
             {
                 obj.Unregister();
             }
-            _resolver = new TestExposedObjectResolver();
-            ExposedClass.RegisterFromAttributes<GoldenNested>();
-            ExposedClass.RegisterFromAttributes<GoldenFixture>();
+            _resolver = new TestLiveObjectResolver();
+            LiveClass.RegisterFromAttributes<GoldenNested>();
+            LiveClass.RegisterFromAttributes<GoldenFixture>();
         }
 
         [TearDown]
         public void TearDown()
         {
-            foreach (var obj in ExposedObjectRegistry.instances.ToList())
+            foreach (var obj in LiveObjectRegistry.instances.ToList())
             {
                 obj.Unregister();
             }
         }
 
         // Fixed, format-stable values (no repeating binary fractions) so the JSON is deterministic.
-        private ExposedObjectHandle _CreateFixture(string id)
+        private LiveObjectHandle _CreateFixture(string id)
         {
             var target = new GoldenFixture
             {
@@ -107,8 +107,8 @@ namespace Lilium.RemoteControl.Tests
                 nested = new GoldenNested { id = 99, label = "inner" },
                 projectValue = 42,
             };
-            var exposedClass = ExposedClass.Find(typeof(GoldenFixture));
-            return new ExposedObjectHandle(id, exposedClass, target);
+            var liveClass = LiveClass.Find(typeof(GoldenFixture));
+            return new LiveObjectHandle(id, liveClass, target);
         }
 
         // Golden strings captured from the current implementation. Any byte difference after a
@@ -132,7 +132,7 @@ namespace Lilium.RemoteControl.Tests
         public void RestFull_MatchesGolden()
         {
             var obj = _CreateFixture("golden-1");
-            Assert.AreEqual(kFull, ExposedPropertySerializer.ToJson(obj, _resolver));
+            Assert.AreEqual(kFull, LivePropertySerializer.ToJson(obj, _resolver));
         }
 
         [Test]
@@ -140,14 +140,14 @@ namespace Lilium.RemoteControl.Tests
         {
             // No dirty members: only force-included untracked (project-scoped) properties appear.
             var obj = _CreateFixture("golden-1");
-            Assert.AreEqual(kDeltaClean, ExposedPropertySerializer.ToJson(obj, _resolver, isDirtyOnly: true));
+            Assert.AreEqual(kDeltaClean, LivePropertySerializer.ToJson(obj, _resolver, isDirtyOnly: true));
         }
 
         [Test]
         public void ScenePersistence_MatchesGolden()
         {
             var obj = _CreateFixture("golden-1");
-            var scene = ExposedPropertySerializer.ToJson(
+            var scene = LivePropertySerializer.ToJson(
                 obj, _resolver, isDirtyOnly: false, forPersistence: true, scopeFilter: PersistScope.Scene);
             Assert.AreEqual(kScene, scene);
         }
@@ -156,7 +156,7 @@ namespace Lilium.RemoteControl.Tests
         public void ProjectPersistence_MatchesGolden()
         {
             var obj = _CreateFixture("golden-1");
-            var project = ExposedPropertySerializer.ToJson(
+            var project = LivePropertySerializer.ToJson(
                 obj, _resolver, isDirtyOnly: false, forPersistence: true, scopeFilter: PersistScope.Project);
             Assert.AreEqual(kProject, project);
         }
@@ -168,23 +168,23 @@ namespace Lilium.RemoteControl.Tests
             obj.FindProperty("intValue").Value.SetValue(123);
             obj.FindProperty("nested.label").Value.SetValue("changed");
             obj.FindProperty("stringValue").Value.SetValue("world");
-            Assert.AreEqual(kDeltaDirty, ExposedPropertySerializer.ToJson(obj, _resolver, isDirtyOnly: true));
+            Assert.AreEqual(kDeltaDirty, LivePropertySerializer.ToJson(obj, _resolver, isDirtyOnly: true));
         }
 
         [Test]
         public void ScenePersistence_RoundTrips()
         {
             var obj = _CreateFixture("golden-1");
-            var scene = ExposedPropertySerializer.ToJson(
+            var scene = LivePropertySerializer.ToJson(
                 obj, _resolver, isDirtyOnly: false, forPersistence: true, scopeFilter: PersistScope.Scene);
 
             // Deserialize the persisted form into a fresh object and re-serialize; must be identical.
             var freshTarget = new GoldenFixture();
-            var freshHandle = new ExposedObjectHandle(
-                "golden-1", ExposedClass.Find(typeof(GoldenFixture)), freshTarget);
-            ExposedPropertySerializer.FromJson(scene, freshHandle, _resolver);
+            var freshHandle = new LiveObjectHandle(
+                "golden-1", LiveClass.Find(typeof(GoldenFixture)), freshTarget);
+            LivePropertySerializer.FromJson(scene, freshHandle, _resolver);
 
-            var reSerialized = ExposedPropertySerializer.ToJson(
+            var reSerialized = LivePropertySerializer.ToJson(
                 freshHandle, _resolver, isDirtyOnly: false, forPersistence: true, scopeFilter: PersistScope.Scene);
             Assert.AreEqual(kScene, reSerialized);
         }

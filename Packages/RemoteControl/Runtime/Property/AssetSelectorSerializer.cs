@@ -10,7 +10,7 @@ namespace Lilium.RemoteControl
     /// <c>{ "@type", "@guid" }</c> (plus <c>"@name"</c> outside persistence, so clients can
     /// label the current value without an extra request) and resolved back through
     /// <see cref="AssetRegistry"/>. Mirrors <see cref="ObjectSelectorSerializer"/>, but
-    /// identifies the target by asset GUID instead of an ExposedObject id.
+    /// identifies the target by asset GUID instead of an LiveObject id.
     /// </summary>
     internal static class AssetSelectorSerializer
     {

@@ -15,13 +15,13 @@ namespace Lilium.RemoteControl.LiveScene
         /// <summary>
         /// Resolves the backing <see cref="GameObject"/> for an exposed handle: the GameObject itself, a
         /// component's GameObject, or the GameObject/Component referenced by an
-        /// <see cref="ExposedUnityObjectBase"/> proxy. Returns null for non-GameObject targets.
+        /// <see cref="LiveUnityObjectBase"/> proxy. Returns null for non-GameObject targets.
         /// </summary>
-        public static GameObject GetGameObject(ExposedObjectHandle obj)
+        public static GameObject GetGameObject(LiveObjectHandle obj)
         {
             if (obj.target is Component comp) return comp.gameObject;
             if (obj.target is GameObject g) return g;
-            if (obj.target is ExposedUnityObjectBase unityObj)
+            if (obj.target is LiveUnityObjectBase unityObj)
             {
                 if (unityObj.reference is GameObject gRef) return gRef;
                 if (unityObj.reference is Component cRef) return cRef.gameObject;

@@ -23,11 +23,11 @@ namespace Lilium.LiveStudio
     /// destroyed (avatar swap), keeping the per-frame follow allocation-free.
     /// </summary>
     [Serializable]
-    [ExposedClass("PropAttachment", Icon = "link")]
+    [LiveClass("PropAttachment", Icon = "link")]
     public class PropAttachment : IManipulatorTarget
     {
         // Target socket name. The prop attaches to the avatar socket with this name.
-        [ExposedField]
+        [LiveField]
         [StringSelector(nameof(availableSocketNames))]
         public string socketName = "S_WristRight";
 
@@ -38,13 +38,13 @@ namespace Lilium.LiveStudio
         // サイズは ApplyScale で毎フレーム適用する。アバターのスケールは親 (avatarRoot) を通じて lossyScale に
         // 伝播するため、ここでは socket スケールで補正しない。
         //
-        // ExposedLight.transform と同じ「隠し ExposedField + 公開 ExposedProperty」パターン。値は Unity
+        // LiveLight.transform と同じ「隠し LiveField + 公開 LiveProperty」パターン。値は Unity
         // シリアライズ用の _offset に保持し、RemoteApp には offset プロパティを TransformValue として見せる。
-        [SerializeField, Hide, ExposedField]
-        [FormerlyExposedAs("offset")]
+        [SerializeField, Hide, LiveField]
+        [FormerlyNamedAs("offset")]
         TransformValue _offset = TransformValue.identity;
 
-        [ExposedProperty]
+        [LiveProperty]
         public TransformValue offset
         {
             get => _offset;
@@ -53,7 +53,7 @@ namespace Lilium.LiveStudio
 
         // Socket names available on the parent avatar, surfaced to the RemoteApp dropdown. Resolved
         // through the avatar service, so it does not depend on the owning component.
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public string[] availableSocketNames
         {
             get

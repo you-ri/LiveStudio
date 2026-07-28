@@ -11,10 +11,10 @@ namespace Lilium.LiveStudio
     /// own source resolution and load path. The actual avatar-ready plumbing (delta-baseline capture,
     /// controller-wrapper objectId resolution) is shared separately through <see cref="AvatarAssetSupport"/>.
     ///
-    /// Deliberately NOT marked <c>[ExposedClass]</c> (like <see cref="AssetBase"/>): it is abstract and the
+    /// Deliberately NOT marked <c>[LiveClass]</c> (like <see cref="AssetBase"/>): it is abstract and the
     /// polymorphic <c>@type</c> discriminator only ever names a concrete subclass. Its purpose on the wire
     /// is instead as a stable grouping key — the client discovers, via each concrete type's
-    /// <c>baseTypes</c> in <c>GET /exposed/types</c>, that <c>AvatarAsset</c> and <c>BuiltinAvatarAsset</c>
+    /// <c>baseTypes</c> in <c>GET /live/types</c>, that <c>AvatarAsset</c> and <c>BuiltinAvatarAsset</c>
     /// both derive from <c>AvatarAssetBase</c>, so it can list "every avatar asset" by base type without
     /// enumerating each concrete <c>@type</c>.
     /// </summary>

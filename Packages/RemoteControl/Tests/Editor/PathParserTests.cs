@@ -78,13 +78,13 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void IsMatch_RealUrlPatterns_WorksCorrectly()
         {
-            // ExposedObjectHandler実際のパターンテスト
-            Assert.IsTrue(PathParser.IsMatch("/exposed/object/123/property/name", "/exposed/object/*/property/*"));
-            Assert.IsTrue(PathParser.IsMatch("/exposed/object/camera1/property/position", "/exposed/object/*/property/*"));
-            Assert.IsTrue(PathParser.IsMatch("/exposed/object/light1/property/intensity/reset", "/exposed/object/*/property/*/reset"));
+            // LiveObjectHandler実際のパターンテスト
+            Assert.IsTrue(PathParser.IsMatch("/live/object/123/property/name", "/live/object/*/property/*"));
+            Assert.IsTrue(PathParser.IsMatch("/live/object/camera1/property/position", "/live/object/*/property/*"));
+            Assert.IsTrue(PathParser.IsMatch("/live/object/light1/property/intensity/reset", "/live/object/*/property/*/reset"));
 
-            Assert.IsFalse(PathParser.IsMatch("/exposed/objects", "/exposed/object/*/property/*"));
-            Assert.IsFalse(PathParser.IsMatch("/exposed/object/123", "/exposed/object/*/property/*"));
+            Assert.IsFalse(PathParser.IsMatch("/live/objects", "/live/object/*/property/*"));
+            Assert.IsFalse(PathParser.IsMatch("/live/object/123", "/live/object/*/property/*"));
         }
 
         [Test]
@@ -131,8 +131,8 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void IsMatchIgnoreCase_RealUrlPatterns_WorksCorrectly()
         {
-            Assert.IsTrue(PathParser.IsMatchIgnoreCase("/EXPOSED/OBJECT/123/PROPERTY/NAME", "/exposed/object/*/property/*"));
-            Assert.IsTrue(PathParser.IsMatchIgnoreCase("/Exposed/Object/Camera1/Property/Position", "/exposed/object/*/property/*"));
+            Assert.IsTrue(PathParser.IsMatchIgnoreCase("/LIVE/OBJECT/123/PROPERTY/NAME", "/live/object/*/property/*"));
+            Assert.IsTrue(PathParser.IsMatchIgnoreCase("/Live/Object/Camera1/Property/Position", "/live/object/*/property/*"));
         }
 
         [Test]
@@ -150,9 +150,9 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void GetPathSegment_ValidPath_ReturnsCorrectSegment()
         {
-            string path = "/exposed/object/123/property/name";
+            string path = "/live/object/123/property/name";
 
-            Assert.AreEqual("exposed", PathParser.GetPathSegment(path, 0));
+            Assert.AreEqual("live", PathParser.GetPathSegment(path, 0));
             Assert.AreEqual("object", PathParser.GetPathSegment(path, 1));
             Assert.AreEqual("123", PathParser.GetPathSegment(path, 2));
             Assert.AreEqual("property", PathParser.GetPathSegment(path, 3));
@@ -162,9 +162,9 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void GetPathSegment_PathWithoutLeadingSlash_ReturnsCorrectSegment()
         {
-            string path = "exposed/object/123";
+            string path = "live/object/123";
 
-            Assert.AreEqual("exposed", PathParser.GetPathSegment(path, 0));
+            Assert.AreEqual("live", PathParser.GetPathSegment(path, 0));
             Assert.AreEqual("object", PathParser.GetPathSegment(path, 1));
             Assert.AreEqual("123", PathParser.GetPathSegment(path, 2));
         }
@@ -172,9 +172,9 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void GetPathSegment_PathWithTrailingSlash_ReturnsCorrectSegment()
         {
-            string path = "/exposed/object/123/";
+            string path = "/live/object/123/";
 
-            Assert.AreEqual("exposed", PathParser.GetPathSegment(path, 0));
+            Assert.AreEqual("live", PathParser.GetPathSegment(path, 0));
             Assert.AreEqual("object", PathParser.GetPathSegment(path, 1));
             Assert.AreEqual("123", PathParser.GetPathSegment(path, 2));
         }
@@ -182,7 +182,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void GetPathSegment_IndexOutOfRange_ReturnsNull()
         {
-            string path = "/exposed/object/123";
+            string path = "/live/object/123";
 
             Assert.IsNull(PathParser.GetPathSegment(path, 5));
             Assert.IsNull(PathParser.GetPathSegment(path, 10));
@@ -192,7 +192,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void GetPathSegment_NegativeIndex_ReturnsNull()
         {
-            string path = "/exposed/object/123";
+            string path = "/live/object/123";
 
             Assert.IsNull(PathParser.GetPathSegment(path, -1));
             Assert.IsNull(PathParser.GetPathSegment(path, -5));
@@ -216,14 +216,14 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void GetPathSegment_RealApiPaths_ReturnsCorrectSegments()
         {
-            // ExposedObjectHandlerで実際に使用されるパス
-            string objectPath = "/exposed/object/camera1";
-            Assert.AreEqual("exposed", PathParser.GetPathSegment(objectPath, 0));
+            // LiveObjectHandlerで実際に使用されるパス
+            string objectPath = "/live/object/camera1";
+            Assert.AreEqual("live", PathParser.GetPathSegment(objectPath, 0));
             Assert.AreEqual("object", PathParser.GetPathSegment(objectPath, 1));
             Assert.AreEqual("camera1", PathParser.GetPathSegment(objectPath, 2));
 
-            string propertyPath = "/exposed/object/light1/property/intensity";
-            Assert.AreEqual("exposed", PathParser.GetPathSegment(propertyPath, 0));
+            string propertyPath = "/live/object/light1/property/intensity";
+            Assert.AreEqual("live", PathParser.GetPathSegment(propertyPath, 0));
             Assert.AreEqual("object", PathParser.GetPathSegment(propertyPath, 1));
             Assert.AreEqual("light1", PathParser.GetPathSegment(propertyPath, 2));
             Assert.AreEqual("property", PathParser.GetPathSegment(propertyPath, 3));
@@ -237,9 +237,9 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void GetPathSegmentFrom_ValidPath_ReturnsCorrectSegments()
         {
-            string path = "/exposed/object/123/property/name";
+            string path = "/live/object/123/property/name";
 
-            Assert.AreEqual("exposed/object/123/property/name", PathParser.GetPathSegmentFrom(path, 0));
+            Assert.AreEqual("live/object/123/property/name", PathParser.GetPathSegmentFrom(path, 0));
             Assert.AreEqual("object/123/property/name", PathParser.GetPathSegmentFrom(path, 1));
             Assert.AreEqual("123/property/name", PathParser.GetPathSegmentFrom(path, 2));
             Assert.AreEqual("property/name", PathParser.GetPathSegmentFrom(path, 3));
@@ -249,9 +249,9 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void GetPathSegmentFrom_CustomSeparator_ReturnsCorrectSegments()
         {
-            string path = "/exposed/object/123/property/name";
+            string path = "/live/object/123/property/name";
 
-            Assert.AreEqual("exposed.object.123.property.name", PathParser.GetPathSegmentFrom(path, 0, "."));
+            Assert.AreEqual("live.object.123.property.name", PathParser.GetPathSegmentFrom(path, 0, "."));
             Assert.AreEqual("object-123-property-name", PathParser.GetPathSegmentFrom(path, 1, "-"));
             Assert.AreEqual("123|property|name", PathParser.GetPathSegmentFrom(path, 2, "|"));
         }
@@ -259,7 +259,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void GetPathSegmentFrom_IndexOutOfRange_ReturnsNull()
         {
-            string path = "/exposed/object/123";
+            string path = "/live/object/123";
 
             Assert.IsNull(PathParser.GetPathSegmentFrom(path, 5));
             Assert.IsNull(PathParser.GetPathSegmentFrom(path, 10));
@@ -268,7 +268,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void GetPathSegmentFrom_NegativeIndex_ReturnsNull()
         {
-            string path = "/exposed/object/123";
+            string path = "/live/object/123";
 
             Assert.IsNull(PathParser.GetPathSegmentFrom(path, -1));
             Assert.IsNull(PathParser.GetPathSegmentFrom(path, -5));
@@ -284,7 +284,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void GetPathSegmentFrom_LastIndex_ReturnsSingleSegment()
         {
-            string path = "/exposed/object/123/property/name";
+            string path = "/live/object/123/property/name";
 
             Assert.AreEqual("name", PathParser.GetPathSegmentFrom(path, 4));
             Assert.AreEqual("name", PathParser.GetPathSegmentFrom(path, 4, "."));
@@ -308,14 +308,14 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void GetPathSegment_PercentEscape_IsUnescaped()
         {
-            Assert.AreEqual("my id", PathParser.GetPathSegment("/exposed/object/my%20id", 2));
-            Assert.AreEqual("a/b", PathParser.GetPathSegment("/exposed/object/a%2Fb", 2));
+            Assert.AreEqual("my id", PathParser.GetPathSegment("/live/object/my%20id", 2));
+            Assert.AreEqual("a/b", PathParser.GetPathSegment("/live/object/a%2Fb", 2));
         }
 
         [Test]
         public void GetPathSegment_NoEscape_ReturnsVerbatim()
         {
-            Assert.AreEqual("plain-id_1", PathParser.GetPathSegment("/exposed/object/plain-id_1", 2));
+            Assert.AreEqual("plain-id_1", PathParser.GetPathSegment("/live/object/plain-id_1", 2));
         }
 
         [Test]
@@ -338,7 +338,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void GetPathSegmentFrom_NoEscapeDefaultSeparator_MatchesJoin()
         {
-            Assert.AreEqual("property/name", PathParser.GetPathSegmentFrom("/exposed/object/123/property/name", 3));
+            Assert.AreEqual("property/name", PathParser.GetPathSegmentFrom("/live/object/123/property/name", 3));
             // 連続スラッシュ (空セグメント) を含む結合も従来と一致する。
             Assert.AreEqual("/b/c", PathParser.GetPathSegmentFrom("/a//b/c", 1));
         }

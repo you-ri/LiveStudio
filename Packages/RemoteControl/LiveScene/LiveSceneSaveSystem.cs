@@ -63,7 +63,7 @@ namespace Lilium.RemoteControl.LiveScene
                 || filePath.EndsWith(kLegacyFileExtension, StringComparison.OrdinalIgnoreCase);
         }
 
-        public ExposedObjectContainer objectContainer => _objectContainer;
+        public LiveObjectContainer objectContainer => _objectContainer;
         public string defaultFileName => _defaultFileName;
         public bool autoSaveOnQuit { get; set; }
 
@@ -93,14 +93,14 @@ namespace Lilium.RemoteControl.LiveScene
 
         public string currentFullPath => _ResolvePath(_currentFilePath);
 
-        private readonly ExposedObjectContainer _objectContainer;
+        private readonly LiveObjectContainer _objectContainer;
         private readonly string _defaultFileName;
         private readonly bool _switchSceneOnLoad;
         private string _currentFilePath;
 
         public event Action onResetDataRequested;
 
-        public LiveSceneSaveSystem(ExposedObjectContainer objectContainer, string defaultFileName, bool autoSaveOnQuit = true, bool switchSceneOnLoad = true)
+        public LiveSceneSaveSystem(LiveObjectContainer objectContainer, string defaultFileName, bool autoSaveOnQuit = true, bool switchSceneOnLoad = true)
         {
             _objectContainer = objectContainer;
             _defaultFileName = defaultFileName ?? string.Empty;
@@ -348,8 +348,8 @@ namespace Lilium.RemoteControl.LiveScene
             var projectPath = _stateProjectDirectoryOverride;
             if (string.IsNullOrEmpty(projectPath)) return;
 
-            var allObjects = new List<IExposedObject>(_objectContainer.EnumerateAllObjects());
-            var objects = ExposedObjectGraph.ResolveExposedObjects(allObjects, _objectContainer);
+            var allObjects = new List<ILiveObject>(_objectContainer.EnumerateAllObjects());
+            var objects = LiveObjectGraph.ResolveLiveObjects(allObjects, _objectContainer);
             var perClass = ProjectSettingsSerializer.BuildPerClassJson(objects, _objectContainer);
             ProjectSettingsStore.WriteAll(projectPath, perClass);
         }
@@ -368,8 +368,8 @@ namespace Lilium.RemoteControl.LiveScene
         {
             if (_objectContainer == null) return false;
 
-            var objects = ExposedObjectGraph.ResolveExposedObjects(
-                new List<IExposedObject>(_objectContainer.EnumerateAllObjects()), _objectContainer);
+            var objects = LiveObjectGraph.ResolveLiveObjects(
+                new List<ILiveObject>(_objectContainer.EnumerateAllObjects()), _objectContainer);
 
             foreach (var obj in objects)
             {
@@ -385,8 +385,8 @@ namespace Lilium.RemoteControl.LiveScene
         {
             if (_objectContainer == null) return;
 
-            var objects = ExposedObjectGraph.ResolveExposedObjects(
-                new List<IExposedObject>(_objectContainer.EnumerateAllObjects()), _objectContainer);
+            var objects = LiveObjectGraph.ResolveLiveObjects(
+                new List<ILiveObject>(_objectContainer.EnumerateAllObjects()), _objectContainer);
 
             foreach (var obj in objects)
             {
@@ -405,7 +405,7 @@ namespace Lilium.RemoteControl.LiveScene
         }
 
         /// <summary>
-        /// Reverts every contained ExposedObjectHandle to its captured defaults, whether or not it
+        /// Reverts every contained LiveObjectHandle to its captured defaults, whether or not it
         /// currently counts as edited.
         ///
         /// <see cref="RevertAllToDefault"/> only touches objects that report dirty properties, and a
@@ -420,31 +420,31 @@ namespace Lilium.RemoteControl.LiveScene
         {
             if (_objectContainer == null) return;
 
-            var objects = ExposedObjectGraph.ResolveExposedObjects(
-                new List<IExposedObject>(_objectContainer.EnumerateAllObjects()), _objectContainer);
+            var objects = LiveObjectGraph.ResolveLiveObjects(
+                new List<ILiveObject>(_objectContainer.EnumerateAllObjects()), _objectContainer);
 
             foreach (var obj in objects)
             {
-                var defaultJson = ExposedObjectDefaultRegistry.GetDefaults(obj);
+                var defaultJson = LiveObjectDefaultRegistry.GetDefaults(obj);
                 if (defaultJson == null) continue;
 
                 // FromJson (SetValueRaw) rather than Revert(path), for the same reason as
                 // RevertAllToDefault: it can write through read-only component arrays.
-                ExposedPropertySerializer.FromJson(
+                LivePropertySerializer.FromJson(
                     defaultJson.ToString(), obj, _objectContainer, captureDefaults: false);
             }
         }
 
         /// <summary>
-        /// Reverts every dirty property in every contained ExposedObjectHandle back to its captured
+        /// Reverts every dirty property in every contained LiveObjectHandle back to its captured
         /// default. Used at editor Play-mode exit to restore ScriptableObject state.
         /// </summary>
         public void RevertAllToDefault()
         {
             if (_objectContainer == null) return;
 
-            var objects = ExposedObjectGraph.ResolveExposedObjects(
-                new List<IExposedObject>(_objectContainer.EnumerateAllObjects()), _objectContainer);
+            var objects = LiveObjectGraph.ResolveLiveObjects(
+                new List<ILiveObject>(_objectContainer.EnumerateAllObjects()), _objectContainer);
 
             foreach (var obj in objects)
             {
@@ -454,10 +454,10 @@ namespace Lilium.RemoteControl.LiveScene
                 // Use FromJson rather than Revert(path) because FromJson uses SetValueRaw,
                 // which can write through read-only component arrays containing
                 // ScriptableObject values.
-                var defaultJson = ExposedObjectDefaultRegistry.GetDefaults(obj);
+                var defaultJson = LiveObjectDefaultRegistry.GetDefaults(obj);
                 if (defaultJson != null)
                 {
-                    ExposedPropertySerializer.FromJson(
+                    LivePropertySerializer.FromJson(
                         defaultJson.ToString(), obj, _objectContainer, captureDefaults: false);
                 }
             }
@@ -601,7 +601,7 @@ namespace Lilium.RemoteControl.LiveScene
             // Whatever was just applied — the scene file, the project settings, or neither — is the
             // state the user opened, not something they edited, so re-baseline the dirty tracking here.
             // Assets that finish loading asynchronously after this point re-baseline themselves when
-            // their load completes (see ExposedObjectDefaultRegistry.CaptureDefaultsPreservingOverrides),
+            // their load completes (see LiveObjectDefaultRegistry.CaptureDefaultsPreservingOverrides),
             // so a late prop no longer resurfaces as an unsaved edit at quit time.
             _MarkAllClean();
         }

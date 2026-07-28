@@ -24,26 +24,26 @@ namespace Lilium.LiveStudio.EditorTests
     {
         /// <summary>
         /// Minimal live-scene object: one exposed value whose default is captured by
-        /// <see cref="ExposedObjectContainer.Initialize"/>, the way a real host captures its own at
+        /// <see cref="LiveObjectContainer.Initialize"/>, the way a real host captures its own at
         /// startup.
         /// </summary>
         [Serializable]
-        [ExposedClass("ProjectSwitchTestObject", Icon = "test")]
-        public class TestObject : IExposedObject
+        [LiveClass("ProjectSwitchTestObject", Icon = "test")]
+        public class TestObject : ILiveObject
         {
             private string _id;
-            private ExposedObjectHandle? _handle;
+            private LiveObjectHandle? _handle;
 
             public TestObject(string id) { _id = id; }
 
-            [ExposedField]
+            [LiveField]
             public int value;
 
             public string name { get => _id; set => _id = value; }
             public string id => _id;
-            public ExposedObjectHandle? exposedObject => _handle;
+            public LiveObjectHandle? liveObject => _handle;
 
-            public void OnEnable() { _handle = ExposedObjectRegistry.Create<TestObject>(this, _id); }
+            public void OnEnable() { _handle = LiveObjectRegistry.Create<TestObject>(this, _id); }
             public void OnDisable() { _handle?.Unregister(); _handle = null; }
             public void OnDispose() { }
             public void Update() { }
@@ -191,7 +191,7 @@ namespace Lilium.LiveStudio.EditorTests
                 obj.value = 42;
                 // A load re-baselines every object as clean, so the previous project's values are not
                 // reported as edited any more.
-                obj.exposedObject.Value.MarkClean();
+                obj.liveObject.Value.MarkClean();
 
                 var save = new LiveSceneSaveSystem(container, kDefaultSceneFileName);
 
@@ -226,15 +226,15 @@ namespace Lilium.LiveStudio.EditorTests
         // A host-less save system: only its path / startup-state behaviour is under test.
         private static LiveSceneSaveSystem _NewSaveSystem()
         {
-            var container = new ExposedObjectContainer("ProjectSwitchTests", new List<IExposedObject>());
+            var container = new LiveObjectContainer("ProjectSwitchTests", new List<ILiveObject>());
             return new LiveSceneSaveSystem(container, kDefaultSceneFileName);
         }
 
         // A container whose objects have their defaults captured, as a host does at startup.
-        private static ExposedObjectContainer _CreateInitializedContainer(IExposedObject obj)
+        private static LiveObjectContainer _CreateInitializedContainer(ILiveObject obj)
         {
-            var container = new ExposedObjectContainer(
-                "ProjectSwitchTests", new List<IExposedObject> { obj });
+            var container = new LiveObjectContainer(
+                "ProjectSwitchTests", new List<ILiveObject> { obj });
             container.Initialize();
             return container;
         }

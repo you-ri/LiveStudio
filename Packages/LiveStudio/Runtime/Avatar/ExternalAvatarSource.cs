@@ -20,8 +20,8 @@ namespace Lilium.LiveStudio
     /// このコンポーネント自身は exposed なモデルファイルプロパティを持たない。
     /// </summary>
     [DefaultExecutionOrder(250)]
-    [ExposedClass("ExternalAvatarSource", Category = "Avatar", Icon = "deployed_code")]
-    [FormerlyExposedAs("VRMAvatarSource")]
+    [LiveClass("ExternalAvatarSource", Category = "Avatar", Icon = "deployed_code")]
+    [FormerlyNamedAs("VRMAvatarSource")]
     public class ExternalAvatarSource : MonoBehaviour, IAvatarSource, IVRMLoadObserver
     {
         public event Action<GameObject> onAvatarReady;
@@ -36,7 +36,7 @@ namespace Lilium.LiveStudio
 
         // 登録済みアバター名の一覧（先頭の空文字 = 既定アバター）。selectedAvatar の選択肢ソース。
         // ExternalAssetManager のアバター選択への view であり、ここには永続化状態を持たない。
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public string[] avatarOptions =>
             ExternalAssetManager.current != null
                 ? ExternalAssetManager.current.GetAvatarNames()
@@ -44,8 +44,8 @@ namespace Lilium.LiveStudio
 
         // ライブシーンページ等のインスペクタから、ExternalAssetManager に登録済みのアバターを
         // ドロップダウンで選択する。get/set とも manager に委譲する（backing field なし = 非永続）。
-        [ExposedProperty(label = "AVATAR_SELECT"), StringSelector(nameof(avatarOptions))]
-        [ExposedHelp("AVATAR_SELECT_HELP")]
+        [LiveProperty(label = "AVATAR_SELECT"), StringSelector(nameof(avatarOptions))]
+        [Help("AVATAR_SELECT_HELP")]
         public string selectedAvatar
         {
             get =>

@@ -25,7 +25,7 @@ namespace Lilium.RemoteControl.UI.Editor
         private ObjectField _providerField;
         private ObjectField _definitionField;
 
-        private ExposedObjectHandle? _selectedObject;
+        private LiveObjectHandle? _selectedObject;
         private ScrollView _propertyScrollView;
         private MenuItem _selectedMenuItem;
 
@@ -312,9 +312,9 @@ namespace Lilium.RemoteControl.UI.Editor
                 if (provider != null && provider.objectContainer != null)
                 {
                     provider.objectContainer.Shutdown();
-                    ExposedObjectRegistry.ClearAll();
-                    ExposedClass.Reset();
-                    ExposedEnum.Reset();
+                    LiveObjectRegistry.ClearAll();
+                    LiveClass.Reset();
+                    LiveEnum.Reset();
                     provider.objectContainer.Initialize();
                 }
             })
@@ -559,14 +559,14 @@ namespace Lilium.RemoteControl.UI.Editor
             }
 
             // オブジェクトリスト表示
-            ExposedObjectHandle? firstExposed = null;
+            LiveObjectHandle? firstLive = null;
             foreach (var obj in objects)
             {
-                var exposed = ExposedObjectRegistry.FindByTarget(obj);
+                var exposed = LiveObjectRegistry.FindByTarget(obj);
                 if (exposed == null) continue;
 
-                if (firstExposed == null)
-                    firstExposed = exposed;
+                if (firstLive == null)
+                    firstLive = exposed;
 
                 var row = new VisualElement();
                 row.style.flexDirection = FlexDirection.Row;
@@ -575,8 +575,8 @@ namespace Lilium.RemoteControl.UI.Editor
                 row.style.marginTop = 1;
                 row.style.marginBottom = 1;
 
-                var capturedExposed = exposed;
-                var objButton = new Button(() => _SelectObject(capturedExposed.Value));
+                var capturedLive = exposed;
+                var objButton = new Button(() => _SelectObject(capturedLive.Value));
                 objButton.text = exposed.Value.name;
                 objButton.style.height = 28;
                 objButton.style.flexGrow = 1;
@@ -598,11 +598,11 @@ namespace Lilium.RemoteControl.UI.Editor
                     var capturedFactory = factory;
                     var deleteButton = new Button(() =>
                     {
-                        if (capturedFactory != null && capturedExposed != null)
+                        if (capturedFactory != null && capturedLive != null)
                         {
-                            capturedFactory.DestroyObject(capturedExposed.Value.id);
+                            capturedFactory.DestroyObject(capturedLive.Value.id);
                         }
-                        if (_selectedObject == capturedExposed)
+                        if (_selectedObject == capturedLive)
                         {
                             _selectedObject = null;
                             _propertyScrollView = null;
@@ -621,13 +621,13 @@ namespace Lilium.RemoteControl.UI.Editor
             }
 
             // 最初のオブジェクトを自動選択
-            if (firstExposed != null)
+            if (firstLive != null)
             {
-                _SelectObject(firstExposed.Value);
+                _SelectObject(firstLive.Value);
             }
         }
 
-        private void _SelectObject(ExposedObjectHandle obj)
+        private void _SelectObject(LiveObjectHandle obj)
         {
             _selectedObject = obj;
             _ShowObjectProperties(obj);
@@ -643,14 +643,14 @@ namespace Lilium.RemoteControl.UI.Editor
                 var button = child.Q<Button>("obj-button");
                 if (button == null) continue;
 
-                var isSelected = button.userData as ExposedObjectHandle? == _selectedObject;
+                var isSelected = button.userData as LiveObjectHandle? == _selectedObject;
                 button.style.backgroundColor = isSelected
                     ? new Color(0.2f, 0.4f, 0.6f, 0.5f)
                     : StyleKeyword.Null;
             }
         }
 
-        private void _ShowObjectProperties(ExposedObjectHandle obj)
+        private void _ShowObjectProperties(LiveObjectHandle obj)
         {
             _propertyArea.Clear();
             _propertyScrollView = null;
@@ -710,7 +710,7 @@ namespace Lilium.RemoteControl.UI.Editor
                         foreach (var child in _objectList.Children())
                         {
                             var button = child.Q<Button>("obj-button");
-                            if (button != null && button.userData as ExposedObjectHandle? == capturedObj)
+                            if (button != null && button.userData as LiveObjectHandle? == capturedObj)
                             {
                                 button.text = evt.newValue;
                                 break;
@@ -774,7 +774,7 @@ namespace Lilium.RemoteControl.UI.Editor
             _propertyArea.Add(_propertyScrollView);
         }
 
-        private VisualElement _CreateObjectPropertyRow(ExposedObjectHandle obj, ExposedPropertyType propType)
+        private VisualElement _CreateObjectPropertyRow(LiveObjectHandle obj, LivePropertyType propType)
         {
             // 編集コントロール生成
             var prop = obj.FindProperty(propType.name);
@@ -894,7 +894,7 @@ namespace Lilium.RemoteControl.UI.Editor
             return row;
         }
 
-        private Label _CreatePropertyNameLabel(ExposedObjectHandle obj, ExposedPropertyType propType)
+        private Label _CreatePropertyNameLabel(LiveObjectHandle obj, LivePropertyType propType)
         {
             var nameLabel = new Label(ObjectNames.NicifyVariableName(propType.name));
             nameLabel.style.width = kPropertyNameWidth;
@@ -935,7 +935,7 @@ namespace Lilium.RemoteControl.UI.Editor
                                 foreach (var child in _objectList.Children())
                                 {
                                     var button = child.Q<Button>("obj-button");
-                                    if (button != null && button.userData as ExposedObjectHandle? == _selectedObject)
+                                    if (button != null && button.userData as LiveObjectHandle? == _selectedObject)
                                     {
                                         button.text = nameValue;
                                         break;

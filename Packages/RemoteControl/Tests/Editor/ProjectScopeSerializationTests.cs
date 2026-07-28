@@ -20,86 +20,86 @@ namespace Lilium.RemoteControl.Tests
     {
         #region Test Classes
 
-        [ExposedClass("TestScopeClass")]
+        [LiveClass("TestScopeClass")]
         public class TestScopeClass
         {
-            [ExposedField]
+            [LiveField]
             public int sceneValue;
 
-            [ExposedField(persistScope = PersistScope.Project)]
+            [LiveField(persistScope = PersistScope.Project)]
             public int projectValue;
         }
 
         // shadow field 側の persistScope を property が継承するパターン (ScreenController と同型)。
-        [ExposedClass("TestScopeShadowClass")]
+        [LiveClass("TestScopeShadowClass")]
         public class TestScopeShadowClass
         {
-            [ExposedField(persistScope = PersistScope.Project), Hide]
-            [FormerlyExposedAs("quality")]
+            [LiveField(persistScope = PersistScope.Project), Hide]
+            [FormerlyNamedAs("quality")]
             private string _quality = "Mid";
 
-            [ExposedProperty]
+            [LiveProperty]
             public string quality
             {
                 get => _quality;
                 set => _quality = value;
             }
 
-            [ExposedField]
+            [LiveField]
             public int sceneValue;
         }
 
-        // shadow / [InlineReference] を持たない [ExposedProperty] は非 persistable。
+        // shadow / [InlineReference] を持たない [LiveProperty] は非 persistable。
         // ここに persistScope = Project を付けても保存されないため警告が出る。
-        [ExposedClass("TestMisusedProjectClass")]
+        [LiveClass("TestMisusedProjectClass")]
         public class TestMisusedProjectClass
         {
-            [ExposedProperty(persistScope = PersistScope.Project)]
+            [LiveProperty(persistScope = PersistScope.Project)]
             public int value { get; set; }
         }
 
-        // 公開 GameObject の component として辿られる [ExposedClass] MonoBehaviour
+        // 公開 GameObject の component として辿られる [LiveClass] MonoBehaviour
         // (ScreenController="Screen" と同じ構図)。
-        [ExposedClass("TestScreenComponent")]
+        [LiveClass("TestScreenComponent")]
         public class TestScreenComponent : MonoBehaviour
         {
-            [ExposedField(persistScope = PersistScope.Project)]
+            [LiveField(persistScope = PersistScope.Project)]
             public int projectVal;
 
-            [ExposedField]
+            [LiveField]
             public int sceneVal;
         }
 
         #endregion
 
-        private TestExposedObjectResolver _resolver;
+        private TestLiveObjectResolver _resolver;
 
         [SetUp]
         public void SetUp()
         {
-            ExposedClass.Clear();
-            foreach (var obj in ExposedObjectRegistry.instances.ToList())
+            LiveClass.Clear();
+            foreach (var obj in LiveObjectRegistry.instances.ToList())
             {
                 obj.Unregister();
             }
-            _resolver = new TestExposedObjectResolver();
+            _resolver = new TestLiveObjectResolver();
         }
 
         [TearDown]
         public void TearDown()
         {
-            foreach (var obj in ExposedObjectRegistry.instances.ToList())
+            foreach (var obj in LiveObjectRegistry.instances.ToList())
             {
                 obj.Unregister();
             }
         }
 
-        private ExposedObjectHandle _CreateScopeObject(string id, int sceneValue, int projectValue)
+        private LiveObjectHandle _CreateScopeObject(string id, int sceneValue, int projectValue)
         {
-            ExposedClass.RegisterFromAttributes<TestScopeClass>();
+            LiveClass.RegisterFromAttributes<TestScopeClass>();
             var target = new TestScopeClass { sceneValue = sceneValue, projectValue = projectValue };
-            var exposedClass = ExposedClass.Find(typeof(TestScopeClass));
-            return new ExposedObjectHandle(id, exposedClass, target);
+            var liveClass = LiveClass.Find(typeof(TestScopeClass));
+            return new LiveObjectHandle(id, liveClass, target);
         }
 
         // -------------------------------------------------------
@@ -111,7 +111,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var obj = _CreateScopeObject("scope-1", sceneValue: 10, projectValue: 20);
 
-            var json = ExposedPropertySerializer.ToJson(
+            var json = LivePropertySerializer.ToJson(
                 obj, _resolver, isDirtyOnly: false, forPersistence: true, scopeFilter: PersistScope.Scene);
             var jObj = JObject.Parse(json);
 
@@ -124,7 +124,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var obj = _CreateScopeObject("scope-1", sceneValue: 10, projectValue: 20);
 
-            var json = ExposedPropertySerializer.ToJson(
+            var json = LivePropertySerializer.ToJson(
                 obj, _resolver, isDirtyOnly: false, forPersistence: true, scopeFilter: PersistScope.Project);
             var jObj = JObject.Parse(json);
 
@@ -139,7 +139,7 @@ namespace Lilium.RemoteControl.Tests
             var obj = _CreateScopeObject("scope-1", sceneValue: 10, projectValue: 20);
 
             // forPersistence:false の通常読み出しは scope に関わらず全プロパティを含む。
-            var json = ExposedPropertySerializer.ToJson(
+            var json = LivePropertySerializer.ToJson(
                 obj, _resolver, isDirtyOnly: false, forPersistence: false);
             var jObj = JObject.Parse(json);
 
@@ -150,14 +150,14 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void ToJson_ShadowField_InheritsProjectScope()
         {
-            ExposedClass.RegisterFromAttributes<TestScopeShadowClass>();
+            LiveClass.RegisterFromAttributes<TestScopeShadowClass>();
             var target = new TestScopeShadowClass { quality = "High", sceneValue = 3 };
-            var exposedClass = ExposedClass.Find(typeof(TestScopeShadowClass));
-            var obj = new ExposedObjectHandle("shadow-1", exposedClass, target);
+            var liveClass = LiveClass.Find(typeof(TestScopeShadowClass));
+            var obj = new LiveObjectHandle("shadow-1", liveClass, target);
 
-            var sceneJson = JObject.Parse(ExposedPropertySerializer.ToJson(
+            var sceneJson = JObject.Parse(LivePropertySerializer.ToJson(
                 obj, _resolver, isDirtyOnly: false, forPersistence: true, scopeFilter: PersistScope.Scene));
-            var projectJson = JObject.Parse(ExposedPropertySerializer.ToJson(
+            var projectJson = JObject.Parse(LivePropertySerializer.ToJson(
                 obj, _resolver, isDirtyOnly: false, forPersistence: true, scopeFilter: PersistScope.Project));
 
             Assert.IsNull(sceneJson["quality"], "Shadow-backed property must inherit Project scope and be excluded from Scene.");
@@ -176,7 +176,7 @@ namespace Lilium.RemoteControl.Tests
             var obj = _CreateScopeObject("scope-1", sceneValue: 10, projectValue: 20);
 
             var json = LiveSceneSerializer.LiveSceneToJson(
-                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver);
+                new List<LiveObjectHandle>(LiveObjectRegistry.instances), _resolver);
             var jRoot = JObject.Parse(json);
             // root エントリは @id が外され @source = obj.id に置き換わる。
             var entry = ((JArray)jRoot["objects"]).Cast<JObject>()
@@ -195,7 +195,7 @@ namespace Lilium.RemoteControl.Tests
         {
             _CreateScopeObject("scope-1", sceneValue: 10, projectValue: 20);
 
-            var objects = new List<ExposedObjectHandle>(ExposedObjectRegistry.instances);
+            var objects = new List<LiveObjectHandle>(LiveObjectRegistry.instances);
             var perClass = ProjectSettingsSerializer.BuildPerClassJson(objects, _resolver);
 
             Assert.IsTrue(perClass.ContainsKey("TestScopeClass"), "Settings should be keyed by class typeName.");
@@ -210,13 +210,13 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void ApplyJson_RestoresProjectValues_AndIsIdempotent()
         {
-            ExposedClass.RegisterFromAttributes<TestScopeClass>();
+            LiveClass.RegisterFromAttributes<TestScopeClass>();
             var target = new TestScopeClass { sceneValue = 10, projectValue = 20 };
-            var exposedClass = ExposedClass.Find(typeof(TestScopeClass));
-            var obj = new ExposedObjectHandle("scope-1", exposedClass, target);
+            var liveClass = LiveClass.Find(typeof(TestScopeClass));
+            var obj = new LiveObjectHandle("scope-1", liveClass, target);
 
             var perClass = ProjectSettingsSerializer.BuildPerClassJson(
-                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver);
+                new List<LiveObjectHandle>(LiveObjectRegistry.instances), _resolver);
             var json = perClass["TestScopeClass"];
 
             // 値を変更してから適用 → 復元されること。
@@ -232,13 +232,13 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void BuildPerClassJson_MultipleInstances_KeyedById()
         {
-            ExposedClass.RegisterFromAttributes<TestScopeClass>();
-            var exposedClass = ExposedClass.Find(typeof(TestScopeClass));
-            var a = new ExposedObjectHandle("inst-a", exposedClass, new TestScopeClass { projectValue = 1 });
-            var b = new ExposedObjectHandle("inst-b", exposedClass, new TestScopeClass { projectValue = 2 });
+            LiveClass.RegisterFromAttributes<TestScopeClass>();
+            var liveClass = LiveClass.Find(typeof(TestScopeClass));
+            var a = new LiveObjectHandle("inst-a", liveClass, new TestScopeClass { projectValue = 1 });
+            var b = new LiveObjectHandle("inst-b", liveClass, new TestScopeClass { projectValue = 2 });
 
             var perClass = ProjectSettingsSerializer.BuildPerClassJson(
-                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver);
+                new List<LiveObjectHandle>(LiveObjectRegistry.instances), _resolver);
             var root = JObject.Parse(perClass["TestScopeClass"]);
             var entries = ((JArray)root["objects"]).Cast<JObject>().ToList();
 
@@ -252,14 +252,14 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void BuildPerClassJson_ClassWithoutProjectMembers_IsSkipped()
         {
-            ExposedClass.RegisterFromAttributes<TestScopeShadowClass>();
+            LiveClass.RegisterFromAttributes<TestScopeShadowClass>();
             // sceneValue だけ設定し、Project メンバー (quality) は既定のまま。
-            var exposedClass = ExposedClass.Find(typeof(TestScopeShadowClass));
-            var _ = new ExposedObjectHandle("shadow-1", exposedClass, new TestScopeShadowClass { sceneValue = 5 });
+            var liveClass = LiveClass.Find(typeof(TestScopeShadowClass));
+            var _ = new LiveObjectHandle("shadow-1", liveClass, new TestScopeShadowClass { sceneValue = 5 });
 
             // quality は Project メンバーなので出力対象。クラスはファイル化される。
             var perClass = ProjectSettingsSerializer.BuildPerClassJson(
-                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver);
+                new List<LiveObjectHandle>(LiveObjectRegistry.instances), _resolver);
 
             Assert.IsTrue(perClass.ContainsKey("TestScopeShadowClass"));
             var entry = ((JArray)JObject.Parse(perClass["TestScopeShadowClass"])["objects"]).Single() as JObject;
@@ -286,13 +286,13 @@ namespace Lilium.RemoteControl.Tests
                 System.IO.Path.GetTempPath(), "VirgoProjScopeTest_" + System.Guid.NewGuid().ToString("N"));
             try
             {
-                ExposedClass.RegisterFromAttributes<TestScopeClass>();
-                var exposedClass = ExposedClass.Find(typeof(TestScopeClass));
+                LiveClass.RegisterFromAttributes<TestScopeClass>();
+                var liveClass = LiveClass.Find(typeof(TestScopeClass));
                 var target = new TestScopeClass { projectValue = 42 };
-                var obj = new ExposedObjectHandle("scope-1", exposedClass, target);
+                var obj = new LiveObjectHandle("scope-1", liveClass, target);
 
                 var perClass = ProjectSettingsSerializer.BuildPerClassJson(
-                    new List<ExposedObjectHandle>(ExposedObjectRegistry.instances), _resolver);
+                    new List<LiveObjectHandle>(LiveObjectRegistry.instances), _resolver);
                 ProjectSettingsStore.WriteAll(tempProject, perClass);
 
                 var file = ProjectSettingsStore.GetSettingsFilePath(tempProject, "TestScopeClass");
@@ -317,7 +317,7 @@ namespace Lilium.RemoteControl.Tests
         public void Register_ProjectScopeOnNonPersistableProperty_LogsWarning()
         {
             LogAssert.Expect(LogType.Warning, new Regex("marked PersistScope.Project but is not persistable"));
-            ExposedClass.RegisterFromAttributes<TestMisusedProjectClass>();
+            LiveClass.RegisterFromAttributes<TestMisusedProjectClass>();
         }
 
         // -------------------------------------------------------
@@ -325,23 +325,23 @@ namespace Lilium.RemoteControl.Tests
         // -------------------------------------------------------
 
         [Test]
-        public void BuildPerClassJson_TraversesExposedGameObjectComponents()
+        public void BuildPerClassJson_TraversesLiveGameObjectComponents()
         {
-            ExposedClass.RegisterFromAttributes<ExposedGameObject>();
-            ExposedClass.RegisterFromAttributes<TestScreenComponent>();
+            LiveClass.RegisterFromAttributes<LiveGameObject>();
+            LiveClass.RegisterFromAttributes<TestScreenComponent>();
 
             var go = new GameObject("TestParentGO");
-            ExposedGameObject proxy = null;
+            LiveGameObject proxy = null;
             try
             {
                 var comp = go.AddComponent<TestScreenComponent>();
                 comp.projectVal = 7;
                 comp.sceneVal = 3;
 
-                // ExposedGameObject は ctor で自身を ExposedObjectRegistry に登録する。
-                proxy = new ExposedGameObject(go);
+                // LiveGameObject は ctor で自身を LiveObjectRegistry に登録する。
+                proxy = new LiveGameObject(go);
 
-                var objs = new List<ExposedObjectHandle>(ExposedObjectRegistry.instances);
+                var objs = new List<LiveObjectHandle>(LiveObjectRegistry.instances);
                 var perClass = ProjectSettingsSerializer.BuildPerClassJson(objs, _resolver);
 
                 Assert.IsTrue(perClass.ContainsKey("TestScreenComponent"),

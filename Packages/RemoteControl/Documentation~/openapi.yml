@@ -24,7 +24,7 @@ paths:
         Notifications and confirmation prompts are queued per client (identified by
         X-Client-ID) rather than pushed. Pass the lastEventId from the previous response as
         `since` to receive what came after it. The remote app sends this as a sub-request of
-        /exposed/batch so it costs no extra round trip.
+        /live/batch so it costs no extra round trip.
       parameters:
         - in: query
           name: since
@@ -37,7 +37,7 @@ paths:
         '200':
           description: The events queued after `since`, and the new read position
 
-  /exposed/types:
+  /live/types:
     get:
       summary: Get all exposed object types. Optionally filter by type name.
       parameters:
@@ -56,7 +56,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/TypesGettingResponse"  
 
-  /exposed/objects:
+  /live/objects:
     get:
       summary: Get the exposed object list. Optionally filter by type.
       parameters:
@@ -78,7 +78,7 @@ paths:
             property values are serialized but nested inline (unregistered) composite children are
             replaced by a truncation stub ({ "@type": ..., "@truncated": true }) so the payload stays
             small and scalable. Arrays do not consume depth, so element count and per-element type
-            stay visible. Fetch a stubbed child on demand via GET /exposed/object/{id}/{path}.
+            stay visible. Fetch a stubbed child on demand via GET /live/object/{id}/{path}.
             Pass `?nested` (or `?nested=true`) to restore full unbounded expansion.
             (The depth is 1 vs. unbounded today; a future `?nested=<N>` numeric form may expose it.)
       responses:
@@ -89,7 +89,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ObjectsGettingResponse"
 
-  /exposed/object/{id}:
+  /live/object/{id}:
     get:
       summary: Get all properties of the exposed object.
       parameters:
@@ -105,7 +105,7 @@ paths:
             type: boolean
           example: true
           description: >
-            Optional flag, same semantics as on /exposed/objects. Absent (default) returns the object
+            Optional flag, same semantics as on /live/objects. Absent (default) returns the object
             at depth 1 with nested inline composites truncated; `?nested` returns full expansion.
       responses:
         '200':
@@ -116,12 +116,12 @@ paths:
                 $ref: "#/components/schemas/ObjectGettingResponse"  
 
 
-  /exposed/object/{id}/{property}:
+  /live/object/{id}/{property}:
     get:
       summary: >
         Get the property of the exposed object. Always fully (unbounded) expanded — the `nested`
         flag does not apply here, because the path already scopes the response to a single branch.
-        The client uses this to lazily fetch a child that /exposed/objects truncated.
+        The client uses this to lazily fetch a child that /live/objects truncated.
       parameters:
         - in: path
           name: id
@@ -223,7 +223,7 @@ paths:
         '200':
           description: Successfully reordered the array element
 
-  /exposed/object/{id}/{property}/reset:
+  /live/object/{id}/{property}/reset:
     post:
       summary: Reset the property of the exposed object to its default value.
       parameters:
@@ -243,7 +243,7 @@ paths:
             schema:
               $ref: "#/components/schemas/PropertyGettingResponse"
 
-  /exposed/function/{id}/{function}:
+  /live/function/{id}/{function}:
     post:
       summary: Call the function of the exposed object.
       parameters:
@@ -265,13 +265,13 @@ paths:
               schema:
                 type: object
 
-  /exposed/batch:
+  /live/batch:
     post:
       summary: Apply multiple exposed-object operations in a single request.
       description: >
         Epic Remote Control's /remote/batch equivalent. Each sub-request targets an
-        /exposed/object/{id}/{path} operation (GET/PUT/POST/DELETE/PATCH) or a
-        POST /exposed/function/{id}/{path} call, and is applied in order within a single
+        /live/object/{id}/{path} operation (GET/PUT/POST/DELETE/PATCH) or a
+        POST /live/function/{id}/{path} call, and is applied in order within a single
         frame. Items are independent: one failing item does not abort the others
         (continue-on-error). The overall response is always 200; per-item results carry
         their own status.
@@ -289,7 +289,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/BatchResponse"
 
-  /exposed/changes:
+  /live/changes:
     get:
       summary: Get the ids of exposed objects that changed since a revision.
       description: >
@@ -324,7 +324,7 @@ paths:
                     items:
                       type: string
 
-  /exposed/import:
+  /live/import:
     post:
       summary: Import exposed objects and their properties.
       responses:
@@ -336,7 +336,7 @@ paths:
             schema:
               $ref: "#/components/schemas/ImportRequest"
 
-  /exposed/export:
+  /live/export:
     post:
       summary: Export all exposed objects and their properties.
       responses:
@@ -495,8 +495,8 @@ components:
             example: PUT
           path:
             type: string
-            description: "Absolute path of the sub-request. Limited to /exposed/object/{id}/{path} and /exposed/function/{id}/{path} families."
-            example: "/exposed/object/3470a41c-f079-4d30-a002-3468fda088f7/intensity"
+            description: "Absolute path of the sub-request. Limited to /live/object/{id}/{path} and /live/function/{id}/{path} families."
+            example: "/live/object/3470a41c-f079-4d30-a002-3468fda088f7/intensity"
           body:
             type: object
             description: "Sub-request JSON body (e.g. {\"value\": 100} for PUT, {\"args\": [..]} for a function call). Omit when not needed."

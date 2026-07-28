@@ -11,10 +11,10 @@ using Lilium.RemoteControl.UI;
 
 namespace Lilium.RemoteControl.Tests
 {
-    [ExposedClass(Icon = "settings")]
+    [LiveClass(Icon = "settings")]
     internal static class NavigateSelectorTestPage
     {
-        [ExposedProperty]
+        [LiveProperty]
         public static float value { get => 1f; set { } }
     }
 
@@ -24,7 +24,7 @@ namespace Lilium.RemoteControl.Tests
         [SetUp]
         public void Setup()
         {
-            ExposedClass.Clear();
+            LiveClass.Clear();
         }
 
         #region MenuItem Tests
@@ -145,11 +145,11 @@ namespace Lilium.RemoteControl.Tests
             var go2 = new GameObject("Prefab2");
             try
             {
-                var f1 = new ExposedGameObjectFactory { prefab = go1 };
-                var f2 = new ExposedGameObjectFactory { prefab = go2 };
+                var f1 = new LiveGameObjectFactory { prefab = go1 };
+                var f2 = new LiveGameObjectFactory { prefab = go2 };
                 var factory = new StandardObjectFactory
                 {
-                    factories = new IExposedObjectFactory[] { f1, f2 }
+                    factories = new ILiveObjectFactory[] { f1, f2 }
                 };
                 var objects = factory.objects;
 
@@ -171,11 +171,11 @@ namespace Lilium.RemoteControl.Tests
             var go2 = new GameObject("Beta");
             try
             {
-                var f1 = new ExposedGameObjectFactory { prefab = go1 };
-                var f2 = new ExposedGameObjectFactory { prefab = go2 };
+                var f1 = new LiveGameObjectFactory { prefab = go1 };
+                var f2 = new LiveGameObjectFactory { prefab = go2 };
                 var factory = new StandardObjectFactory
                 {
-                    factories = new IExposedObjectFactory[] { f1, f2 }
+                    factories = new ILiveObjectFactory[] { f1, f2 }
                 };
                 var names = factory.objectNames;
 
@@ -196,10 +196,10 @@ namespace Lilium.RemoteControl.Tests
             var go = new GameObject("Valid");
             try
             {
-                var f1 = new ExposedGameObjectFactory { prefab = go };
+                var f1 = new LiveGameObjectFactory { prefab = go };
                 var factory = new StandardObjectFactory
                 {
-                    factories = new IExposedObjectFactory[] { f1, null }
+                    factories = new ILiveObjectFactory[] { f1, null }
                 };
                 var names = factory.objectNames;
 
@@ -216,7 +216,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void StandardObjectFactory_CreateObject_InvalidIndex_DoesNotThrow()
         {
-            var factory = new StandardObjectFactory { factories = new IExposedObjectFactory[0] };
+            var factory = new StandardObjectFactory { factories = new ILiveObjectFactory[0] };
             Assert.DoesNotThrow(() => factory.CreateObject(-1));
             Assert.DoesNotThrow(() => factory.CreateObject(0));
             Assert.DoesNotThrow(() => factory.CreateObject(100));
@@ -234,7 +234,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var factory = new StandardObjectFactory
             {
-                factories = new IExposedObjectFactory[] { null }
+                factories = new ILiveObjectFactory[] { null }
             };
             Assert.DoesNotThrow(() => factory.CreateObject(0));
         }
@@ -253,15 +253,15 @@ namespace Lilium.RemoteControl.Tests
             var instance = new GameObject("DestroyTestPrefab(Clone)");
             try
             {
-                ExposedClass.Register<GameObject>("DestroyTest", new ExposedPropertyDefine[0]);
-                var exposedClass = ExposedClass.Find(typeof(GameObject));
-                var exposedObj = new ExposedObjectHandle("destroy-test-1", exposedClass, instance);
+                LiveClass.Register<GameObject>("DestroyTest", new LivePropertyDefine[0]);
+                var liveClass = LiveClass.Find(typeof(GameObject));
+                var liveObj = new LiveObjectHandle("destroy-test-1", liveClass, instance);
 
                 var factory = new StandardObjectFactory();
                 factory.DestroyObject("destroy-test-1");
 
-                // ExposedObjectが解除されたことを確認
-                Assert.IsNull(ExposedObjectRegistry.FindById("destroy-test-1"));
+                // LiveObjectが解除されたことを確認
+                Assert.IsNull(LiveObjectRegistry.FindById("destroy-test-1"));
             }
             finally
             {
@@ -290,10 +290,10 @@ namespace Lilium.RemoteControl.Tests
             {
                 var factory = new StandardObjectFactory
                 {
-                    factories = new IExposedObjectFactory[]
+                    factories = new ILiveObjectFactory[]
                     {
-                        new ExposedGameObjectFactory { prefab = go1 },
-                        new ExposedGameObjectFactory { prefab = go2 }
+                        new LiveGameObjectFactory { prefab = go1 },
+                        new LiveGameObjectFactory { prefab = go2 }
                     }
                 };
                 // Asset でない生成 GameObject は GUID を持てないため、Warning が出ることを期待する。
@@ -392,8 +392,8 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void UIHandler_RegistersSelectorsForCategoryPages()
         {
-            ExposedClass.RegisterFromAttributes<ObjectSelectorBase>();
-            ExposedClass.RegisterFromAttributes<ObjectFactoryBase>();
+            LiveClass.RegisterFromAttributes<ObjectSelectorBase>();
+            LiveClass.RegisterFromAttributes<ObjectFactoryBase>();
 
             var definition = ScriptableObject.CreateInstance<UIDefinition>();
             try
@@ -405,14 +405,14 @@ namespace Lilium.RemoteControl.Tests
                     page = new CategoryPage()
                 });
 
-                // UIHandler のコンストラクタで selector が ExposedObjectHandle として登録される
+                // UIHandler のコンストラクタで selector が LiveObjectHandle として登録される
                 var handler = new UIHandler(null, definition);
 
-                var selectorObj = ExposedObjectRegistry.FindById("ui.selector.test-page");
-                Assert.IsNotNull(selectorObj, "Selector should be registered as ExposedObjectHandle");
+                var selectorObj = LiveObjectRegistry.FindById("ui.selector.test-page");
+                Assert.IsNotNull(selectorObj, "Selector should be registered as LiveObjectHandle");
 
-                var factoryObj = ExposedObjectRegistry.FindById("ui.factory.test-page");
-                Assert.IsNotNull(factoryObj, "Factory should be registered as ExposedObjectHandle");
+                var factoryObj = LiveObjectRegistry.FindById("ui.factory.test-page");
+                Assert.IsNotNull(factoryObj, "Factory should be registered as LiveObjectHandle");
 
                 handler.Cleanup();
             }
@@ -423,10 +423,10 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void UIHandler_Cleanup_UnregistersExposedObjects()
+        public void UIHandler_Cleanup_UnregistersLiveObjects()
         {
-            ExposedClass.RegisterFromAttributes<ObjectSelectorBase>();
-            ExposedClass.RegisterFromAttributes<ObjectFactoryBase>();
+            LiveClass.RegisterFromAttributes<ObjectSelectorBase>();
+            LiveClass.RegisterFromAttributes<ObjectFactoryBase>();
 
             var definition = ScriptableObject.CreateInstance<UIDefinition>();
             try
@@ -441,15 +441,15 @@ namespace Lilium.RemoteControl.Tests
                 var handler = new UIHandler(null, definition);
 
                 // 登録を確認
-                Assert.IsNotNull(ExposedObjectRegistry.FindById("ui.selector.cleanup-page"));
-                Assert.IsNotNull(ExposedObjectRegistry.FindById("ui.factory.cleanup-page"));
+                Assert.IsNotNull(LiveObjectRegistry.FindById("ui.selector.cleanup-page"));
+                Assert.IsNotNull(LiveObjectRegistry.FindById("ui.factory.cleanup-page"));
 
                 // Cleanup
                 handler.Cleanup();
 
                 // 解除を確認
-                Assert.IsNull(ExposedObjectRegistry.FindById("ui.selector.cleanup-page"));
-                Assert.IsNull(ExposedObjectRegistry.FindById("ui.factory.cleanup-page"));
+                Assert.IsNull(LiveObjectRegistry.FindById("ui.selector.cleanup-page"));
+                Assert.IsNull(LiveObjectRegistry.FindById("ui.factory.cleanup-page"));
             }
             finally
             {
@@ -488,7 +488,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void UIHandler_MenuItemWithoutPage_DoesNotThrow()
         {
-            ExposedClass.RegisterFromAttributes<ObjectSelectorBase>();
+            LiveClass.RegisterFromAttributes<ObjectSelectorBase>();
 
             var definition = ScriptableObject.CreateInstance<UIDefinition>();
             try
@@ -515,8 +515,8 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void UIHandler_MultipleMenuItems_RegistersAllSelectors()
         {
-            ExposedClass.RegisterFromAttributes<ObjectSelectorBase>();
-            ExposedClass.RegisterFromAttributes<ObjectFactoryBase>();
+            LiveClass.RegisterFromAttributes<ObjectSelectorBase>();
+            LiveClass.RegisterFromAttributes<ObjectFactoryBase>();
 
             var definition = ScriptableObject.CreateInstance<UIDefinition>();
             try
@@ -536,10 +536,10 @@ namespace Lilium.RemoteControl.Tests
 
                 var handler = new UIHandler(null, definition);
 
-                Assert.IsNotNull(ExposedObjectRegistry.FindById("ui.selector.page-a"));
-                Assert.IsNotNull(ExposedObjectRegistry.FindById("ui.selector.page-b"));
-                Assert.IsNotNull(ExposedObjectRegistry.FindById("ui.factory.page-a"));
-                Assert.IsNotNull(ExposedObjectRegistry.FindById("ui.factory.page-b"));
+                Assert.IsNotNull(LiveObjectRegistry.FindById("ui.selector.page-a"));
+                Assert.IsNotNull(LiveObjectRegistry.FindById("ui.selector.page-b"));
+                Assert.IsNotNull(LiveObjectRegistry.FindById("ui.factory.page-a"));
+                Assert.IsNotNull(LiveObjectRegistry.FindById("ui.factory.page-b"));
 
                 handler.Cleanup();
             }
@@ -550,12 +550,12 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void NavigateObjectSelector_SerializesStaticExposedObjectAsReference()
+        public void NavigateObjectSelector_SerializesStaticLiveObjectAsReference()
         {
-            // ExposedClass.Reset() で属性スキャン + 静的クラスの ExposedObjectHandle 登録を行う。
-            ExposedClass.Reset();
-            var staticClass = ExposedClass.Find(typeof(NavigateSelectorTestPage));
-            Assert.IsNotNull(staticClass, "static ExposedClass must be registered");
+            // LiveClass.Reset() で属性スキャン + 静的クラスの LiveObjectHandle 登録を行う。
+            LiveClass.Reset();
+            var staticClass = LiveClass.Find(typeof(NavigateSelectorTestPage));
+            Assert.IsNotNull(staticClass, "static LiveClass must be registered");
 
             var definition = ScriptableObject.CreateInstance<UIDefinition>();
             try
@@ -576,10 +576,10 @@ namespace Lilium.RemoteControl.Tests
                 var handler = new UIHandler(null, definition);
                 try
                 {
-                    var selectorObj = ExposedObjectRegistry.FindById("ui.selector.settings");
-                    Assert.IsNotNull(selectorObj, "selector ExposedObjectHandle must be registered");
+                    var selectorObj = LiveObjectRegistry.FindById("ui.selector.settings");
+                    Assert.IsNotNull(selectorObj, "selector LiveObjectHandle must be registered");
 
-                    var json = ExposedPropertySerializer.ToJson(selectorObj.Value, DefaultExposedObjectResolver.Instance);
+                    var json = LivePropertySerializer.ToJson(selectorObj.Value, DefaultLiveObjectResolver.Instance);
                     var parsed = JObject.Parse(json);
                     var objectsArray = parsed["objects"] as JArray;
 
@@ -600,18 +600,18 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void NavigateObjectSelector_FallbacksToExposedClassWhenRegistryEmpty()
+        public void NavigateObjectSelector_FallbacksToLiveClassWhenRegistryEmpty()
         {
-            // _RegisterStaticExposedObjects が未実行の状態 (Edit モード等) を再現するため、
-            // ExposedClass 側の登録のみを行い、ExposedObjectRegistry には載せない。
-            ExposedClass.Clear();
-            ExposedClass.RegisterFromAttributes<ObjectSelectorBase>();
-            ExposedClass.RegisterFromAttributes<ObjectFactoryBase>();
-            ExposedClass.RegisterClass(typeof(NavigateSelectorTestPage));
-            ExposedClass.RegisterProperties(typeof(NavigateSelectorTestPage));
+            // _RegisterStaticLiveObjects が未実行の状態 (Edit モード等) を再現するため、
+            // LiveClass 側の登録のみを行い、LiveObjectRegistry には載せない。
+            LiveClass.Clear();
+            LiveClass.RegisterFromAttributes<ObjectSelectorBase>();
+            LiveClass.RegisterFromAttributes<ObjectFactoryBase>();
+            LiveClass.RegisterClass(typeof(NavigateSelectorTestPage));
+            LiveClass.RegisterProperties(typeof(NavigateSelectorTestPage));
 
             // precondition: 静的クラスは registry 未登録
-            Assert.IsNull(ExposedObjectRegistry.FindById(nameof(NavigateSelectorTestPage)),
+            Assert.IsNull(LiveObjectRegistry.FindById(nameof(NavigateSelectorTestPage)),
                 "precondition: static class must not be in registry yet");
 
             var definition = ScriptableObject.CreateInstance<UIDefinition>();
@@ -633,16 +633,16 @@ namespace Lilium.RemoteControl.Tests
                 var handler = new UIHandler(null, definition);
                 try
                 {
-                    var selectorObj = ExposedObjectRegistry.FindById("ui.selector.settings");
+                    var selectorObj = LiveObjectRegistry.FindById("ui.selector.settings");
                     Assert.IsNotNull(selectorObj);
 
-                    var json = ExposedPropertySerializer.ToJson(selectorObj.Value, DefaultExposedObjectResolver.Instance);
+                    var json = LivePropertySerializer.ToJson(selectorObj.Value, DefaultLiveObjectResolver.Instance);
                     var parsed = JObject.Parse(json);
                     var objectsArray = parsed["objects"] as JArray;
 
                     Assert.IsNotNull(objectsArray, $"objects array must exist. json={json}");
                     Assert.AreEqual(1, objectsArray.Count,
-                        $"fallback must resolve static ExposedClass. json={json}");
+                        $"fallback must resolve static LiveClass. json={json}");
                     Assert.AreEqual(nameof(NavigateSelectorTestPage), objectsArray[0]["@ref"]?.Value<string>());
                 }
                 finally

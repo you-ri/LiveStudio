@@ -14,10 +14,10 @@ namespace Lilium.LiveStudio.EditorTests
     {
         const string kTargetId = "target-1";
 
-        [ExposedClass]
+        [LiveClass]
         public class FakeTarget
         {
-            [ExposedField] public bool flag;
+            [LiveField] public bool flag;
             public int invokeCount;
 
             // Records the last argument received by SetValue so an argument-bearing invoke can be asserted.
@@ -25,12 +25,12 @@ namespace Lilium.LiveStudio.EditorTests
 
             // Read-only keyed array standing in for an avatar's expressions[]: a bound action targets
             // an element's float weight by its stable key, e.g. "weights[Beta].weight".
-            [ExposedField] public WeightedEntry[] weights;
+            [LiveField] public WeightedEntry[] weights;
 
-            [ExposedFunction]
+            [LiveFunction]
             public void DoThing() => invokeCount++;
 
-            [ExposedFunction]
+            [LiveFunction]
             public void SetValue(int value)
             {
                 lastValue = value;
@@ -38,7 +38,7 @@ namespace Lilium.LiveStudio.EditorTests
             }
         }
 
-        [ExposedClass("FakeWeighted")]
+        [LiveClass("FakeWeighted")]
         public class WeightedEntry
         {
             private string _key = string.Empty;
@@ -47,13 +47,13 @@ namespace Lilium.LiveStudio.EditorTests
 
             public WeightedEntry(string key) { _key = key ?? string.Empty; }
 
-            [ExposedProperty, ExposedKey] public string key => _key;
+            [LiveProperty, LiveKey] public string key => _key;
 
-            [ExposedProperty] public float weight { get; set; }
+            [LiveProperty] public float weight { get; set; }
 
-            // A nested [ExposedFunction] so an InvokeFunctionOperation can target it via a property path
+            // A nested [LiveFunction] so an InvokeFunctionOperation can target it via a property path
             // (the generic shape of StageManager's set-element WarpTo).
-            [ExposedFunction] public void Bump(float amount) => weight += amount;
+            [LiveFunction] public void Bump(float amount) => weight += amount;
         }
 
         FakeTarget _target;
@@ -61,20 +61,20 @@ namespace Lilium.LiveStudio.EditorTests
         [SetUp]
         public void SetUp()
         {
-            ExposedObjectRegistry.ClearAll();
-            ExposedClass.RegisterFromAttributes<WeightedEntry>();
-            ExposedClass.RegisterFromAttributes<FakeTarget>();
+            LiveObjectRegistry.ClearAll();
+            LiveClass.RegisterFromAttributes<WeightedEntry>();
+            LiveClass.RegisterFromAttributes<FakeTarget>();
             _target = new FakeTarget
             {
                 weights = new[] { new WeightedEntry("Alpha"), new WeightedEntry("Beta") },
             };
-            ExposedObjectRegistry.Create(_target, kTargetId);
+            LiveObjectRegistry.Create(_target, kTargetId);
         }
 
         [TearDown]
         public void TearDown()
         {
-            ExposedObjectRegistry.ClearAll();
+            LiveObjectRegistry.ClearAll();
         }
 
         static OperationContext Triggered(bool active)

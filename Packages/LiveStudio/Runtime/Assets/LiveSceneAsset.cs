@@ -20,7 +20,7 @@ namespace Lilium.LiveStudio
     /// <see cref="ExternalAssetManager.OpenLiveScene"/> also invokes <see cref="Open"/> to switch scenes.
     /// </summary>
     [System.Serializable]
-    [ExposedClass("LiveSceneAsset", Category = "Asset", Icon = "movie")]
+    [LiveClass("LiveSceneAsset", Category = "Asset", Icon = "movie")]
     public class LiveSceneAsset : AssetBase
     {
         // Additive group, but never enabled: opening is a one-shot action, not a sticky load state.
@@ -33,10 +33,10 @@ namespace Lilium.LiveStudio
 
         /// <summary>
         /// Opens this live scene, replacing the current app state. The live-scene-specific work.
-        /// Exposed as a button in the generic object UI (the project detail pane) so the scene is
+        /// Live as a button in the generic object UI (the project detail pane) so the scene is
         /// switched from there instead of by a bespoke launcher control.
         /// </summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void Open()
         {
             if (string.IsNullOrEmpty(filePath)) return;

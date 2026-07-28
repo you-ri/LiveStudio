@@ -8,7 +8,7 @@ using Lilium.RemoteControl;
 namespace Lilium.RemoteControl.Tests
 {
     /// <summary>
-    /// ExposedObjectRegistry.FindByCategoryの重複検出バグの回帰テスト。
+    /// LiveObjectRegistry.FindByCategoryの重複検出バグの回帰テスト。
     /// instancesに登録済みのコンポーネントがFindObjectsByTypeで再発見され、
     /// 異なるIDで重複登録されるケースを検証する。
     /// </summary>
@@ -17,10 +17,10 @@ namespace Lilium.RemoteControl.Tests
     {
         private const string kTestCategory = "TestFindByCategory";
 
-        [ExposedClass("TestFindByCategoryComponent", Category = kTestCategory, Icon = "test")]
+        [LiveClass("TestFindByCategoryComponent", Category = kTestCategory, Icon = "test")]
         public class TestCategoryComponent : MonoBehaviour
         {
-            [ExposedField]
+            [LiveField]
             public int value;
         }
 
@@ -29,10 +29,10 @@ namespace Lilium.RemoteControl.Tests
         [SetUp]
         public void SetUp()
         {
-            ExposedClass.Clear();
-            ExposedClass.RegisterFromAttributes<TestCategoryComponent>();
+            LiveClass.Clear();
+            LiveClass.RegisterFromAttributes<TestCategoryComponent>();
 
-            var toRemove = ExposedObjectRegistry.instances.ToList();
+            var toRemove = LiveObjectRegistry.instances.ToList();
             foreach (var obj in toRemove)
             {
                 obj.Unregister();
@@ -42,7 +42,7 @@ namespace Lilium.RemoteControl.Tests
         [TearDown]
         public void TearDown()
         {
-            var toRemove = ExposedObjectRegistry.instances.ToList();
+            var toRemove = LiveObjectRegistry.instances.ToList();
             foreach (var obj in toRemove)
             {
                 obj.Unregister();
@@ -70,7 +70,7 @@ namespace Lilium.RemoteControl.Tests
             var go = CreateGameObjectWithComponent("TestObject");
 
             // Act
-            var result = ExposedObjectRegistry.FindByCategory(kTestCategory);
+            var result = LiveObjectRegistry.FindByCategory(kTestCategory);
 
             // Assert: 1つだけ返る
             Assert.AreEqual(1, result.Count, "コンポーネントが1つなら結果も1つであるべき");
@@ -80,20 +80,20 @@ namespace Lilium.RemoteControl.Tests
         public void FindByCategory_ComponentPreRegisteredInInstances_NoDuplicate()
         {
             // Arrange: シーンにコンポーネントを配置し、先にinstancesに別IDで登録する
-            // （ExposedObjectContainerから登録されるケースのシミュレーション）
+            // （LiveObjectContainerから登録されるケースのシミュレーション）
             var go = CreateGameObjectWithComponent("MainScreen");
             var component = go.GetComponent<TestCategoryComponent>();
-            var exposedClass = ExposedClass.Find(typeof(TestCategoryComponent));
+            var liveClass = LiveClass.Find(typeof(TestCategoryComponent));
 
             // GUIDベースのIDでinstancesに事前登録（Container経由の登録をシミュレート）
             var guidId = "container-guid-" + System.Guid.NewGuid().ToString("N").Substring(0, 8);
-            var preRegistered = ExposedObjectRegistry.GetOrCreate(guidId, exposedClass, component);
+            var preRegistered = LiveObjectRegistry.GetOrCreate(guidId, liveClass, component);
             Assert.IsNotNull(preRegistered, "事前登録が成功するべき");
 
             // Act: FindByCategoryを呼ぶ
             // ステップ2でinstancesからguidIdで見つかり、
             // ステップ3でFindObjectsByTypeでGetInstanceID()ベースのIDで再発見される
-            var result = ExposedObjectRegistry.FindByCategory(kTestCategory);
+            var result = LiveObjectRegistry.FindByCategory(kTestCategory);
 
             // Assert: 同一コンポーネントが重複して返されてはいけない
             Assert.AreEqual(1, result.Count,
@@ -107,14 +107,14 @@ namespace Lilium.RemoteControl.Tests
             var go1 = CreateGameObjectWithComponent("Screen1");
             var go2 = CreateGameObjectWithComponent("Screen2");
             var component1 = go1.GetComponent<TestCategoryComponent>();
-            var exposedClass = ExposedClass.Find(typeof(TestCategoryComponent));
+            var liveClass = LiveClass.Find(typeof(TestCategoryComponent));
 
             // component1のみGUIDベースIDで事前登録
             var guidId = "pre-registered-guid";
-            ExposedObjectRegistry.GetOrCreate(guidId, exposedClass, component1);
+            LiveObjectRegistry.GetOrCreate(guidId, liveClass, component1);
 
             // Act
-            var result = ExposedObjectRegistry.FindByCategory(kTestCategory);
+            var result = LiveObjectRegistry.FindByCategory(kTestCategory);
 
             // Assert: 2つのコンポーネントなので結果は2つ
             Assert.AreEqual(2, result.Count,
@@ -129,13 +129,13 @@ namespace Lilium.RemoteControl.Tests
             var go2 = CreateGameObjectWithComponent("ScreenB");
             var component1 = go1.GetComponent<TestCategoryComponent>();
             var component2 = go2.GetComponent<TestCategoryComponent>();
-            var exposedClass = ExposedClass.Find(typeof(TestCategoryComponent));
+            var liveClass = LiveClass.Find(typeof(TestCategoryComponent));
 
-            ExposedObjectRegistry.GetOrCreate("guid-a", exposedClass, component1);
-            ExposedObjectRegistry.GetOrCreate("guid-b", exposedClass, component2);
+            LiveObjectRegistry.GetOrCreate("guid-a", liveClass, component1);
+            LiveObjectRegistry.GetOrCreate("guid-b", liveClass, component2);
 
             // Act
-            var result = ExposedObjectRegistry.FindByCategory(kTestCategory);
+            var result = LiveObjectRegistry.FindByCategory(kTestCategory);
 
             // Assert: 重複なく2つ返る
             Assert.AreEqual(2, result.Count,
@@ -152,13 +152,13 @@ namespace Lilium.RemoteControl.Tests
             // Arrange: GUIDベースIDで事前登録されたコンポーネントのIDが保持されることを確認
             var go = CreateGameObjectWithComponent("MainScreen");
             var component = go.GetComponent<TestCategoryComponent>();
-            var exposedClass = ExposedClass.Find(typeof(TestCategoryComponent));
+            var liveClass = LiveClass.Find(typeof(TestCategoryComponent));
 
             var originalId = "original-guid-id";
-            ExposedObjectRegistry.GetOrCreate(originalId, exposedClass, component);
+            LiveObjectRegistry.GetOrCreate(originalId, liveClass, component);
 
             // Act
-            var result = ExposedObjectRegistry.FindByCategory(kTestCategory);
+            var result = LiveObjectRegistry.FindByCategory(kTestCategory);
 
             // Assert
             Assert.AreEqual(1, result.Count);

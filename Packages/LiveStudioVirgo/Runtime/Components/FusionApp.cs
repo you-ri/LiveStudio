@@ -20,7 +20,7 @@ namespace Lilium.LiveStudio.Virgo
     /// reset for disabled Domain Reload are needed.
     /// </summary>
     [DefaultExecutionOrder(-100)]
-    [ExposedClass("FusionApp", Icon = "memory", Category = "Motion")]
+    [LiveClass("FusionApp", Icon = "memory", Category = "Motion")]
     public class FusionApp : MonoBehaviour
     {
         /// <summary>Name of the inbound firewall rule that allows the capture UDP ports.</summary>
@@ -83,7 +83,7 @@ namespace Lilium.LiveStudio.Virgo
         void OnDestroy() => StopFusion();
 
         /// <summary>Resolve the launch options and start the Fusion child process.</summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void StartFusion()
         {
             if (IsRunning) return;
@@ -112,7 +112,7 @@ namespace Lilium.LiveStudio.Virgo
         }
 
         /// <summary>Stop the Fusion child process and release the handle.</summary>
-        [ExposedFunction]
+        [LiveFunction]
         public void StopFusion()
         {
             if (_process == null) return;

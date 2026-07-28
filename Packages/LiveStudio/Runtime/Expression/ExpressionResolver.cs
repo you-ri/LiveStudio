@@ -13,7 +13,7 @@ namespace Lilium.LiveStudio
     /// ICameraControllerと同じ [SerializeReference, Select] パターンで利用可能
     /// </summary>
     [Serializable]
-    [ExposedClass(Icon = "psychology")]
+    [LiveClass(Icon = "psychology")]
     [MovedFrom(false, "Lilium.Virgo.Studio", "Lilium.Virgo.Studio2", null)]
     public abstract class IExpressionResolver
     {

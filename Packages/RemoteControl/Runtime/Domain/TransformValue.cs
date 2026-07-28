@@ -7,7 +7,7 @@ namespace Lilium.RemoteControl
     /// <summary>
     /// position / rotation / scale を単一の値として保持する構造体。
     /// UnityEngine.Transform (Component) は値として扱えないため、
-    /// ExposedProperty で Transform 相当のデータをやり取りする用途で用いる。
+    /// LiveProperty で Transform 相当のデータをやり取りする用途で用いる。
     /// </summary>
     [Serializable]
     public struct TransformValue : IEquatable<TransformValue>

@@ -126,7 +126,7 @@ namespace Lilium.LiveStudio.Editor
         /// <summary>
         /// A short, stable, filesystem-safe token (hex MD5) derived from a string. Stable across
         /// runs/machines so re-exporting the same input yields the same bundle name — and therefore the
-        /// same internal CAB — keeping the build reproducible. Exposed so multi-content exporters can
+        /// same internal CAB — keeping the build reproducible. Live so multi-content exporters can
         /// derive a token from all member GUIDs.
         /// </summary>
         public static string StableToken(string value)

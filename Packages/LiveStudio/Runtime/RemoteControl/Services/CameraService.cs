@@ -6,21 +6,21 @@ namespace Lilium.LiveStudio
 {
     public static class CameraService
     {
-        public static IEnumerable<IExposedCamera> cameras => Service<IExposedCamera>.subjects.AsEnumerable();
+        public static IEnumerable<ILiveCamera> cameras => Service<ILiveCamera>.subjects.AsEnumerable();
 
-        public static IExposedCamera GetCamera(string displayName)
+        public static ILiveCamera GetCamera(string displayName)
         {
-            return Service<IExposedCamera>.subjects.FirstOrDefault(x => x.displayName == displayName);
+            return Service<ILiveCamera>.subjects.FirstOrDefault(x => x.displayName == displayName);
         }
 
-        public static IExposedCamera GetCamera(System.Guid id)
+        public static ILiveCamera GetCamera(System.Guid id)
         {
-            return Service<IExposedCamera>.subjects.FirstOrDefault(x => x.guid == id);
+            return Service<ILiveCamera>.subjects.FirstOrDefault(x => x.guid == id);
         }
 
         public static void SwitchCamera(string displayName)
         {
-            Service<IExposedCamera>.subjects.ForEach(x =>
+            Service<ILiveCamera>.subjects.ForEach(x =>
             {
                 if (x.displayName == displayName)
                 {
@@ -35,7 +35,7 @@ namespace Lilium.LiveStudio
 
         public static void SwitchCamera(System.Guid id)
         {
-            Service<IExposedCamera>.subjects.ForEach(x =>
+            Service<ILiveCamera>.subjects.ForEach(x =>
             {
                 if (x.guid == id)
                 {

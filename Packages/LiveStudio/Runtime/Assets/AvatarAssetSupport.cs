@@ -25,19 +25,19 @@ namespace Lilium.LiveStudio
         /// remote app can open the avatar's GameObject (transform + components, including the Avatar
         /// component) in its detail pane — symmetric with how a prop entry points at its own wrapper.
         /// The AvatarController's GameObject is a persistent scene object already exposed as an
-        /// ExposedGameObjectWithTransform, so this only reads the existing wrapper (no new wrapper is made).
+        /// LiveGameObjectWithTransform, so this only reads the existing wrapper (no new wrapper is made).
         /// Returns null if no controller / wrapper is present (e.g. the default avatar with no scene wrapper).
         /// </summary>
         internal static string ResolveControllerObjectId()
         {
             if (!(SingletonService<IAvatarService>.subject is Component controller)) return null;
             var go = controller.gameObject;
-            foreach (var handle in ExposedObjectRegistry.instances)
+            foreach (var handle in LiveObjectRegistry.instances)
             {
                 if (!handle.hasId) continue;
-                // The GameObject wrapper's target is an ExposedUnityObjectBase referencing the GameObject,
+                // The GameObject wrapper's target is an LiveUnityObjectBase referencing the GameObject,
                 // distinct from the AvatarController component handle (raw component target) on the same GO.
-                if (handle.target is ExposedUnityObjectBase proxy
+                if (handle.target is LiveUnityObjectBase proxy
                     && proxy.reference is GameObject wrappedGo
                     && wrappedGo == go)
                 {
@@ -84,7 +84,7 @@ namespace Lilium.LiveStudio
                 // AvatarController's GameObject is a persistent scene object already bound in the restore.
                 var wrapperId = ResolveControllerObjectId();
                 if (!string.IsNullOrEmpty(wrapperId))
-                    LiveScenePendingStore.ApplyFor(wrapperId, DefaultExposedObjectResolver.Instance);
+                    LiveScenePendingStore.ApplyFor(wrapperId, DefaultLiveObjectResolver.Instance);
 
                 // The load is complete and everything applied above came from disk, not from the user.
                 // Re-baseline the dirty tracking (delta baseline untouched) so an avatar that finishes
@@ -113,8 +113,8 @@ namespace Lilium.LiveStudio
         {
             var controller = SingletonService<IAvatarService>.subject as Component;
             if (controller == null) return;
-            var handle = ExposedObjectRegistry.FindByTarget(controller);
-            if (handle.HasValue) ExposedObjectSnapshot.Restore(stateJson, handle.Value);
+            var handle = LiveObjectRegistry.FindByTarget(controller);
+            if (handle.HasValue) LiveObjectSnapshot.Restore(stateJson, handle.Value);
         }
     }
 }

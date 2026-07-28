@@ -12,16 +12,16 @@ namespace Lilium.LiveStudio
     /// unloaded, and the named set is loaded on demand and activated once its scene is ready.
     /// </summary>
     [Serializable]
-    [ExposedClass(Category = "Operation", Icon = "public")]
+    [LiveClass(Category = "Operation", Icon = "public")]
     [MovedFrom(false, null, null, "SwitchStageAction")]
-    [FormerlyExposedAs("SwitchStageAction")]
+    [FormerlyNamedAs("SwitchStageAction")]
     public class SwitchStageOperation : OperationBase
     {
-        [ExposedField, StringSelector(nameof(stageNames))]
+        [LiveField, StringSelector(nameof(stageNames))]
         public string stage = string.Empty;
 
         /// <summary>Names of the known sets (including the bootstrap set) — the dropdown source.</summary>
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public string[] stageNames
             => StageManager.current?.GetSetNames() ?? Array.Empty<string>();
 

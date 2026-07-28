@@ -55,9 +55,9 @@ namespace Lilium.RemoteControl.LiveScene
         }
 
         // Removes stale settings files after a write:
-        // - a file whose class no longer exists (no ExposedClass for its entries' @type), and
+        // - a file whose class no longer exists (no LiveClass for its entries' @type), and
         // - a file named after a FORMER class name whose current-name file was just written (a rename
-        //   left the old file behind; keeping it would re-apply stale values via [FormerlyExposedAs]).
+        //   left the old file behind; keeping it would re-apply stale values via [FormerlyNamedAs]).
         // A current class's file that simply was not written this session (its object is not loaded now)
         // is KEPT, so an absent object never loses its project settings. Files we cannot classify
         // (unparseable / no @type) are left untouched.
@@ -79,7 +79,7 @@ namespace Lilium.RemoteControl.LiveScene
                 var fileType = _ReadEntryType(file);
                 if (string.IsNullOrEmpty(fileType)) continue; // unknown shape -> leave it
 
-                var ec = ExposedClass.Find(fileType);
+                var ec = LiveClass.Find(fileType);
                 if (ec == null)
                 {
                     _TryDelete(file, $"class '{fileType}' no longer exists");
@@ -136,7 +136,7 @@ namespace Lilium.RemoteControl.LiveScene
         /// objects. Globbing means class names need not be known up front, and added/removed
         /// classes are handled automatically. No-op when the directory is missing.
         /// </summary>
-        public static void ApplyAll(string projectPath, IExposedObjectResolver resolver)
+        public static void ApplyAll(string projectPath, ILiveObjectResolver resolver)
         {
             if (string.IsNullOrEmpty(projectPath) || resolver == null) return;
 

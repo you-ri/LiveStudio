@@ -14,7 +14,7 @@ namespace Lilium.LiveStudio
     /// ExpressionConfig評価 → 目線計算 → Mix → Smooth の共通パイプラインを実行
     /// </summary>
     [Serializable]
-    [ExposedClass(Icon = "psychology")]
+    [LiveClass(Icon = "psychology")]
     [MovedFrom(false, "Lilium.Virgo.Studio", "Lilium.Virgo.Studio2", null)]
     public class DefaultExpressionResolver : IExpressionResolver
     {

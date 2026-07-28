@@ -25,11 +25,11 @@ namespace Lilium.RemoteControl.UI
     }
 
     [Serializable]
-    [ExposedClass]
+    [LiveClass]
     [MovedFrom(true, "Lilium.RemoteControl.WebUI", "Lilium.RemoteControl.WebUI")]
     public class ObjectSelectorBase : IObjectSelector
     {
-        [ExposedProperty]
+        [LiveProperty]
         public object[] objects => GetObjects();
 
         protected virtual object[] GetObjects() => new object[0];
@@ -48,35 +48,35 @@ namespace Lilium.RemoteControl.UI
     }
 
     [Serializable]
-    [ExposedClass(HideInScene = true)]
+    [LiveClass(HideInScene = true)]
     [MovedFrom(true, "Lilium.RemoteControl.WebUI", "Lilium.RemoteControl.WebUI")]
     public class ObjectFactoryBase : IObjectFactory
     {
         [NonSerialized]
-        protected ExposedObjectContainer _container;
+        protected LiveObjectContainer _container;
 
         public object[] objects => GetObjects();
 
-        [ExposedProperty]
+        [LiveProperty]
         public string[] objectNames => GetObjectNames();
 
         protected virtual object[] GetObjects() => new object[0];
         protected virtual string[] GetObjectNames() => new string[0];
 
-        [ExposedProperty]
+        [LiveProperty]
         public int[] objectAccessLevels => GetObjectAccessLevels();
 
         protected virtual int[] GetObjectAccessLevels() => new int[0];
 
-        public virtual void Initialize(ExposedObjectContainer container)
+        public virtual void Initialize(LiveObjectContainer container)
         {
             _container = container;
         }
 
-        [ExposedFunction]
+        [LiveFunction]
         public virtual void CreateObject(int index) { }
 
-        [ExposedFunction]
+        [LiveFunction]
         public virtual void DestroyObject(string objectId) { }
 
         public virtual void RegisterPrefabs() { }
@@ -87,7 +87,7 @@ namespace Lilium.RemoteControl.UI
     /// Corresponds to the CategoryPage on the RemoteApp side.
     /// </summary>
     [Serializable]
-    [ExposedClass]
+    [LiveClass]
     [MovedFrom(true, "Lilium.RemoteControl.WebUI", "Lilium.RemoteControl.WebUI")]
     public class CategoryPage : IPage
     {
@@ -116,7 +116,7 @@ namespace Lilium.RemoteControl.UI
         {
             if (string.IsNullOrEmpty(category))
                 return new object[0];
-            var list = ExposedObjectRegistry.FindByCategory(category);
+            var list = LiveObjectRegistry.FindByCategory(category);
             var result = new object[list.Count];
             for (int i = 0; i < list.Count; i++)
                 result[i] = list[i].target;
@@ -129,7 +129,7 @@ namespace Lilium.RemoteControl.UI
     public class StandardObjectFactory : ObjectFactoryBase
     {
         [SerializeReference, Select]
-        public IExposedObjectFactory[] factories;
+        public ILiveObjectFactory[] factories;
 
         protected override object[] GetObjects()
         {
@@ -182,7 +182,7 @@ namespace Lilium.RemoteControl.UI
                 _container = host != null ? host.objectContainer : null;
                 if (_container == null)
                 {
-                    Debug.LogError("[RemoteControl] StandardObjectFactory.CreateObject: ExposedObjectContainer not found.");
+                    Debug.LogError("[RemoteControl] StandardObjectFactory.CreateObject: LiveObjectContainer not found.");
                     return;
                 }
             }
@@ -190,7 +190,7 @@ namespace Lilium.RemoteControl.UI
             GameObjectUtility.SetCurrentUndoGroup("Create Object");
             GameObjectUtility.RecordObjectUndo(_container.host, "Create Object");
 
-            IExposedObject created;
+            ILiveObject created;
             try
             {
                 created = factory.Create();
@@ -208,7 +208,7 @@ namespace Lilium.RemoteControl.UI
             }
 
             created.name = _GenerateUniqueName(created.name);
-            _container.AddExposedObject(created);
+            _container.AddLiveObject(created);
             created.OnEnable();
         }
 
@@ -226,8 +226,8 @@ namespace Lilium.RemoteControl.UI
             if (_DisposeFromContainer(objectId))
                 return;
 
-            // コンテナに見つからなかった場合、ExposedObjectから直接探す
-            if (ExposedObjectRegistry.TryFindById(objectId, out var exposed))
+            // コンテナに見つからなかった場合、LiveObjectから直接探す
+            if (LiveObjectRegistry.TryFindById(objectId, out var exposed))
             {
                 var target = exposed.target;
                 GameObject go = null;
@@ -252,7 +252,7 @@ namespace Lilium.RemoteControl.UI
 
 #if UNITY_EDITOR
         /// <summary>
-        /// Re-resolves the prefab GUID for each IExposedObjectFactory from its Asset.
+        /// Re-resolves the prefab GUID for each ILiveObjectFactory from its Asset.
         /// Invoked by UIDefinition.OnValidate.
         /// </summary>
         public void RefreshPrefabKeys()
@@ -296,11 +296,11 @@ namespace Lilium.RemoteControl.UI
             for (int i = 0; i < objects.Count; i++)
             {
                 if (objects[i] == null) continue;
-                if (objects[i].exposedObject?.id == objectId)
+                if (objects[i].liveObject?.id == objectId)
                 {
                     var obj = objects[i];
                     obj.OnDispose();
-                    _container.RemoveExposedObject(obj);
+                    _container.RemoveLiveObject(obj);
 
                     // Factoryに破棄を委譲
                     if (factories != null)

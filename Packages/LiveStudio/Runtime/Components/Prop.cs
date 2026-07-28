@@ -18,15 +18,15 @@ namespace Lilium.LiveStudio
     /// immediately.
     /// </summary>
     [DefaultExecutionOrder(20)] // after the avatar (VRCFTAvatar order 10) has posed its bones this frame
-    [ExposedClass("Prop", Category = "Avatar", Icon = "deployed_code")]
+    [LiveClass("Prop", Category = "Avatar", Icon = "deployed_code")]
     public class Prop : MonoBehaviour, IProp
     {
-        [ExposedProperty("name"), Hide]
+        [LiveProperty("name"), Hide]
         public string displayName => this.name;
 
         // Shared socket-attachment surface (socket name + offsets + follow math), exposed as a nested
         // "PropAttachment" under this component's @type.
-        [SerializeField, ExposedField]
+        [SerializeField, LiveField]
         public PropAttachment attachment = new PropAttachment();
 
         void Start()

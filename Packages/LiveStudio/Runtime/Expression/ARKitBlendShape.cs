@@ -15,7 +15,7 @@ namespace Lilium.LiveStudio
     /// Call <see cref="ARKitFaceSubsystem.GetBlendShapeCoefficients*"/> to get the current coefficients of each
     /// blend shape location for the current facial expression.
     /// </remarks>
-    [ExposedEnum]
+    [LiveEnum]
     public enum ARKitBlendShapeLocation
     {
         /// <summary>

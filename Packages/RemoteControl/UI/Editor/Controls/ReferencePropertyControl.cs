@@ -23,7 +23,7 @@ namespace Lilium.RemoteControl.UI.Editor
             // Foldout内のネストされたプロパティは_UpdateNestedで更新される
         }
 
-        public static void UpdateNestedPropertyValues(Foldout foldout, ExposedProperty? parentProp)
+        public static void UpdateNestedPropertyValues(Foldout foldout, LiveProperty? parentProp)
         {
             if (parentProp == null || !parentProp.HasValue) return;
 
@@ -56,7 +56,7 @@ namespace Lilium.RemoteControl.UI.Editor
         private VisualElement _CreateFoldout(PropertyControlContext ctx, int depth, string parentPath)
         {
             var foldout = new Foldout();
-            foldout.text = ctx.propType.exposedValueClass.typeName ?? ctx.propType.valueType.Name;
+            foldout.text = ctx.propType.liveValueClass.typeName ?? ctx.propType.valueType.Name;
             foldout.value = false;
             foldout.name = "prop-foldout";
 
@@ -68,7 +68,7 @@ namespace Lilium.RemoteControl.UI.Editor
                 return foldout;
             }
 
-            var childPropTypes = ctx.propType.exposedValueClass.propertyTypes;
+            var childPropTypes = ctx.propType.liveValueClass.propertyTypes;
             if (childPropTypes == null || childPropTypes.Length == 0)
                 return foldout;
 
@@ -99,7 +99,7 @@ namespace Lilium.RemoteControl.UI.Editor
                 nameLabel.name = "prop-name";
                 row.Add(nameLabel);
 
-                if (childPropType.exposedValueClass != null && !childPropType.isExposedObjectReference)
+                if (childPropType.liveValueClass != null && !childPropType.isLiveObjectReference)
                 {
                     var childCtx = new PropertyControlContext
                     {

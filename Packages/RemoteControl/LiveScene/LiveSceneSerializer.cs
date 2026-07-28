@@ -12,7 +12,7 @@ namespace Lilium.RemoteControl.LiveScene
 {
     /// <summary>
     /// シーン全体のシリアライズ/デシリアライズを担当するユーティリティクラス。
-    /// 依存グラフ走査は本体側 <see cref="ExposedObjectGraph"/> に分離済み。
+    /// 依存グラフ走査は本体側 <see cref="LiveObjectGraph"/> に分離済み。
     /// </summary>
     public static class LiveSceneSerializer
     {
@@ -26,7 +26,7 @@ namespace Lilium.RemoteControl.LiveScene
         // read best-effort. See FormatHeader for the shared policy. Incompatible breaks use a new format id.
         public const int MinSupportedVersion = 1;
 
-        public static string LiveSceneToJson(IReadOnlyList<ExposedObjectHandle> objects, IExposedObjectResolver resolver, SerializeMode filter = SerializeMode.Snapshot, ExcludeFilter exclude = ExcludeFilter.None, string baseSceneName = null)
+        public static string LiveSceneToJson(IReadOnlyList<LiveObjectHandle> objects, ILiveObjectResolver resolver, SerializeMode filter = SerializeMode.Snapshot, ExcludeFilter exclude = ExcludeFilter.None, string baseSceneName = null)
         {
             bool onlyDirty = filter == SerializeMode.Delta;
             bool excludeStatic = (exclude & ExcludeFilter.Static) != 0;
@@ -59,18 +59,18 @@ namespace Lilium.RemoteControl.LiveScene
             {
                 if (!_IsValidObject(obj, excludeStatic)) continue;
 
-                // ExposedObjectContainer はシーンJSONには書き出さない。
+                // LiveObjectContainer はシーンJSONには書き出さない。
                 // 1 live.json = 1 Container 前提のため、Container 自身のエントリは冗長。
                 // 配下のオブジェクトは @prefab 付き（@source なし）でトップレベルに直接書き出される。
-                if (obj.target is ExposedObjectContainer) continue;
+                if (obj.target is LiveObjectContainer) continue;
 
                 // Prefab追跡情報を収集 (値は Asset GUID)
-                if (obj.target is ExposedUnityObjectBase unityObj && !string.IsNullOrEmpty(unityObj.prefabSourceKey))
+                if (obj.target is LiveUnityObjectBase unityObj && !string.IsNullOrEmpty(unityObj.prefabSourceKey))
                 {
                     var prefabGo = LiveSceneObjectUtil.GetGameObject(obj);
                     if (prefabGo != null)
                     {
-                        goPrefabMap[ExposedObjectUtility.GetInstanceID(prefabGo)] = unityObj.prefabSourceKey;
+                        goPrefabMap[LiveObjectUtility.GetInstanceID(prefabGo)] = unityObj.prefabSourceKey;
                     }
                 }
 
@@ -80,17 +80,17 @@ namespace Lilium.RemoteControl.LiveScene
                 // fileid ベースの @ref に置き換わる。
                 fileResolver.SetCurrentRoot(obj);
                 // Scene scope のメンバーのみ live.json に書き出す (Project scope は settings.json へ別出力)。
-                var json = ExposedPropertySerializer.ToJson(obj, fileResolver, onlyDirty, forPersistence: true, scopeFilter: PersistScope.Scene);
+                var json = LivePropertySerializer.ToJson(obj, fileResolver, onlyDirty, forPersistence: true, scopeFilter: PersistScope.Scene);
                 var jObj = JObject.Parse(json);
 
                 // Prefab から生成された新規エントリは「存在そのものが default からの差分」なので
                 // Delta モードでもプロパティ差分の有無に関わらず必ず出力する。
                 var go = LiveSceneObjectUtil.GetGameObject(obj);
-                bool isPrefabNew = go != null && goPrefabMap.ContainsKey(ExposedObjectUtility.GetInstanceID(go));
+                bool isPrefabNew = go != null && goPrefabMap.ContainsKey(LiveObjectUtility.GetInstanceID(go));
 
                 // onlyDirty の場合、メタデータ(@type/@id/@name)以外のプロパティがなければスキップ
                 // （ただし prefab-new エントリは存在情報を保持するため例外）
-                if (onlyDirty && !isPrefabNew && !ExposedPropertySerializer.HasNonMetaProperties(jObj))
+                if (onlyDirty && !isPrefabNew && !LivePropertySerializer.HasNonMetaProperties(jObj))
                     continue;
 
                 // root が UnityEngine.Object なら FileRegistry に登録して他エントリから参照可能にする
@@ -100,7 +100,7 @@ namespace Lilium.RemoteControl.LiveScene
                     fileResolver.AssignFileId(rootUnityObj, registerPending: false);
                 }
 
-                if (isPrefabNew && goPrefabMap.TryGetValue(ExposedObjectUtility.GetInstanceID(go), out var pfKey))
+                if (isPrefabNew && goPrefabMap.TryGetValue(LiveObjectUtility.GetInstanceID(go), out var pfKey))
                 {
                     // Prefab 新規: @id を残したまま先頭に @prefab を差し込む (@source は付けない)。
                     // @prefab の値は prefab の Asset GUID。
@@ -127,31 +127,31 @@ namespace Lilium.RemoteControl.LiveScene
                 if (!processedSourceKeys.Add(pending.sourceKey)) continue;
                 if (pending.target == null) continue;
 
-                // 本体を書き出せる場合: ExposedClass があればプロパティを展開、なければメタだけ
-                var pendingExposedClass = ExposedClass.Find(pending.target.GetType());
+                // 本体を書き出せる場合: LiveClass があればプロパティを展開、なければメタだけ
+                var pendingLiveClass = LiveClass.Find(pending.target.GetType());
                 JObject entry;
 
-                if (pendingExposedClass != null)
+                if (pendingLiveClass != null)
                 {
                     // 再起点として、元の root/path をベースに展開する
                     // （ここで pending 内部の Unity.Object 参照が更なる pending として追加されうる）
                     var originalRoot = !string.IsNullOrEmpty(pending.rootId) ? resolver.FindById(pending.rootId) : null;
-                    var tempExposed = ExposedObjectHandle.CreateUnregistered(pendingExposedClass, pending.target);
+                    var tempLive = LiveObjectHandle.CreateUnregistered(pendingLiveClass, pending.target);
 
                     fileResolver.SetCurrentRoot(originalRoot);
                     fileResolver.SetBasePath(pending.path);
                     // pending も scene 全体の SerializeMode に従う。
-                    // ExposedObjectDefaultRegistry は target 参照で defaults を保持するため、
+                    // LiveObjectDefaultRegistry は target 参照で defaults を保持するため、
                     // inline child として事前に EnsureDefaultsCaptured/SetDefault されていれば
-                    // tempExposed 経由でも同じ defaults が参照でき、正しく delta が計算できる。
+                    // tempLive 経由でも同じ defaults が参照でき、正しく delta が計算できる。
                     // defaults 未登録の場合は _ToJsonDelta のフォールバックで「差分ゼロ＝
                     // metadata only」となり、HasNonMetaProperties チェックでスキップされる。
-                    var subJson = ExposedPropertySerializer.ToJson(tempExposed, fileResolver, isDirtyOnly: onlyDirty, forPersistence: true, scopeFilter: PersistScope.Scene);
+                    var subJson = LivePropertySerializer.ToJson(tempLive, fileResolver, isDirtyOnly: onlyDirty, forPersistence: true, scopeFilter: PersistScope.Scene);
                     entry = JObject.Parse(subJson);
 
                     // delta モードでメタデータ以外のプロパティを含まない pending は出力しない
                     // （root エントリの L61-62 と同じロジック）。
-                    if (onlyDirty && !ExposedPropertySerializer.HasNonMetaProperties(entry))
+                    if (onlyDirty && !LivePropertySerializer.HasNonMetaProperties(entry))
                         continue;
                 }
                 else
@@ -236,14 +236,14 @@ namespace Lilium.RemoteControl.LiveScene
         /// 指定 Container の現在の状態を、変更検出用の Delta JSON として生成する。
         /// LiveSceneToJson の Delta モード・既定フィルタを呼ぶ薄いラッパー。container が null なら null。
         /// </summary>
-        public static string BuildLiveSceneJson(ExposedObjectContainer container, string baseSceneName = null)
+        public static string BuildLiveSceneJson(LiveObjectContainer container, string baseSceneName = null)
         {
             if (container == null) return null;
             // Snapshot main + all merged sources so objects carried in from other scenes
             // (RemoteControlContainer worlds) are serialized into the single live scene file.
-            var allObjects = new List<IExposedObject>(container.EnumerateAllObjects());
+            var allObjects = new List<ILiveObject>(container.EnumerateAllObjects());
             return LiveSceneToJson(
-                ExposedObjectGraph.ResolveExposedObjects(allObjects, container),
+                LiveObjectGraph.ResolveLiveObjects(allObjects, container),
                 container,
                 SerializeMode.Delta,
                 ExcludeFilter.None,
@@ -275,7 +275,7 @@ namespace Lilium.RemoteControl.LiveScene
             }
         }
 
-        public static void LiveSceneFromJson(string json, IExposedObjectResolver resolver)
+        public static void LiveSceneFromJson(string json, ILiveObjectResolver resolver)
         {
             if (string.IsNullOrEmpty(json)) return;
 
@@ -293,7 +293,7 @@ namespace Lilium.RemoteControl.LiveScene
 
             // ファイル読み込みの起点では FileRegistry を初期化する。
             // 以降のエントリ走査で source-key ベースに再登録される。
-            ExposedObjectFileRegistry.Clear();
+            LiveObjectFileRegistry.Clear();
             // 同じく、未解決エントリの遅延バインドキューも読み込みごとに初期化する。
             // 解決できなかったエントリは以降のパスで再登録される。
             LiveScenePendingStore.Clear();
@@ -314,9 +314,9 @@ namespace Lilium.RemoteControl.LiveScene
         // Pass 1: @prefab 付き(かつ @source なし)エントリから Prefab インスタンス化
         // @prefab の値は Asset GUID。同じ GUID のエントリが複数あっても、求めるコンポーネントが
         // 既に「消費済み」なら新規GOを生成する。
-        // - 同一GO上の異なる型のExposedObject (例: TestAdditionsComponent + TestAdditionsComponent2) → 同じGOを共有
+        // - 同一GO上の異なる型のLiveObject (例: TestAdditionsComponent + TestAdditionsComponent2) → 同じGOを共有
         // - 同一プレハブの別インスタンス (例: 4個のCamera) → それぞれ別のGOを生成
-        private static void _InstantiatePrefabs(JArray jArray, IExposedObjectResolver resolver)
+        private static void _InstantiatePrefabs(JArray jArray, ILiveObjectResolver resolver)
         {
             var prefabInstances = new List<(string prefabKey, GameObject go)>();
             var claimedTargets = new HashSet<UnityEngine.Object>();
@@ -373,7 +373,7 @@ namespace Lilium.RemoteControl.LiveScene
                     prefabInstances.Add((prefabKey, go));
                 }
 
-                var wrapper = _RegisterComponentExposedObject(go, typeName, id, prefabKey, out var claimedTarget);
+                var wrapper = _RegisterComponentLiveObject(go, typeName, id, prefabKey, out var claimedTarget);
                 if (claimedTarget != null) claimedTargets.Add(claimedTarget);
                 if (wrapper != null)
                 {
@@ -381,7 +381,7 @@ namespace Lilium.RemoteControl.LiveScene
 
                     // 復元したプレハブ インスタンスはベースシーンの RemoteControlContainer に登録する。
                     // こうするとベースシーン リロード時にそのシーンと一緒に破棄され、常駐ホストの
-                    // ExposedObjectContainer に stale エントリが蓄積しない (リロードのたびに再生成される
+                    // LiveObjectContainer に stale エントリが蓄積しない (リロードのたびに再生成される
                     // ため)。シーンに RemoteControlContainer が無い構成 (テスト等) では従来どおり
                     // resolver 自身のコンテナにフォールバックする。
                     var sceneContainer = _ResolveSceneContainer();
@@ -390,7 +390,7 @@ namespace Lilium.RemoteControl.LiveScene
                         if (!sceneContainer._objects.Contains(wrapper))
                             sceneContainer._objects.Add(wrapper);
                     }
-                    else if (resolver is ExposedObjectContainer container)
+                    else if (resolver is LiveObjectContainer container)
                     {
                         if (!container._objects.Contains(wrapper))
                             container._objects.Add(wrapper);
@@ -405,7 +405,7 @@ namespace Lilium.RemoteControl.LiveScene
         // - POCO → GetOrCreate で Activator 生成
         // - Component 型 → シーン上を探す
         // - それでも無ければ typename フォールバック
-        private static void _RegisterRoots(JArray jArray, IExposedObjectResolver resolver)
+        private static void _RegisterRoots(JArray jArray, ILiveObjectResolver resolver)
         {
             foreach (var jEntry in jArray)
             {
@@ -419,12 +419,12 @@ namespace Lilium.RemoteControl.LiveScene
                 if (PendingPrefabStore.Contains(id)) continue;
                 if (resolver.FindById(id) != null) continue;
 
-                var exposedClass = ExposedClass.Find(typeName);
-                if (exposedClass == null) continue;
+                var liveClass = LiveClass.Find(typeName);
+                if (liveClass == null) continue;
 
                 var objectName = jObject["@name"]?.Value<string>();
 
-                // ExposedUnityObjectFactory登録済みのProxy/Reference型はシーン上に実体が存在するため、
+                // LiveUnityObjectFactory登録済みのProxy/Reference型はシーン上に実体が存在するため、
                 // Activator.CreateInstanceで空インスタンスを作らず、型名で既存オブジェクトを探索する
                 if (_IsFactoryRegisteredType(typeName))
                 {
@@ -432,25 +432,25 @@ namespace Lilium.RemoteControl.LiveScene
                     continue;
                 }
 
-                var created = ExposedObjectRegistry.GetOrCreate(id, exposedClass);
+                var created = LiveObjectRegistry.GetOrCreate(id, liveClass);
 
                 // MonoBehaviour/ScriptableObject型はGetOrCreateで生成できないため、
-                // シーン上のコンポーネントを検索してExposedObjectを作成
-                if (created == null && exposedClass.type != null
-                    && typeof(Component).IsAssignableFrom(exposedClass.type))
+                // シーン上のコンポーネントを検索してLiveObjectを作成
+                if (created == null && liveClass.type != null
+                    && typeof(Component).IsAssignableFrom(liveClass.type))
                 {
-                    var found = GameObject.FindObjectsByType(exposedClass.type, FindObjectsInactive.Include, FindObjectsSortMode.None);
+                    var found = GameObject.FindObjectsByType(liveClass.type, FindObjectsInactive.Include, FindObjectsSortMode.None);
                     foreach (var comp in found)
                     {
                         if (comp is Component c && (objectName == null || c.gameObject.name == objectName))
                         {
-                            ExposedObjectRegistry.GetOrCreate(id, exposedClass, comp);
+                            LiveObjectRegistry.GetOrCreate(id, liveClass, comp);
                             break;
                         }
                     }
                 }
 
-                // IDミスマッチのフォールバック: 型名（+@name）で既存ExposedObjectを検索
+                // IDミスマッチのフォールバック: 型名（+@name）で既存LiveObjectを検索
                 if (resolver.FindById(id) == null)
                 {
                     _TryResolveByTypeName(typeName, id, objectName);
@@ -460,7 +460,7 @@ namespace Lilium.RemoteControl.LiveScene
 
         // Pass 2.5: source-key → UnityEngine.Object を FileRegistry に登録する。
         // @source があれば rootId+path で解決 (path 空ならルート target)、無ければ @id から Registry 経由で解決。
-        private static void _RegisterFileObjects(JArray jArray, IExposedObjectResolver resolver)
+        private static void _RegisterFileObjects(JArray jArray, ILiveObjectResolver resolver)
         {
             foreach (var jEntry in jArray)
             {
@@ -475,7 +475,7 @@ namespace Lilium.RemoteControl.LiveScene
 
                 if (target != null)
                 {
-                    ExposedObjectFileRegistry.Register(entryKey, target);
+                    LiveObjectFileRegistry.Register(entryKey, target);
                 }
                 else if (_IsPendingEntry(jObject))
                 {
@@ -490,9 +490,9 @@ namespace Lilium.RemoteControl.LiveScene
         }
 
         // Pass 3: プロパティデシリアライズ
-        // pending 子参照 (@source に path あり) は FileRegistry の target に一時 ExposedObjectHandle で適用、
-        // それ以外は entryKey で登録済み ExposedObjectHandle を引いて適用する。
-        private static void _ApplyProperties(JArray jArray, IExposedObjectResolver resolver)
+        // pending 子参照 (@source に path あり) は FileRegistry の target に一時 LiveObjectHandle で適用、
+        // それ以外は entryKey で登録済み LiveObjectHandle を引いて適用する。
+        private static void _ApplyProperties(JArray jArray, ILiveObjectResolver resolver)
         {
             foreach (var jEntry in jArray)
             {
@@ -519,13 +519,13 @@ namespace Lilium.RemoteControl.LiveScene
                 if (PendingPrefabStore.Contains(entryKey)) continue;
 
                 // ルート上書き or 新規 (Pass 1/2 で登録済み): entryKey で引いて適用
-                var exposedObject = resolver.FindById(entryKey);
-                if (exposedObject != null)
+                var liveObject = resolver.FindById(entryKey);
+                if (liveObject != null)
                 {
                     // captureDefaults: false — デフォルトはContainer.Initializeで既にキャプチャ済み。
-                    // LiveSceneFromJson中にキャプチャすると、DeserializeExposedObject内のSetValueRawで
+                    // LiveSceneFromJson中にキャプチャすると、DeserializeLiveObject内のSetValueRawで
                     // 変更された値がデフォルトとして記録され、Delta保存で差分が検出されなくなる。
-                    ExposedPropertySerializer.FromJson(propertyJson, exposedObject.Value, resolver, captureDefaults: false);
+                    LivePropertySerializer.FromJson(propertyJson, liveObject.Value, resolver, captureDefaults: false);
                 }
                 else
                 {
@@ -543,12 +543,12 @@ namespace Lilium.RemoteControl.LiveScene
         // -------------------------------------------------------
 
         /// <summary>
-        /// ExposedUnityObjectFactory に登録済みの型名かを判定する。
+        /// LiveUnityObjectFactory に登録済みの型名かを判定する。
         /// Proxy/Reference型はシーンに実体が存在し、Activatorで生成しても空になるため区別が必要。
         /// </summary>
         private static bool _IsFactoryRegisteredType(string typeName)
         {
-            var registrations = ExposedUnityObjectFactory.GetRegisteredTypes();
+            var registrations = LiveUnityObjectFactory.GetRegisteredTypes();
             for (int i = 0; i < registrations.Count; i++)
             {
                 if (registrations[i].displayName == typeName) return true;
@@ -574,7 +574,7 @@ namespace Lilium.RemoteControl.LiveScene
             return fallback;
         }
 
-        private static bool _IsValidObject(ExposedObjectHandle obj, bool excludeStatic)
+        private static bool _IsValidObject(LiveObjectHandle obj, bool excludeStatic)
         {
             if (obj == null) return false;
             if (excludeStatic && obj.targetType != null && obj.targetType.isStatic) return false;
@@ -585,7 +585,7 @@ namespace Lilium.RemoteControl.LiveScene
             // Distinguish this from a pure proxy that legitimately never has a backing reference
             // (ReferenceEquals(reference, null) == true, e.g. id supplied from its own field) — those must
             // still be serialized. So require a real reference (not C# null) that is now destroyed.
-            if (obj.target is ExposedUnityObjectBase unityObj
+            if (obj.target is LiveUnityObjectBase unityObj
                 && !ReferenceEquals(unityObj.reference, null)  // a real reference was assigned...
                 && unityObj.reference == null)                 // ...but it is now a destroyed (fake null)
                 return false;
@@ -624,7 +624,7 @@ namespace Lilium.RemoteControl.LiveScene
         /// per-load id is not persisted — capturing the target's current values as the delta baseline
         /// first (mirrors the original Pass 3 pending handling).
         /// </summary>
-        internal static bool ApplyPendingEntry(string sourceKey, JObject entry, IExposedObjectResolver resolver)
+        internal static bool ApplyPendingEntry(string sourceKey, JObject entry, ILiveObjectResolver resolver)
         {
             if (entry == null || resolver == null) return false;
 
@@ -640,7 +640,7 @@ namespace Lilium.RemoteControl.LiveScene
             {
                 var handle = resolver.FindById(rootId);
                 if (handle == null) return false;
-                ExposedPropertySerializer.FromJson(entryJson, handle.Value, resolver, captureDefaults: false);
+                LivePropertySerializer.FromJson(entryJson, handle.Value, resolver, captureDefaults: false);
                 // Deferred apply of saved state, not a user edit: this lands after the load-time
                 // re-baseline, so adopt it as the user-change baseline or the quit check reports the
                 // restored values as unsaved changes.
@@ -651,64 +651,64 @@ namespace Lilium.RemoteControl.LiveScene
             var target = _ResolveObjectBySource(sourceKey, resolver);
             if (target == null) return false;
 
-            var pendingClass = ExposedClass.Find(typeName);
+            var pendingClass = LiveClass.Find(typeName);
             if (pendingClass == null) return false;
 
-            var tempExposed = ExposedObjectHandle.CreateUnregistered(pendingClass, target);
-            ExposedObjectDefaultRegistry.EnsureDefaultsCaptured(tempExposed, resolver);
-            ExposedPropertySerializer.FromJson(entryJson, tempExposed, resolver, captureDefaults: false);
+            var tempLive = LiveObjectHandle.CreateUnregistered(pendingClass, target);
+            LiveObjectDefaultRegistry.EnsureDefaultsCaptured(tempLive, resolver);
+            LivePropertySerializer.FromJson(entryJson, tempLive, resolver, captureDefaults: false);
             // Same as the root branch. The handle is unregistered, but the dirty baselines are keyed by
             // target reference, so this cleans the state the registered handle reports too.
-            tempExposed.MarkClean();
+            tempLive.MarkClean();
             return true;
         }
 
         /// <summary>
         /// @source (rootId と path を "." で結合した文字列) から UnityEngine.Object を引き当てる。
-        /// 登録済み ExposedObjectHandle を起点に PropertyPath で辿る。
+        /// 登録済み LiveObjectHandle を起点に PropertyPath で辿る。
         /// </summary>
-        private static UnityEngine.Object _ResolveObjectBySource(string sourceKey, IExposedObjectResolver resolver)
+        private static UnityEngine.Object _ResolveObjectBySource(string sourceKey, ILiveObjectResolver resolver)
         {
             _ParseSourceKey(sourceKey, out var rootId, out var path);
             if (string.IsNullOrEmpty(rootId)) return null;
 
-            var rootExposed = resolver.FindById(rootId);
-            if (rootExposed == null) return null;
-            var rootExposedObj = rootExposed.Value;
+            var rootLive = resolver.FindById(rootId);
+            if (rootLive == null) return null;
+            var rootLiveObj = rootLive.Value;
 
             // path が空なら root 自身を返す
             if (string.IsNullOrEmpty(path))
             {
-                return rootExposedObj.target as UnityEngine.Object;
+                return rootLiveObj.target as UnityEngine.Object;
             }
 
             // Named component element ("components[Chair]"): resolve by exposed type name rather than array
             // index, so a source key survives bundle re-export / component reordering. Numeric keys
             // ("components[0]", legacy files) and any other path shape fall through to index-based
             // FindProperty below.
-            if (_TryResolveNamedComponent(rootExposedObj, path, out var namedComponent))
+            if (_TryResolveNamedComponent(rootLiveObj, path, out var namedComponent))
             {
                 return namedComponent;
             }
 
-            var property = rootExposedObj.FindProperty(path);
+            var property = rootLiveObj.FindProperty(path);
             if (!property.HasValue) return null;
 
             return property.Value.GetValue() as UnityEngine.Object;
         }
 
-        // The exposed property name of the GameObject wrapper's component list (see ExposedGameObject).
+        // The exposed property name of the GameObject wrapper's component list (see LiveGameObject).
         private const string kComponentsPrefix = "components[";
 
         /// <summary>
         /// Resolves a single named component element path ("components[&lt;TypeName&gt;]") against the root's
-        /// GameObject by matching each component's exposed type name (then its [FormerlyExposedAs] former
+        /// GameObject by matching each component's exposed type name (then its [FormerlyNamedAs] former
         /// names, mirroring AssetStateSnapshot). Returns false — so the caller falls back to index-based
         /// resolution — for numeric keys (legacy "components[0]"), multi-segment paths, or non-GameObject
         /// roots. First match wins when several components share a type (same constraint as the state
         /// snapshot envelope).
         /// </summary>
-        private static bool _TryResolveNamedComponent(ExposedObjectHandle root, string path, out UnityEngine.Object result)
+        private static bool _TryResolveNamedComponent(LiveObjectHandle root, string path, out UnityEngine.Object result)
         {
             result = null;
             if (!path.StartsWith(kComponentsPrefix, StringComparison.Ordinal)) return false;
@@ -733,15 +733,15 @@ namespace Lilium.RemoteControl.LiveScene
             {
                 var comp = components[i];
                 if (comp == null) continue;
-                var exposedClass = ExposedClass.Find(comp.GetType());
-                if (exposedClass != null && exposedClass.typeName == key) { result = comp; return true; }
+                var liveClass = LiveClass.Find(comp.GetType());
+                if (liveClass != null && liveClass.typeName == key) { result = comp; return true; }
             }
-            // Former type names fallback (component type renamed via [FormerlyExposedAs]).
+            // Former type names fallback (component type renamed via [FormerlyNamedAs]).
             for (int i = 0; i < components.Length; i++)
             {
                 var comp = components[i];
                 if (comp == null) continue;
-                var formers = ExposedClass.Find(comp.GetType())?.formerTypeNames;
+                var formers = LiveClass.Find(comp.GetType())?.formerTypeNames;
                 if (formers == null) continue;
                 for (int f = 0; f < formers.Length; f++)
                 {
@@ -790,15 +790,15 @@ namespace Lilium.RemoteControl.LiveScene
 
         /// <summary>
         /// IDで解決できなかったオブジェクトを型名（+@name）で検索し、
-        /// 一致するExposedObjectが見つかればReplaceIdでIDを復元する。
-        /// ExposedUnityObjectProxy等がPlay mode再入時に新しいGUIDを生成するケースに対応。
+        /// 一致するLiveObjectが見つかればReplaceIdでIDを復元する。
+        /// LiveUnityObjectProxy等がPlay mode再入時に新しいGUIDを生成するケースに対応。
         /// </summary>
         private static void _TryResolveByTypeName(string typeName, string savedId, string objectName)
         {
-            ExposedObjectHandle? match = null;
+            LiveObjectHandle? match = null;
             int matchCount = 0;
 
-            foreach (var instance in ExposedObjectRegistry.instances)
+            foreach (var instance in LiveObjectRegistry.instances)
             {
                 if (!instance.isValid) continue;
                 if (instance.targetTypeName != typeName) continue;
@@ -813,14 +813,14 @@ namespace Lilium.RemoteControl.LiveScene
             // 一意に特定できた場合のみIDを復元（曖昧な場合は安全のためスキップ）
             if (matchCount == 1 && match != null)
             {
-                if (match.Value.target is ExposedUnityObjectBase wrapper)
+                if (match.Value.target is LiveUnityObjectBase wrapper)
                 {
                     wrapper.ReplaceId(savedId);
                 }
                 else
                 {
-                    // 非UnityObject型: ExposedObjectのIDを直接更新（struct なので Registry 経由で再キー）
-                    ExposedObjectRegistry.ReplaceId(match.Value, savedId);
+                    // 非UnityObject型: LiveObjectのIDを直接更新（struct なので Registry 経由で再キー）
+                    LiveObjectRegistry.ReplaceId(match.Value, savedId);
                 }
             }
             else if (matchCount > 1 && !string.IsNullOrEmpty(objectName))
@@ -836,12 +836,12 @@ namespace Lilium.RemoteControl.LiveScene
         }
 
         /// <summary>
-        /// Prefabインスタンス上のコンポーネントからExposedObjectを生成・登録する。
-        /// Component型の場合はExposedObjectのみ作成。
-        /// ExposedUnityObjectBase派生型（Proxy/Reference）の場合はFactoryでラッパーも生成して返す。
+        /// Prefabインスタンス上のコンポーネントからLiveObjectを生成・登録する。
+        /// Component型の場合はLiveObjectのみ作成。
+        /// LiveUnityObjectBase派生型（Proxy/Reference）の場合はFactoryでラッパーも生成して返す。
         /// </summary>
         /// <param name="claimedTarget">このエントリで「消費」したUnityObject（Component または GameObject）。Pass 1での重複検出に使用。</param>
-        /// <returns>コンテナに追加すべきExposedUnityObjectBase。Component型の場合はnull。</returns>
+        /// <returns>コンテナに追加すべきLiveUnityObjectBase。Component型の場合はnull。</returns>
         /// <summary>
         /// Instantiates one deferred @prefab entry (queued by Pass 1 because its prefab was not resolvable
         /// then) now that <paramref name="prefab"/> is available: registers a fresh instance under the saved
@@ -874,7 +874,7 @@ namespace Lilium.RemoteControl.LiveScene
             if (sceneContainer != null)
                 UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(go, sceneContainer.gameObject.scene);
 
-            var wrapper = _RegisterComponentExposedObject(go, typeName, id, prefabKey, out _);
+            var wrapper = _RegisterComponentLiveObject(go, typeName, id, prefabKey, out _);
             if (wrapper == null)
             {
                 UnityEngine.Object.Destroy(go);
@@ -896,34 +896,34 @@ namespace Lilium.RemoteControl.LiveScene
             var handle = resolver.FindById(id);
             if (handle != null)
             {
-                ExposedPropertySerializer.FromJson(jObject.ToString(), handle.Value, resolver, captureDefaults: false);
+                LivePropertySerializer.FromJson(jObject.ToString(), handle.Value, resolver, captureDefaults: false);
                 LiveScenePendingStore.ApplyFor(id, resolver);
                 handle.Value.MarkClean();
             }
             return true;
         }
 
-        private static ExposedUnityObjectBase _RegisterComponentExposedObject(GameObject go, string typeName, string id, string prefabKey, out UnityEngine.Object claimedTarget)
+        private static LiveUnityObjectBase _RegisterComponentLiveObject(GameObject go, string typeName, string id, string prefabKey, out UnityEngine.Object claimedTarget)
         {
             claimedTarget = null;
-            var exposedClass = ExposedClass.Find(typeName);
-            if (exposedClass == null || exposedClass.type == null) return null;
+            var liveClass = LiveClass.Find(typeName);
+            if (liveClass == null || liveClass.type == null) return null;
 
-            // Case 1: ExposedClass型がComponent（直接Componentに[ExposedClass]がついている場合）
-            if (typeof(Component).IsAssignableFrom(exposedClass.type))
+            // Case 1: LiveClass型がComponent（直接Componentに[LiveClass]がついている場合）
+            if (typeof(Component).IsAssignableFrom(liveClass.type))
             {
-                var component = go.GetComponent(exposedClass.type);
+                var component = go.GetComponent(liveClass.type);
                 if (component != null)
                 {
-                    ExposedObjectRegistry.GetOrCreate(id, exposedClass, component);
+                    LiveObjectRegistry.GetOrCreate(id, liveClass, component);
                     claimedTarget = component;
                 }
                 return null;
             }
 
-            // Case 2: ExposedUnityObjectBase派生型（ExposedCamera等のProxy/Reference型）
-            // ExposedUnityObjectFactoryからdisplayNameが一致する登録を探す
-            var registrations = ExposedUnityObjectFactory.GetRegisteredTypes();
+            // Case 2: LiveUnityObjectBase派生型（LiveCamera等のProxy/Reference型）
+            // LiveUnityObjectFactoryからdisplayNameが一致する登録を探す
+            var registrations = LiveUnityObjectFactory.GetRegisteredTypes();
             for (int i = 0; i < registrations.Count; i++)
             {
                 if (registrations[i].displayName != typeName) continue;
@@ -939,10 +939,10 @@ namespace Lilium.RemoteControl.LiveScene
 
                 if (target == null) continue;
 
-                // ファクトリでラッパー生成（コンストラクタで自動生成IDのExposedObjectが作られる）
+                // ファクトリでラッパー生成（コンストラクタで自動生成IDのLiveObjectが作られる）
                 var wrapper = registration.factory(target);
 
-                // 自動生成のExposedObjectを破棄し、保存済みIDで再登録
+                // 自動生成のLiveObjectを破棄し、保存済みIDで再登録
                 wrapper.ReplaceId(id);
 
                 // Prefab復元時はソースキー (Asset GUID) を設定（LiveSceneToJsonで@op/@prefab付きで出力するため）
@@ -958,18 +958,18 @@ namespace Lilium.RemoteControl.LiveScene
 
         /// <summary>
         /// typeNameから、Pass 1で「ターゲットが既に消費されたか」を判定するためのUnityObject型を返す。
-        /// ExposedClassがComponent派生ならその型、Proxy/Reference型なら登録の componentType を返す。
+        /// LiveClassがComponent派生ならその型、Proxy/Reference型なら登録の componentType を返す。
         /// 該当するUnityObject型が無い場合（POCO等）は null を返す。
         /// </summary>
         private static Type _ResolveRequiredUnityObjectType(string typeName)
         {
-            var exposedClass = ExposedClass.Find(typeName);
-            if (exposedClass != null && exposedClass.type != null
-                && typeof(UnityEngine.Object).IsAssignableFrom(exposedClass.type))
+            var liveClass = LiveClass.Find(typeName);
+            if (liveClass != null && liveClass.type != null
+                && typeof(UnityEngine.Object).IsAssignableFrom(liveClass.type))
             {
-                return exposedClass.type;
+                return liveClass.type;
             }
-            var registrations = ExposedUnityObjectFactory.GetRegisteredTypes();
+            var registrations = LiveUnityObjectFactory.GetRegisteredTypes();
             for (int i = 0; i < registrations.Count; i++)
             {
                 if (registrations[i].displayName == typeName)

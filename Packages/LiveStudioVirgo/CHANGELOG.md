@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- `FusionRequestSystem` calls `/live/function/...`, following RemoteControl's `/exposed/*` → `/live/*` route rename.
+
 ## [0.25.1] - 2026-07-20
 <!-- changelog-sha: dc55cba22927641c3ad952c44a494539b13e05dc -->
 

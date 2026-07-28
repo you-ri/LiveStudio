@@ -9,22 +9,22 @@ using Lilium.RemoteControl;
 namespace Lilium.LiveStudio
 {
     [CreateAssetMenu(fileName = "AvatarExpressionConfig", menuName = "LiveStudio/AvatarExpressionConfig")]
-    [ExposedClass(Icon = "tune")]
+    [LiveClass(Icon = "tune")]
     [MovedFrom(false, "Lilium.Virgo.Studio", "Lilium.Virgo.Studio2", null)]
     public class AvatarExpressionConfig : ScriptableObject
     {
-        [ExposedField]
+        [LiveField]
         public ARKitWeightAdjustmentData sourceWeightAdjustments = ARKitWeightAdjustmentData.Default;
 
         // モデルによっては左右の瞬きウェイトの精度に偏りが出て非対称なまばたきになるため、
         // 有効時は左右の瞬きウェイトを小さい方に揃えて同期させる。
-        [ExposedField]
+        [LiveField]
         public bool syncBlink = false;
 
-        [ExposedField]
+        [LiveField]
         public ExpressionData neutralExpression = ExpressionData.Default;
 
-        [ExposedField]
+        [LiveField]
         public ExpressionData[] expressions = new ExpressionData[0];
 
         public static void Evaluate(in ARKitWeightData arkitWeightData, AvatarExpressionConfig expressionConfig, ref ExpressionWorkData workData)

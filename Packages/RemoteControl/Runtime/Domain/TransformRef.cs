@@ -9,10 +9,10 @@ using UnityEngine;
 namespace Lilium.RemoteControl
 {
     /// <summary>
-    /// 親 ExposedObjectHandle の配下にある Transform への相対参照。
+    /// 親 LiveObjectHandle の配下にある Transform への相対参照。
     ///
-    /// `_ownerName` は親 ExposedObjectHandle の表示 name (= 紐づく GameObject 名) を保持する source of truth。
-    /// 解決は <see cref="ExposedObjectRegistry"/> 配下を name で検索することで行うため、
+    /// `_ownerName` は親 LiveObjectHandle の表示 name (= 紐づく GameObject 名) を保持する source of truth。
+    /// 解決は <see cref="LiveObjectRegistry"/> 配下を name で検索することで行うため、
     /// 起動時に対象がまだ未登録であっても name 文字列だけは復元され、後続フレームで
     /// 対象が登録され次第 <see cref="Resolve"/> / <see cref="ResolveOwner"/> が成功するようになる。
     ///
@@ -22,11 +22,11 @@ namespace Lilium.RemoteControl
     /// - <see cref="SearchType.Name"/>: 親 root 配下を再帰的に探索し、同名の Transform を first-match で返す。
     /// </summary>
     [Serializable]
-    [ExposedClass]
-    public class TransformRef : IExposedDeserializeCallback
+    [LiveClass]
+    public class TransformRef : ILiveDeserializeCallback
     {
         /// <summary>_transformPath の解釈方法。</summary>
-        [ExposedEnum]
+        [LiveEnum]
         public enum SearchType
         {
             /// <summary>親 root からの相対 path で厳密検索する (旧来の挙動、デフォルト)。</summary>
@@ -35,16 +35,16 @@ namespace Lilium.RemoteControl
             Name,
         }
 
-        [SerializeField, ExposedField, Hide]
-        [FormerlyExposedAs("ownerName")]
+        [SerializeField, LiveField, Hide]
+        [FormerlyNamedAs("ownerName")]
         string _ownerName;
 
-        [SerializeField, ExposedField, Hide]
-        [FormerlyExposedAs("transformPath")]
+        [SerializeField, LiveField, Hide]
+        [FormerlyNamedAs("transformPath")]
         string _transformPath;
 
-        [SerializeField, ExposedField, Hide]
-        [FormerlyExposedAs("searchType")]
+        [SerializeField, LiveField, Hide]
+        [FormerlyNamedAs("searchType")]
         SearchType _searchType = SearchType.Path;
 
         /// <summary>
@@ -53,11 +53,11 @@ namespace Lilium.RemoteControl
         public event Action onChanged;
 
         [NonSerialized]
-        ExposedUnityObjectBase _self;
+        LiveUnityObjectBase _self;
 
         public TransformRef() { }
 
-        /// <param name="ownerName">親 ExposedObjectHandle の表示 name (= 紐づく GameObject 名)。</param>
+        /// <param name="ownerName">親 LiveObjectHandle の表示 name (= 紐づく GameObject 名)。</param>
         /// <param name="transformPath">searchType に応じて解釈される値: Path モードなら親 root からの相対 path (例: "Armature/Hips/Head")、Name モードなら検索対象の name。</param>
         /// <param name="searchType">検索方式。デフォルトは Path (旧挙動互換)。</param>
         public TransformRef(string ownerName, string transformPath, SearchType searchType = SearchType.Path)
@@ -68,10 +68,10 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// この TransformRef を保持している ExposedObjectHandle (= self / 宿主) を紐付ける。
+        /// この TransformRef を保持している LiveObjectHandle (= self / 宿主) を紐付ける。
         /// <see cref="availableOwnerNames"/> の循環除外 (self + 子孫をドロップダウンから外す) のためだけに使用する。
         /// </summary>
-        public void SetSelf(ExposedUnityObjectBase self)
+        public void SetSelf(LiveUnityObjectBase self)
         {
             _self = self;
         }
@@ -83,7 +83,7 @@ namespace Lilium.RemoteControl
         public bool isEmpty => string.IsNullOrEmpty(_ownerName) && string.IsNullOrEmpty(_transformPath);
 
         /// <summary>
-        /// ownerName が指定されているか (= 親 ExposedObjectHandle の解決を意図しているか)。
+        /// ownerName が指定されているか (= 親 LiveObjectHandle の解決を意図しているか)。
         /// 「指定済みだが ResolveOwner が null を返す」= 未登録の未解決状態を判定するために使う。
         /// </summary>
         public bool hasOwner => !string.IsNullOrEmpty(_ownerName);
@@ -92,18 +92,18 @@ namespace Lilium.RemoteControl
         /// 現在の設定で参照先 Transform を解決できるか。
         /// RemoteApp 側が「target 有効か」を判定するための公開フラグ。
         /// false のときは ResolveOwner / Resolve のいずれかが失敗している
-        /// (= 親 ExposedObjectHandle 未登録、または bone path 未解決)。
+        /// (= 親 LiveObjectHandle 未登録、または bone path 未解決)。
         /// </summary>
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public bool isResolved => Resolve() != null;
 
         /// <summary>
-        /// 親 ExposedObjectHandle の表示 name。永続化はこのプロパティが直接担う。
+        /// 親 LiveObjectHandle の表示 name。永続化はこのプロパティが直接担う。
         /// 起動時に対象がまだ Registry に登録されていなくても、name 文字列自体は保存・復元され、
         /// 登録され次第 Resolve が解決できるようになる。
-        /// RemoteApp からは StringSelector によるドロップダウンで親 ExposedObjectHandle の name を選択する。
+        /// RemoteApp からは StringSelector によるドロップダウンで親 LiveObjectHandle の name を選択する。
         /// </summary>
-        [ExposedProperty]
+        [LiveProperty]
         [StringSelector(nameof(availableOwnerNames))]
         public string ownerName
         {
@@ -118,11 +118,11 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// 親 ExposedObjectHandle の候補となる name 一覧。
-        /// 空文字 (ルート = 親なし) を先頭に、ExposedObjectHandle として登録済みの UnityObject 系の名前を列挙する。
+        /// 親 LiveObjectHandle の候補となる name 一覧。
+        /// 空文字 (ルート = 親なし) を先頭に、LiveObjectHandle として登録済みの UnityObject 系の名前を列挙する。
         /// self 自身と self の子孫は循環防止のため除外する (除外判定には引き続き Registry の id を内部利用)。
         /// </summary>
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public string[] availableOwnerNames
         {
             get
@@ -133,11 +133,11 @@ namespace Lilium.RemoteControl
                     : null;
 
                 var names = new List<string> { string.Empty };
-                foreach (var obj in ExposedObjectRegistry.instances)
+                foreach (var obj in LiveObjectRegistry.instances)
                 {
                     if (obj == null || !obj.isValid) continue;
                     if (excluded != null && excluded.Contains(obj.id)) continue;
-                    if (!(obj.target is ExposedUnityObjectBase proxy)) continue;
+                    if (!(obj.target is LiveUnityObjectBase proxy)) continue;
                     if (proxy.reference == null) continue;
                     var name = proxy.reference.name;
                     if (string.IsNullOrEmpty(name)) continue;
@@ -161,7 +161,7 @@ namespace Lilium.RemoteControl
             while (stack.Count > 0)
             {
                 var cur = stack.Pop();
-                foreach (var child in ExposedObjectRegistry.GetChildren(cur))
+                foreach (var child in LiveObjectRegistry.GetChildren(cur))
                 {
                     if (child == null || !child.isValid) continue;
                     if (result.Add(child.id))
@@ -183,7 +183,7 @@ namespace Lilium.RemoteControl
         ///   スラッシュを含む値は path とみなしてそのまま格納する。
         ///   root 未解決や子孫未発見の場合は生値のまま保持し、Resolve の name fallback に委ねる。
         /// </summary>
-        [ExposedProperty]
+        [LiveProperty]
         [StringSelector(nameof(availableTransformNames))]
         public string transformName
         {
@@ -230,7 +230,7 @@ namespace Lilium.RemoteControl
         /// 内部 path の source of truth としての永続化プロパティ。
         /// UI には露出せず (<see cref="Hide"/>)、JSON への読み書きだけを担う。
         /// </summary>
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public string transformPath
         {
             get => _transformPath ?? string.Empty;
@@ -248,7 +248,7 @@ namespace Lilium.RemoteControl
         /// _transformPath は保持されるため、Path 形式の path が Name モードでヒットしない場合は
         /// Resolve のフォールバックで root.transform に戻る。
         /// </summary>
-        [ExposedProperty]
+        [LiveProperty]
         public SearchType searchType
         {
             get => _searchType;
@@ -260,7 +260,7 @@ namespace Lilium.RemoteControl
             }
         }
 
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public string[] availableTransformNames
         {
             get
@@ -303,15 +303,15 @@ namespace Lilium.RemoteControl
 
         /// <summary>
         /// _ownerName から親 GameObject を取得する。
-        /// ExposedObjectRegistry を name で検索し、ヒットした ExposedObjectHandle の target から GameObject を抽出する。
+        /// LiveObjectRegistry を name で検索し、ヒットした LiveObjectHandle の target から GameObject を抽出する。
         /// 未登録 / name 不一致のときは null を返す。
         /// </summary>
         public GameObject ResolveOwner()
         {
             if (string.IsNullOrEmpty(_ownerName)) return null;
-            var parentExposed = _FindExposedByName(_ownerName);
-            if (parentExposed == null) return null;
-            return _ExtractGameObject(parentExposed.Value.target);
+            var parentLive = _FindLiveByName(_ownerName);
+            if (parentLive == null) return null;
+            return _ExtractGameObject(parentLive.Value.target);
         }
 
         /// <summary>
@@ -358,7 +358,7 @@ namespace Lilium.RemoteControl
 
         /// <summary>
         /// 指定 Transform を指すように参照を初期化する。
-        /// t の祖先を辿り、ExposedObjectRegistry に登録済みの ExposedObjectHandle (GameObject を伴うもの) を
+        /// t の祖先を辿り、LiveObjectRegistry に登録済みの LiveObjectHandle (GameObject を伴うもの) を
         /// 親として特定し、その GameObject 名を ownerName にセットする。
         /// _transformPath は target が親 root と同じなら空、子孫なら root からの相対 path (Path モード) または
         /// leaf name (Name モード) を格納する。
@@ -384,7 +384,7 @@ namespace Lilium.RemoteControl
                 var go = cur.gameObject;
                 if (selfGameObject != null && go == selfGameObject) continue;
 
-                var exposed = _FindExposedByGameObject(go);
+                var exposed = _FindLiveByGameObject(go);
                 if (exposed == null) continue;
 
                 if (silent)
@@ -408,14 +408,14 @@ namespace Lilium.RemoteControl
 
         /// <summary>
         /// 任意のオブジェクトから GameObject を取り出す。
-        /// GameObject / Component / ExposedUnityObjectBase (reference 経由) に対応。
+        /// GameObject / Component / LiveUnityObjectBase (reference 経由) に対応。
         /// </summary>
         static GameObject _ExtractGameObject(object obj)
         {
             if (obj == null) return null;
             if (obj is GameObject go) return go;
             if (obj is Component comp) return comp.gameObject;
-            if (obj is ExposedUnityObjectBase proxy)
+            if (obj is LiveUnityObjectBase proxy)
             {
                 var reference = proxy.reference;
                 if (reference is GameObject pgo) return pgo;
@@ -425,20 +425,20 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// GameObject に対応する ExposedObjectHandle を Registry から検索する。
+        /// GameObject に対応する LiveObjectHandle を Registry から検索する。
         /// Proxy 系 (target=Proxy) と直 UnityObject 系 (target=UnityObject) の両方を拾う。
         /// </summary>
-        static ExposedObjectHandle? _FindExposedByGameObject(GameObject go)
+        static LiveObjectHandle? _FindLiveByGameObject(GameObject go)
         {
             if (go == null) return null;
 
-            var direct = ExposedObjectRegistry.FindByTarget(go);
+            var direct = LiveObjectRegistry.FindByTarget(go);
             if (direct != null) return direct;
 
-            foreach (var obj in ExposedObjectRegistry.instances)
+            foreach (var obj in LiveObjectRegistry.instances)
             {
                 if (!obj.isValid) continue;
-                if (obj.target is ExposedUnityObjectBase proxy)
+                if (obj.target is LiveUnityObjectBase proxy)
                 {
                     var reference = proxy.reference;
                     if (reference is GameObject pgo && pgo == go) return obj;
@@ -449,15 +449,15 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// name から owner として扱える ExposedObjectHandle を検索する。
-        /// ExposedUnityObjectBase 派生 (proxy) と、target が直接 GameObject/Component の
-        /// ExposedObjectHandle (例: <c>[ExposedClass]</c> を持つ MonoBehaviour) の両方を対象にする。
-        /// 比較は <see cref="ExposedObjectHandle.name"/> ベースなので Unity の GameObject 名と一致する。
+        /// name から owner として扱える LiveObjectHandle を検索する。
+        /// LiveUnityObjectBase 派生 (proxy) と、target が直接 GameObject/Component の
+        /// LiveObjectHandle (例: <c>[LiveClass]</c> を持つ MonoBehaviour) の両方を対象にする。
+        /// 比較は <see cref="LiveObjectHandle.name"/> ベースなので Unity の GameObject 名と一致する。
         /// </summary>
-        static ExposedObjectHandle? _FindExposedByName(string name)
+        static LiveObjectHandle? _FindLiveByName(string name)
         {
             if (string.IsNullOrEmpty(name)) return null;
-            foreach (var obj in ExposedObjectRegistry.instances)
+            foreach (var obj in LiveObjectRegistry.instances)
             {
                 if (!obj.isValid) continue;
                 if (obj.name != name) continue;
@@ -470,7 +470,7 @@ namespace Lilium.RemoteControl
         // Fields are written via reflection during JSON deserialization, which bypasses the
         // property setters that normally fire onChanged. Re-fire here so consumers (parent
         // attachment, RemoteApp UI) can react to restored values exactly once per load.
-        void IExposedDeserializeCallback.OnAfterExposedDeserialize()
+        void ILiveDeserializeCallback.OnAfterLiveDeserialize()
         {
             onChanged?.Invoke();
         }

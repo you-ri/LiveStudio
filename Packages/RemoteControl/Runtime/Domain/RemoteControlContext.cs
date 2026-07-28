@@ -11,9 +11,9 @@ namespace Lilium.RemoteControl.Server
     public class RemoteControlContext
     {
         /// <summary>
-        /// ExposedObjectContainer this server operates on.
+        /// LiveObjectContainer this server operates on.
         /// </summary>
-        public ExposedObjectContainer objectContainer { get; }
+        public LiveObjectContainer objectContainer { get; }
 
         /// <summary>
         /// Event queue dedicated to this server instance.
@@ -43,8 +43,8 @@ namespace Lilium.RemoteControl.Server
         /// Create a RemoteControlContext.
         /// </summary>
         /// <param name="scope">Scope identifier (default: "default").</param>
-        /// <param name="container">ExposedObjectContainer (optional).</param>
-        public RemoteControlContext(string scope = "default", ExposedObjectContainer container = null)
+        /// <param name="container">LiveObjectContainer (optional).</param>
+        public RemoteControlContext(string scope = "default", LiveObjectContainer container = null)
         {
             this.objectContainer = container;
             this.scope = scope;

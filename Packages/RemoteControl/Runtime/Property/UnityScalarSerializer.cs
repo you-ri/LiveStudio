@@ -6,7 +6,7 @@ namespace Lilium.RemoteControl
 {
     /// <summary>
     /// Unity 値型(Color/Vector/Quaternion/Rect/TransformValue/Texture2D)を JToken へ
-    /// 変換する純粋なリーフ直列化。ExposedPropertySerializer から分離(自己完結・依存なし)。
+    /// 変換する純粋なリーフ直列化。LivePropertySerializer から分離(自己完結・依存なし)。
     /// </summary>
     internal static class UnityScalarSerializer
     {

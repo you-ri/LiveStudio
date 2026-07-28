@@ -9,7 +9,7 @@ namespace Lilium.LiveStudio
 {
     /// <summary>
     /// Drives an exposed property of a target object (addressed by its stable
-    /// <see cref="ExposedObjectRegistry"/> id) from the input — the generic counterpart of
+    /// <see cref="LiveObjectRegistry"/> id) from the input — the generic counterpart of
     /// <see cref="SetActiveOperation"/>, which is hard-wired to <c>GameObject.activeSelf</c>. Created from the
     /// remote app's "bind to key" affordance next to a control, so the control's owning object
     /// (<see cref="targetId"/>) and member (<see cref="propertyPath"/>) are known at creation.
@@ -25,29 +25,29 @@ namespace Lilium.LiveStudio
     /// <see cref="Apply"/> is a no-op — distinct from <see cref="OperationSet.enabled"/>.
     /// </summary>
     [Serializable]
-    [ExposedClass(Category = "Operation", Icon = "toggle_on")]
+    [LiveClass(Category = "Operation", Icon = "toggle_on")]
     [MovedFrom(false, null, null, "SetPropertyAction")]
-    [FormerlyExposedAs("SetPropertyAction")]
+    [FormerlyNamedAs("SetPropertyAction")]
     public class SetPropertyOperation : OperationBase
     {
         /// <summary>Stable id of the exposed object that owns the property.</summary>
-        [ExposedField]
+        [LiveField]
         public string targetId = string.Empty;
 
         /// <summary>Path of the property to drive. Stored in the remote app's transport (slash) form so it
         /// round-trips with the bind UI; e.g. "useSpout" or, for a keyed array element,
         /// "expressions/Joy/weight". Resolved via <see cref="_ResolvePath"/> just before lookup.</summary>
-        [ExposedField]
+        [LiveField]
         public string propertyPath = string.Empty;
 
         // 解決結果のキャッシュ。Apply は毎フレーム呼ばれるが、FindProperty の walk は要素 path の文字列確保
-        // (PropertyPath.AppendIndex) や GameObject プロキシの components 配列確保 (ExposedGameObject.components)
-        // を伴うため、targetId / propertyPath と解決元 handle・キー配列世代が不変な間は解決済み ExposedProperty を
+        // (PropertyPath.AppendIndex) や GameObject プロキシの components 配列確保 (LiveGameObject.components)
+        // を伴うため、targetId / propertyPath と解決元 handle・キー配列世代が不変な間は解決済み LiveProperty を
         // 再利用して walk 自体を毎フレーム行わない。[NonSerialized] なのでシリアライズ / Domain Reload 復元時は
-        // 既定 (null) に戻り次回 Apply で必ず再解決される。[ExposedField] でないため RemoteControl 非露出
+        // 既定 (null) に戻り次回 Apply で必ず再解決される。[LiveField] でないため RemoteControl 非露出
         // (scene.json / REST 応答は不変)。Apply は LateUpdate (メインスレッド) からのみ触る (valid getter は非依存)。
-        [NonSerialized] private ExposedProperty? _cachedProperty;
-        [NonSerialized] private ExposedObjectHandle _cachedHandle;
+        [NonSerialized] private LiveProperty? _cachedProperty;
+        [NonSerialized] private LiveObjectHandle _cachedHandle;
         [NonSerialized] private string _cachedTargetId;
         [NonSerialized] private string _cachedPropertyPath;
         [NonSerialized] private int _cachedGeneration;
@@ -58,20 +58,20 @@ namespace Lilium.LiveStudio
 
         // Normalize the stored path (slash transport form) to the DotBracket form FindProperty expects.
         // A no-op for bare names ("useSpout") and DotBracket paths without slashes; converts a slash key
-        // path "expressions/Joy/weight" to "expressions.Joy.weight" so it resolves by [ExposedKey].
+        // path "expressions/Joy/weight" to "expressions.Joy.weight" so it resolves by [LiveKey].
         private string _ResolvePath() => PropertyPath.FromSlash(propertyPath).Value;
 
         // 解決済みプロパティを返す。バインド (targetId / propertyPath)、解決元オブジェクトの再登録
         // (handle 変化 = 対象破棄→再生成やシーン再読込)、およびキー付き配列の再構築 (keyedCollectionVersion 変化
         // = 例: アバター切替で expressions の要素が差し替わる) を検知したときだけ FindProperty で再解決する。
         // 解決不能 (null) の間は毎フレーム再解決し、対象が現れれば自己回復する (ダングリングは誤設定 / 一時状態)。
-        private ExposedProperty? _ResolveProperty()
+        private LiveProperty? _ResolveProperty()
         {
-            var handle = ExposedObjectRegistry.FindById(targetId);
+            var handle = LiveObjectRegistry.FindById(targetId);
             // 対象が未登録: 現れたら再解決するようキャッシュを無効化して即返す (walk なし)。
             if (handle == null) { _cacheValid = false; _cachedProperty = null; return null; }
 
-            int generation = ExposedObjectRegistry.keyedCollectionVersion;
+            int generation = LiveObjectRegistry.keyedCollectionVersion;
             bool fresh = _cacheValid
                 && string.Equals(targetId, _cachedTargetId, StringComparison.Ordinal)
                 && string.Equals(propertyPath, _cachedPropertyPath, StringComparison.Ordinal)
@@ -95,12 +95,12 @@ namespace Lilium.LiveStudio
 
         /// <summary>True while the target id resolves and still exposes the property. Read-only and computed
         /// (never serialized); separate from <see cref="OperationSet.enabled"/>.</summary>
-        [ExposedProperty]
+        [LiveProperty]
         public bool valid
         {
             get
             {
-                var handle = ExposedObjectRegistry.FindById(targetId);
+                var handle = LiveObjectRegistry.FindById(targetId);
                 return handle != null && handle.Value.FindProperty(_ResolvePath()) != null;
             }
         }

@@ -8,7 +8,7 @@ using Lilium.RemoteControl;
 namespace Lilium.RemoteControl.LiveScene
 {
     /// <summary>
-    /// Holds a list of remote-controllable <see cref="IExposedObject"/> instances for the scene it
+    /// Holds a list of remote-controllable <see cref="ILiveObject"/> instances for the scene it
     /// lives in, and registers itself in a static registry so a <see cref="RemoteControlBehaviour"/>
     /// (which owns the single HTTP server) can discover and merge those objects.
     /// </summary>
@@ -22,10 +22,10 @@ namespace Lilium.RemoteControl.LiveScene
     public class RemoteControlContainer : MonoBehaviour
     {
         [SerializeReference, Select]
-        [ExposedField(persistable = false)]
-        public List<IExposedObject> _objects = new List<IExposedObject>();
+        [LiveField(persistable = false)]
+        public List<ILiveObject> _objects = new List<ILiveObject>();
 
-        public IReadOnlyList<IExposedObject> objects => _objects;
+        public IReadOnlyList<ILiveObject> objects => _objects;
 
         // --- Static registry (discovery for the host RemoteControlBehaviour) ---
 

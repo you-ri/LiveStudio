@@ -1,6 +1,6 @@
 # Source Generator — Lilium.RemoteControl.SourceGenerator
 
-`Plugins/Lilium.RemoteControl.SourceGenerator.dll` is a Roslyn `IIncrementalGenerator` that extracts the **source-declaration order** of `[ExposedClass]` members from C# source and exposes it to the runtime. This makes the remote client's `DynamicObjectPane` lay `[ExposedProperty]`, `[ExposedField]`, and `[ExposedFunction]` members out **in the order they appear in source** when no explicit `order` is set, even when the kinds are interleaved.
+`Plugins/Lilium.RemoteControl.SourceGenerator.dll` is a Roslyn `IIncrementalGenerator` that extracts the **source-declaration order** of `[LiveClass]` members from C# source and exposes it to the runtime. This makes the remote client's `DynamicObjectPane` lay `[LiveProperty]`, `[LiveField]`, and `[LiveFunction]` members out **in the order they appear in source** when no explicit `order` is set, even when the kinds are interleaved.
 
 Consumers do not need to do anything — the prebuilt DLL ships with the package. This document is for maintainers who edit or rebuild the generator.
 
@@ -36,4 +36,4 @@ Practical consequences:
 
 ## Fallback behavior
 
-When the generator is disabled (`CS9057`, missing DLL, unsupported runtime), `ExposedClassDeclarationOrderTable.Register` is never called. The runtime falls back to ordering members by `MemberInfo.MetadataToken` — which sorts members **by kind first** (all properties, then all fields, then all methods, in their declaration order within each kind), not by interleaved source order. The remote client still works, but pane layouts will look "blocked" instead of mirroring the source layout.
+When the generator is disabled (`CS9057`, missing DLL, unsupported runtime), `LiveClassDeclarationOrderTable.Register` is never called. The runtime falls back to ordering members by `MemberInfo.MetadataToken` — which sorts members **by kind first** (all properties, then all fields, then all methods, in their declaration order within each kind), not by interleaved source order. The remote client still works, but pane layouts will look "blocked" instead of mirroring the source layout.

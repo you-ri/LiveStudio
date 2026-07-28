@@ -14,7 +14,7 @@ namespace Lilium.LiveStudio
         public bool lockRoll = true;
 
         [SerializeField]
-        [ExposedField(label = "CAMERATRACKER_MOTIONSOURCE"), ObjectSelector]
+        [LiveField(label = "CAMERATRACKER_MOTIONSOURCE"), ObjectSelector]
         [Tooltip("参照するモーションソース。未指定時はシーン内の MotionSourceBase を自動検出する。")]
         private MotionSourceBase _motionSource;
 

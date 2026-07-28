@@ -14,14 +14,14 @@ using GameObjectUtility = Lilium.RemoteControl.GameObjectUtility;
 
 namespace Lilium.LiveStudio
 {
-    [ExposedClass]
+    [LiveClass]
     [Serializable]
     public class MeshState
     {
-        [ExposedField, StringSelector(nameof(AvatarController.meshPaths))]
+        [LiveField, StringSelector(nameof(AvatarController.meshPaths))]
         public string name;
 
-        [ExposedField]
+        [LiveField]
         public bool visible = true;
 
         public SkinnedMeshRenderer skinnedMeshRenderer;
@@ -31,24 +31,24 @@ namespace Lilium.LiveStudio
         public bool defaultVisible = true;
     }
 
-    [ExposedClass]
+    [LiveClass]
     [Serializable]
     public class AnimationParameterOverride
     {
-        [ExposedField, StringSelector(nameof(AvatarController.animationParameters))]
+        [LiveField, StringSelector(nameof(AvatarController.animationParameters))]
         public string name;
 
         // パラメータ名から自動判別された型。ShowIf がこのフィールドを参照して値フィールドの表示を切り替える。
-        [ExposedField, Hide]
+        [LiveField, Hide]
         public AnimatorControllerParameterType type;
 
-        [ExposedField, ShowIf(nameof(type), (int)AnimatorControllerParameterType.Float)]
+        [LiveField, ShowIf(nameof(type), (int)AnimatorControllerParameterType.Float)]
         public float floatValue;
 
-        [ExposedField, ShowIf(nameof(type), (int)AnimatorControllerParameterType.Int)]
+        [LiveField, ShowIf(nameof(type), (int)AnimatorControllerParameterType.Int)]
         public int intValue;
 
-        [ExposedField, ShowIf(nameof(type), (int)AnimatorControllerParameterType.Bool)]
+        [LiveField, ShowIf(nameof(type), (int)AnimatorControllerParameterType.Bool)]
         public bool boolValue;
 
         [NonSerialized] public float defaultFloat;
@@ -59,13 +59,13 @@ namespace Lilium.LiveStudio
 
     /// <summary>
     /// One bindable facial-expression slot on the active avatar. The <see cref="name"/> is its stable
-    /// key ([ExposedKey]) so a property path can address it by name ("expressions[Joy].weight") and
+    /// key ([LiveKey]) so a property path can address it by name ("expressions[Joy].weight") and
     /// survive reordering / avatar swaps. <see cref="weight"/> reads and writes the live weight through
     /// <see cref="ExpressionService"/> (the active avatar), so a <see cref="SetPropertyOperation"/> bound to
     /// it (via the remote app's "bind to key" affordance) drives whichever avatar is currently loaded —
     /// the single, data-driven way expression weights are keyed.
     /// </summary>
-    [ExposedClass("Expression")]
+    [LiveClass("Expression")]
     [Serializable]
     public class ExpressionEntry
     {
@@ -76,14 +76,14 @@ namespace Lilium.LiveStudio
 
         public ExpressionEntry(string name) { _name = name ?? string.Empty; }
 
-        [ExposedProperty, ExposedKey]
+        [LiveProperty, LiveKey]
         public string name => _name;
 
-        [ExposedProperty]
+        [LiveProperty]
         public float weight
         {
             // A default-constructed entry has an empty name: that is the array-diff template built by
-            // ExposedPropertySerializer._GetDefaultTemplate, not a live expression slot. FacialKey
+            // LivePropertySerializer._GetDefaultTemplate, not a live expression slot. FacialKey
             // rejects an empty custom name, and there is no expression to drive anyway, so read 0 and
             // ignore writes rather than throwing out of a serialization pass.
             get => string.IsNullOrEmpty(_name)
@@ -98,17 +98,17 @@ namespace Lilium.LiveStudio
     }
 
     [DefaultExecutionOrder(200)]
-    [ExposedClass("Avatar", Category = "Avatar", Icon = "person")]
-    public class AvatarController : MonoBehaviour, IAvatarService, IExposedDeserializeCallback
+    [LiveClass("Avatar", Category = "Avatar", Icon = "person")]
+    public class AvatarController : MonoBehaviour, IAvatarService, ILiveDeserializeCallback
     {
         /// <summary>
         /// Read-only list of the active avatar's facial expressions as bindable slots. The element count
         /// is dynamic (per avatar) while the element schema stays static, so operations can target an
         /// expression weight generically via "expressions[name].weight" without a bespoke operation type or
-        /// runtime-added exposed members. Exposed (not hidden) so the remote app renders a weight control
+        /// runtime-added exposed members. Live (not hidden) so the remote app renders a weight control
         /// per expression with a "bind to key" affordance next to it.
         /// </summary>
-        [ExposedProperty, Collapsed]
+        [LiveProperty, Collapsed]
         public ExpressionEntry[] expressions
         {
             get
@@ -139,10 +139,10 @@ namespace Lilium.LiveStudio
             _expressionsCache = null;
             // expressions[key].weight を解決結果キャッシュで駆動する SetPropertyOperation 等に、
             // 要素 (ExpressionEntry) が差し替わったことを通知して再解決させる (古いキーへの誤書き込み防止)。
-            ExposedObjectRegistry.NotifyKeyedCollectionChanged();
+            LiveObjectRegistry.NotifyKeyedCollectionChanged();
         }
 
-        [ExposedProperty("name"), Hide]
+        [LiveProperty("name"), Hide]
         public string displayName => this.name;
 
         public GameObject target => _target;
@@ -155,12 +155,12 @@ namespace Lilium.LiveStudio
         GameObject _defaultAvatarPrefab;
 
         [SerializeField]
-        //[ExposedField(label = "AVATAR_RECEIVER"), ObjectSelector]
+        //[LiveField(label = "AVATAR_RECEIVER"), ObjectSelector]
         MotionSourceBase _motionSource;
 
         public MotionSourceBase motionSource => _motionSource;
 
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public string[] meshPaths
         {
             get
@@ -173,7 +173,7 @@ namespace Lilium.LiveStudio
         }
 
 
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public string[] animationParameters
         {
             get
@@ -192,7 +192,7 @@ namespace Lilium.LiveStudio
 
         // アバターモデルに設定可能なレイヤー名の一覧。先頭の空文字は「変更しない」を表す。
         // StringSelector の選択肢として RemoteApp / Inspector に提供する。
-        [ExposedProperty, Hide]
+        [LiveProperty, Hide]
         public string[] layerNames
         {
             get
@@ -210,7 +210,7 @@ namespace Lilium.LiveStudio
         // アバターモデル（ターゲットの子孫すべて）に適用するレイヤー。
         // 空文字＝「変更しない」で、その場合は Prefab 元のレイヤーを維持する。
         [SerializeField]
-        [ExposedField(label="AVATAR_LAYER"), StringSelector(nameof(layerNames))]
+        [LiveField(label="AVATAR_LAYER"), StringSelector(nameof(layerNames))]
         private string _avatarLayer = string.Empty;
 
         // _ApplyAvatarLayer で元レイヤーへ戻せるよう、ターゲット差し替え時に一度だけ捕捉する
@@ -219,11 +219,11 @@ namespace Lilium.LiveStudio
         private readonly Dictionary<Transform, int> _originalLayers = new Dictionary<Transform, int>();
 
         [SerializeField]
-        [ExposedField(label="AVATAR_MESHSTATEOVERRIDES")]
+        [LiveField(label="AVATAR_MESHSTATEOVERRIDES")]
         private MeshState[] meshStateOverrides = new MeshState[0];
 
         [SerializeField]
-        [ExposedField(label="AVATAR_ANIMATIONPARAMETEROVERRIDES")]
+        [LiveField(label="AVATAR_ANIMATIONPARAMETEROVERRIDES")]
         private AnimationParameterOverride[] animationParameterOverrides = new AnimationParameterOverride[0];
 
         // _bodyOverrideClip のアセット GUID (未選択は空文字)。ランタイムでは AssetDatabase を使えないため
@@ -239,7 +239,7 @@ namespace Lilium.LiveStudio
         // RemoteControl のシリアライズ (live.json 等) にはアセット GUID が保存される。候補は
         // GET /api/assets?type=AnimationClip (組み込み Resources + 外部バンドル) から供給される。
         [SerializeField]
-        [ExposedField(label="AVATAR_BODYOVERRIDECLIP"), AssetSelector(refPropertyName: nameof(_bodyOverrideClipRef))]
+        [LiveField(label="AVATAR_BODYOVERRIDECLIP"), AssetSelector(refPropertyName: nameof(_bodyOverrideClipRef))]
         private AnimationClip _bodyOverrideClip;
 
         // このコントローラからクリップを転送済みか。「変更しない」(空文字) では転送しないが、
@@ -252,7 +252,7 @@ namespace Lilium.LiveStudio
         // Object でなくキー文字列で保持し、PackBundleLoader がロード→AssetRegistry 登録→解決する。
         // 旧シーンにこのフィールドは無い (=空=既存挙動) ので live.json はバイト不変。Hide でジェネリック
         // インスペクタから隠し、RemoteApp の専用 2 段セレクタが読み書きする。
-        [ExposedField, Hide]
+        [LiveField, Hide]
         private string _bodyOverrideClipRef = string.Empty;
 
         // _bodyOverrideClipRef の非同期解決状態 (解決済みクリップ / 適用済みキー / 解決中キー / supersede)
@@ -266,13 +266,13 @@ namespace Lilium.LiveStudio
         // 位置・回転とも motionSource の anchor へ固定する。各ボーンの回転は mocap を反映しつつ、
         // 両足は脚の 2 ボーン IK で接地位置に固定する。クリップ未設定時は固定されない。
         [SerializeField]
-        [ExposedField(label="AVATAR_LOCKLOWERBODYPOSE")]
-        [ExposedHelp("AVATAR_LOCKLOWERBODYPOSE_HELP")]
+        [LiveField(label="AVATAR_LOCKLOWERBODYPOSE")]
+        [Help("AVATAR_LOCKLOWERBODYPOSE_HELP")]
         private bool _lockLowerBodyPose;
 
         [SerializeField]
-        [ExposedField, Hide]
-        [FormerlyExposedAs("_config")]
+        [LiveField, Hide]
+        [FormerlyNamedAs("_config")]
         private AvatarExpressionConfig _expressionConfig;
 
         public AvatarExpressionConfig config => _expressionConfig;
@@ -327,8 +327,8 @@ namespace Lilium.LiveStudio
                 _motionSource.anchor = transform;
             }
 
-            ExposedClass.Get<AvatarController>().onPropertyChanging += OnPropertyChanging;
-            ExposedClass.Get<AvatarController>().onPropertyChanged += OnPropertyChanged;
+            LiveClass.Get<AvatarController>().onPropertyChanging += OnPropertyChanging;
+            LiveClass.Get<AvatarController>().onPropertyChanged += OnPropertyChanged;
 
             _avatarSources = GetComponents<IAvatarSource>();
             foreach (var source in _avatarSources)
@@ -352,8 +352,8 @@ namespace Lilium.LiveStudio
             }
             _avatarSources = Array.Empty<IAvatarSource>();
 
-            ExposedClass.Get<AvatarController>().onPropertyChanging -= OnPropertyChanging;
-            ExposedClass.Get<AvatarController>().onPropertyChanged -= OnPropertyChanged;
+            LiveClass.Get<AvatarController>().onPropertyChanging -= OnPropertyChanging;
+            LiveClass.Get<AvatarController>().onPropertyChanged -= OnPropertyChanged;
             SelectableService<IAvatarService>.Unregister("current", this);
 
             SingletonService<IAvatarService>.Unregister(this);
@@ -645,7 +645,7 @@ namespace Lilium.LiveStudio
             => !string.IsNullOrEmpty(_bodyOverrideClipRef) ? _bodyOverrideExternal.asset : _bodyOverrideClip;
 
         // 外部参照キーが変化したら解決を開始する。ライブシーン復元と REST 書き込みの両方で発火する
-        // OnAfterExposedDeserialize / OnPropertyChanged から呼ばれるため、変化していなければ no-op。
+        // OnAfterLiveDeserialize / OnPropertyChanged から呼ばれるため、変化していなければ no-op。
         private void _OnOverrideRefMaybeChanged()
         {
             _bodyOverrideExternal.Sync(_bodyOverrideClipRef, _ReapplyOverrideToTarget);
@@ -661,7 +661,7 @@ namespace Lilium.LiveStudio
         }
 
         // ライブシーン復元・プロパティ書き込みの後に発火。外部クリップ参照の変化を解決へ回す。
-        void IExposedDeserializeCallback.OnAfterExposedDeserialize()
+        void ILiveDeserializeCallback.OnAfterLiveDeserialize()
         {
             _OnOverrideRefMaybeChanged();
         }
@@ -739,14 +739,14 @@ namespace Lilium.LiveStudio
             if (avatar != null)
             {
                 // ユーザーが TransformRef("Main Avatar/Head" 等) でアバターのボーン配下に
-                // アタッチした managed な ExposedGameObjectWithTransform 系子 GO を、
+                // アタッチした managed な LiveGameObjectWithTransform 系子 GO を、
                 // 破棄前に ControllerGO 直下に退避させる。退避中の hierarchy 変更で
                 // user-set TransformRef が clobber されないよう suspendHierarchySync を立てる。
                 // 新アバター生成後 _PostSetupAvatar 末尾の TransformStructureService.NotifyStructureChanged で再アタッチする。
-                ExposedGameObjectWithTransform.suspendHierarchySync = true;
+                LiveGameObjectWithTransform.suspendHierarchySync = true;
                 try
                 {
-                    _RescueExposedManagedDescendants(avatar);
+                    _RescueLiveManagedDescendants(avatar);
                     // Object.Destroy はフレーム末まで遅延されるため、階層に残ったままだと
                     // 直後に走る GetComponentsInChildren (TransformRef.Resolve など) が
                     // 破棄予定の Transform を拾い、フレーム末で参照が "Missing" になる。
@@ -756,25 +756,25 @@ namespace Lilium.LiveStudio
                 }
                 finally
                 {
-                    ExposedGameObjectWithTransform.suspendHierarchySync = false;
+                    LiveGameObjectWithTransform.suspendHierarchySync = false;
                 }
             }
         }
 
         /// <summary>
-        /// avatar の子孫の中から ExposedUnityObjectBase で wrap されている GO (= ユーザーが
+        /// avatar の子孫の中から LiveUnityObjectBase で wrap されている GO (= ユーザーが
         /// RemoteApp 経由で配置した prefab 等) を探し出し、avatar 破棄に巻き込まれないよう
         /// ControllerGO (this.transform) 直下に退避させる。
         /// 子も再帰的に救出されるが wrapper 単位で見れば最も外側のものだけ拾えば足りる。
         /// </summary>
-        void _RescueExposedManagedDescendants(GameObject avatar)
+        void _RescueLiveManagedDescendants(GameObject avatar)
         {
             if (avatar == null) return;
             var managed = new HashSet<GameObject>(ReferenceEqualityComparer.Instance);
-            foreach (var instance in ExposedObjectRegistry.instances)
+            foreach (var instance in LiveObjectRegistry.instances)
             {
                 if (instance == null || !instance.isValid) continue;
-                if (!(instance.target is ExposedUnityObjectBase proxy)) continue;
+                if (!(instance.target is LiveUnityObjectBase proxy)) continue;
                 var refObj = proxy.reference;
                 if (refObj == null) continue;
                 GameObject go = refObj as GameObject;
@@ -929,7 +929,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        private void OnPropertyChanging(ExposedProperty property, object newValue)
+        private void OnPropertyChanging(LiveProperty property, object newValue)
         {
             // オーバーライドしているメッシュの表示状態を初期設定に戻す
             if (property.PathContains(nameof(meshStateOverrides)))
@@ -970,10 +970,10 @@ namespace Lilium.LiveStudio
             }
         }
 
-        private void OnPropertyChanged(ExposedProperty property, object oldValue)
+        private void OnPropertyChanged(LiveProperty property, object oldValue)
         {
             // 外部 body override 参照の変化を解決へ回す (変化していなければ no-op)。復元経路は
-            // OnAfterExposedDeserialize、REST 書き込み経路はここ、と両経路をカバーする。
+            // OnAfterLiveDeserialize、REST 書き込み経路はここ、と両経路をカバーする。
             _OnOverrideRefMaybeChanged();
 
             if (_target == null) return;
@@ -1017,7 +1017,7 @@ namespace Lilium.LiveStudio
         // binding functions are needed here; only the available-expression list is surfaced for the add UI.
 
         [Preserve]
-        [ExposedFunction("getavailableexpressions"), Hide]
+        [LiveFunction("getavailableexpressions"), Hide]
         IEnumerable<string> GetAvailableExpressions()
         {
             var expressionKeys = ExpressionService.GetAvailableExpressions();
@@ -1025,8 +1025,8 @@ namespace Lilium.LiveStudio
         }
 
         [Preserve]
-        [ExposedFunction(label="AVATAR_RESETPHYSICS")]
-        [ExposedHelp("AVATAR_RESETPHYSICS_HELP")]
+        [LiveFunction(label="AVATAR_RESETPHYSICS")]
+        [Help("AVATAR_RESETPHYSICS_HELP")]
         void ResetPhysics()
         {
             if (_target == null)

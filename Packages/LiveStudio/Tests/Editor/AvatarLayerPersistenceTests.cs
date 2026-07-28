@@ -21,12 +21,12 @@ namespace Lilium.LiveStudio.EditorTests
     [TestFixture]
     public class AvatarLayerPersistenceTests
     {
-        // Mirrors the shape of AvatarController: an [ExposedClass] component with a string field whose
+        // Mirrors the shape of AvatarController: an [LiveClass] component with a string field whose
         // default is the empty string ("" = "do not change the layer").
-        [ExposedClass("TestAvatar")]
+        [LiveClass("TestAvatar")]
         public class TestAvatarComponent : MonoBehaviour
         {
-            [ExposedField] public string layer = "";
+            [LiveField] public string layer = "";
         }
 
         private readonly List<GameObject> _spawned = new List<GameObject>();
@@ -34,35 +34,35 @@ namespace Lilium.LiveStudio.EditorTests
         [SetUp]
         public void SetUp()
         {
-            ExposedClass.Clear();
-            foreach (var obj in ExposedObjectRegistry.instances.ToList()) obj.Unregister();
+            LiveClass.Clear();
+            foreach (var obj in LiveObjectRegistry.instances.ToList()) obj.Unregister();
             LiveScenePendingStore.Clear();
-            ExposedObjectFileRegistry.Clear();
+            LiveObjectFileRegistry.Clear();
 
-            ExposedClass.RegisterFromAttributes<ExposedGameObject>();
-            ExposedClass.RegisterFromAttributes<TestAvatarComponent>();
+            LiveClass.RegisterFromAttributes<LiveGameObject>();
+            LiveClass.RegisterFromAttributes<TestAvatarComponent>();
         }
 
         [TearDown]
         public void TearDown()
         {
-            foreach (var obj in ExposedObjectRegistry.instances.ToList()) obj.Unregister();
+            foreach (var obj in LiveObjectRegistry.instances.ToList()) obj.Unregister();
             LiveScenePendingStore.Clear();
-            ExposedObjectFileRegistry.Clear();
+            LiveObjectFileRegistry.Clear();
             foreach (var go in _spawned) if (go != null) Object.DestroyImmediate(go);
             _spawned.Clear();
         }
 
         // Builds an avatar-like wrapper: a persistent GameObject with the test component, wrapped by an
-        // ExposedGameObject re-keyed to objectId (mirrors the AvatarController's scene wrapper).
-        private (ExposedGameObject wrapper, TestAvatarComponent comp) _BuildAvatarWrapper(string objectId, string layer)
+        // LiveGameObject re-keyed to objectId (mirrors the AvatarController's scene wrapper).
+        private (LiveGameObject wrapper, TestAvatarComponent comp) _BuildAvatarWrapper(string objectId, string layer)
         {
             var go = new GameObject("Main Avatar");
             _spawned.Add(go);
             var comp = go.AddComponent<TestAvatarComponent>();
             comp.layer = layer;
 
-            var wrapper = new ExposedGameObject(go);
+            var wrapper = new LiveGameObject(go);
             wrapper.ReplaceId(objectId);
             wrapper.OnEnable();
             return (wrapper, comp);
@@ -70,8 +70,8 @@ namespace Lilium.LiveStudio.EditorTests
 
         private static string _Save(SerializeMode mode) =>
             LiveSceneSerializer.LiveSceneToJson(
-                new List<ExposedObjectHandle>(ExposedObjectRegistry.instances),
-                DefaultExposedObjectResolver.Instance, mode);
+                new List<LiveObjectHandle>(LiveObjectRegistry.instances),
+                DefaultLiveObjectResolver.Instance, mode);
 
         // Faithful path: the avatar's load-complete re-baseline (AssetStateSnapshot.CaptureDefaults).
         [Test]
@@ -81,14 +81,14 @@ namespace Lilium.LiveStudio.EditorTests
             _BuildAvatarWrapper("avatar-1", layer: "Water");
             var saved = _Save(SerializeMode.Snapshot);
 
-            foreach (var obj in ExposedObjectRegistry.instances.ToList()) obj.Unregister();
+            foreach (var obj in LiveObjectRegistry.instances.ToList()) obj.Unregister();
             foreach (var go in _spawned) Object.DestroyImmediate(go);
             _spawned.Clear();
 
             // Reload: the wrapper is a persistent scene object, so it exists at restore time and the saved
             // override is applied immediately during LiveSceneFromJson (not deferred).
             var (_, comp) = _BuildAvatarWrapper("avatar-1", layer: "");
-            LiveSceneSerializer.LiveSceneFromJson(saved, DefaultExposedObjectResolver.Instance);
+            LiveSceneSerializer.LiveSceneFromJson(saved, DefaultLiveObjectResolver.Instance);
             Assert.AreEqual("Water", comp.layer, "sanity: the restore applies the saved layer override");
 
             // The avatar model finishes loading AFTER the restore; its load-complete re-baseline runs here.
