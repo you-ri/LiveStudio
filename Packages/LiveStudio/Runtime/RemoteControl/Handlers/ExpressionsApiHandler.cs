@@ -52,30 +52,23 @@ namespace Lilium.LiveStudio
     }
 
     /// <summary>
-    /// Broadcasts active expression weights over SSE (for the remote app's expression cards) and exposes a
-    /// direct weight setter. Key bindings are no longer handled here — they live on the generic OperationManager
-    /// as ordinary SetPropertyOperation sets driving expressions[name].weight (the remote app's "bind to key").
+    /// Lists the active avatar's expressions and exposes a direct weight setter.
+    ///
+    /// Live weights are NOT sent from here. They are readable as an ordinary exposed property
+    /// (<c>AvatarController.expressions[name].weight</c>), so the remote app polls them through the
+    /// same displayed-property sync as everything else — only while the expression cards are on
+    /// screen, and only to the client looking at them. This handler used to broadcast every weight
+    /// to every connected client ten times a second regardless of what any of them had open.
+    ///
+    /// Key bindings are no longer handled here either — they live on the generic OperationManager
+    /// as ordinary SetPropertyOperation sets driving expressions[name].weight (the remote app's
+    /// "bind to key").
     /// </summary>
     public class ExpressionsApiHandler : BaseRemoteControlApiHandler
     {
-        private double _lastUpdateTime = 0f;
-        private const float kUpdateInterval = 0.1f; // 100ms間隔で更新
-        private int _lastSentExpressionCount = 0;
-
         public ExpressionsApiHandler(RemoteControlServerCore server)
             : base(server, new RouteRule("/api/expressions", RouteMatch.Exact))
         {
-        }
-
-        // Update method for periodic expression weight broadcasting
-        public void Update()
-        {
-            var time = TimeUtility.GetTime();
-            if (time - _lastUpdateTime >= kUpdateInterval)
-            {
-                _lastUpdateTime = time;
-                _ = BroadcastExpressionWeightUpdate();
-            }
         }
 
         protected override bool SupportsGet() => true;
@@ -193,48 +186,6 @@ namespace Lilium.LiveStudio
             }
 
             return expressionInfoList.ToArray();
-        }
-
-        private async Task BroadcastExpressionWeightUpdate()
-        {
-            if (!ExpressionService.IsAvailable()) return;
-
-            var weightUpdates = await ExecuteOnMainThread(() =>
-            {
-                var available = ExpressionService.GetAvailableExpressions();
-                var weights = new List<ExpressionWeightInfo>();
-
-                foreach (var facialKey in available)
-                {
-                    float currentWeight = ExpressionService.GetExpressionWeight(facialKey);
-
-                    // アクティブな表情（ウェイト値 > 0）のみ送信
-                    if (currentWeight > 0.001f)
-                    {
-                        weights.Add(new ExpressionWeightInfo
-                        {
-                            name = facialKey.name,
-                            weight = currentWeight
-                        });
-                    }
-                }
-
-                return new
-                {
-                    type = "expression_weight_update",
-                    expressions = weights.ToArray(),
-                    timestamp = GetISOTimestamp()
-                };
-            });
-
-            // 全て0でも、前回は表情があった場合は1回だけ送信（状態変化を通知）
-            if (weightUpdates.expressions.Length == 0 && _lastSentExpressionCount == 0)
-            {
-                return; // 連続で空の場合はスキップ
-            }
-            _lastSentExpressionCount = weightUpdates.expressions.Length;
-
-            await _server?.BroadcastMessage(weightUpdates, "expression_weight_update");
         }
     }
 }

@@ -19,10 +19,20 @@ namespace Lilium.RemoteControl
         public string version;
 
         public float fps;
+
+        /// <summary>Identifies this run of the server. See <see cref="RemoteControlContext.instanceId"/>.</summary>
+        public string instanceId;
     }
 
 
 
+    /// <summary>
+    /// Connection check, polled by every remote app about once a second.
+    ///
+    /// It doubles as the presence signal: with nothing holding a connection open, "is a remote app
+    /// there" can only mean "did one ask us something recently", and this is the request every
+    /// connected remote sends on a fixed cadence whatever page it is on.
+    /// </summary>
     public class StatusHandler : BaseRemoteControlApiHandler
     {
         private readonly string _applicationName;
@@ -39,12 +49,20 @@ namespace Lilium.RemoteControl
 
         protected override Task HandleGetRequest(HttpListenerContext context)
         {
+            // Registering on every poll is what keeps the client counted as present, which is how a
+            // confirmation prompt knows whether it has anywhere to show (see RemoteConfirmSystem).
+            _context?.connectionManager?.RegisterClient(
+                GetClientId(context.Request),
+                context.Request.UserAgent,
+                context.Request.RemoteEndPoint?.Address?.ToString());
+
             var status = new StatusResponse
             {
                 success = true,
                 applicationName = _applicationName,
                 version = _applicationVersion,
                 fps = 60,//TimeService.fps,
+                instanceId = _context?.instanceId,
             };
 
             return WriteJson(context, status);

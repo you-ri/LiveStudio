@@ -15,7 +15,7 @@ namespace Lilium.RemoteControl.Tests
     /// serializer refactor / GC work touches (metadata, full, delta, arrays, Unity scalar types,
     /// enums, scope filtering) and asserts the produced JSON string verbatim.
     ///
-    /// The purpose is to guarantee the REST-invariance boundary: the JSON emitted for GET / SSE /
+    /// The purpose is to guarantee the REST-invariance boundary: the JSON emitted for GET /
     /// scene persistence / project persistence must stay byte-for-byte identical across the
     /// refactor. Exotic members (@ref, [RawJson], shadow fields, [FormerlyExposedAs]) keep their
     /// own dedicated behavioural tests (RawJsonSerializationTests, ShadowFieldTests,

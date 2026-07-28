@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using Lilium.RemoteControl;
 
@@ -178,88 +179,6 @@ namespace Lilium.RemoteControl.Tests
             Assert.AreEqual(0, q.DrainInto(0, buffer));
         }
 
-        // ---- long-poll ----
-
-        [Test]
-        public void WaitAndDrain_ImmediateWhenAvailable()
-        {
-            var q = new ClientEventQueue("c", 1000);
-            q.AddEvent(Ev(1));
-
-            int n = Run(async () =>
-            {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                var buffer = new List<EventItem>();
-                return await q.WaitAndDrainAsync(0, buffer, cts.Token);
-            });
-
-            Assert.AreEqual(1, n);
-        }
-
-        [Test]
-        public void WaitAndDrain_TimeoutReturnsZeroAndActuallyWaits()
-        {
-            // セマフォ単調増加バグ (long-poll が即 return する) の回帰検出。
-            var q = new ClientEventQueue("c", 1000);
-
-            var sw = Stopwatch.StartNew();
-            int n = Run(async () =>
-            {
-                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
-                var buffer = new List<EventItem>();
-                return await q.WaitAndDrainAsync(0, buffer, cts.Token);
-            });
-            sw.Stop();
-
-            Assert.AreEqual(0, n);
-            Assert.GreaterOrEqual(sw.ElapsedMilliseconds, 150,
-                "新着が無ければタイムアウトまで待機するはず (即 return は long-poll 破綻)");
-        }
-
-        [Test]
-        public void WaitAndDrain_WakesOnAdd()
-        {
-            var q = new ClientEventQueue("c", 1000);
-
-            var sw = Stopwatch.StartNew();
-            int n = Run(async () =>
-            {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                var buffer = new List<EventItem>();
-                var waitTask = q.WaitAndDrainAsync(0, buffer, cts.Token);
-
-                await Task.Delay(50);
-                Assert.IsFalse(waitTask.IsCompleted, "新着前は待機中のはず");
-
-                q.AddEvent(Ev(1));
-                return await waitTask;
-            });
-            sw.Stop();
-
-            Assert.AreEqual(1, n);
-            Assert.Less(sw.ElapsedMilliseconds, 4000, "タイムアウトを待たず Add で即起床するはず");
-        }
-
-        [Test]
-        public void WaitAndDrain_LostWakeupRace()
-        {
-            // drain が空を返した直後に Add が来てもロストウェイクアップしないことを多数回確認。
-            for (int iter = 0; iter < 200; iter++)
-            {
-                var q = new ClientEventQueue("c", 1000);
-                int n = Run(async () =>
-                {
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                    var buffer = new List<EventItem>();
-                    var waitTask = q.WaitAndDrainAsync(0, buffer, cts.Token);
-                    await Task.Yield();
-                    q.AddEvent(Ev(1)); // 待機登録と競合させる
-                    return await waitTask;
-                });
-                Assert.AreEqual(1, n, $"iteration {iter}: 取りこぼし発生");
-            }
-        }
-
         // ---- 並行ストレス ----
 
         [Test]
@@ -296,12 +215,17 @@ namespace Lilium.RemoteControl.Tests
                     });
                 }
 
+                // 消費側はポーリングと同じく即時 drain を繰り返す。
                 long cursor = 0;
-                while (consumed.Count < total)
+                var deadline = Stopwatch.StartNew();
+                while (consumed.Count < total && deadline.Elapsed < TimeSpan.FromSeconds(10))
                 {
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                    int n = await q.WaitAndDrainAsync(cursor, buffer, cts.Token);
-                    if (n == 0) break; // タイムアウト = 取りこぼし
+                    int n = q.DrainInto(cursor, buffer);
+                    if (n == 0)
+                    {
+                        await Task.Yield();
+                        continue;
+                    }
                     for (int i = 0; i < n; i++) consumed.Add(buffer[i].Id);
                     cursor = buffer[n - 1].Id;
                 }
@@ -346,10 +270,15 @@ namespace Lilium.RemoteControl.Tests
                     }
 
                     long cursor = 0;
-                    while (consumed.Count < total)
+                    var deadline = Stopwatch.StartNew();
+                    while (consumed.Count < total && deadline.Elapsed < TimeSpan.FromSeconds(10))
                     {
-                        int n = await eq.GetEventsAsync("c1", cursor, buffer, TimeSpan.FromSeconds(5), default);
-                        if (n == 0) break; // タイムアウト = 取りこぼし
+                        int n = eq.DrainEvents("c1", cursor, buffer);
+                        if (n == 0)
+                        {
+                            await Task.Yield();
+                            continue;
+                        }
                         for (int i = 0; i < n; i++) consumed.Add(buffer[i].Id);
                         cursor = buffer[n - 1].Id;
                     }
@@ -368,10 +297,10 @@ namespace Lilium.RemoteControl.Tests
             }
         }
 
-        // ---- EventQueue 経由の統合 ----
+        // ---- EventQueue 経由の統合 (受信箱ポーリング) ----
 
         [Test]
-        public void EventQueue_GetEventsAsync_FillsBuffer()
+        public void EventQueue_DrainEvents_FillsBuffer()
         {
             var eq = new EventQueue();
             try
@@ -380,8 +309,7 @@ namespace Lilium.RemoteControl.Tests
                 eq.AddEvent("hello", "data");
 
                 var buffer = new List<EventItem>();
-                int n = Run(async () =>
-                    await eq.GetEventsAsync("c1", 0, buffer, TimeSpan.FromMilliseconds(500), default));
+                int n = eq.DrainEvents("c1", 0, buffer);
 
                 Assert.AreEqual(1, n);
                 Assert.AreEqual(1, buffer.Count);
@@ -394,7 +322,7 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void EventQueue_GetEventsAsync_TimeoutReturnsZero()
+        public void EventQueue_DrainEvents_EmptyReturnsZero()
         {
             var eq = new EventQueue();
             try
@@ -402,15 +330,77 @@ namespace Lilium.RemoteControl.Tests
                 eq.UpdateClientActivity("c1");
 
                 var buffer = new List<EventItem>();
-                int n = Run(async () =>
-                    await eq.GetEventsAsync("c1", 0, buffer, TimeSpan.FromMilliseconds(200), default));
-
-                Assert.AreEqual(0, n);
+                Assert.AreEqual(0, eq.DrainEvents("c1", 0, buffer));
             }
             finally
             {
                 eq.Shutdown();
             }
+        }
+
+        [Test]
+        public void EventQueue_DrainEvents_UnknownClientRegistersAndReceivesLater()
+        {
+            // ポーリングで初めて名乗ったクライアントは、その時点では何も溜まっていないが、
+            // 以後のブロードキャストは届く (受信箱がここで作られるため)。
+            var eq = new EventQueue();
+            try
+            {
+                var buffer = new List<EventItem>();
+                Assert.AreEqual(0, eq.DrainEvents("newcomer", 0, buffer));
+
+                eq.AddEvent("hello", "data");
+
+                Assert.AreEqual(1, eq.DrainEvents("newcomer", 0, buffer));
+                Assert.AreEqual("hello", buffer[0].Data);
+            }
+            finally
+            {
+                eq.Shutdown();
+            }
+        }
+
+        // ---- ワイヤ形式 ----
+
+        [Test]
+        public void GetPayload_FillsTypeAndTimestampWhenMissing()
+        {
+            var item = new EventItem
+            {
+                Id = 1,
+                Data = new { message = "hi" },
+                EventType = "system_notification",
+            };
+
+            var payload = item.GetPayload();
+
+            Assert.AreEqual("system_notification", (string)payload["type"]);
+            Assert.IsNotNull(payload["timestamp"]);
+            Assert.AreEqual("hi", (string)payload["message"]);
+        }
+
+        [Test]
+        public void GetPayload_KeepsTypeCarriedByTheData()
+        {
+            var item = new EventItem
+            {
+                Id = 1,
+                Data = new { type = "confirm_request", id = "confirm-1" },
+                EventType = "confirm_request",
+            };
+
+            Assert.AreEqual("confirm_request", (string)item.GetPayload()["type"]);
+            Assert.AreEqual("confirm-1", (string)item.GetPayload()["id"]);
+        }
+
+        [Test]
+        public void GetPayload_IsCachedAcrossClients()
+        {
+            // 1 つの EventItem が全クライアントの受信箱に配られるため、
+            // ペイロードは 1 度だけ組み立てて使い回す。
+            var item = new EventItem { Id = 1, Data = new { message = "hi" }, EventType = "data" };
+
+            Assert.AreSame(item.GetPayload(), item.GetPayload());
         }
     }
 }

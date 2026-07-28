@@ -272,11 +272,27 @@ namespace Lilium.LiveStudio
         void Update()
         {
             // 体アニメ (トラッキング遷移 / メッシュ表示 / root 直書き / 姿勢の Job 受け渡し / 下半身ロック) は driver が担当。
-            if (!_bodyDriver.Tick()) return;
+            // Tick が false = トラッキングしていない。姿勢と顔追従はここで止めるが、表情そのものは止めない:
+            // 手で駆動された表情 (ゲームパッド割り当て / リモート操作 / オペレーション) はトラッキングとは
+            // 無関係に効くべきで、アバターはベースポーズで画面に映ったままだからである。
+            bool tracking = _bodyDriver.Tick();
 
             // ARKit 52 weight を resolver で reshape (neutral 表情の差分 + 各表情ウェイト合成 + スムージング)。
             // 以降のロジックは resolver の arkitWeightData / smoothedOutputs を参照する。
-            expressionResolver.Resolve(in _bodyDriver.motionSource.frameData.expression);
+            // 非トラッキング時は顔から来る値が無いので中立の ARKit ウェイトで解決し、手動ウェイトだけを進める。
+            if (tracking)
+            {
+                expressionResolver.Resolve(in _bodyDriver.motionSource.frameData.expression);
+            }
+            else
+            {
+                expressionResolver.Resolve(default);
+
+                // VRChat 表情だけ反映して終了。ビセム・まばたき・視線はトラッキング入力そのものなので、
+                // 中立値で書き込むと FX のアニメ clip と張り合ってしまう。
+                _expressionDriver.Update(_expressions, this);
+                return;
+            }
 
             float voice = _ComputeVisemeScores();
             _SmoothScores();

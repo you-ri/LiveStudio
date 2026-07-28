@@ -11,7 +11,7 @@ ExposedObject周りの仕様の要約や方向性を記述する。機能実装�
 ### プロパティパス
 
 - 内部表現（DotBracket）と外部表現（Slash）の2形式がある
-- 外部インターフェース（REST API・SSE）では常に Slash 形式を使う
+- 外部インターフェース（REST API）では常に Slash 形式を使う
 - サーバー内部では DotBracket 形式を使う
 - 境界での変換は `PropertyPath` が担う
 
@@ -109,7 +109,7 @@ ExposedObject周りの仕様の要約や方向性を記述する。機能実装�
 ### `@instanceID` メタデータ
 
 - target が UnityEngine.Object の ExposedObject に副次ルックアップキーとして付与する
-- 用途: Registry 未登録のオブジェクト (selector 経由でのみアクセスされる AvatarController 等) を SSE で更新通知できるようにする
+- 用途: Registry 未登録のオブジェクト (selector 経由でのみアクセスされる AvatarController 等) を変更フィードで更新通知できるようにする
 - primary key は従来通り `@id` / selector 合成キー。RemoteApp は受信 id で直引きが失敗したときだけ instanceID で翻訳する
 - 永続化 JSON には含めない (セッション依存のため)。再接続後は RemoteApp 側の再フェッチで整合する
 
@@ -121,7 +121,7 @@ ExposedObject周りの仕様の要約や方向性を記述する。機能実装�
 - **登録済み子** (`hasId=true`) は従来どおり `@ref` で表現され、深度の影響を受けない（もともと深さ1相当）。`@truncated` が付くのは inline 子のみ。
 - `?nested`（または `?nested=true` / `?nested=1`）を付けると従来どおり **無限展開**で返る。`?nested=false` / `?nested=0` は既定（深さ1）。
 - **`@truncated` は読み取り専用マーカー**。デシリアライズ (`FromJson` / PUT) 側ではプロパティ名でないため無視され、書き戻しても子を消さない。
-- **`GET /exposed/object/{id}/{path}`（property GET）は `nested` に非対応で常にフル展開**。パス指定でレスポンスが既に1ブランチに限定されており、深さ1にすると正当な「ブランチ全量取得」が要素ごとの追加リクエストに分解されるため。SSE 配信・PUT 応答・永続化 (scene/project/preset) も従来どおりフル展開（深度は `forPersistence` 時に無限へ強制される）。
+- **`GET /exposed/object/{id}/{path}`（property GET）は `nested` に非対応で常にフル展開**。パス指定でレスポンスが既に1ブランチに限定されており、深さ1にすると正当な「ブランチ全量取得」が要素ごとの追加リクエストに分解されるため。PUT 応答・永続化 (scene/project/preset) も従来どおりフル展開（深度は `forPersistence` 時に無限へ強制される）。
 
 ## 通信
 

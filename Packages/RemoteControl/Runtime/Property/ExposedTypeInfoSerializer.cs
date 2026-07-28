@@ -250,7 +250,7 @@ namespace Lilium.RemoteControl
 
             // ExposedPropertyRef: 参照先メタデータ (targetTypeName / propertyPath) を emit する。
             // RemoteApp 側はこれを見て、表示時に参照先 ExposedObjectHandle のストアエントリから値を読み、
-            // SSE による参照先プロパティ更新に自動追従する。
+            // 変更フィードによる参照先プロパティ更新に自動追従する。
             if (propertyType.isExposedPropertyReference
                 && propertyType.fieldInfo != null
                 && propertyType.fieldInfo.IsStatic)

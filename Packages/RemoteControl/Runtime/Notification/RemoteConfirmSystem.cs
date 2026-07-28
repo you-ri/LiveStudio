@@ -63,7 +63,8 @@ namespace Lilium.RemoteControl.Notification
             }
         }
 
-        // SSE event types the remote app listens for.
+        // Event types the remote app dispatches on. Both are queued in each connected client's
+        // inbox and collected on its next poll, so a prompt raised between two polls is not lost.
         private const string kRequestEvent = "confirm_request";
         private const string kDismissEvent = "confirm_dismiss";
 
@@ -193,8 +194,12 @@ namespace Lilium.RemoteControl.Notification
             return true;
         }
 
-        // Sends the prompt to every connected remote app. Returns how many clients it went to, so the
-        // caller can tell "nobody is listening" apart from "waiting for an answer".
+        // Queues the prompt for every connected remote app. Returns how many clients it went to, so
+        // the caller can tell "nobody is listening" apart from "waiting for an answer". Presence is
+        // "polled us recently" rather than "holds a connection", so a remote that quit without
+        // saying so still counts as present for a few seconds — the cost of that is a prompt that
+        // waits a moment longer, which is far better than one cancelled out from under a user whose
+        // phone was merely slow to answer.
         private static int _BroadcastRequest(string id, Request request)
         {
             var payload = new ConfirmRequestEvent

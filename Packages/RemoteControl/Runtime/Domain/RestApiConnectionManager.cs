@@ -9,15 +9,26 @@ using UnityEngine;
 namespace Lilium.RemoteControl
 {
     /// <summary>
-    /// REST APIクライアント接続管理システム
-    /// REST API経由の擬似接続を管理
-    /// 複数のサーバーインスタンスで独立して使用可能
+    /// REST APIクライアント接続管理システム。
+    /// 「今この瞬間リモートアプリが繋がっているか」を、直近に接続確認 (/api/status) を
+    /// 投げてきた時刻で判定する。常時接続が無いので切断イベントは飛んでこず、
+    /// 沈黙が続いたことをもって離脱とみなすしかない。
+    /// 複数のサーバーインスタンスで独立して使用可能。
     /// </summary>
     public class RestApiConnectionManager
     {
+        /// <summary>
+        /// 在席とみなす無沈黙時間。接続確認の間隔 (1 秒) の 5 倍。
+        /// 短すぎると一時的な遅延で在席中のリモートを見失い、確認ダイアログが
+        /// 「誰も見ていない」と判断して即キャンセルしてしまう。長すぎると逆に、
+        /// とっくに閉じたリモートの返事を待って操作が止まる。
+        /// これは在席判定専用で、受信箱の保持期間 (<see cref="EventQueue"/>) とは別物。
+        /// 受信箱は一時的に離れたクライアントが戻ってきたときのために長く持つ。
+        /// </summary>
+        public static readonly TimeSpan kClientTimeout = TimeSpan.FromSeconds(5);
+
         private readonly ConcurrentDictionary<string, RestApiClient> _clients;
         private readonly object _lockObject = new object();
-        private readonly TimeSpan _clientTimeout = TimeSpan.FromSeconds(10);
         private CancellationTokenSource _cleanupCts;
         
         public event Action<RestApiClient> OnClientConnected;
@@ -200,7 +211,8 @@ namespace Lilium.RemoteControl
                 {
                     try
                     {
-                        await Task.Delay(TimeSpan.FromMinutes(2), token); // 2分間隔でクリーンアップ
+                        // 在席の窓 (5 秒) より十分長く、かつ離脱を長く引きずらない間隔。
+                        await Task.Delay(TimeSpan.FromSeconds(30), token);
                         CleanupInactiveClients();
                     }
                     catch (OperationCanceledException)
@@ -217,7 +229,7 @@ namespace Lilium.RemoteControl
         
         private void CleanupInactiveClients()
         {
-            var cutoff = DateTime.UtcNow.Subtract(_clientTimeout);
+            var cutoff = DateTime.UtcNow.Subtract(kClientTimeout);
             var inactiveClients = _clients.Values
                 .Where(client => client.LastActivity < cutoff)
                 .ToList();
@@ -263,7 +275,7 @@ namespace Lilium.RemoteControl
         private readonly List<double> _responseTimes = new List<double>();
         private readonly object _lockObject = new object();
         
-        public bool IsActive => (DateTime.UtcNow - LastActivity).TotalSeconds < 10;
+        public bool IsActive => (DateTime.UtcNow - LastActivity) < RestApiConnectionManager.kClientTimeout;
         public TimeSpan ConnectionDuration => DateTime.UtcNow - ConnectedAt;
         
         public RestApiClient(string clientId, string userAgent = null, string ipAddress = null)

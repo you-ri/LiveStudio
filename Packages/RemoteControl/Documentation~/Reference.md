@@ -33,9 +33,8 @@ All endpoints are served by `HttpServerCore` under the configured base URL (defa
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/status` | Application status (name, version, FPS). |
-| `GET` | `/api/stream` | SSE event stream subscription (notifications and confirmations only). |
-| `GET` / `POST` | `/api/heartbeat` | Connection-keepalive heartbeat. |
+| `GET` | `/api/status` | Application status (name, version, FPS, server instance id). Polling it also marks the client present. |
+| `GET` | `/api/events?since={lastEventId}` | Collect the one-shot notices queued for this client. |
 
 ### Exposed objects
 
@@ -56,6 +55,17 @@ Property changes are not pushed. The server records only the **id** of each chan
 client polls `/exposed/changes` to learn what to refetch — so nobody receives data for a page they are
 not looking at, and a change costs the same whether zero or five clients are connected. The pseudo ids
 `@types` and `@ui` mean "refetch the type tables" and "refetch the side menu" respectively.
+
+Nothing is pushed at all: there is no held-open connection. The few notices that cannot be recovered by
+re-reading state — toast notifications and confirmation prompts — are queued per client and collected
+from `/api/events`, which the client sends as a sub-request of `/exposed/batch` alongside the change
+feed so it costs no extra round trip. Each client tracks its own `lastEventId` and passes it back as
+`?since=`; missing a poll delays a notice but never drops it.
+
+`/api/status` carries an `instanceId` that changes whenever the server is rebuilt. Both cursors
+(`since` on the change feed and on the inbox) restart with it, so a client that sees a new value must
+discard what it holds and resync — polling cannot otherwise notice a restart it polled straight
+through.
 
 By default an object is returned at **depth 1**: its own property values are serialized, but a nested
 inline (unregistered) composite child is replaced by a truncation stub

@@ -26,8 +26,8 @@ namespace Lilium.RemoteControl.RestApi
         protected readonly SynchronizationContext _mainThreadContext;
 
         // Routes supplied through the params constructor. Null when a handler
-        // overrides Routes itself (e.g. StreamHandler / HeartbeatHandler whose
-        // routes depend on a runtime path argument).
+        // overrides Routes itself (e.g. ExposedObjectHandler, whose route table
+        // is a static shared with its endpoint dispatch).
         private readonly RouteRule[] _routesField;
 
 
@@ -306,10 +306,17 @@ namespace Lilium.RemoteControl.RestApi
         }
 
         /// <summary>
-        /// クライアントIDを取得
+        /// クライアントIDを取得。
+        /// クライアントが名乗る X-Client-ID を優先する。受信箱 (<see cref="EventQueue"/>) の
+        /// 宛先はポーリングの往復をまたいで同一である必要があり、TCP の送信元ポートは
+        /// 接続が張り直されるたびに変わってしまうため、それだけでは identity にならない。
+        /// ヘッダーが無いクライアント (curl 等) には従来どおり接続元エンドポイントを使う。
         /// </summary>
         protected string GetClientId(HttpListenerRequest request)
         {
+            var declared = request.Headers["X-Client-ID"];
+            if (!string.IsNullOrEmpty(declared)) return declared;
+
             var clientEndpoint = request.RemoteEndPoint;
             return clientEndpoint != null ? $"{clientEndpoint.Address}:{clientEndpoint.Port}" : "unknown";
         }

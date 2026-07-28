@@ -97,7 +97,6 @@ namespace Lilium.LiveStudio
         {
             _cameraHandler?.Update();
             _inputActionsHandler?.Update();
-            _expressionsHandler?.Update();
         }
     }
 }

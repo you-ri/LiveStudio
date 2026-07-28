@@ -13,12 +13,5 @@ namespace Lilium.LiveStudio
         public string actionType;
     }
 
-    [System.Serializable]
-    public class ExpressionWeightInfo
-    {
-        public string name;
-        public float weight;
-    }
-
 
 }

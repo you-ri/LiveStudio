@@ -231,7 +231,7 @@ namespace Lilium.LiveStudio
                         newBinding = updatedAction.bindings[bindingIndex].effectivePath;
                     }
 
-                    // SSEで他のクライアントに通知
+                    // 他のクライアントの受信箱へ通知
                     await BroadcastBindingResult(actionName, bindingIndex, true, "Binding completed successfully", newBinding);
                     
                     // アクションリストの更新も通知

@@ -414,19 +414,34 @@ namespace Lilium.LiveStudio
         void Update()
         {
             // 体アニメ (トラッキング遷移 / メッシュ表示 / root 直書き / 姿勢の Job 受け渡し) は driver が担当。
-            if (!_bodyDriver.Tick()) return;
+            // Tick が false = トラッキングしていない。姿勢と顔追従はここで止めるが、表情そのものは止めない:
+            // 手で駆動された表情 (ゲームパッド割り当て / リモート操作 / オペレーション) はトラッキングとは
+            // 無関係に効くべきで、アバターはベースポーズで画面に映ったままだからである。
+            bool tracking = _bodyDriver.Tick();
 
             // ARKit 52 weight を resolver で reshape (source 調整 + neutral 差分 + 表情合成 + スムージング)。
             // 以降の FT パラメータ計算は resolver の arkitWeightData を入力にする。
-            expressionResolver.Resolve(in _bodyDriver.motionSource.frameData.expression);
+            // 非トラッキング時は顔から来る値が無いので中立の ARKit ウェイトで解決し、手動ウェイトだけを進める。
+            if (tracking)
+            {
+                expressionResolver.Resolve(in _bodyDriver.motionSource.frameData.expression);
 
-            _ComputeTargetValues();
-            _ComputeCombinedValues();
-            _WriteToController();
+                _ComputeTargetValues();
+                _ComputeCombinedValues();
+                _WriteToController();
+            }
+            else
+            {
+                expressionResolver.Resolve(default);
+            }
 
             // VRChat 表情: 最大ウェイトの表情の AnimationParameterOverride を controllerPlayable へ反映。
             // ウェイトは自身の IExpressionAvatar.GetWeight (内部で smoothedOutputs を引く) から取得する。
+            // FT パラメータと違いトラッキング入力ではないので、非トラッキング時も反映する。
             _expressionDriver.Update(_expressions, this);
+
+            // 視線はトラッキング入力そのもの。無いときは書き込まず FX のアニメ clip に明け渡す。
+            if (!tracking) return;
 
             _ApplyEyeLookAt();
         }

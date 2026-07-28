@@ -1,9 +1,9 @@
 # Lilium Remote Control
 
-Remote-control framework for Unity Editor and runtime over **REST + Server-Sent Events**.
+Remote-control framework for Unity Editor and runtime over **REST polling** — nothing is pushed.
 
 - Mark properties, fields, and methods with `[ExposedProperty]` / `[ExposedFunction]` to expose them to a remote client
-- REST API for read / write / invoke; SSE stream for realtime change notifications
+- REST API for read / write / invoke; a change feed and a per-client event inbox the client polls
 - Works in Edit mode and Play mode
 - No Virgo Motion dependency — usable as standalone Unity remote-control infrastructure
 
@@ -86,7 +86,7 @@ https://github.com/you-ri/LiveStudio.git?path=/Packages/RemoteControl#beta
 
 4. Enter Play mode (or use Edit mode — both are supported). The HTTP server starts and accepts requests at the configured port.
 
-For the full attribute list, REST endpoint reference, and SSE stream format, see [`Documentation~/Reference.md`](Documentation~/Reference.md). Translation of labels and help text is documented in [`Documentation~/Localization.md`](Documentation~/Localization.md).
+For the full attribute list, REST endpoint reference, and event inbox format, see [`Documentation~/Reference.md`](Documentation~/Reference.md). Translation of labels and help text is documented in [`Documentation~/Localization.md`](Documentation~/Localization.md).
 
 ---
 

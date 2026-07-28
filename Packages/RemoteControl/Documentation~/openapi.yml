@@ -8,9 +8,34 @@ paths:
   /api/status:
     get:
       summary: Get the current status of the Virgo Motion Remote
+      description: >-
+        Also marks the calling client (X-Client-ID) as present, which is how the app knows
+        whether a confirmation prompt has any remote to show on. The response carries an
+        instanceId that changes whenever the server is rebuilt; clients that see a new value
+        must discard the cursors and cached data they hold.
       responses:
         '200':
           description: Successful response with the current status
+
+  /api/events:
+    get:
+      summary: Collect the one-shot notices queued for this client
+      description: >-
+        Notifications and confirmation prompts are queued per client (identified by
+        X-Client-ID) rather than pushed. Pass the lastEventId from the previous response as
+        `since` to receive what came after it. The remote app sends this as a sub-request of
+        /exposed/batch so it costs no extra round trip.
+      parameters:
+        - in: query
+          name: since
+          required: false
+          schema:
+            type: integer
+            format: int64
+          description: "Read position from the previous response. Omit or 0 to take everything queued."
+      responses:
+        '200':
+          description: The events queued after `since`, and the new read position
 
   /exposed/types:
     get:

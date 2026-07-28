@@ -211,32 +211,11 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// Reads <c>?since=N</c> off a batch sub-request path. Batch items carry the raw path string
-        /// rather than a parsed query collection, and this runs on every poll of every client, so it
-        /// scans in place instead of splitting the string.
+        /// Reads <c>?since=N</c> off a batch sub-request path. Shares the alloc-free scanner with
+        /// the event inbox, which reads the same cursor parameter off its own sub-request.
         /// </summary>
         private static bool _TryParseChangesSince(string absolutePath, out long since)
-        {
-            since = 0;
-            int query = absolutePath.IndexOf('?');
-            if (query < 0) return false;
-            int at = absolutePath.IndexOf("since=", query, StringComparison.Ordinal);
-            if (at < 0) return false;
-
-            at += "since=".Length;
-            long value = 0;
-            bool anyDigit = false;
-            for (; at < absolutePath.Length; at++)
-            {
-                char c = absolutePath[at];
-                if (c < '0' || c > '9') break;
-                value = value * 10 + (c - '0');
-                anyDigit = true;
-            }
-            if (!anyDigit) return false;
-            since = value;
-            return true;
-        }
+            => EventInbox.TryParseSince(absolutePath, out since);
 
         /// <summary>
         /// Resolves the nested-expansion depth for a GET request from the <c>nested</c> query flag.
@@ -653,11 +632,44 @@ namespace Lilium.RemoteControl
             // 毎フレームのメインスレッド占有を減らす。不正 JSON は空リスト → 実行ゼロ (原子性)。
             var items = ExtractBatchItems(body);
 
+            // 受信箱は「誰が聞いているか」を知る必要があり、ExposedObjectContainer だけでは解けない。
+            // Unity API にも触れないので、メインスレッドホップに持ち込まずここで先に解決する。
+            var preResolved = _ResolveInboxItems(context.Request, items);
+
             // Pass 2: 実行 + 応答構築はメインスレッド (各オペレーションが Unity API を含む)。
             // 全件を 1 ホップで適用しフレーム内で一貫させる。
             var responseJson = await ExecuteOnMainThread(
-                () => ExecuteBatchItems(GetObjectContainer(), GetResolver(), items));
+                () => ExecuteBatchItems(GetObjectContainer(), GetResolver(), items, preResolved));
             await WriteResponse(200, context.Response, responseJson);
+        }
+
+        /// <summary>
+        /// Resolves any inbox sub-requests (<c>GET /api/events</c>) up front, returning a body per
+        /// item position and null for everything the batch executor handles itself. Returns null
+        /// when the batch carries no inbox request, which is the case for every batch except the
+        /// remote app's poll loop.
+        /// </summary>
+        private string[] _ResolveInboxItems(HttpListenerRequest request, List<BatchItem> items)
+        {
+            if (items == null) return null;
+
+            string[] resolved = null;
+            for (int i = 0; i < items.Count; i++)
+            {
+                var item = items[i];
+                if (!EventInbox.IsInboxPath(item.path)) continue;
+
+                if (resolved == null) resolved = new string[items.Count];
+                if (!string.Equals(item.method, "GET", StringComparison.OrdinalIgnoreCase))
+                {
+                    // 405 は executor 側に任せず、ここで空応答にはしない (未解決のまま通す)。
+                    continue;
+                }
+
+                EventInbox.TryParseSince(item.path, out var since);
+                resolved[i] = EventInbox.BuildJson(_context?.eventQueue, GetClientId(request), since);
+            }
+            return resolved;
         }
 
         // バッチ本文のプロパティ名 intern テーブル。既知キーを生成時に一度だけ登録し、以降は
@@ -874,18 +886,30 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// 抽出済みの <see cref="BatchItem"/> 群を順に適用し { "responses": [...] } JSON を返す (Pass 2)。
         /// 各オペレーションが Unity API を含むためメインスレッド前提。各 item は独立 (continue-on-error)。
+        /// <paramref name="preResolvedBodies"/> は「コンテナだけでは解けないためハンドラ側で先に
+        /// 解決済みの応答本文」(受信箱など) を item 位置ごとに渡す。null 要素は通常どおり実行する。
         /// </summary>
         internal static string ExecuteBatchItems(
-            ExposedObjectContainer container, IExposedObjectResolver resolver, List<BatchItem> items)
+            ExposedObjectContainer container, IExposedObjectResolver resolver, List<BatchItem> items,
+            string[] preResolvedBodies = null)
         {
             var responses = new JArray();
 
             if (items != null)
             {
-                foreach (var item in items)
+                for (int index = 0; index < items.Count; index++)
                 {
+                    var item = items[index];
+                    var preResolved = preResolvedBodies != null && index < preResolvedBodies.Length
+                        ? preResolvedBodies[index]
+                        : null;
+
                     PropertyResult opResult;
-                    if (string.IsNullOrEmpty(item.method) || string.IsNullOrEmpty(item.path))
+                    if (preResolved != null)
+                    {
+                        opResult = PropertyResult.Success(preResolved);
+                    }
+                    else if (string.IsNullOrEmpty(item.method) || string.IsNullOrEmpty(item.path))
                     {
                         opResult = PropertyResult.Error(400, "Invalid request format");
                     }
@@ -938,6 +962,15 @@ namespace Lilium.RemoteControl
             var m = method ?? string.Empty;
 
             bool isPost = string.Equals(m, "POST", StringComparison.OrdinalIgnoreCase);
+
+            // 受信箱。誰宛かはコンテナからは解けないため <see cref="HandleBatch"/> が先に解決する。
+            // ここに来るのは GET 以外か、サーバーを介さない直接実行 (テスト) のときだけ。
+            if (EventInbox.IsInboxPath(absolutePath))
+            {
+                return string.Equals(m, "GET", StringComparison.OrdinalIgnoreCase)
+                    ? PropertyResult.Error(400, "Event inbox requires a client")
+                    : PropertyResult.Error(405, "Method not allowed");
+            }
 
             // 変更フィード。表示中プロパティの GET と同じ 1 往復に相乗りさせるため、単発ルートだけでなく
             // バッチからも引けるようにする（クライアントは毎サイクル必ずこれを 1 件載せる）。

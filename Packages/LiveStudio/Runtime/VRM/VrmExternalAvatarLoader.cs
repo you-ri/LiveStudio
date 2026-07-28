@@ -9,7 +9,7 @@ namespace Lilium.LiveStudio
     /// <summary>
     /// .vrm ファイル用の外部アバターローダー。
     /// 既存の <see cref="VRMLoader"/> をラップする。完了通知は <see cref="VRMLoadObserver"/> の
-    /// ブロードキャスト（ExternalAvatarSource 自身 + VrmLoadApiHandler の進捗 SSE）が担うため、
+    /// ブロードキャスト（ExternalAvatarSource 自身 + VrmLoadApiHandler の進捗通知）が担うため、
     /// <see cref="LoadAsync"/> は GameObject を直接返さず null を返す。
     /// </summary>
     internal sealed class VrmExternalAvatarLoader : IExternalAvatarLoader

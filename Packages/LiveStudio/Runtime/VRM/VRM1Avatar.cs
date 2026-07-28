@@ -137,14 +137,30 @@ namespace Lilium.LiveStudio
         void Update()
         {
             // 体アニメ (トラッキング遷移 / メッシュ表示 / root 直書き / 姿勢の Job 受け渡し) は driver が担当。
-            if (!_bodyDriver.Tick()) return;
+            // Tick が false = トラッキングしていない。姿勢と顔追従はここで止めるが、表情そのものは止めない:
+            // 手で駆動された表情 (ゲームパッド割り当て / リモート操作 / オペレーション) はトラッキングとは
+            // 無関係に効くべきで、アバターはベースポーズで画面に映ったままだからである。ここを一律 return に
+            // すると Resolve ごと飛ばされ、smoothedOutputs が更新されず全ウェイトが 0 に貼り付く。
+            bool tracking = _bodyDriver.Tick();
 
-            ref AvatarAnimationData frameData = ref _bodyDriver.motionSource.frameData;
-
-            expressionResolver.Resolve(in frameData.expression);
+            // 顔から来る値はトラッキング中だけ。非トラッキング時は中立の ARKit ウェイトで解決し、
+            // 手動ウェイトのミックスとスムージングだけを進める。
+            if (tracking)
+            {
+                ref AvatarAnimationData frameData = ref _bodyDriver.motionSource.frameData;
+                expressionResolver.Resolve(in frameData.expression);
+            }
+            else
+            {
+                expressionResolver.Resolve(default);
+            }
 
             // スムージングされた表情を最初に適用
             ApplySmoothedWeights();
+
+            // まばたき・視線・ARKit 由来の表情はトラッキング入力そのものなので、無いときは適用しない
+            // (中立値で上書きするとベースポーズのアニメーションと張り合ってしまう)。
+            if (!tracking) return;
 
             ApplyBlink();
             ApplyLookAtBones();

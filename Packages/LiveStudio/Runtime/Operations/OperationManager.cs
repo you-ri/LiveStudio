@@ -227,7 +227,7 @@ namespace Lilium.LiveStudio
         /// <summary>Per-set firing output (0..1) in <see cref="operationSets"/> order, for the remote app to
         /// poll and light its cards while an input (or the manual hold) is firing. Read-only and hidden;
         /// reflects the value recorded by the most recent <see cref="Update"/>. Polled rather than pushed
-        /// over SSE so it costs nothing while the Operations page is not open.</summary>
+        /// to every client, so it costs nothing while the Operations page is not open.</summary>
         [ExposedProperty, Hide]
         public float[] operationSetValues
         {

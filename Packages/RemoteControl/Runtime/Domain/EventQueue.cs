@@ -6,14 +6,18 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using UnityEngine;
+
+using Lilium.RemoteControl.Core;
 
 namespace Lilium.RemoteControl
 {
     /// <summary>
-    /// クライアント別イベントキューシステム
-    /// Long Polling対応の効率的なイベント配信機能を提供
-    /// 複数のサーバーインスタンスで独立して使用可能
+    /// クライアント別イベントキュー（受信箱）。
+    /// 「取りこぼすと再現できない一過性の知らせ」(通知・確認ダイアログ) を溜めておき、
+    /// クライアントが既読位置 (lastEventId) を持って定期ポーリングで取りに来る。
+    /// 複数のサーバーインスタンスで独立して使用可能。
     /// </summary>
     public class EventQueue
     {
@@ -25,6 +29,9 @@ namespace Lilium.RemoteControl
         private readonly object _addLock = new object();
         private long _nextEventId = 1;
         private readonly int _maxEventsPerClient = 1000;
+        // 受信箱の保持期間。在席判定 (RestApiConnectionManager) より桁違いに長いのは役割が違うため:
+        // あちらは「今この瞬間見ている人がいるか」、こちらは「戻ってきたときに渡すものが残っているか」。
+        // 短くすると、一時的に離れたクライアントが戻ったときに知らせを取りこぼす。
         private readonly TimeSpan _clientTimeout = TimeSpan.FromMinutes(10);
         private CancellationTokenSource _cleanupCts;
 
@@ -96,53 +103,18 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// イベントを取得（Long Polling対応）。
-        /// 新着イベントを呼び出し側が用意した <paramref name="buffer"/> に書き込み、件数を返す。
-        /// 新着が無い場合は buffer に一切触れず 0 を返す（GCAlloc 回避）。
+        /// クライアントの受信箱から <paramref name="lastEventId"/> より後のイベントを取り出す。
+        /// 定期ポーリングから毎回呼ばれるため即時に返り、新着が無い場合は
+        /// <paramref name="buffer"/> に一切触れず 0 を返す（アイドル時 0 alloc）。
+        /// 未知のクライアントはここで受信箱が作られる（以後の配信対象になる）。
         /// </summary>
-        /// <returns>buffer に書き込んだイベント数。タイムアウト/キャンセル時は 0。</returns>
-        public async Task<int> GetEventsAsync(string clientId, long lastEventId, List<EventItem> buffer, TimeSpan? timeout = null, CancellationToken cancellationToken = default)
+        /// <returns>buffer に書き込んだイベント数。</returns>
+        public int DrainEvents(string clientId, long lastEventId, List<EventItem> buffer)
         {
             UpdateClientActivity(clientId);
 
             var clientQueue = _clientQueues.GetOrAdd(clientId, id => new ClientEventQueue(id, _maxEventsPerClient));
-
-            // Fast path: when events are already queued, drain them immediately without allocating
-            // the timeout / linked CancellationTokenSources below. Under load (e.g. a slider drag
-            // streaming many events) this keeps the poll loop allocation-free; only a genuinely
-            // idle poll pays for the long-poll wait primitives. DrainInto leaves the buffer
-            // untouched and returns 0 when there is nothing new.
-            int immediate = clientQueue.DrainInto(lastEventId, buffer);
-            if (immediate > 0)
-            {
-                return immediate;
-            }
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return 0;
-            }
-
-            // 外部の CancellationToken と内部のタイムアウトを組み合わせる
-            var actualTimeout = timeout ?? TimeSpan.FromSeconds(30);
-            using var timeoutCts = new CancellationTokenSource(actualTimeout);
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-
-            // 即時 drain → 無ければ long-poll 待機、をまとめて担う。
-            // タイムアウト/キャンセルは内部で吸収され 0 が返るため try-catch は不要。
-            return await clientQueue.WaitAndDrainAsync(lastEventId, buffer, linkedCts.Token);
-        }
-
-        /// <summary>
-        /// 更多イベントが利用可能かチェック
-        /// </summary>
-        public bool HasMoreEvents(string clientId, long lastEventId)
-        {
-            if (!_clientQueues.TryGetValue(clientId, out var clientQueue))
-            {
-                return false;
-            }
-
-            return clientQueue.HasMoreEvents(lastEventId);
+            return clientQueue.DrainInto(lastEventId, buffer);
         }
 
         /// <summary>
@@ -325,38 +297,6 @@ namespace Lilium.RemoteControl
             return Task.FromResult(deliveredCount);
         }
 
-        /// <summary>
-        /// クライアント接続通知をブロードキャスト
-        /// </summary>
-        public async Task NotifyClientConnected(string clientId)
-        {
-            var connectionEvent = new ClientConnectionEvent
-            {
-                Type = "client_connected",
-                ClientId = clientId,
-                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                EventId = Guid.NewGuid().ToString()
-            };
-
-            await BroadcastAsync(connectionEvent, "client_connected", clientId);
-        }
-
-        /// <summary>
-        /// クライアント切断通知をブロードキャスト
-        /// </summary>
-        public async Task NotifyClientDisconnected(string clientId)
-        {
-            var disconnectionEvent = new ClientConnectionEvent
-            {
-                Type = "client_disconnected",
-                ClientId = clientId,
-                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                EventId = Guid.NewGuid().ToString()
-            };
-
-            await BroadcastAsync(disconnectionEvent, "client_disconnected");
-        }
-
         private void StartCleanupTask()
         {
             _cleanupCts = new CancellationTokenSource();
@@ -420,14 +360,14 @@ namespace Lilium.RemoteControl
 
     /// <summary>
     /// クライアント別のイベントキュー。
-    /// 固定長リングバッファ + lock + TaskCompletionSource で実装し、
-    /// アイドル時のポーリングで GCAlloc が発生しないよう設計している。
+    /// 固定長リングバッファ + lock で実装し、アイドル時のポーリングで GCAlloc が
+    /// 発生しないよう設計している。
     /// イベントの Id は <see cref="EventQueue"/> の Interlocked.Increment で単調増加するため、
     /// リング内は Id 昇順を保ち、afterEventId 以降の開始位置を二分探索できる。
     ///
-    /// スレッド安全性: 全ての可変状態 (_ring/_count/_head/_maxId/_waiter) は単一の
-    /// _gate ロック下でのみ読み書きする。AddEvent は複数スレッドから、drain 系は単一の
-    /// SSE 接続タスクからの呼び出しを想定する (1 ClientEventQueue = 1 消費者)。
+    /// スレッド安全性: 全ての可変状態 (_ring/_count/_head/_maxId) は単一の
+    /// _gate ロック下でのみ読み書きする。AddEvent は複数スレッドから、DrainInto は
+    /// そのクライアントのポーリング要求を処理するワーカースレッドから呼ばれる。
     /// </summary>
     public class ClientEventQueue
     {
@@ -439,9 +379,6 @@ namespace Lilium.RemoteControl
         private int _count;                     // 保持件数 (<= _capacity)
         private int _head;                       // 最古要素の物理 index
         private long _maxId;                     // 保持中の最大 Id。空なら 0
-
-        // long-poll 用。新着で起床、null = 待機者なし。
-        private TaskCompletionSource<bool> _waiter;
 
         public string ClientId => _clientId;
         public int EventCount { get { lock (_gate) { return _count; } } }
@@ -461,16 +398,10 @@ namespace Lilium.RemoteControl
         /// </summary>
         public void AddEvent(EventItem eventItem)
         {
-            TaskCompletionSource<bool> toSignal;
             lock (_gate)
             {
                 _PushBack(eventItem);
-
-                // 待機者がいれば取り出してロック外で起床させる (継続がロック内で走るのを防ぐ)
-                toSignal = _waiter;
-                _waiter = null;
             }
-            toSignal?.TrySetResult(true);
         }
 
         /// <summary>
@@ -544,50 +475,6 @@ namespace Lilium.RemoteControl
             }
         }
 
-        /// <summary>
-        /// 即時 drain → 無ければ新着 or キャンセルまで待機 → 再 drain。
-        /// キャンセル (タイムアウト含む) 時は buffer に触れず 0 を返す。
-        /// </summary>
-        public async Task<int> WaitAndDrainAsync(long afterEventId, List<EventItem> buffer, CancellationToken cancellationToken)
-        {
-            while (true)
-            {
-                int n = DrainInto(afterEventId, buffer);
-                if (n > 0)
-                {
-                    return n;
-                }
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    return 0;
-                }
-
-                // 「新着の再チェック」と「待機者登録」を同一ロック内で行い、
-                // drain が空を返した直後に AddEvent が来てもロストウェイクアップしない。
-                TaskCompletionSource<bool> waiter;
-                lock (_gate)
-                {
-                    if (_count > 0 && afterEventId < _maxId)
-                    {
-                        continue; // 登録直前に新着 → ループ先頭で drain
-                    }
-                    // キャンセルで完了したままの古い TCS を再利用すると await が即返りビジースピンする。
-                    // null か完了済みなら新規生成する (AddEvent は signal 時に _waiter を null にする)。
-                    if (_waiter == null || _waiter.Task.IsCompleted)
-                    {
-                        _waiter = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    }
-                    waiter = _waiter;
-                }
-
-                // キャンセルされたら待機 Task を完了させてループに戻す (例外を投げない)。
-                using (cancellationToken.Register(static s => ((TaskCompletionSource<bool>)s).TrySetResult(false), waiter))
-                {
-                    await waiter.Task;
-                }
-            }
-        }
-
         public bool HasMoreEvents(long afterEventId)
         {
             lock (_gate)
@@ -619,12 +506,41 @@ namespace Lilium.RemoteControl
         public string Type { get; set; }
         public string EventType { get; set; }
 
-        // Cached unified SSE JSON payload. The same EventItem instance is fanned out to every
-        // subscribed client (see EventQueue.AddEvent), and its payload is client-independent, so
-        // the serialization is built once on first send and reused for all further clients.
-        // Racing builders are harmless: they produce identical strings and a reference assignment
-        // is atomic, so no lock is needed.
-        internal string cachedSseJson;
+        // Cached wire payload. The same EventItem instance is fanned out to every client's inbox
+        // (see EventQueue.AddEvent) and the payload is client-independent, so it is built once on
+        // first delivery and reused for every further client. Racing builders are harmless: they
+        // produce equivalent objects and a reference assignment is atomic, so no lock is needed.
+        private JObject _payload;
+
+        /// <summary>
+        /// The object a remote app receives. The event data itself, with <c>type</c> and
+        /// <c>timestamp</c> filled in when the data does not carry them — clients dispatch on
+        /// <c>type</c>, so it must always be present.
+        /// </summary>
+        public JObject GetPayload()
+        {
+            var cached = _payload;
+            if (cached != null) return cached;
+
+            var token = Data as JToken ?? (Data != null ? JToken.FromObject(Data) : JValue.CreateNull());
+            if (!(token is JObject payload))
+            {
+                // Non-object payloads (a bare string, a number) cannot carry the dispatch fields
+                // themselves, so they travel wrapped rather than being dropped.
+                payload = new JObject { ["data"] = token };
+            }
+            if (payload["type"] == null && !string.IsNullOrEmpty(EventType))
+            {
+                payload["type"] = EventType;
+            }
+            if (payload["timestamp"] == null)
+            {
+                payload["timestamp"] = TimeUtility.GetISOTimestamp();
+            }
+
+            _payload = payload;
+            return payload;
+        }
     }
 
     /// <summary>
@@ -676,16 +592,5 @@ namespace Lilium.RemoteControl
         [JsonProperty("data")] public object Data { get; set; }
         [JsonProperty("timestamp")] public long Timestamp { get; set; }
         [JsonProperty("messageId")] public string MessageId { get; set; }
-    }
-
-    /// <summary>
-    /// クライアント接続イベント
-    /// </summary>
-    public class ClientConnectionEvent
-    {
-        public string Type { get; set; }
-        public string ClientId { get; set; }
-        public long Timestamp { get; set; }
-        public string EventId { get; set; }
     }
 }

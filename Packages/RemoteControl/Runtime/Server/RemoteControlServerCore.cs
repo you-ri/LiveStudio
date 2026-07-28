@@ -15,8 +15,8 @@ namespace Lilium.RemoteControl.Server
         public RemoteControlContext context { get; private set; }
         private EventQueue _eventQueue;
         private RestApiConnectionManager _connectionManager;
-        private StreamHandler _streamHandler;
         private ExposedObjectHandler _exposedObjectHandler;
+        private EventsHandler _eventsHandler;
         private StatusHandler _statusHandler;
         private PerformanceHandler _performanceHandler;
         private LanguageHandler _languageHandler;
@@ -47,10 +47,12 @@ namespace Lilium.RemoteControl.Server
         
         public void RegisterDefaultRoutes()
         {
-            _streamHandler = new StreamHandler(this, "/api/stream");
-            RegisterRoute(_streamHandler);
             _exposedObjectHandler = new ExposedObjectHandler(this);
             RegisterRoute(_exposedObjectHandler);
+            // Standalone route for the per-client event inbox. The remote app collects it through
+            // the batch endpoint instead, but a non-batching client needs somewhere to ask.
+            _eventsHandler = new EventsHandler(this);
+            RegisterRoute(_eventsHandler);
             _statusHandler = new StatusHandler(this);
             RegisterRoute(_statusHandler);
             _performanceHandler = new PerformanceHandler(this);
@@ -68,10 +70,10 @@ namespace Lilium.RemoteControl.Server
         public void UnregisterDefaultRoutes()
         {
             // UnregisterRoute calls handler.Cleanup() internally.
-            UnregisterRoute(_streamHandler);
-            _streamHandler = null;
             UnregisterRoute(_exposedObjectHandler);
             _exposedObjectHandler = null;
+            UnregisterRoute(_eventsHandler);
+            _eventsHandler = null;
             UnregisterRoute(_statusHandler);
             _statusHandler = null;
             UnregisterRoute(_performanceHandler);
@@ -106,13 +108,11 @@ namespace Lilium.RemoteControl.Server
         private void HandleClientConnected(RestApiClient client)
         {
             onClientConnected?.Invoke(client);
-            _ = _eventQueue?.NotifyClientConnected(client.ClientId);
         }
 
         private void HandleClientDisconnected(RestApiClient client)
         {
             onClientDisconnected?.Invoke(client);
-            _ = _eventQueue?.NotifyClientDisconnected(client.ClientId);
         }
         
         public Task BroadcastMessage(object message, string eventType)
@@ -145,6 +145,11 @@ namespace Lilium.RemoteControl.Server
                 : Task.CompletedTask;
         }
         
+        /// <summary>
+        /// How many remote apps are polling this server right now. Backed by each client's last
+        /// request time (see <see cref="RestApiConnectionManager"/>), which is the only liveness
+        /// signal there is once nothing holds a connection open.
+        /// </summary>
         public int GetConnectionCount()
         {
             return _connectionManager?.ConnectionCount ?? 0;

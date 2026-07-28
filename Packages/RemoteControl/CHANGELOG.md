@@ -5,12 +5,18 @@
 ### Added
 
 - `GET /exposed/changes` reports which exposed objects changed since a revision, as ids only. `ExposedChangeLog` keeps the latest revision per object id rather than a queue of events, so memory is bounded by the number of distinct objects and a client that has been away for any length of time still gets exactly the set it missed — there is no "cursor fell off the end" case to recover from.
+- `GET /api/events?since={lastEventId}` hands a client the one-shot notices queued for it — toast notifications and confirmation prompts, the only things left that cannot be recovered by re-reading state. The queue is per client with its own read position, so missing a poll delays a notice instead of dropping it. It is also resolvable as a sub-request of `POST /exposed/batch`, which is how the remote app collects it: riding the poll it already sends for displayed values means the inbox costs no extra round trip.
+- `/api/status` reports an `instanceId` that changes whenever the server is rebuilt, and polling it marks the calling client present. Without a held-open connection there is nothing to notice a restart that polling happened to poll straight through, and a client would sit on cursors and a type table describing a state that no longer exists.
 
 ### Changed
 
 - Property changes are no longer pushed over SSE. `ExposedPropertyBroadcast` records the changed object's id in `ExposedChangeLog` instead of serializing the value and fanning it out to every connected client. A broadcast went to all clients regardless of what each was looking at, and the value was serialized once per change even when nobody displayed it; now a client polls the change feed and refetches only the objects it holds. The entry points and their call sites are unchanged.
 - `types_update` and `ui_update` events are replaced by the pseudo ids `@types` and `@ui` in the same change feed, so cache invalidation travels the same path as everything else.
-- The SSE stream (`/api/stream`) now carries only system notifications and confirmation prompts — the events that are genuinely one-shot and cannot be recovered by polling.
+- Nothing is pushed to a remote app any more. The SSE stream (`/api/stream`) and its long-poll machinery are gone; notifications and confirmation prompts travel through the per-client inbox above. `EventQueue` keeps its queues and read positions — only the held-open connection that drained them was replaced.
+- "Is a remote app connected" (which decides whether a confirmation prompt has anywhere to show) is now "did one poll us in the last 5 seconds" — five times the connection-check interval. A shorter window would drop a prompt on the floor whenever a phone answered slowly; the event inbox keeps its own, much longer retention, since that answers a different question (is there anything left to hand over when a client comes back).
+- `GetClientId` prefers the client-declared `X-Client-ID` header over the TCP endpoint. Inbox delivery has to survive across separate requests, and the source port does not.
+- Removed `/api/heartbeat`. It was never registered on any route, and the client-liveness it was meant to carry now comes from the status poll.
+- Nothing is broadcast on a timer any longer. The last such producer, the expression-weight update, sent every active weight to every connected client ten times a second no matter what page each had open; the remote app now polls `AvatarController.expressions` through the ordinary displayed-property sync, so the weights cost nothing while the expression cards are closed and reach only the client looking at them.
 <!-- changelog-sha: ead5a500c2674f81ae92f66e88e1b3eacac8bd4f -->
 
 ### Added

@@ -1,3 +1,5 @@
+using System;
+
 using Lilium.RemoteControl.Core;
 
 namespace Lilium.RemoteControl.Server
@@ -29,6 +31,15 @@ namespace Lilium.RemoteControl.Server
         public string scope { get; }
 
         /// <summary>
+        /// Identifies this run of the server. A new value means the event queue and the exposed
+        /// object registry were rebuilt, so every cursor a remote app is holding (inbox read
+        /// position, change-feed revision) refers to a state that no longer exists. Clients watch
+        /// this on <c>/api/status</c> and resync when it changes — polling alone cannot notice a
+        /// restart it happened to poll straight through.
+        /// </summary>
+        public string instanceId { get; }
+
+        /// <summary>
         /// Create a RemoteControlContext.
         /// </summary>
         /// <param name="scope">Scope identifier (default: "default").</param>
@@ -39,6 +50,7 @@ namespace Lilium.RemoteControl.Server
             this.scope = scope;
             this.eventQueue = new EventQueue();
             this.connectionManager = new RestApiConnectionManager();
+            this.instanceId = Guid.NewGuid().ToString("N");
         }
     }
 }

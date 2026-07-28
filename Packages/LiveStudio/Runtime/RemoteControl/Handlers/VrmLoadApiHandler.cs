@@ -30,7 +30,7 @@ namespace Lilium.LiveStudio
             // IVRMLoadObserverとしてサービスに登録
             Service<IVRMLoadObserver>.Register(this);
 
-            // SSEクライアント接続時にVRM読み込み中であれば開始イベントを送信
+            // クライアントが初めて名乗ったときに VRM 読み込み中であれば開始イベントを積む
             _server.onClientConnected += OnClientConnected;
         }
 
@@ -42,7 +42,7 @@ namespace Lilium.LiveStudio
 
         private void OnClientConnected(RestApiClient client)
         {
-            // SSEクライアント接続時にVRM読み込み中であれば、そのクライアントに開始イベントを送信
+            // 途中から繋いだクライアントにも読み込み中であることを伝える (受信箱に積む)
             if (VRMLoader.IsLoading && !string.IsNullOrEmpty(VRMLoader.CurrentLoadingFilePath))
             {
                 var startData = new
@@ -117,7 +117,7 @@ namespace Lilium.LiveStudio
                 }
 
                 // VRM読み込み処理を非同期で開始（完了を待たない）
-                // 結果はSSE経由で通知される
+                // 結果は受信箱経由で通知される
                 _ = ProcessVrmLoadAsync(clientId, filePath);
 
                 // 即座にレスポンスを返す
@@ -166,7 +166,7 @@ namespace Lilium.LiveStudio
                 response.StatusCode = 200;
                 await WriteResponse(response, json);
 
-                // リセット完了をSSE配信
+                // リセット完了を受信箱へ
                 var resetData = new
                 {
                     type = "vrm_reset_complete",
@@ -197,7 +197,7 @@ namespace Lilium.LiveStudio
         
         /// <summary>
         /// VRM読み込みを非同期で開始（Fire-and-forget方式）
-        /// 結果はIVRMLoadObserverコールバック経由でSSE通知される
+        /// 結果はIVRMLoadObserverコールバック経由で受信箱に積まれる
         /// </summary>
         private async Task ProcessVrmLoadAsync(string clientId, string filePath)
         {
@@ -208,7 +208,7 @@ namespace Lilium.LiveStudio
             _currentFilePath = filePath;
 
             // AvatarServiceを通じてVRM読み込みを実行
-            // 開始通知はVRMLoader→OnVRMLoadStartedコールバック経由でSSE送信される
+            // 開始通知はVRMLoader→OnVRMLoadStartedコールバック経由で受信箱に積まれる
             // 結果はIVRMLoadObserverのコールバック経由で通知される
             AvatarService.Load("current", filePath);
 
@@ -226,7 +226,7 @@ namespace Lilium.LiveStudio
             // Studio側から直接読み込まれた場合もファイルパスを保持
             _currentFilePath = filePath;
 
-            // 開始をSSE配信
+            // 開始を受信箱へ
             var startData = new
             {
                 type = "vrm_load_start",
@@ -245,7 +245,7 @@ namespace Lilium.LiveStudio
         {
             Debug.Log($"[Studio] VRM loaded successfully: {vrm?.name}");
 
-            // 完了をSSE配信
+            // 完了を受信箱へ
             var completeData = new
             {
                 type = "vrm_load_complete",
@@ -269,7 +269,7 @@ namespace Lilium.LiveStudio
         {
             Debug.LogError($"[Studio] VRM load failed: {error}");
 
-            // エラーをSSE配信
+            // エラーを受信箱へ
             var errorData = new
             {
                 type = "vrm_load_error",

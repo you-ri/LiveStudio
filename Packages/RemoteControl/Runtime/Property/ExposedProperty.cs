@@ -302,7 +302,7 @@ namespace Lilium.RemoteControl
 
         public void SetValue(object value, bool captureDefault)
         {
-            // PropertyRef: 参照先に委譲しつつ、owner (= FusionPage 側) にも onPropertyChanged を発火して SSE Broadcast を走らせる
+            // PropertyRef: 参照先に委譲しつつ、owner (= FusionPage 側) にも onPropertyChanged を発火して変更記録を走らせる
             if (type != null && type.isExposedPropertyReference)
             {
                 var resolved = _ResolveRef();
@@ -539,7 +539,7 @@ namespace Lilium.RemoteControl
                 {
                     var oldValue = resolved.Value.GetValue();
                     resolved.Value.RevertValue();
-                    // owner (FusionPage) 側の PropertyChanged も発火して SSE で UI 更新を反映
+                    // owner (FusionPage) 側の PropertyChanged も発火して変更フィード経由で UI 更新を反映
                     owner.targetType?.RaisePropertyChanged(this, oldValue);
                 }
                 return;

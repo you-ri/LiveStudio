@@ -2,7 +2,7 @@
   "name": "jp.lilium.livestudio.virgo",
   "displayName": "Lilium Live Studio Virgo Extension",
   "version": "0.25.3-exp.1",
-  "description": "VirgoMotion adapter for jp.lilium.livestudio. Receives ARKit / MediaPipe motion frames over UDP, talks to the Fusion process via REST/SSE, and bridges the wire format into the LiveStudio avatar pipeline.",
+  "description": "VirgoMotion adapter for jp.lilium.livestudio. Receives ARKit / MediaPipe motion frames over UDP, talks to the Fusion process via REST, and bridges the wire format into the LiveStudio avatar pipeline.",
   "author": {
     "name": "Syrize",
     "email": "you-ri@sasakingdom.com",

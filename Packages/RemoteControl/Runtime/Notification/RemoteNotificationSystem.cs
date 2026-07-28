@@ -6,7 +6,8 @@ namespace Lilium.RemoteControl.Notification
     /// <summary>
     /// Studio 等の Unity アプリから接続中の Remote App へ通知ダイアログを表示するための静的 API。
     /// 内部的には RemoteControlServerCore.BroadcastSystemNotification を全サーバへ送る。
-    /// RemoteApp 側は SSE の "system_notification" を NotificationSystem に変換して表示する。
+    /// 通知は各クライアントの受信箱に積まれ、リモート側が定期ポーリングで拾って
+    /// "system_notification" として表示する。取りこぼしても次のポーリングで届く。
     /// </summary>
     public static class RemoteNotificationSystem
     {

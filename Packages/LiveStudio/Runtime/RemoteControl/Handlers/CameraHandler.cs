@@ -137,7 +137,7 @@ namespace Lilium.LiveStudio
                 {
                     if (camera.isLive && camera.image != null)
                     {
-                        SendCameraImageSSE(camera);
+                        SendCameraImage(camera);
                     }
                 }
 
@@ -270,7 +270,7 @@ namespace Lilium.LiveStudio
                 var response = await ExecuteOnMainThread(() => {
                     var result = ExecuteCameraAction(request.data);
 
-                    // SSEで他のクライアントに通知
+                    // 他のクライアントの受信箱へ通知
                     _ = BroadcastCameraUpdate();
 
                     return result;
@@ -400,7 +400,7 @@ namespace Lilium.LiveStudio
             await _server?.BroadcastMessage(updateData, "camera_update");
         }
 
-        private async void SendCameraImageSSE(IExposedCamera activeCamera)
+        private async void SendCameraImage(IExposedCamera activeCamera)
         {
             if (activeCamera?.image != null)
             {
@@ -413,7 +413,7 @@ namespace Lilium.LiveStudio
 
                 byte[] imageBytes = thumbnailTexture.EncodeToPNG();
                 
-                // SSE用データ構造
+                // 配信用データ構造
                 var imageData = new
                 {
                     type = "camera_image",

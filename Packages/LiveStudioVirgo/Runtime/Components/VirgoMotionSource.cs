@@ -18,17 +18,11 @@ namespace Lilium.LiveStudio.Virgo
 
         public static bool isConnected;
 
-        public static System.Action onSSEConnected;
-
-        public static System.Action onSSEDisconnected;
-
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void Initialize()
         {
             isConnected = false;
-            onSSEConnected = null;
-            onSSEDisconnected = null;
         }
 
     }
