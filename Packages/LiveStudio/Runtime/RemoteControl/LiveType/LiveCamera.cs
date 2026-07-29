@@ -54,16 +54,44 @@ namespace Lilium.LiveStudio
         [SerializeReference, Select]
         public ICameraController controller = new OrbitalFollowCameraController();
 
+        // Shadow Field for priority. The live value lives on the CinemachineCamera (the Brain
+        // derives the live camera from the highest priority), so persisting it is what makes the
+        // active camera survive a save/load: SwitchCamera writes 1/0 through the property setter,
+        // the scene file stores the values, and OnAfterLiveDeserialize re-applies them on load.
+        // Synced from the reference in OnEnable so a file without the key (older saves) applies a
+        // no-op instead of clobbering the scene-authored priority with the field's default.
+        [SerializeField, LiveField, Hide]
+        [FormerlyNamedAs("priority")]
+        private int _priority;
+
+        [LiveProperty, Hide]
         public int priority
         {
-            get => _reference != null ? _reference.Priority : default(int);
+            get => _reference != null ? _reference.Priority : _priority;
             set
             {
+                _priority = value;
                 if (_reference != null)
                 {
                     _reference.Priority = value;
                     PropertyUtility.Apply(_reference);
                 }
+            }
+        }
+
+        public override void OnBeforeLiveSerialize()
+        {
+            base.OnBeforeLiveSerialize();
+            if (_reference != null) _priority = _reference.Priority;
+        }
+
+        public override void OnAfterLiveDeserialize()
+        {
+            base.OnAfterLiveDeserialize();
+            if (_reference != null)
+            {
+                _reference.Priority = _priority;
+                PropertyUtility.Apply(_reference);
             }
         }
 
@@ -230,6 +258,12 @@ namespace Lilium.LiveStudio
         public override void OnEnable()
         {
             base.OnEnable();
+
+            // Adopt the scene-authored priority as the shadow's starting value, so deserializing a
+            // file that carries no priority key re-applies the current value (no-op) and the dirty
+            // baseline starts from the authored state.
+            if (_reference != null) _priority = _reference.Priority;
+
             Service<ILiveCamera>.Register(this);
 
             controller?.Setup(_reference);

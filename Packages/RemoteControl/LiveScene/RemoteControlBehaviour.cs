@@ -131,6 +131,17 @@ namespace Lilium.RemoteControl.LiveScene
             bool switched = _sceneSave?.LoadCurrentDataFrom(path, forceBaseSceneReload) ?? false;
             if (switched && persistAcrossScenes) _switchPendingReload = true;
         }
+        /// <summary>
+        /// Applies a full-state scene file (e.g. a snapshot) on top of the live scene without
+        /// adopting it as the current scene file. A base-scene switch arms the deferred apply the
+        /// same way <see cref="LoadCurrentDataFrom"/> does. See
+        /// <see cref="LiveSceneSaveSystem.ApplyExternalData"/>.
+        /// </summary>
+        public void ApplyExternalData(string path)
+        {
+            bool switched = _sceneSave?.ApplyExternalData(path) ?? false;
+            if (switched && persistAcrossScenes) _switchPendingReload = true;
+        }
         public void SaveCurrentData() => _sceneSave?.SaveCurrentData();
         public void SaveCurrentDataTo(string path) => _sceneSave?.SaveCurrentDataTo(path);
         public bool HasUnsavedChanges() => _sceneSave?.HasUnsavedChanges() ?? false;

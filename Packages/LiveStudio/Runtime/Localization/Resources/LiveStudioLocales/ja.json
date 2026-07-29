@@ -44,5 +44,10 @@
     "AVATAR_LOCKLOWERBODYPOSE_HELP": "下半身の位置をロックします。アバターは基準位置に固定されます。各ボーンの回転はモーションキャプチャーに従うため、アバターはその場に留まりつつポーズは動きます。",
     "AVATAR_RECEIVER": "レシーバー",
     "CAMERATRACKER_MOTIONSOURCE": "モーションソース",
-    "NOTIFY_PRESET_SAVED": "プリセットを保存しました"
+    "NOTIFY_PRESET_SAVED": "プリセットを保存しました",
+    "SNAPSHOT_TAKE": "スナップショットを撮る",
+    "SNAPSHOT_RESTORE": "スナップショットを復元",
+    "SNAPSHOT_DELETE": "スナップショットを削除",
+    "NOTIFY_SNAPSHOT_SAVED": "スナップショットを保存しました",
+    "NOTIFY_SNAPSHOT_RESTORED": "スナップショットを復元しました"
 }

@@ -44,5 +44,10 @@
     "AVATAR_LOCKLOWERBODYPOSE_HELP": "锁定下半身位置。角色固定在基准位置。各骨骼的旋转仍跟随动作捕捉，因此角色原地不动但姿势会动。",
     "AVATAR_RECEIVER": "接收器",
     "CAMERATRACKER_MOTIONSOURCE": "动作源",
-    "NOTIFY_PRESET_SAVED": "已保存预设"
+    "NOTIFY_PRESET_SAVED": "已保存预设",
+    "SNAPSHOT_TAKE": "拍摄快照",
+    "SNAPSHOT_RESTORE": "恢复快照",
+    "SNAPSHOT_DELETE": "删除快照",
+    "NOTIFY_SNAPSHOT_SAVED": "已保存快照",
+    "NOTIFY_SNAPSHOT_RESTORED": "已恢复快照"
 }

@@ -53,6 +53,22 @@ namespace Lilium.RemoteControl.LiveScene
         private static string _StateDir() => _stateProjectDirectoryOverride ?? Application.persistentDataPath;
 
         /// <summary>
+        /// Full-state file (e.g. a snapshot) waiting to be applied after a base-scene switch.
+        /// Static because a non-persistent host is recreated by the scene reload with a fresh
+        /// <see cref="LiveSceneSaveSystem"/> instance; the replacement drains it from
+        /// <see cref="LoadCurrentData"/>.
+        /// </summary>
+        private static string _pendingExternalApplyPath;
+
+        // Reset at runtime startup so a pending apply never leaks across play sessions when
+        // Domain Reload is disabled.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void _ResetPendingStatics()
+        {
+            _pendingExternalApplyPath = null;
+        }
+
+        /// <summary>
         /// True if the path is a live scene file (current ".live.json" or legacy ".scene.json").
         /// Lets a project crawler classify files by path alone, without reading their contents.
         /// </summary>
@@ -196,6 +212,17 @@ namespace Lilium.RemoteControl.LiveScene
         /// </summary>
         public bool LoadCurrentData(bool forceBaseSceneReload = false)
         {
+            // A pending external apply (a snapshot restore that had to switch base scenes) takes
+            // this re-entry over: the switch was triggered by ApplyExternalData, so what must run
+            // now is the deferred apply, not a reload of the current scene file.
+            if (_pendingExternalApplyPath != null)
+            {
+                var pendingPath = _pendingExternalApplyPath;
+                _pendingExternalApplyPath = null;
+                _ApplyExternalFrom(pendingPath);
+                return false;
+            }
+
             string fullPath;
             if (_currentFilePath != _defaultFileName && System.IO.File.Exists(currentFullPath))
             {
@@ -294,6 +321,54 @@ namespace Lilium.RemoteControl.LiveScene
             return true;
         }
 
+        /// <summary>
+        /// Applies a scene-state file (e.g. a ".snapshot.json" full snapshot) on top of the current
+        /// live scene WITHOUT adopting it as the current scene file: <see cref="currentFilePath"/>,
+        /// the startup state and the "Save" destination all stay untouched, and the applied values
+        /// count as unsaved edits (no dirty re-baseline).
+        ///
+        /// When the file records a different base Unity scene, the scene is switched first and the
+        /// apply is deferred until the new scene has loaded, mirroring <see cref="LoadCurrentData"/>'s
+        /// flow (the host re-enters LoadCurrentData from Start / sceneLoaded, which drains the
+        /// pending path). Returns <c>true</c> when a base-scene switch was triggered, <c>false</c>
+        /// when the data was applied in place.
+        /// </summary>
+        public bool ApplyExternalData(string fullPath)
+        {
+            if (_objectContainer == null) return false;
+            if (string.IsNullOrEmpty(fullPath) || !System.IO.File.Exists(fullPath))
+            {
+                Debug.LogWarning($"[RemoteControl] ApplyExternalData: file not found: '{fullPath}'");
+                return false;
+            }
+
+            if (_switchSceneOnLoad && _TrySwitchBaseScene(fullPath, force: false))
+            {
+                _pendingExternalApplyPath = fullPath;
+                return true;
+            }
+
+            _ApplyExternalFrom(fullPath);
+            return false;
+        }
+
+        // Deserializes the file into the container without re-baselining dirty tracking: the applied
+        // state differs from the current scene file on disk, so it must keep counting as unsaved
+        // edits until the user saves. Project-scoped settings are not touched (these files carry
+        // Scene-scoped members only, like the scene file itself).
+        private void _ApplyExternalFrom(string fullPath)
+        {
+            if (_objectContainer == null) return;
+            if (!System.IO.File.Exists(fullPath))
+            {
+                Debug.LogWarning($"[RemoteControl] Apply failed; file disappeared: '{fullPath}'");
+                return;
+            }
+
+            var fileJson = System.IO.File.ReadAllText(fullPath);
+            LiveSceneSerializer.LiveSceneFromJson(fileJson, _objectContainer);
+        }
+
         public void SaveCurrentData()
         {
             if (string.IsNullOrEmpty(_currentFilePath))
@@ -320,7 +395,7 @@ namespace Lilium.RemoteControl.LiveScene
             if (!string.IsNullOrEmpty(dir) && !System.IO.Directory.Exists(dir))
                 System.IO.Directory.CreateDirectory(dir);
 
-            var baseSceneName = _ResolveBaseSceneName();
+            var baseSceneName = ResolveBaseSceneName();
             var json = LiveSceneSerializer.BuildLiveSceneJson(_objectContainer, baseSceneName);
             System.IO.File.WriteAllText(fullPath, json);
 
@@ -615,8 +690,9 @@ namespace Lilium.RemoteControl.LiveScene
         // Resolve the baseSceneName to persist. Prefer the active scene when it is a build scene;
         // otherwise fall back to the first loaded build scene (the active scene is an additive
         // world bundle on top of it). Returns null when no build scene is loaded, in which case
-        // the serializer omits the field.
-        private static string _ResolveBaseSceneName()
+        // the serializer omits the field. Public so other full-state writers (snapshots) record
+        // the same base scene a regular scene save would.
+        public static string ResolveBaseSceneName()
         {
             var active = SceneManager.GetActiveScene();
             if (_IsBuildScene(active)) return active.name;

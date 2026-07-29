@@ -25,6 +25,7 @@ namespace Lilium.LiveStudio
         private QuitApiHandler _quitHandler;
         private VrmLoadApiHandler _vrmLoadHandler;
         private AvatarImageHandler _avatarImageHandler;
+        private SnapshotImageHandler _snapshotImageHandler;
         private AnimationClipsHandler _animationClipsHandler;
         private AssetsHandler _assetsHandler;
 
@@ -41,6 +42,9 @@ namespace Lilium.LiveStudio
 
             _avatarImageHandler = new AvatarImageHandler(server);
             server.RegisterRoute(_avatarImageHandler);
+
+            _snapshotImageHandler = new SnapshotImageHandler(server);
+            server.RegisterRoute(_snapshotImageHandler);
 
             _animationClipsHandler = new AnimationClipsHandler(server);
             server.RegisterRoute(_animationClipsHandler);
@@ -72,6 +76,7 @@ namespace Lilium.LiveStudio
             server.UnregisterRoute(_manipulatorHandler);
             server.UnregisterRoute(_vrmLoadHandler);
             server.UnregisterRoute(_avatarImageHandler);
+            server.UnregisterRoute(_snapshotImageHandler);
             server.UnregisterRoute(_animationClipsHandler);
             server.UnregisterRoute(_assetsHandler);
             server.UnregisterRoute(_inputActionsHandler);
@@ -84,6 +89,7 @@ namespace Lilium.LiveStudio
             _manipulatorHandler = null;
             _vrmLoadHandler = null;
             _avatarImageHandler = null;
+            _snapshotImageHandler = null;
             _animationClipsHandler = null;
             _assetsHandler = null;
             _inputActionsHandler = null;

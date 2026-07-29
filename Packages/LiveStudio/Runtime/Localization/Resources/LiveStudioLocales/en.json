@@ -44,5 +44,10 @@
     "AVATAR_LOCKLOWERBODYPOSE_HELP": "Locks the lower-body position. The avatar is pinned to its anchor position. Individual bone rotations still follow the motion capture, so the pose keeps moving while the avatar stays put.",
     "AVATAR_RECEIVER": "Receiver",
     "CAMERATRACKER_MOTIONSOURCE": "Motion Source",
-    "NOTIFY_PRESET_SAVED": "Preset saved"
+    "NOTIFY_PRESET_SAVED": "Preset saved",
+    "SNAPSHOT_TAKE": "Take Snapshot",
+    "SNAPSHOT_RESTORE": "Restore Snapshot",
+    "SNAPSHOT_DELETE": "Delete Snapshot",
+    "NOTIFY_SNAPSHOT_SAVED": "Snapshot saved",
+    "NOTIFY_SNAPSHOT_RESTORED": "Snapshot restored"
 }
