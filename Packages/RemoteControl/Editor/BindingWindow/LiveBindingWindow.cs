@@ -38,13 +38,6 @@ namespace Lilium.RemoteControl.Editor
             typeof(Vector2Int), typeof(Vector3Int), typeof(RectInt),
         };
 
-        private static readonly HashSet<Type> kNumericTypes = new HashSet<Type>
-        {
-            typeof(int), typeof(uint), typeof(long), typeof(ulong),
-            typeof(short), typeof(ushort), typeof(byte), typeof(sbyte),
-            typeof(float), typeof(double), typeof(decimal),
-        };
-
         private struct MemberCandidate
         {
             public string path;
@@ -546,7 +539,7 @@ namespace Lilium.RemoteControl.Editor
             // Removal paths call GUIUtility.ExitGUI, so forward iteration is safe here.
             for (int i = 0; i < _preset.typeDefinitions.Count; i++)
             {
-                _DrawTypeDefinition(_preset.typeDefinitions[i]);
+                _DrawTypeDefinition(_preset.typeDefinitions[i], i);
             }
 
             if (_preset.bindings.Count > 0)
@@ -561,7 +554,7 @@ namespace Lilium.RemoteControl.Editor
             EditorGUILayout.EndScrollView();
         }
 
-        private void _DrawTypeDefinition(LiveBindingPreset.TypeDefinition definition)
+        private void _DrawTypeDefinition(LiveBindingPreset.TypeDefinition definition, int definitionIndex)
         {
             if (definition == null) return;
             var type = definition.ResolveType();
@@ -619,7 +612,7 @@ namespace Lilium.RemoteControl.Editor
                 var members = definition.members;
                 for (int i = 0; i < members.Count; i++)
                 {
-                    changed |= _DrawMember(type, members, i);
+                    changed |= _DrawMember(definitionIndex, members, i);
                 }
                 EditorGUI.indentLevel--;
 
@@ -629,7 +622,7 @@ namespace Lilium.RemoteControl.Editor
             EditorGUILayout.EndVertical();
         }
 
-        private bool _DrawMember(Type type, List<LiveBindingMember> members, int index)
+        private bool _DrawMember(int definitionIndex, List<LiveBindingMember> members, int index)
         {
             var member = members[index];
             bool changed = false;
@@ -675,35 +668,40 @@ namespace Lilium.RemoteControl.Editor
             {
                 persistable = EditorGUILayout.Toggle("Persistable", member.persistable);
             }
-
-            bool useSlider = member.useSlider;
-            float sliderMin = member.sliderMin, sliderMax = member.sliderMax, sliderStep = member.sliderStep;
-            if (!member.isFunction && _IsNumericMember(type, member))
-            {
-                useSlider = EditorGUILayout.Toggle("Slider", member.useSlider);
-                if (useSlider)
-                {
-                    EditorGUI.indentLevel++;
-                    sliderMin = EditorGUILayout.FloatField("Min", member.sliderMin);
-                    sliderMax = EditorGUILayout.FloatField("Max", member.sliderMax);
-                    sliderStep = EditorGUILayout.FloatField("Step (0 = auto)", member.sliderStep);
-                    EditorGUI.indentLevel--;
-                }
-            }
             if (EditorGUI.EndChangeCheck())
             {
                 Undo.RecordObject(_preset, "Edit Member Metadata");
                 member.help = help;
                 member.persistable = persistable;
-                member.useSlider = useSlider;
-                member.sliderMin = sliderMin;
-                member.sliderMax = sliderMax;
-                member.sliderStep = sliderStep;
                 changed = true;
+            }
+
+            if (!member.isFunction)
+            {
+                changed |= _DrawControlField(definitionIndex, index);
             }
             EditorGUI.indentLevel--;
 
             return changed;
+        }
+
+        // Draws the polymorphic controller through the SerializedProperty path so the
+        // [SerializeReference, Select] drawer provides the type dropdown and per-control fields.
+        private bool _DrawControlField(int definitionIndex, int memberIndex)
+        {
+            var serialized = new SerializedObject(_preset);
+            var property = serialized.FindProperty(
+                $"typeDefinitions.Array.data[{definitionIndex}].members.Array.data[{memberIndex}].control");
+            if (property == null) return false;
+
+            EditorGUI.BeginChangeCheck();
+            EditorGUILayout.PropertyField(property, new GUIContent("Control"), includeChildren: true);
+            if (EditorGUI.EndChangeCheck())
+            {
+                serialized.ApplyModifiedProperties();
+                return true;
+            }
+            return false;
         }
 
         private void _DrawInstanceBinding(LiveBindingPreset.InstanceBinding entry)
@@ -741,14 +739,5 @@ namespace Lilium.RemoteControl.Editor
             EditorGUILayout.EndHorizontal();
         }
 
-        private static bool _IsNumericMember(Type type, LiveBindingMember member)
-        {
-            if (type == null) return false;
-            var prop = type.GetProperty(member.path, BindingFlags.Public | BindingFlags.Instance);
-            if (prop != null) return kNumericTypes.Contains(prop.PropertyType);
-            var field = type.GetField(member.path, BindingFlags.Public | BindingFlags.Instance);
-            if (field != null) return kNumericTypes.Contains(field.FieldType);
-            return false;
-        }
     }
 }

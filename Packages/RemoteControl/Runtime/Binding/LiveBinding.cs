@@ -29,15 +29,9 @@ namespace Lilium.RemoteControl
         [Tooltip("Include this member in live-scene save/restore")]
         public bool persistable = true;
 
-        [Tooltip("Render a numeric member as a slider")]
-        public bool useSlider;
-
-        public float sliderMin = 0f;
-
-        public float sliderMax = 1f;
-
-        [Tooltip("Slider step. 0 auto-derives (range / 20)")]
-        public float sliderStep = 0f;
+        [Tooltip("Controller used to render the member in RemoteApp. None = default for the value type")]
+        [SerializeReference, Select]
+        public LiveBindingControl control;
 
         internal LivePropertyDefine ToPropertyDefine()
         {
@@ -47,7 +41,7 @@ namespace Lilium.RemoteControl
                 path = path,
                 isPersistable = persistable,
                 persistScope = PersistScope.Scene,
-                control = useSlider ? new SliderAttribute(sliderMin, sliderMax, sliderStep) : null,
+                control = control?.ToControlAttribute(),
                 label = string.IsNullOrEmpty(label) ? null : label,
                 help = string.IsNullOrEmpty(help) ? null : help,
             };
@@ -73,9 +67,10 @@ namespace Lilium.RemoteControl
             sb.Append(isFunction ? 'f' : 'p').Append(':').Append(path)
                 .Append('|').Append(label).Append('|').Append(help)
                 .Append('|').Append(persistable ? '1' : '0');
-            if (useSlider)
+            if (control != null)
             {
-                sb.Append("|s").Append(sliderMin).Append(',').Append(sliderMax).Append(',').Append(sliderStep);
+                sb.Append("|c:");
+                control.AppendSignature(sb);
             }
             sb.Append(';');
         }

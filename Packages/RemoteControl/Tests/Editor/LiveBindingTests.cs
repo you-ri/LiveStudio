@@ -135,7 +135,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var preset = _CreatePreset();
             var definition = preset.GetOrAddTypeDefinition(typeof(Light));
-            definition.members.Add(new LiveBindingMember { path = "intensity", useSlider = true, sliderMin = 0f, sliderMax = 8f });
+            definition.members.Add(new LiveBindingMember { path = "intensity", control = new SliderControl { min = 0f, max = 8f } });
             definition.members.Add(new LiveBindingMember { path = "enabled" });
             definition.members.Add(new LiveBindingMember { path = "range", persistable = false });
 
@@ -165,7 +165,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var preset = _CreatePreset();
             var definition = preset.GetOrAddTypeDefinition(typeof(Light));
-            definition.members.Add(new LiveBindingMember { path = "intensity", useSlider = true, sliderMax = 8f });
+            definition.members.Add(new LiveBindingMember { path = "intensity", control = new SliderControl { max = 8f } });
             definition.members.Add(new LiveBindingMember { path = "Reset", isFunction = true, label = "Reset Light" });
 
             var lightGo = _CreateGameObject("BindingLight");
