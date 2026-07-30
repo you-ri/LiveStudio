@@ -381,12 +381,52 @@ namespace Lilium.LiveStudio.Virgo
         [LiveFunction]
         public void ResyncTiming()
         {
+            // The pipeline has two timing baselines: Fusion's (its offset onto the capture stream) and
+            // this one (playback position). Re-locking only one leaves the other's drift in place, so
+            // this single call covers both. Fusion is asked first — without waiting for the reply — and
+            // the local reset below always runs, so a Studio-only session still resyncs.
+            _RequestFusionResync();
+
             _animationFrameBuffer.Reset();
             _frameOffset = 0;
             // Forget the last received frame number so a sender that restarted its numbering
             // does not emit a spurious "went backwards" warning on the next packet.
             _lastReceivedFrames = -1;
             Debug.Log("[Studio] Manual resync timing: cleared frame buffer and offset; re-locking on next received frames.");
+        }
+
+        /// <summary>
+        /// Asks Fusion to re-lock its capture timing. The reply is not awaited: both sides re-lock on
+        /// the frames that arrive next, so there is nothing to sequence.
+        /// </summary>
+        void _RequestFusionResync()
+        {
+            // Coroutines need play mode, and outside it nothing is being received anyway (OnEnable /
+            // Update do not run), so there is no timing to resync.
+            if (!Application.isPlaying || !isActiveAndEnabled)
+            {
+                return;
+            }
+
+            StartCoroutine(_RequestFusionResyncRoutine());
+        }
+
+        static IEnumerator _RequestFusionResyncRoutine()
+        {
+            bool ok = false;
+            string error = null;
+            yield return FusionRequestSystem.ResyncTiming((success, err) =>
+            {
+                ok = success;
+                error = err;
+            });
+
+            if (!ok)
+            {
+                // Fusion being offline is a normal case (Studio-only sessions), and the Studio side has
+                // already resynced, so this stays a warning.
+                Debug.LogWarning($"[Studio] Failed to ask Fusion to resync timing; the Studio side resynced anyway: {error}");
+            }
         }
 
         [ContextMenu("Reset Camera")]

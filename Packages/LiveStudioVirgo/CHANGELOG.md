@@ -4,6 +4,7 @@
 
 ### Changed
 
+- `VirgoMotionSource.ResyncTiming` now asks Fusion to re-lock its capture timing as well, so a single button resyncs the whole pipeline. There are two timing baselines — Fusion's offset onto the capture stream and Studio's playback offset — and re-locking one left the other's drift in place, which meant pressing a button in each app. The request to Fusion is fire-and-forget and the local reset always runs, so a Studio-only session (or an offline Fusion) resyncs exactly as before.
 - `FusionRequestSystem` calls `/live/function/...`, following RemoteControl's `/exposed/*` → `/live/*` route rename.
 
 ## [0.25.1] - 2026-07-20

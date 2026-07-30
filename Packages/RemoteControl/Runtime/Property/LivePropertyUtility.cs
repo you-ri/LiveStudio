@@ -128,10 +128,45 @@ namespace Lilium.RemoteControl
                             Debug.LogWarning($"[RemoteControl] Shadow field '{e.shadowFieldPath}' not found on {type.Name}; falling back to direct property access for '{e.name}'.");
                         }
                     }
-                    return new LivePropertyType(e.name, memberInfo, e.isPersistable, shadowField, e.persistScope);
+                    return new LivePropertyType(e.name, memberInfo, e.isPersistable, shadowField, e.persistScope,
+                        controlOverride: e.control, labelOverride: e.label, helpOverride: e.help, sectionOverride: e.section);
                 }
 
                 Debug.LogError($"[RemoteControl] Member not found for {type.Name}.{e.path}");
+                return null;
+
+            }).Where(e => e != null).ToArray();
+        }
+
+        /// <summary>
+        /// <see cref="MakePropertyTypes"/> の関数版。Define の path でメソッドを解決し、
+        /// 属性なしで <see cref="LiveFunctionType"/> を構築する (メタデータは Define 側の値を優先)。
+        /// オーバーロードは非対応で、同名メソッドは最初に見つかったものを使う。
+        /// </summary>
+        internal static LiveFunctionType[] MakeFunctionTypes(Type type, LiveFunctionDefine[] defines)
+        {
+            if (defines == null || defines.Length == 0) return null;
+
+            return defines.Select(e =>
+            {
+                // Type.GetMethod(name) はオーバーロードが存在すると AmbiguousMatchException を投げるため、
+                // 列挙して同名メソッドのうち引数が最少のものを選ぶ (RemoteApp のボタンは主に引数なし想定)。
+                MethodInfo methodInfo = null;
+                foreach (var m in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
+                {
+                    if (m.Name != e.path || m.IsGenericMethodDefinition) continue;
+                    if (methodInfo == null || m.GetParameters().Length < methodInfo.GetParameters().Length)
+                    {
+                        methodInfo = m;
+                    }
+                }
+                if (methodInfo != null)
+                {
+                    return new LiveFunctionType(e.name ?? methodInfo.Name, methodInfo,
+                        labelOverride: e.label, iconOverride: e.icon, helpOverride: e.help, sectionOverride: e.section);
+                }
+
+                Debug.LogError($"[RemoteControl] Method not found for {type.Name}.{e.path}");
                 return null;
 
             }).Where(e => e != null).ToArray();

@@ -32,6 +32,48 @@ namespace Lilium.RemoteControl
         /// デシリアライズ時の setter 副作用 (Apply 系処理) をバイパスする。
         /// </summary>
         public string shadowFieldPath;
+
+        /// <summary>
+        /// Control metadata override (e.g. <see cref="SliderAttribute"/>). When set, it takes
+        /// precedence over any [Control] attribute on the member. Used by attribute-less
+        /// registration (presets) where metadata cannot come from attributes.
+        /// </summary>
+        public ControlAttribute control;
+
+        /// <summary>Display label override. Takes precedence over the attribute-provided label.</summary>
+        public string label;
+
+        /// <summary>Help text override. Takes precedence over any [Help] attribute on the member.</summary>
+        public string help;
+
+        /// <summary>Section override. Takes precedence over any [Section] attribute on the member.</summary>
+        public SectionAttribute section;
+    }
+
+    /// <summary>
+    /// Attribute-less function (method) registration entry. Counterpart of
+    /// <see cref="LivePropertyDefine"/> for [LiveFunction]-less methods, used by presets.
+    /// </summary>
+    [System.Serializable]
+    public struct LiveFunctionDefine
+    {
+        /// <summary>Wire name of the function. Defaults to the method name when null.</summary>
+        public string name;
+
+        /// <summary>Method name on the target type.</summary>
+        public string path;
+
+        /// <summary>Display label override for the RemoteApp button.</summary>
+        public string label;
+
+        /// <summary>Material Icons name shown on the RemoteApp button.</summary>
+        public string icon;
+
+        /// <summary>Help text override.</summary>
+        public string help;
+
+        /// <summary>Section override (button-only sections).</summary>
+        public SectionAttribute section;
     }
 
     public class LiveClass
@@ -106,9 +148,25 @@ namespace Lilium.RemoteControl
 
         public static void Register<T>(string typeName, LivePropertyDefine[] defines, string category = null, string icon = null, bool hideInScene = false)
         {
-            var properties = LivePropertyUtility.MakePropertyTypes(typeof(T), defines);
-            var liveClass = new LiveClass(typeof(T), typeName, properties, category: category, icon: icon, hideInScene: hideInScene);
+            Register(typeof(T), typeName, defines, functionDefines: null, category: category, icon: icon, hideInScene: hideInScene);
+        }
+
+        /// <summary>
+        /// Attribute-less registration for an arbitrary type (including compiled types such as
+        /// UnityEngine components). Members and their UI metadata come entirely from the defines,
+        /// so no [LiveClass]/[LiveProperty] attributes are required on the type.
+        /// Registering the same type again replaces the previous registration (one member set per type).
+        /// </summary>
+        public static LiveClass Register(System.Type type, string typeName, LivePropertyDefine[] defines,
+            LiveFunctionDefine[] functionDefines = null, string category = null, string icon = null, bool hideInScene = false)
+        {
+            if (type == null) throw new ArgumentNullException(nameof(type));
+            var properties = LivePropertyUtility.MakePropertyTypes(type, defines ?? Array.Empty<LivePropertyDefine>());
+            var functions = LivePropertyUtility.MakeFunctionTypes(type, functionDefines);
+            var liveClass = new LiveClass(type, typeName ?? type.Name, properties, functions,
+                category: category, icon: icon, hideInScene: hideInScene);
             _SetLiveClass(liveClass);
+            return liveClass;
         }
 
         public static LiveClass RegisterClass(Type type)
@@ -1140,7 +1198,8 @@ namespace Lilium.RemoteControl
         public bool forceValue => false;
 
 
-        public LivePropertyType(string name, MemberInfo info, bool isPersistable = true, FieldInfo shadowField = null, PersistScope persistScope = PersistScope.Scene)
+        public LivePropertyType(string name, MemberInfo info, bool isPersistable = true, FieldInfo shadowField = null, PersistScope persistScope = PersistScope.Scene,
+            ControlAttribute controlOverride = null, string labelOverride = null, string helpOverride = null, SectionAttribute sectionOverride = null)
         {
             Debug.Assert(info != null, "PropertyInfo cannot be null");
 
@@ -1188,7 +1247,8 @@ namespace Lilium.RemoteControl
             {
                 this.liveValueClass = LiveClass.Get(valueType);
             }
-            this.controlAttribute = TypeReflectionSystem.GetCustomAttribute<ControlAttribute>(info) ?? new ControlAttribute("default");
+            // Define-side override (attribute-less registration) takes precedence over member attributes.
+            this.controlAttribute = controlOverride ?? TypeReflectionSystem.GetCustomAttribute<ControlAttribute>(info) ?? new ControlAttribute("default");
 
             // [RawJson]: string メンバーの値を埋め込み JSON として出力する (二重エンコード回避)。
             this.isRawJson = TypeReflectionSystem.GetCustomAttribute<RawJsonAttribute>(info) != null;
@@ -1252,28 +1312,21 @@ namespace Lilium.RemoteControl
                 defaultValue = null;
             }
 
-            // Help属性を読み取り（TypeReflectionSystem経由でキャッシュ付き）
+            // Help属性を読み取り（TypeReflectionSystem経由でキャッシュ付き）。Define側の上書きを優先。
             var helpAttr = TypeReflectionSystem.GetCustomAttribute<HelpAttribute>(info);
-            if (helpAttr != null)
-            {
-                this.help = helpAttr.text;
-            }
-            else
-            {
-                this.help = null;
-            }
+            this.help = helpOverride ?? helpAttr?.text;
 
-            // label属性を読み取り（LivePropertyAttribute または LiveFieldAttribute から）
+            // label属性を読み取り（LivePropertyAttribute または LiveFieldAttribute から）。Define側の上書きを優先。
             var labelPropAttr = TypeReflectionSystem.GetCustomAttribute<LivePropertyAttribute>(info);
             var labelFieldAttr = TypeReflectionSystem.GetCustomAttribute<LiveFieldAttribute>(info);
-            this.label = labelPropAttr?.label ?? labelFieldAttr?.label;
+            this.label = labelOverride ?? labelPropAttr?.label ?? labelFieldAttr?.label;
 
             // ShowIf/HideIf属性を読み取り (複数付与可、AND 評価)。
             // ShowIf を先に並べることで、単一条件を "visibility" として出力する際の優先順を従来と揃える。
             this.visibilityConditions = _CollectVisibilityConditions(info, info.DeclaringType);
 
-            // Section属性を読み取り
-            this.sectionAttribute = TypeReflectionSystem.GetCustomAttribute<SectionAttribute>(info);
+            // Section属性を読み取り。Define側の上書きを優先。
+            this.sectionAttribute = sectionOverride ?? TypeReflectionSystem.GetCustomAttribute<SectionAttribute>(info);
 
             // Layout属性を読み取り（セクション内の縦横グループ）
             this.layoutAttribute = TypeReflectionSystem.GetCustomAttribute<LayoutAttribute>(info);
@@ -1502,7 +1555,8 @@ namespace Lilium.RemoteControl
         /// <summary>条件付き表示が設定されているか。</summary>
         public bool hasVisibilityCondition => visibilityConditions != null && visibilityConditions.Length > 0;
 
-        public LiveFunctionType(string name, MethodInfo methodInfo)
+        public LiveFunctionType(string name, MethodInfo methodInfo,
+            string labelOverride = null, string iconOverride = null, string helpOverride = null, SectionAttribute sectionOverride = null)
         {
             Debug.Assert(methodInfo != null, "MethodInfo cannot be null");
 
@@ -1511,14 +1565,14 @@ namespace Lilium.RemoteControl
             this._apiName = name.ToLowerInvariant();
             this._parameters = methodInfo.GetParameters();
 
-            // Help属性を読み取り（TypeReflectionSystem経由でキャッシュ付き）
+            // Help属性を読み取り（TypeReflectionSystem経由でキャッシュ付き）。Define側の上書きを優先。
             var helpAttr = TypeReflectionSystem.GetCustomAttribute<HelpAttribute>(methodInfo);
-            this.help = helpAttr?.text;
+            this.help = helpOverride ?? helpAttr?.text;
 
-            // LiveFunctionAttribute から label / icon を読み取り
+            // LiveFunctionAttribute から label / icon を読み取り。Define側の上書きを優先。
             var funcAttr = TypeReflectionSystem.GetCustomAttribute<LiveFunctionAttribute>(methodInfo);
-            this.label = funcAttr?.label;
-            this.icon = funcAttr?.icon;
+            this.label = labelOverride ?? funcAttr?.label;
+            this.icon = iconOverride ?? funcAttr?.icon;
 
             // ControlAttribute属性を読み取り
             this.controlAttribute = TypeReflectionSystem.GetCustomAttribute<ControlAttribute>(methodInfo);
@@ -1527,8 +1581,8 @@ namespace Lilium.RemoteControl
             this.layoutAttribute = TypeReflectionSystem.GetCustomAttribute<LayoutAttribute>(methodInfo);
 
             // Section属性を読み取り（ボタンだけのセクション用）。アクセスレベルの解決規則は
-            // LivePropertyType と同一に揃える。
-            this.sectionAttribute = TypeReflectionSystem.GetCustomAttribute<SectionAttribute>(methodInfo);
+            // LivePropertyType と同一に揃える。Define側の上書きを優先。
+            this.sectionAttribute = sectionOverride ?? TypeReflectionSystem.GetCustomAttribute<SectionAttribute>(methodInfo);
             if (TypeReflectionSystem.GetCustomAttribute<DevelopmentAttribute>(methodInfo) != null)
             {
                 this.sectionAccessLevel = AccessLevel.Development;

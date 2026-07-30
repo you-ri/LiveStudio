@@ -1061,8 +1061,12 @@ namespace Lilium.RemoteControl
             // types のシリアライズはメインスレッドで実行する。
             var json = await ExecuteOnMainThread(() =>
             {
+                // ToJObject 中の派生型解決 (LiveClass.Find) が未登録の [LiveClass] 型を遅延登録して
+                // LiveClass.all を変更しうるため、生の Dictionary ビューのまま列挙せず
+                // スナップショットを取ってから直列化する (Collection was modified 対策)。
                 var liveTypes = LiveClass.all.Values
-                    .Where(t => t.typeName == typeName || typeName == null);
+                    .Where(t => t.typeName == typeName || typeName == null)
+                    .ToList();
                 return LiveTypeInfoSerializer.ToJson(liveTypes);
             });
 

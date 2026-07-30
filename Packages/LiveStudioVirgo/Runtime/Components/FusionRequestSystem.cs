@@ -13,6 +13,9 @@ namespace Lilium.LiveStudio.Virgo
 {
     public static class FusionRequestSystem
     {
+        // Body for a LiveFunction that takes no arguments.
+        const string kNoArgsBody = "{\"args\":[]}";
+
         // Sends the built avatar skeleton to Fusion. The result (and the error text on failure) is
         // reported through onComplete so the caller owns the logging and retry policy; Fusion may be
         // offline at startup, so a failure here is not necessarily an error.
@@ -29,6 +32,19 @@ namespace Lilium.LiveStudio.Virgo
                 bool ok = request.result == UnityWebRequest.Result.Success;
                 onComplete?.Invoke(ok, ok ? null : $"{requestUrl}: {request.error}");
             }
+        }
+
+        /// <summary>
+        /// Asks Fusion to re-lock its own capture timing (the frame-offset baseline of every capture
+        /// channel), so a single Studio-side resync covers both stages of the pipeline. Fusion being
+        /// offline is a normal case, so the caller owns the logging and retry policy.
+        /// </summary>
+        public static IEnumerator ResyncTiming(System.Action<bool, string> onComplete = null)
+        {
+            // Addressed by Fusion's exposed names, not by a type reference (Fusion is a separate
+            // process and package). Renaming them on the Fusion side silently turns this into a 404,
+            // so the Fusion function carries a note pointing back here.
+            yield return _PostFunction("FusionPage", "resynctiming", kNoArgsBody, onComplete);
         }
 
         /// <summary>
@@ -59,22 +75,43 @@ namespace Lilium.LiveStudio.Virgo
 
         private static IEnumerator _PostLicenseFunction(string functionName, string keyArg, System.Action<bool, string> onComplete)
         {
-            string baseUrl = FusionNetwork.BaseURL;
-            string requestUrl = baseUrl + "/live/function/LicenseSettings/" + functionName;
             string body = keyArg != null
                 ? LiveTypeInfoSerializer.ToJsonForFunctionArgs(keyArg, DefaultLiveObjectResolver.Instance)
-                : "{\"args\":[]}";
+                : kNoArgsBody;
 
-            UnityWebRequest request = UnityWebRequest.Post(requestUrl, body, "application/json");
-            yield return request.SendWebRequest();
+            bool ok = false;
+            string payload = null;
+            yield return _PostFunction("LicenseSettings", functionName, body, (success, text) =>
+            {
+                ok = success;
+                payload = text;
+            });
 
-            bool ok = request.result == UnityWebRequest.Result.Success;
-            string responseBody = ok && request.downloadHandler != null ? request.downloadHandler.text : null;
             if (!ok)
             {
-                Debug.LogWarning($"[Studio] License {functionName} failed: {request.error}");
+                Debug.LogWarning($"[Studio] License {functionName} failed: {payload}");
             }
-            onComplete?.Invoke(ok, responseBody);
+            // Callers only parse the body on success, so a failure keeps handing them null.
+            onComplete?.Invoke(ok, ok ? payload : null);
+        }
+
+        /// <summary>
+        /// Posts to one of Fusion's LiveFunctions. onComplete receives the response body on success
+        /// and an error text carrying the request URL on failure; logging and retries are the
+        /// caller's business (Fusion may legitimately be offline).
+        /// </summary>
+        private static IEnumerator _PostFunction(string objectId, string functionName, string body,
+            System.Action<bool, string> onComplete)
+        {
+            string requestUrl = $"{FusionNetwork.BaseURL}/live/function/{objectId}/{functionName}";
+            using (UnityWebRequest request = UnityWebRequest.Post(requestUrl, body, "application/json"))
+            {
+                yield return request.SendWebRequest();
+
+                bool ok = request.result == UnityWebRequest.Result.Success;
+                string payload = ok ? request.downloadHandler?.text : $"{requestUrl}: {request.error}";
+                onComplete?.Invoke(ok, payload);
+            }
         }
     }
 }
