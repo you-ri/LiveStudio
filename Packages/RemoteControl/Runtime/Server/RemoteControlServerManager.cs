@@ -126,6 +126,20 @@ namespace Lilium.RemoteControl.Server
             return _servers.TryGetValue(port, out var instance) && instance.server?.IsRunning == true;
         }
 
+        /// <summary>
+        /// True while at least one registered server is listening. Answers "is the remote server up?"
+        /// without the caller having to know which ports this app configured; the editor toolbar
+        /// indicator polls it, so it walks the dictionary directly instead of allocating an enumerator.
+        /// </summary>
+        public static bool IsAnyServerRunning()
+        {
+            foreach (var pair in _servers)
+            {
+                if (pair.Value?.server?.IsRunning == true) return true;
+            }
+            return false;
+        }
+
         public static bool HasServer(int port)
         {
             return _servers.ContainsKey(port);

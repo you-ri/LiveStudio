@@ -4,6 +4,8 @@
 
 ### Changed
 
+- The Remote app toolbar button is hosted by Remote Control's shared toolbar host and takes its tints from there, so it and the new Remote Control server toggle read as one pair: the Remote app button sits immediately right of the server toggle whatever order the two assemblies happen to initialize in. The button itself is unchanged.
+
 - The package's asset-creation entries share a single **Live Studio** submenu. `Assets ▸ Create` listed three roots for one package — `Live Studio` (VRM Avatar Setup Settings), `LiveStudio` (AvatarExpressionConfig) and `Lilium Live Studio` (Bundle Thumbnail) — which read as three unrelated packages. The two odd ones out now sit under `Live Studio`, and `AvatarExpressionConfig` is spelled `Avatar Expression Config` to match its siblings. Menu paths only affect where the command appears; existing assets and their serialized types are untouched.
 
 - Following RemoteControl's Exposed → Live rename: `ExposedCamera` / `ExposedLight` are now `LiveCamera` / `LiveLight`. Their serialized `@type` names change with the class names, so both carry `[FormerlyNamedAs]` and scenes saved under the old names still restore (and re-save under the new names). The factories are `LiveCameraFactory` / `LiveLightFactory` with `[MovedFrom]` covering Unity-serialized references, and the runtime folder `ExposedType/` is now `LiveType/`.

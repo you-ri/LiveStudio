@@ -3,6 +3,7 @@
     "rootNamespace": "Lilium.LiveStudio.Editor",
     "references": [
         "Lilium.LiveStudio",
+        "Lilium.RemoteControl.Editor",
         "Unity.InputSystem"
     ],
     "includePlatforms": [
