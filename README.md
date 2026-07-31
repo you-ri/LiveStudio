@@ -21,7 +21,7 @@ This is a **package monorepo**. Each subdirectory under `Packages/` is an indepe
 | `jp.lilium.livestudio.virgo` | [`Packages/LiveStudioVirgo`](./Packages/LiveStudioVirgo) | Experimental (`-exp`) | VirgoMotion adapter for `jp.lilium.livestudio`: UDP `VirgoMotionSource`, Fusion REST `FusionRequestSystem`, `AnimationFrameBridge`, Build / Tools menu. |
 | `jp.lilium.vrchatavatartransfer` | [`Packages/VRChatAvatarTransfer`](./Packages/VRChatAvatarTransfer) | Experimental (`-exp`) | Editor tools to bring VRChat avatars into non-VRChat environments (PhysBone → VRM SpringBone, VRC Constraint → Unity Constraint). |
 | `jp.lilium.nativegamepad` | [`Packages/NativeGamepad`](./Packages/NativeGamepad) | Pre-release (`-pre`) | Native Windows gamepad support with background input (XInput + Windows.Gaming.Input). |
-| `jp.lilium.remotecontrol` | [`Packages/RemoteControl`](./Packages/RemoteControl) | Experimental (`-exp`) | REST API server with reflection-based remote control for Unity Editor and runtime. SSE-based realtime updates and `[LiveProperty]`-driven UI generation. |
+| `jp.lilium.remotecontrol` | [`Packages/RemoteControl`](./Packages/RemoteControl) | Experimental (`-exp`) | REST API server with reflection-based remote control for Unity Editor and runtime. Poll-based realtime updates (change feed + per-client inbox) and `[LiveProperty]`-driven UI generation. |
 
 ---
 

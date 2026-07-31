@@ -8,7 +8,7 @@ using Lilium.RemoteControl;
 
 namespace Lilium.LiveStudio
 {
-    [CreateAssetMenu(fileName = "AvatarExpressionConfig", menuName = "LiveStudio/AvatarExpressionConfig")]
+    [CreateAssetMenu(fileName = "AvatarExpressionConfig", menuName = "Live Studio/Avatar Expression Config")]
     [LiveClass(Icon = "tune")]
     [MovedFrom(false, "Lilium.Virgo.Studio", "Lilium.Virgo.Studio2", null)]
     public class AvatarExpressionConfig : ScriptableObject

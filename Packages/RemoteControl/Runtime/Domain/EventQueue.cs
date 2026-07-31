@@ -288,9 +288,9 @@ namespace Lilium.RemoteControl
                 MessageId = Guid.NewGuid().ToString()
             };
 
-            // eventType を指定することで StreamHandler に unified format
-            // ({type:"data", data:{...}}) へラップさせる。eventType=null だと
-            // 既に unified format とみなされ生のオブジェクトが流れてしまう。
+            // eventType becomes the payload's "type" field (see EventItem.GetPayload), which is what
+            // a client dispatches on after collecting the notice from the inbox. Leaving it null
+            // falls back to "data", which no client routes anywhere.
             AddEvent(systemNotification, eventType: "system_notification");
 
             var deliveredCount = GetConnectedClientCount();

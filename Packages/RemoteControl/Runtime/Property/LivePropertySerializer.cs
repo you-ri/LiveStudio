@@ -25,13 +25,13 @@ namespace Lilium.RemoteControl
         /// passed around individually.
         /// <list type="bullet">
         /// <item><c>forPersistence</c>: writing to a file (scene / project settings) rather than a
-        /// REST / SSE / dirty-detection read.</item>
+        /// REST / dirty-detection read.</item>
         /// <item><c>skipPropertyRef</c>: exclude <see cref="LivePropertyType.isLivePropertyReference"/>
         /// fields (baseline / dirty comparison does not want the referenced value inlined).</item>
         /// <item><c>scopeFilter</c>: when persisting, only members whose persistScope matches are written.</item>
         /// <item><c>maxDepth</c>: how many levels of composite (LiveClass) object expansion the top
         /// object is serialized with. <c>int.MaxValue</c> = unbounded (the default, and the only value
-        /// used by persistence / SSE / dirty detection). REST reads may pass a finite depth so nested
+        /// used by persistence / dirty detection). REST reads may pass a finite depth so nested
         /// inline children beyond the limit are emitted as truncation stubs. Arrays do not consume depth
         /// (their elements sit at the array's depth) so element count and type stay visible. Ignored
         /// (forced unbounded) when <c>forPersistence</c> is true — see <see cref="SerializeFullToJObject"/>.</item>
@@ -105,7 +105,7 @@ namespace Lilium.RemoteControl
         {
             if (!propType.isValid) return true;
             if (forPersistence && !propType.isPersistable) return true;
-            // 永続化時のみ保存先 (scope) でフィルタする。SSE / REST / dirty 判定など非永続の読み出しは
+            // 永続化時のみ保存先 (scope) でフィルタする。REST / dirty 判定など非永続の読み出しは
             // scope に関わらず全プロパティを対象にする。
             if (forPersistence && propType.persistScope != scopeFilter) return true;
             if (forPersistence && propType.isReadOnly && !propType.containsLiveObjectReference) return true;
@@ -344,7 +344,7 @@ namespace Lilium.RemoteControl
                 // Depth limit reached: emit a truncation stub for this inline (unregistered) child
                 // instead of expanding its properties. @truncated marks that a child exists here so the
                 // client can lazily fetch it via GET /live/object/{id}/{path}; @type/@name/@instanceID
-                // keep the collapsed view labeled and SSE-routable. Registered children are handled by the
+                // keep the collapsed view labeled and addressable by the client. Registered children are handled by the
                 // @ref branch above and are unaffected. forPersistence never reaches here with a finite
                 // depth (SerializeFullToJObject forces unbounded), so scene/project files are byte-stable.
                 if (depth <= 0)
@@ -365,7 +365,7 @@ namespace Lilium.RemoteControl
                 }
 
                 // インライン展開時も UnityEngine.Object であれば instanceID を付与する。
-                // RemoteApp 側の副次インデックスで後続 SSE のルーティング翻訳に使う。
+                // RemoteApp 側は @id を持たないインライン要素をこれで名指しする (副次インデックス)。
                 // 永続化にはセッション依存の instanceID を含めない。
                 if (!forPersistence
                     && value is UnityEngine.Object inlineUnityObj
@@ -1097,7 +1097,7 @@ namespace Lilium.RemoteControl
             // derived from external state (e.g. AvatarInput.settings snapshot).
             // Fires once per object before persistence so the shadow field path
             // used below sees a fresh value. Skipped for non-persistence reads
-            // (dirty detection, SSE broadcasts, API responses) because property
+            // (dirty detection, API responses) because property
             // setters keep the shadow in sync with user-driven changes and the
             // refresh itself can be expensive (CreateSettingsFromAvatarInput).
             if (options.forPersistence)
@@ -1642,7 +1642,7 @@ namespace Lilium.RemoteControl
 
         /// <summary>
         /// プロパティを {value, id, path, changed} の JObject に変換する。
-        /// 文字列化してから再パースする往復を避けたい呼び出し側 (SSE ブロードキャスト等) はこちらを使う。
+        /// 文字列化してから再パースする往復を避けたい呼び出し側はこちらを使う。
         /// </summary>
         public static JObject ToJObject(LiveProperty property, ILiveObjectResolver resolver)
         {

@@ -16,7 +16,7 @@ namespace Lilium.LiveStudio
     /// </summary>
     [CreateAssetMenu(
         fileName = "BundleThumbnail",
-        menuName = "Lilium Live Studio/Bundle Thumbnail")]
+        menuName = "Live Studio/Bundle Thumbnail")]
     public sealed class BundleThumbnail : ScriptableObject
     {
         /// <summary>Conventional asset name used when authoring this into a bundle.</summary>

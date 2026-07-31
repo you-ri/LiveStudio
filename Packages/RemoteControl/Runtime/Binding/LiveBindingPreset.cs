@@ -19,7 +19,7 @@ namespace Lilium.RemoteControl
     ///   <c>LiveBindingResolver</c> component in the scene. The key doubles as the LiveObject id,
     ///   so persisted values stay stable across scenes and renames.
     /// </summary>
-    [CreateAssetMenu(menuName = "Lilium/Remote Control/Live Binding Preset", fileName = "LiveBindingPreset")]
+    [CreateAssetMenu(menuName = "Live Studio/Remote Control/Live Binding Preset", fileName = "LiveBindingPreset")]
     public class LiveBindingPreset : ScriptableObject
     {
         /// <summary>Exposed member set of one type (single source of the LiveClass registration).</summary>

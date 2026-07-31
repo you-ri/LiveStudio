@@ -12,7 +12,7 @@ namespace Lilium.RemoteControl.Server
     /// (e.g. MonoBehaviours next to <see cref="RemoteControlServerRunner"/>),
     /// not by subclassing this config.
     /// </summary>
-    [CreateAssetMenu(fileName = "RemoteControlServerConfig", menuName = "Remote Control/Server Config")]
+    [CreateAssetMenu(fileName = "RemoteControlServerConfig", menuName = "Live Studio/Remote Control/Server Config")]
     public class RemoteControlServerConfig : ScriptableObject
     {
         [Tooltip("Server port number")]

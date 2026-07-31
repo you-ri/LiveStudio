@@ -13,7 +13,7 @@ namespace Lilium.RemoteControl.UI
     /// ScriptableObject defining the page structure of the Remote Control UI.
     /// Declares the side menu items and their associated LiveObjectHandle categories.
     /// </summary>
-    [CreateAssetMenu(fileName = "UIDefinition", menuName = "Remote Control/UI Definition")]
+    [CreateAssetMenu(fileName = "UIDefinition", menuName = "Live Studio/Remote Control/UI Definition")]
     [MovedFrom(true, "Lilium.RemoteControl.WebUI", "Lilium.RemoteControl.WebUI", "WebUIDefinition")]
     public class UIDefinition : ScriptableObject
     {

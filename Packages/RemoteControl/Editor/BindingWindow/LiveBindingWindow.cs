@@ -9,10 +9,21 @@ using Lilium.RemoteControl.LiveScene;
 
 namespace Lilium.RemoteControl.Editor
 {
+    /// <summary>One exposable member (property/field/method) of a candidate type.</summary>
+    internal struct MemberCandidate
+    {
+        public string path;
+        public bool isFunction;
+        public Type valueType; // null for functions
+        public string typeLabel;
+    }
+
     /// <summary>
-    /// UE Remote Control-style panel: pick any component in the scene, toggle which of its
-    /// properties/fields/methods are exposed to RemoteApp, and edit the metadata (label,
-    /// slider range, persistence) of the exposed members.
+    /// UE Remote Control-style panel: pick any component in the scene and toggle which of its
+    /// properties/fields/methods are exposed to RemoteApp, or build the exposure class-first —
+    /// "Add Class" adds a type definition to the Exposed list and "Add Member" on each
+    /// definition picks members through a searchable dropdown — then edit the metadata (label,
+    /// control, persistence) of the exposed members.
     ///
     /// Exposure settings are stored in a <see cref="LiveBindingPreset"/> asset (shared across
     /// scenes); the scene-object references live in a <see cref="LiveBindingResolver"/> in the
@@ -38,29 +49,17 @@ namespace Lilium.RemoteControl.Editor
             typeof(Vector2Int), typeof(Vector3Int), typeof(RectInt),
         };
 
-        private struct MemberCandidate
-        {
-            public string path;
-            public bool isFunction;
-            public Type valueType; // null for functions
-            public string typeLabel;
-        }
-
-        private static readonly string[] kSourceTabs = { "Scene Object", "Class" };
-
         private LiveBindingResolver _resolver;
         private LiveBindingPreset _preset;
-        private int _sourceTab;
         private string _memberFilter = "";
         private Vector2 _selectionScroll;
         private Vector2 _exposedScroll;
         private readonly Dictionary<int, bool> _componentFoldouts = new Dictionary<int, bool>();
         private readonly Dictionary<string, bool> _typeFoldouts = new Dictionary<string, bool>();
 
-        // Class-first flow: pick a type, then toggle its members without needing a scene instance.
-        private string _classSearch = "";
-        private Type _classModeType;
-        private Vector2 _classListScroll;
+        // Class-first flow: "Add Class" / "Add Member" searchable dropdowns in the Exposed section.
+        private readonly UnityEditor.IMGUI.Controls.AdvancedDropdownState _classDropdownState = new UnityEditor.IMGUI.Controls.AdvancedDropdownState();
+        private readonly UnityEditor.IMGUI.Controls.AdvancedDropdownState _memberDropdownState = new UnityEditor.IMGUI.Controls.AdvancedDropdownState();
 
         private void OnEnable()
         {
@@ -80,16 +79,7 @@ namespace Lilium.RemoteControl.Editor
             if (_resolver == null || _preset == null) return;
 
             EditorGUILayout.Space();
-            _sourceTab = GUILayout.Toolbar(_sourceTab, kSourceTabs);
-            EditorGUILayout.Space();
-            if (_sourceTab == 0)
-            {
-                _DrawSelectionSection();
-            }
-            else
-            {
-                _DrawClassSection();
-            }
+            _DrawSelectionSection();
 
             EditorGUILayout.Space();
             _DrawExposedSection();
@@ -226,107 +216,7 @@ namespace Lilium.RemoteControl.Editor
             EditorGUI.indentLevel--;
         }
 
-        // --- Class-first flow: pick a type, then toggle members (no scene instance required) ---
-
-        private void _DrawClassSection()
-        {
-            EditorGUILayout.LabelField("Class", EditorStyles.boldLabel);
-
-            if (_classModeType == null)
-            {
-                _DrawClassPicker();
-                return;
-            }
-
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField(_classModeType.FullName, EditorStyles.boldLabel);
-            if (GUILayout.Button("Change", GUILayout.Width(60)))
-            {
-                _classModeType = null;
-                GUIUtility.ExitGUI();
-            }
-            EditorGUILayout.EndHorizontal();
-
-            _memberFilter = EditorGUILayout.TextField("Filter", _memberFilter);
-
-            var definition = _preset.FindTypeDefinition(_classModeType);
-
-            _selectionScroll = EditorGUILayout.BeginScrollView(_selectionScroll, GUILayout.MinHeight(120));
-            foreach (var candidate in _EnumerateCandidates(_classModeType))
-            {
-                if (!string.IsNullOrEmpty(_memberFilter)
-                    && candidate.path.IndexOf(_memberFilter, StringComparison.OrdinalIgnoreCase) < 0)
-                {
-                    continue;
-                }
-
-                bool exposed = definition != null && _FindMember(definition, candidate.path, candidate.isFunction) != null;
-
-                EditorGUILayout.BeginHorizontal();
-                bool next = EditorGUILayout.ToggleLeft(candidate.path, exposed);
-                GUILayout.Label(candidate.typeLabel, EditorStyles.miniLabel, GUILayout.MinWidth(60));
-                EditorGUILayout.EndHorizontal();
-
-                if (next == exposed) continue;
-                if (next) _ExposeTypeMember(_classModeType, candidate);
-                else _UnexposeTypeMember(_classModeType, candidate);
-                GUIUtility.ExitGUI();
-            }
-            EditorGUILayout.EndScrollView();
-        }
-
-        private void _DrawClassPicker()
-        {
-            // Types already defined in the preset come first — the common case is refining them.
-            if (_preset.typeDefinitions.Count > 0)
-            {
-                EditorGUILayout.LabelField("Defined in preset", EditorStyles.miniBoldLabel);
-                foreach (var definition in _preset.typeDefinitions)
-                {
-                    var type = definition?.ResolveType();
-                    if (type == null) continue;
-                    if (GUILayout.Button(type.FullName, EditorStyles.miniButton))
-                    {
-                        _classModeType = type;
-                        GUIUtility.ExitGUI();
-                    }
-                }
-                EditorGUILayout.Space();
-            }
-
-            _classSearch = EditorGUILayout.TextField("Search", _classSearch);
-            if (string.IsNullOrEmpty(_classSearch) || _classSearch.Length < 2)
-            {
-                EditorGUILayout.HelpBox("Type at least 2 characters to search Component / ScriptableObject classes.", MessageType.None);
-                return;
-            }
-
-            const int kMaxResults = 50;
-            int shown = 0;
-            _classListScroll = EditorGUILayout.BeginScrollView(_classListScroll, GUILayout.MinHeight(120));
-            foreach (var type in _EnumerateCandidateTypes())
-            {
-                if (type.Name.IndexOf(_classSearch, StringComparison.OrdinalIgnoreCase) < 0) continue;
-                if (GUILayout.Button(type.FullName, EditorStyles.miniButton))
-                {
-                    _classModeType = type;
-                    _classSearch = "";
-                    EditorGUILayout.EndScrollView();
-                    GUIUtility.ExitGUI();
-                    return;
-                }
-                if (++shown >= kMaxResults)
-                {
-                    EditorGUILayout.LabelField($"… more than {kMaxResults} matches, narrow the search", EditorStyles.miniLabel);
-                    break;
-                }
-            }
-            EditorGUILayout.EndScrollView();
-            if (shown == 0)
-            {
-                EditorGUILayout.HelpBox("No matching class.", MessageType.None);
-            }
-        }
+        // --- Class-first flow: candidate types for the "Add Class" dropdown ---
 
         private static IEnumerable<Type> _EnumerateCandidateTypes()
         {
@@ -527,13 +417,31 @@ namespace Lilium.RemoteControl.Editor
 
         private void _DrawExposedSection()
         {
-            EditorGUILayout.LabelField("Exposed", EditorStyles.boldLabel);
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("Exposed", EditorStyles.boldLabel);
+            GUILayout.FlexibleSpace();
+            // Class-first flow: pick a class through the searchable dropdown to add its
+            // (initially empty) type definition, then fill it with "Add Member".
+            var addClassRect = GUILayoutUtility.GetRect(new GUIContent("Add Class"), GUI.skin.button, GUILayout.Width(84));
+            if (GUI.Button(addClassRect, "Add Class"))
+            {
+                new LiveBindingTypeDropdown(_classDropdownState, new List<Type>(), _EnumerateCandidateTypes,
+                    selected =>
+                    {
+                        _EnsurePresetOnResolver();
+                        Undo.RecordObject(_preset, "Add Class");
+                        var added = _preset.GetOrAddTypeDefinition(selected);
+                        _typeFoldouts[added.typeName ?? ""] = true;
+                        _ApplyChanges();
+                    }).Show(addClassRect);
+            }
+            EditorGUILayout.EndHorizontal();
 
             _exposedScroll = EditorGUILayout.BeginScrollView(_exposedScroll);
 
             if (_preset.typeDefinitions.Count == 0 && _preset.bindings.Count == 0)
             {
-                EditorGUILayout.HelpBox("Nothing exposed yet. Select a GameObject above and toggle members on.", MessageType.None);
+                EditorGUILayout.HelpBox("Nothing exposed yet. Select a GameObject above and toggle members on, or add a class with \"Add Class\".", MessageType.None);
             }
 
             // Removal paths call GUIUtility.ExitGUI, so forward iteration is safe here.
@@ -566,8 +474,24 @@ namespace Lilium.RemoteControl.Editor
             EditorGUILayout.BeginHorizontal();
             open = EditorGUILayout.Foldout(open, $"{title}  ({definition.members.Count} members)", toggleOnLabelClick: true);
             _typeFoldouts[definition.typeName ?? ""] = open;
-            // Class-first flow: create an unbound instance entry, then assign the object in
-            // Instance Bindings below (or bind another scene's object through its resolver).
+            // Searchable member dropdown; picking an entry exposes it on this type definition.
+            var addMemberRect = GUILayoutUtility.GetRect(new GUIContent("Add Member"), GUI.skin.button, GUILayout.Width(88));
+            using (new EditorGUI.DisabledScope(type == null))
+            {
+                if (GUI.Button(addMemberRect, "Add Member"))
+                {
+                    var candidates = new List<MemberCandidate>();
+                    foreach (var candidate in _EnumerateCandidates(type))
+                    {
+                        if (_FindMember(definition, candidate.path, candidate.isFunction) != null) continue;
+                        candidates.Add(candidate);
+                    }
+                    new LiveBindingMemberDropdown(_memberDropdownState, candidates,
+                        selected => _ExposeTypeMember(type, selected)).Show(addMemberRect);
+                }
+            }
+            // Create an unbound instance entry, then assign the object in Instance Bindings
+            // below (or bind another scene's object through its resolver).
             if (GUILayout.Button("Add Binding", GUILayout.Width(84)))
             {
                 _EnsurePresetOnResolver();
@@ -583,7 +507,7 @@ namespace Lilium.RemoteControl.Editor
                 GUIUtility.ExitGUI();
                 return;
             }
-            if (GUILayout.Button("Remove", GUILayout.Width(60)))
+            if (GUILayout.Button("✕", GUILayout.Width(24)))
             {
                 Undo.RecordObject(_preset, "Remove Type Definition");
                 Undo.RecordObject(_resolver, "Remove Type Definition");
