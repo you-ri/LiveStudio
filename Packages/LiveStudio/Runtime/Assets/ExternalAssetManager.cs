@@ -438,7 +438,28 @@ namespace Lilium.LiveStudio
             // Keep the app-embedded built-in entries present alongside the crawled catalog (idempotent;
             // broadcasts only if it actually adds any).
             _EnsureBuiltinAssets();
+
+            // Announce the catalog even when nothing moved: a listener that derives its own state from the
+            // project's files (the operations page's decks) has to be able to converge after any crawl,
+            // including the first one, where its own view is empty and this list is already complete.
+            onCatalogChanged?.Invoke();
         }
+
+        /// <summary>
+        /// Raised after a project crawl has reconciled the catalog. For features whose own state is derived
+        /// from the set of files in the project rather than from the live scene — the deck files behind the
+        /// operations page's tabs — this is when to re-derive it. The catalog itself is the argument:
+        /// listeners read <see cref="assetsView"/>.
+        ///
+        /// Static because listeners (plain <c>ILiveObject</c>s) come and go independently of the manager
+        /// instance; subscribe on enable and unsubscribe on disable.
+        /// </summary>
+        public static event Action onCatalogChanged;
+
+        // Cleared at runtime startup so a subscriber from a previous play session never stays attached
+        // when Domain Reload is disabled.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void _ResetCatalogEvent() => onCatalogChanged = null;
 
         /// <summary>
         /// Injects the app-embedded (built-in) catalog assets — reference resources (e.g. Resources
@@ -529,8 +550,12 @@ namespace Lilium.LiveStudio
         /// <summary>
         /// Permanently deletes an asset's backing file from disk, then unloads and removes the entry.
         /// The remote app drives this, but the file IO runs here (Studio) so it works even when the
-        /// remote app is on a different machine. Restricted to preset files (<c>*.preset.json</c>) for
-        /// now; other asset kinds are rejected.
+        /// remote app is on a different machine. Restricted to the kinds the app itself authors — presets
+        /// (<c>*.preset.json</c>), decks (<c>*.deck.json</c>) and snapshots (<c>*.snapshot.json</c>) —
+        /// since those are the ones a user creates from the remote app and therefore expects to remove from
+        /// there too. Imported source files (avatars, props, bundles) are rejected: deleting what the user
+        /// dragged in is the file manager's job. Which files go with the entry is the kind's own business
+        /// (see <see cref="AssetBase.DeleteFiles"/>) — a snapshot takes its thumbnail with it.
         /// </summary>
         [LiveFunction]
         public void DeleteAssetFile(string assetId)
@@ -541,15 +566,17 @@ namespace Lilium.LiveStudio
                 Debug.LogError($"[LiveStudio] DeleteAssetFile: asset '{assetId}' not found.");
                 return;
             }
-            if (!PropPreset.IsPresetFile(asset.filePath))
+            if (!PropPreset.IsPresetFile(asset.filePath) &&
+                !DeckFile.IsDeckFile(asset.filePath) &&
+                !SnapshotManager.IsSnapshotFile(asset.filePath))
             {
-                Debug.LogError($"[LiveStudio] DeleteAssetFile: only preset files can be deleted (got '{asset.filePath}').");
+                Debug.LogError($"[LiveStudio] DeleteAssetFile: only preset, deck and snapshot files can be deleted (got '{asset.filePath}').");
                 return;
             }
 
             try
             {
-                if (File.Exists(asset.filePath)) File.Delete(asset.filePath);
+                asset.DeleteFiles();
             }
             catch (Exception e)
             {

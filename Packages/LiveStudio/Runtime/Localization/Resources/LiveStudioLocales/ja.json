@@ -45,6 +45,7 @@
     "AVATAR_RECEIVER": "レシーバー",
     "CAMERATRACKER_MOTIONSOURCE": "モーションソース",
     "NOTIFY_PRESET_SAVED": "プリセットを保存しました",
+    "NOTIFY_DECK_SAVED": "デッキを保存しました",
     "SNAPSHOT_TAKE": "スナップショットを撮る",
     "SNAPSHOT_RESTORE": "スナップショットを復元",
     "SNAPSHOT_DELETE": "スナップショットを削除",

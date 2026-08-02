@@ -27,6 +27,19 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
+        /// <see cref="Capture(LiveObjectHandle)"/> restricted to the members declared with
+        /// <paramref name="scope"/>. Lets an owner of <see cref="PersistScope.Custom"/> members write
+        /// exactly those to its own file, the same way the live scene and the project settings write
+        /// their own scopes. Restoring needs no counterpart: deserialization ignores the scope.
+        /// </summary>
+        public static string Capture(LiveObjectHandle handle, PersistScope scope)
+        {
+            return LivePropertySerializer.ToJson(
+                handle, DefaultLiveObjectResolver.Instance, isDirtyOnly: false, forPersistence: true,
+                scopeFilter: scope);
+        }
+
+        /// <summary>
         /// Serializes only the persistable property values of <paramref name="handle"/> that differ
         /// from its captured defaults (the delta). Requires defaults to have been captured for the
         /// handle's target beforehand (see <see cref="LiveObjectDefaultRegistry.CaptureDefaults"/>);

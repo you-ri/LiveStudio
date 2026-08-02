@@ -45,6 +45,7 @@
     "AVATAR_RECEIVER": "Receiver",
     "CAMERATRACKER_MOTIONSOURCE": "Motion Source",
     "NOTIFY_PRESET_SAVED": "Preset saved",
+    "NOTIFY_DECK_SAVED": "Deck saved",
     "SNAPSHOT_TAKE": "Take Snapshot",
     "SNAPSHOT_RESTORE": "Restore Snapshot",
     "SNAPSHOT_DELETE": "Delete Snapshot",

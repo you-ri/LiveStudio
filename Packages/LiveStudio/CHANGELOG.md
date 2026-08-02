@@ -2,7 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- **One deck is one file (`*.deck.json`), and every deck file in the project is a tab.** The authored operation layer — every `OperationSet` and `Deck` — used to be inlined in the live scene, so a deck could not be reused across scenes, handed to someone else, or seen in the project listing. A deck is now a file in the project's `Decks` folder holding that deck's grid width and the operation sets placed on it, and the operations page's tabs are exactly the deck files the project crawl found. The file name **is** the deck's name (nothing inside the file repeats it), so renaming a tab renames the file; adding a tab creates one; deleting a tab deletes it along with the operations it held (the remote app confirms first). There is no save button and no unsaved state: every edit — from the deck functions and from the generic property REST alike — writes the deck it landed in, and only that one. Dropping a `*.deck.json` into the project folder and re-scanning adds it as a tab. `OperationManager.operationSets` / `decks` are `PersistScope.Custom`, so the live scene carries nothing about decks at all; switching scenes within a project keeps the decks, and switching projects replaces them. One consequence worth knowing: a snapshot (and `POST /live/export`) does not carry decks, since both write Scene scope.
+
 ### Changed
+
+- Snapshots are one of the project's asset kinds, so a `*.snapshot.json` file is listed on the project page beside the live scenes and decks that already were — with a `Restore` button on it and the ordinary delete (which takes the `*.snapshot.png` thumbnail with it, since which files an entry owns is now the kind's own business through `AssetBase.DeleteFiles`). Snapshots were the one file the app itself authors that the project listing could not see: `SnapshotManager` scanned the `Snapshots` folder on its own and never went through `AssetTypeRegistry`. It still owns the dedicated snapshot page — the thumbnails, the capture-time ordering and the take/restore/delete flow are unchanged — and now also asks for a re-crawl when a snapshot appears or goes away, so both views agree.
 
 - The Remote app toolbar button is hosted by Remote Control's shared toolbar host and takes its tints from there, so it and the new Remote Control server toggle read as one pair: the Remote app button sits immediately right of the server toggle whatever order the two assemblies happen to initialize in. The button itself is unchanged.
 

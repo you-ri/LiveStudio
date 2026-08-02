@@ -2,10 +2,14 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Scripting.APIUpdating;
 using UnityEngine.Serialization;
+
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 using Lilium.RemoteControl;
 
@@ -50,19 +54,47 @@ namespace Lilium.LiveStudio
 
         public string id => kId;
 
-        /// <summary>The authored operation sets. Polymorphic input/operations serialize via SerializeReference.</summary>
+        /// <summary>The authored operation sets. Polymorphic input/operations serialize via SerializeReference.
+        /// Persisted to the deck file (<see cref="PersistScope.Custom"/>), not to the live scene — see
+        /// <see cref="DeckFile"/>.</summary>
         [SerializeReference, Select]
-        [LiveField]
+        [LiveField(persistScope = PersistScope.Custom)]
         [FormerlyNamedAs("actionSets")]
         [FormerlySerializedAs("actionSets")]
         public List<OperationSet> operationSets = new List<OperationSet>();
 
         /// <summary>The control decks: named grids of <see cref="DeckControl"/> tiles the remote app lays
-        /// out, each operating an <see cref="OperationSet"/> by id. Persisted with the manager in the scene.
+        /// out, each operating an <see cref="OperationSet"/> by id. Persisted to the deck file with the
+        /// operation sets (<see cref="PersistScope.Custom"/>).
         /// Tiles are added/removed/moved through the generic array REST; only whole decks need add/remove
         /// functions here.</summary>
-        [LiveField]
+        [LiveField(persistScope = PersistScope.Custom)]
         public List<Deck> decks = new List<Deck>();
+
+        // Deck name -> the file that deck is (absolute path). One tab is one file, so this is the whole
+        // deck/file relationship; nothing about it is persisted, since the files themselves are the state.
+        [NonSerialized]
+        private readonly Dictionary<string, string> _deckFilePaths = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        // Deck name -> the file text last written (or read) for it. The comparison baseline that keeps
+        // autosave from rewriting untouched decks.
+        [NonSerialized]
+        private readonly Dictionary<string, string> _writtenDeckFiles = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        // The project the current deck model was built from. A different one means every deck belongs to
+        // the previous project and has to go.
+        [NonSerialized]
+        private string _syncedProjectPath;
+
+        // True while the deck files are being applied to the model. The apply restores the manager, which
+        // fires the deserialize callback and property-changed events that would otherwise re-enter here.
+        [NonSerialized]
+        private bool _applyingDeckFiles;
+
+        // Whether this manager may touch the project's deck files at all: only an enabled one that is not
+        // in the middle of applying them. Keeps a bare instance (a unit test, a template being restored)
+        // from writing into the user's project.
+        private bool _deckFilesActive => _initialized && !_applyingDeckFiles;
 
         // The shared input map all KeyInputSources create their input actions in. Rebuilt when the set of
         // inputs changes or an input's binding/type changes. Runtime-only.
@@ -87,7 +119,15 @@ namespace Lilium.LiveStudio
             _EnsureOperationSetIds();
             _RebuildInputMap();
 
+            // Marked live before the first sync: the deck-file work checks this to tell a running app
+            // apart from a bare instance (a unit test, a template being deserialized).
             _initialized = true;
+
+            // The decks are the project's deck files, so they follow the project crawl rather than the
+            // live scene. Sync once now for whatever the catalog already holds (the crawl may have run
+            // before this object was enabled) and follow it from here on.
+            ExternalAssetManager.onCatalogChanged += _OnCatalogChanged;
+            SyncDeckFiles();
         }
 
         public void OnDisable()
@@ -95,6 +135,8 @@ namespace Lilium.LiveStudio
             _initialized = false;
 
             LiveClass.Get<OperationManager>().onPropertyChanged -= _OnPropertyChanged;
+
+            ExternalAssetManager.onCatalogChanged -= _OnCatalogChanged;
 
             _TeardownInputMap();
 
@@ -300,6 +342,7 @@ namespace Lilium.LiveStudio
             operationSets.Add(set);
             _RebuildInputMap();
             _Broadcast();
+            _FlushDirtyDecks();
             return set;
         }
 
@@ -462,22 +505,31 @@ namespace Lilium.LiveStudio
             operationSets.RemoveAt(index);
             _RebuildInputMap();
             _Broadcast();
+            _FlushDirtyDecks();
         }
 
-        /// <summary>Adds a new control deck with a unique auto-generated name and returns that name. The
-        /// remote app then adds tiles by placing controls' <see cref="DeckControl.deckName"/> onto it.</summary>
+        /// <summary>Adds a new control deck with a unique auto-generated name and returns that name. The deck
+        /// is a file (<c>Decks/&lt;name&gt;.deck.json</c>), written immediately so the tab always has one behind
+        /// it. The remote app then adds tiles by placing controls' <see cref="DeckControl.deckName"/> onto it.</summary>
         [LiveFunction]
         public string AddDeck()
         {
-            var deck = new Deck { name = _UniqueDeckName("Deck", null) };
+            // The name becomes the file name, so reserve the sanitized form: otherwise the file would be
+            // named one thing, the tab another, and the next crawl would rename the tab under the user.
+            var deck = new Deck { name = _UniqueDeckName(DeckFile.SanitizeFileName("Deck"), null) };
             decks.Add(deck);
+            // ⚠ 名前を写しておく。下の書き出しはファイル集合との同期を伴い、その復元が decks の
+            // 要素を作り直す (この deck が別の名前で上書きされる)。返し先は「今作ったタブを選ぶ」
+            // ために使われるので、写さないと別のタブが選ばれる。
+            var name = deck.name;
             _BroadcastDecks();
-            return deck.name;
+            _FlushDirtyDecks();
+            return name;
         }
 
-        /// <summary>Removes the deck with the given name and moves any controls that were on it to the default
-        /// page (no unplaced state; a fresh default page is created if this was the last deck). No-op if the
-        /// name is unknown.</summary>
+        /// <summary>Removes the deck with the given name, <b>deleting its file and the operation sets placed on
+        /// it</b> — a deck is a file, so removing the tab removes what it held. The remote app confirms with the
+        /// user first. No-op if the name is unknown.</summary>
         [LiveFunction]
         public void RemoveDeck(string deckName)
         {
@@ -486,25 +538,32 @@ namespace Lilium.LiveStudio
             if (index < 0) return;
             decks.RemoveAt(index);
 
-            bool anyMoved = false;
-            for (int i = 0; i < operationSets.Count; i++)
+            bool anyRemoved = false;
+            for (int i = operationSets.Count - 1; i >= 0; i--)
             {
                 var control = operationSets[i]?.control;
                 if (control != null && control.deckName == deckName)
                 {
-                    _PlaceOnDefaultDeck(control);
-                    anyMoved = true;
+                    operationSets.RemoveAt(i);
+                    anyRemoved = true;
                 }
             }
 
+            _DeleteDeckFile(deckName);
+            // The catalog still lists the file that was just deleted; re-crawl so the entry goes with it
+            // (and so this manager's own view of the file set stays the one the crawl reports).
+            if (_deckFilesActive) ProjectManager.RecrawlProject();
+
+            if (anyRemoved) _RebuildInputMap();
             _BroadcastDecks();
-            if (anyMoved) _Broadcast();
+            if (anyRemoved) _Broadcast();
         }
 
         /// <summary>Renames the deck currently named <paramref name="deckName"/> to <paramref name="newName"/>,
         /// auto-suffixing on collision so deck names stay unique, and updates every control placed on it so the
-        /// reference follows the rename. Returns the resulting (possibly suffixed) name; returns the original
-        /// name unchanged for an unknown current name, an empty new name, or a no-op rename.</summary>
+        /// reference follows the rename. The deck's file is renamed with it (the file name is the deck's name).
+        /// Returns the resulting (possibly suffixed) name; returns the original name unchanged for an unknown
+        /// current name, an empty new name, or a no-op rename.</summary>
         [LiveFunction]
         public string RenameDeck(string deckName, string newName)
         {
@@ -512,7 +571,8 @@ namespace Lilium.LiveStudio
             int index = decks.FindIndex(p => p != null && p.name == deckName);
             if (index < 0) return deckName;
 
-            string unique = _UniqueDeckName(newName, decks[index]);
+            // The new name has to survive as a file name, since that is where it is kept.
+            string unique = _UniqueDeckName(DeckFile.SanitizeFileName(newName), decks[index]);
             if (unique == deckName) return deckName; // no effective change
             decks[index].name = unique;
 
@@ -528,8 +588,13 @@ namespace Lilium.LiveStudio
                 }
             }
 
+            _MoveDeckFile(deckName, unique);
+            // The catalog holds the old file name; re-crawl so the entry follows the rename.
+            if (_deckFilesActive) ProjectManager.RecrawlProject();
+
             _BroadcastDecks();
             if (anyMoved) _Broadcast();
+            _FlushDirtyDecks();
             return unique;
         }
 
@@ -557,6 +622,8 @@ namespace Lilium.LiveStudio
                 control.y = Mathf.Max(0, y);
             }
             _Broadcast();
+            // The tile may have crossed decks; both files are written by the diff.
+            _FlushDirtyDecks();
         }
 
         /// <summary>Places the control of the operation set with the given id onto the deck named
@@ -573,6 +640,7 @@ namespace Lilium.LiveStudio
             if (control == null) return;
             _PlaceOnFreeCell(control, deckName);
             _Broadcast();
+            _FlushDirtyDecks();
         }
 
         /// <summary>Swaps the control kind (<c>DeckButton</c> / <c>DeckToggle</c> / <c>DeckSlider</c>) of
@@ -602,6 +670,7 @@ namespace Lilium.LiveStudio
             // Enforce the new kind's fixed width after the swap (keeps it on-grid).
             _ApplyControlWidth(next);
             _Broadcast();
+            _FlushDirtyDecks();
         }
 
         // Returns a deck name unique among all decks except <paramref name="self"/>, auto-suffixing " 2",
@@ -823,16 +892,378 @@ namespace Lilium.LiveStudio
             set.SetManualValue(Mathf.Clamp01(value));
         }
 
+        // -------------------------------------------------------
+        // Deck files (*.deck.json) — one file is one deck (one tab)
+        // -------------------------------------------------------
+
+        /// <summary>
+        /// Rebuilds the decks from the project's deck files. One tab is one file, so this is where tabs
+        /// come from: every <c>*.deck.json</c> the project crawl found becomes a deck, named after its file.
+        ///
+        /// Only the set of files matters here. A file already loaded is left alone (its in-memory state,
+        /// including a manual hold in the middle of a show, must survive an unrelated crawl); files that
+        /// appeared are read, files that disappeared take their deck and its operation sets with them.
+        /// </summary>
+        internal void SyncDeckFiles()
+        {
+            // The apply below restores this object, which calls back into here through the broadcast.
+            if (!_deckFilesActive) return;
+
+            var projectPath = ProjectManager.projectPath;
+            bool projectChanged = !string.Equals(projectPath, _syncedProjectPath, StringComparison.Ordinal);
+            _syncedProjectPath = projectPath;
+            if (projectChanged)
+            {
+                // Every deck belonged to the previous project. Custom-scope members are invisible to the
+                // reset a project switch performs, so drop them here or they follow the user across.
+                _deckFilePaths.Clear();
+                _writtenDeckFiles.Clear();
+            }
+
+            var desired = _DiscoverDeckFiles();
+            if (!projectChanged && _MatchesLoadedDeckFiles(desired)) return;
+
+            _ApplyDeckFiles(desired);
+        }
+
+        // The deck files the project crawl knows about, as (deck name, absolute path) in tab order.
+        // Names come from the file names and are made unique, since two folders may hold the same name.
+        private static List<KeyValuePair<string, string>> _DiscoverDeckFiles()
+        {
+            var result = new List<KeyValuePair<string, string>>();
+            var manager = ExternalAssetManager.current;
+            if (manager == null) return result;
+
+            var paths = new List<string>();
+            var view = manager.assetsView;
+            for (int i = 0; i < view.Count; i++)
+            {
+                if (view[i] is DeckAsset deck && !string.IsNullOrEmpty(deck.filePath)) paths.Add(deck.filePath);
+            }
+            // The catalog's order follows the crawl; sort so the tabs do not shuffle between runs.
+            paths.Sort(StringComparer.OrdinalIgnoreCase);
+
+            var used = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < paths.Count; i++)
+            {
+                var name = AssetTypeRegistry.DeriveName(paths[i]);
+                if (string.IsNullOrEmpty(name)) name = "Deck";
+                var unique = name;
+                int n = 2;
+                while (!used.Add(unique)) unique = name + " " + (n++);
+                result.Add(new KeyValuePair<string, string>(unique, paths[i]));
+            }
+            return result;
+        }
+
+        // True when the loaded decks already are exactly these files, in this order.
+        private bool _MatchesLoadedDeckFiles(List<KeyValuePair<string, string>> desired)
+        {
+            if (desired.Count != decks.Count) return false;
+            for (int i = 0; i < desired.Count; i++)
+            {
+                var deck = decks[i];
+                if (deck == null || deck.name != desired[i].Key) return false;
+                if (!_deckFilePaths.TryGetValue(deck.name, out var path) ||
+                    !string.Equals(path, desired[i].Value, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // Builds the whole model (decks + operation sets) from the given files and applies it in one
+        // restore. Going through the serializer rather than mutating the lists keeps a single code path
+        // for turning a file's JSON into OperationSet objects — the same one the live scene uses.
+        private void _ApplyDeckFiles(List<KeyValuePair<string, string>> desired)
+        {
+            var handle = liveObject;
+            if (!handle.HasValue) return;
+
+            var current = JObject.Parse(LiveObjectSnapshot.Capture(handle.Value, PersistScope.Custom));
+            var currentSets = current["operationSets"] as JArray ?? new JArray();
+
+            var newDecks = new JArray();
+            var newSets = new JArray();
+            var newPaths = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            for (int i = 0; i < desired.Count; i++)
+            {
+                var name = desired[i].Key;
+                var path = desired[i].Value;
+
+                int columns;
+                JArray sets;
+                if (_deckFilePaths.TryGetValue(name, out var loadedPath) &&
+                    string.Equals(loadedPath, path, StringComparison.OrdinalIgnoreCase))
+                {
+                    // Already loaded: keep what is in memory rather than re-reading the file.
+                    columns = _DeckColumns(name);
+                    sets = _SetsOnDeck(currentSets, name);
+                }
+                else if (!_TryReadDeckFile(path, name, out columns, out sets))
+                {
+                    // Unreadable file: leave the tab out entirely rather than showing an empty one that
+                    // would overwrite the file on the next edit.
+                    continue;
+                }
+
+                newDecks.Add(new JObject { ["@type"] = "Deck", ["name"] = name, ["columns"] = columns });
+                for (int s = 0; s < sets.Count; s++) newSets.Add(sets[s]);
+                newPaths[name] = path;
+            }
+
+            var payload = new JObject
+            {
+                ["@type"] = "OperationManager",
+                ["operationSets"] = newSets,
+                ["decks"] = newDecks,
+            };
+
+            _applyingDeckFiles = true;
+            try
+            {
+                LiveObjectSnapshot.Restore(payload.ToString(Formatting.None), handle.Value);
+            }
+            finally
+            {
+                _applyingDeckFiles = false;
+            }
+
+            _deckFilePaths.Clear();
+            foreach (var pair in newPaths) _deckFilePaths[pair.Key] = pair.Value;
+
+            // What is on disk is what was just applied, so nothing counts as an unwritten edit. Taking the
+            // baseline from the model (rather than from the file text) makes it exact: a file written by
+            // another build may differ in formatting without differing in content.
+            _RebaseDeckFiles();
+
+            _Broadcast();
+            _BroadcastDecks();
+        }
+
+        // Reads one deck file. Returns false (already logged) when it cannot be used.
+        private static bool _TryReadDeckFile(string fullPath, string deckName, out int columns, out JArray sets)
+        {
+            columns = 0;
+            sets = null;
+
+            string json;
+            try { json = File.ReadAllText(fullPath); }
+            catch (Exception e)
+            {
+                Debug.LogError($"[LiveStudio] Failed to read the deck file '{fullPath}': {e.Message}");
+                return false;
+            }
+
+            if (!DeckFile.TryParse(json, fullPath, out var fileColumns, out var setsJson)) return false;
+
+            columns = fileColumns > 0 ? fileColumns : 8;
+            try { sets = JArray.Parse(setsJson); }
+            catch { sets = new JArray(); }
+            // The file decides which deck its sets are on; the stored deckName is only a leftover of where
+            // they were when written (and is wrong outright for a file copied in from another project).
+            for (int i = 0; i < sets.Count; i++)
+            {
+                if (sets[i] is JObject set && set["control"] is JObject control) control["deckName"] = deckName;
+            }
+            return true;
+        }
+
+        // The serialized sets placed on one deck, in order.
+        private static JArray _SetsOnDeck(JArray sets, string deckName)
+        {
+            var result = new JArray();
+            for (int i = 0; i < sets.Count; i++)
+            {
+                if (sets[i] is JObject set &&
+                    set["control"] is JObject control &&
+                    string.Equals(control["deckName"]?.Value<string>(), deckName, StringComparison.Ordinal))
+                {
+                    result.Add(set);
+                }
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Writes every deck whose contents differ from what its file holds. This is the whole save story:
+        /// there is no save button and no unsaved state, because a deck is a file and every edit lands in it.
+        ///
+        /// Called from the functions that author decks and from the property-changed hook, so an edit made
+        /// through the generic property REST (renaming a set, editing an operation) is covered too.
+        /// </summary>
+        private void _FlushDirtyDecks()
+        {
+            // A manager that was never enabled is not part of a running app — a unit test's bare instance,
+            // or a scene template being deserialized. It has no business writing into the user's project.
+            if (!_deckFilesActive) return;
+
+            var payloads = _BuildDeckPayloads();
+            if (payloads == null) return;
+
+            bool created = false;
+            foreach (var pair in payloads)
+            {
+                if (_writtenDeckFiles.TryGetValue(pair.Key, out var written) &&
+                    string.Equals(written, pair.Value, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var path = _EnsureDeckFilePath(pair.Key);
+                if (string.IsNullOrEmpty(path)) continue;
+
+                bool isNew = !File.Exists(path);
+                if (!_WriteDeckFile(path, pair.Value)) continue;
+                _writtenDeckFiles[pair.Key] = pair.Value;
+                created |= isNew;
+            }
+
+            // A file that did not exist before has to reach the project catalog, or the next crawl would
+            // see a deck with no asset entry behind it and drop the tab.
+            if (created) ProjectManager.RecrawlProject();
+        }
+
+        // The file text each deck would be written as, keyed by deck name.
+        private Dictionary<string, string> _BuildDeckPayloads()
+        {
+            var handle = liveObject;
+            if (!handle.HasValue) return null;
+
+            var current = JObject.Parse(LiveObjectSnapshot.Capture(handle.Value, PersistScope.Custom));
+            var sets = current["operationSets"] as JArray ?? new JArray();
+
+            var result = new Dictionary<string, string>(StringComparer.Ordinal);
+            for (int i = 0; i < decks.Count; i++)
+            {
+                var deck = decks[i];
+                if (deck == null || string.IsNullOrEmpty(deck.name)) continue;
+                result[deck.name] = DeckFile.BuildJson(
+                    deck.columns, _SetsOnDeck(sets, deck.name).ToString(Formatting.None));
+            }
+            return result;
+        }
+
+        // Adopts the current model as "what the files hold", without writing anything.
+        private void _RebaseDeckFiles()
+        {
+            _writtenDeckFiles.Clear();
+            var payloads = _BuildDeckPayloads();
+            if (payloads == null) return;
+            foreach (var pair in payloads) _writtenDeckFiles[pair.Key] = pair.Value;
+        }
+
+        // The file a deck is, creating the mapping for a deck that does not have one yet (added from the
+        // remote app). Null when no project is open to write into.
+        private string _EnsureDeckFilePath(string deckName)
+        {
+            if (_deckFilePaths.TryGetValue(deckName, out var known) && !string.IsNullOrEmpty(known)) return known;
+
+            var projectPath = ProjectManager.projectPath;
+            if (string.IsNullOrEmpty(projectPath))
+            {
+                Debug.LogError("[LiveStudio] No project folder is open to write the deck into.");
+                return null;
+            }
+
+            var path = Path.Combine(projectPath, DeckFile.Subfolder, deckName + DeckFile.Extension);
+            _deckFilePaths[deckName] = path;
+            return path;
+        }
+
+        private static bool _WriteDeckFile(string fullPath, string json)
+        {
+            try
+            {
+                var dir = Path.GetDirectoryName(fullPath);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                File.WriteAllText(fullPath, json);
+                return true;
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[LiveStudio] Failed to write the deck file '{fullPath}': {e.Message}");
+                return false;
+            }
+        }
+
+        // Deletes a deck's file and forgets it. The deck itself is removed by the caller.
+        private void _DeleteDeckFile(string deckName)
+        {
+            if (!_deckFilesActive) return;
+            if (_deckFilePaths.TryGetValue(deckName, out var path) && !string.IsNullOrEmpty(path))
+            {
+                try
+                {
+                    if (File.Exists(path)) File.Delete(path);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"[LiveStudio] Failed to delete the deck file '{path}': {e.Message}");
+                }
+            }
+            _deckFilePaths.Remove(deckName);
+            _writtenDeckFiles.Remove(deckName);
+        }
+
+        // Renames a deck's file to follow the deck's new name. No-op when the deck has no file yet
+        // (renamed before the first write); the file is then created under the new name.
+        private void _MoveDeckFile(string fromName, string toName)
+        {
+            if (!_deckFilesActive) return;
+            if (!_deckFilePaths.TryGetValue(fromName, out var fromPath) || string.IsNullOrEmpty(fromPath))
+            {
+                return;
+            }
+
+            _deckFilePaths.Remove(fromName);
+            _writtenDeckFiles.TryGetValue(fromName, out var written);
+            _writtenDeckFiles.Remove(fromName);
+
+            var dir = Path.GetDirectoryName(fromPath);
+            var toPath = string.IsNullOrEmpty(dir)
+                ? toName + DeckFile.Extension
+                : Path.Combine(dir, toName + DeckFile.Extension);
+
+            try
+            {
+                if (File.Exists(fromPath)) File.Move(fromPath, toPath);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[LiveStudio] Failed to rename the deck file '{fromPath}': {e.Message}");
+                return;
+            }
+
+            _deckFilePaths[toName] = toPath;
+            if (written != null) _writtenDeckFiles[toName] = written;
+        }
+
+        private void _OnCatalogChanged() => SyncDeckFiles();
+
         // Operation 要素の追加/削除/型選択は、RemoteApp の汎用配列「+」(elementTypeOptions による
         // 型選択メニュー) と汎用削除でまかなう。専用の Add/RemoveOperation 関数は持たない。
 
         // Rebuilds enabled-set property edits that change input wiring (input type / binding) into a
-        // fresh input map. Operation edits do not affect input, so they are ignored here.
+        // fresh input map, and writes the deck the edit landed in.
+        //
+        // This is the autosave path for everything the remote app edits through the generic property REST
+        // (a set's name / group / enabled, an operation's target, a slider's range) — the dedicated
+        // functions call the flush themselves.
         private void _OnPropertyChanged(LiveProperty property, object oldValue)
         {
             if (!_initialized) return;
-            if (!property.PathContains("input")) return;
-            _RebuildInputMap();
+
+            if (property.PathContains("input")) _RebuildInputMap();
+
+            // The hold and the manual value are what the operator does during a show, not what they
+            // authored; writing a file per button press would put disk IO in the middle of the performance.
+            // They still ride along into the file the next time something is actually edited.
+            if (property.PathContains("held") || property.PathContains("_manualValue")) return;
+
+            if (property.PathContains("operationSets") || property.PathContains("decks")) _FlushDirtyDecks();
         }
 
         // Only AddOperationSet assigns an id; sets authored directly in a scene / prop bundle load with the

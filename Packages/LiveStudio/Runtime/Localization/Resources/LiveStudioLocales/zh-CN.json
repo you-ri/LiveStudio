@@ -45,6 +45,7 @@
     "AVATAR_RECEIVER": "接收器",
     "CAMERATRACKER_MOTIONSOURCE": "动作源",
     "NOTIFY_PRESET_SAVED": "已保存预设",
+    "NOTIFY_DECK_SAVED": "已保存操作台",
     "SNAPSHOT_TAKE": "拍摄快照",
     "SNAPSHOT_RESTORE": "恢复快照",
     "SNAPSHOT_DELETE": "删除快照",

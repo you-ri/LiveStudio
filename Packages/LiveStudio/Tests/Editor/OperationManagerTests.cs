@@ -792,7 +792,7 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
-        public void RemoveDeck_MovesControlsToDefaultPage()
+        public void RemoveDeck_RemovesTheDeckAndTheOperationsOnIt()
         {
             var manager = new OperationManager();
             var keep = manager.AddDeck(); // "Deck" (becomes the default = first deck)
@@ -804,12 +804,11 @@ namespace Lilium.LiveStudio.EditorTests
 
             manager.RemoveDeck(drop);
 
-            // No unplaced state: the control on the removed deck moves to the default page (first remaining).
+            // A deck is a file, so removing the tab removes what it held (the remote app confirms first).
             Assert.AreEqual(1, manager.decks.Count, "only the kept deck remains");
-            Assert.AreEqual(keep, manager.operationSets[0].control.deckName,
-                "a control on the removed deck moves to the default page");
-            Assert.AreEqual(keep, manager.operationSets[1].control.deckName,
-                "a control on the kept deck is untouched");
+            Assert.AreEqual(1, manager.operationSets.Count, "the operation on the removed deck went with it");
+            Assert.AreEqual(b, manager.operationSets[0].id, "the operation on the kept deck stays");
+            Assert.AreEqual(keep, manager.operationSets[0].control.deckName, "and stays where it was");
         }
 
         [Test]

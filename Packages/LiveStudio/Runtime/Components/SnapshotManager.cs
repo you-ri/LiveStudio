@@ -78,6 +78,16 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
+        /// True when the path names a snapshot file. Path-only (the content is never read), so the
+        /// project crawl can classify snapshots like every other asset kind.
+        /// </summary>
+        public static bool IsSnapshotFile(string filePath)
+        {
+            return !string.IsNullOrEmpty(filePath) &&
+                filePath.EndsWith(kSnapshotFileExtension, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
         /// "{projectPath}/Snapshots", or null when no project is open. Does not create the folder.
         /// </summary>
         public static string GetSnapshotDirectory()
@@ -123,6 +133,8 @@ namespace Lilium.LiveStudio
 
             Debug.Log($"[Studio] Snapshot saved: '{Path.Combine(dir, name + kSnapshotFileExtension)}'");
             LivePropertyBroadcast.BroadcastStaticProperty(typeof(SnapshotManager), nameof(snapshots));
+            // The file is a project asset too, so the project listing has to see it appear.
+            ProjectManager.RecrawlProject();
             RemoteNotificationSystem.Show(
                 LocalizationSystem.Translate("NOTIFY_SNAPSHOT_SAVED"),
                 RemoteNotificationSystem.Type.Success,
@@ -168,6 +180,7 @@ namespace Lilium.LiveStudio
 
             Debug.Log($"[Studio] Snapshot deleted: '{filePath}'");
             LivePropertyBroadcast.BroadcastStaticProperty(typeof(SnapshotManager), nameof(snapshots));
+            ProjectManager.RecrawlProject();
         }
 
         /// <summary>

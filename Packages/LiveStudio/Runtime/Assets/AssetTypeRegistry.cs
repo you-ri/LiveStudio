@@ -220,6 +220,28 @@ namespace Lilium.LiveStudio
                     : new PropAsset(),
             });
 
+            // Decks (*.deck.json) hold the authored operation layer. Like live scenes they are launcher
+            // entries, not loadable resources. Above the live scene so the ".json" tail is not misread.
+            Register(new AssetTypeDescriptor
+            {
+                priority = 35,
+                suffixes = new[] { DeckFile.Extension },
+                matches = DeckFile.IsDeckFile,
+                create = _ => new DeckAsset(),
+                importSubfolder = DeckFile.Subfolder,
+            });
+
+            // Snapshots (*.snapshot.json) hold a full capture of the live scene. Launcher entries like
+            // live scenes; the dedicated snapshot page reads the same folder for its thumbnails.
+            Register(new AssetTypeDescriptor
+            {
+                priority = 35,
+                suffixes = new[] { SnapshotManager.kSnapshotFileExtension },
+                matches = SnapshotManager.IsSnapshotFile,
+                create = _ => new SnapshotAsset(),
+                importSubfolder = SnapshotManager.kSnapshotDirName,
+            });
+
             // Live scenes (*.live.json / *.scene.json) are launcher entries, not loadable resources.
             Register(new AssetTypeDescriptor
             {

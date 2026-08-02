@@ -28,6 +28,10 @@ namespace Lilium.RemoteControl.Tests
 
             [LiveField(persistScope = PersistScope.Project)]
             public int projectValue;
+
+            // 所有者が自前ファイルへ書き出すメンバー (デッキファイル等)。
+            [LiveField(persistScope = PersistScope.Custom)]
+            public int customValue;
         }
 
         // shadow field 側の persistScope を property が継承するパターン (ScreenController と同型)。
@@ -94,10 +98,10 @@ namespace Lilium.RemoteControl.Tests
             }
         }
 
-        private LiveObjectHandle _CreateScopeObject(string id, int sceneValue, int projectValue)
+        private LiveObjectHandle _CreateScopeObject(string id, int sceneValue, int projectValue, int customValue = 0)
         {
             LiveClass.RegisterFromAttributes<TestScopeClass>();
-            var target = new TestScopeClass { sceneValue = sceneValue, projectValue = projectValue };
+            var target = new TestScopeClass { sceneValue = sceneValue, projectValue = projectValue, customValue = customValue };
             var liveClass = LiveClass.Find(typeof(TestScopeClass));
             return new LiveObjectHandle(id, liveClass, target);
         }
@@ -131,6 +135,66 @@ namespace Lilium.RemoteControl.Tests
             Assert.IsNotNull(jObj["projectValue"], "Project member should be present.");
             Assert.AreEqual(20, jObj["projectValue"].Value<int>());
             Assert.IsNull(jObj["sceneValue"], "Scene member must be excluded from Project scope.");
+        }
+
+        [Test]
+        public void ToJson_CustomScope_ContainsOnlyCustomMembers()
+        {
+            var obj = _CreateScopeObject("scope-1", sceneValue: 10, projectValue: 20, customValue: 30);
+
+            var json = LivePropertySerializer.ToJson(
+                obj, _resolver, isDirtyOnly: false, forPersistence: true, scopeFilter: PersistScope.Custom);
+            var jObj = JObject.Parse(json);
+
+            Assert.AreEqual(30, jObj["customValue"]?.Value<int>(), "Custom member should be present.");
+            Assert.IsNull(jObj["sceneValue"], "Scene member must be excluded from Custom scope.");
+            Assert.IsNull(jObj["projectValue"], "Project member must be excluded from Custom scope.");
+        }
+
+        [Test]
+        public void ToJson_SceneAndProjectScopes_ExcludeCustomMembers()
+        {
+            var obj = _CreateScopeObject("scope-1", sceneValue: 10, projectValue: 20, customValue: 30);
+
+            var sceneJson = JObject.Parse(LivePropertySerializer.ToJson(
+                obj, _resolver, isDirtyOnly: false, forPersistence: true, scopeFilter: PersistScope.Scene));
+            var projectJson = JObject.Parse(LivePropertySerializer.ToJson(
+                obj, _resolver, isDirtyOnly: false, forPersistence: true, scopeFilter: PersistScope.Project));
+
+            Assert.IsNull(sceneJson["customValue"], "Custom member is written by its owner, not to the live scene.");
+            Assert.IsNull(projectJson["customValue"], "Custom member is written by its owner, not to the settings file.");
+        }
+
+        [Test]
+        public void IsDirty_IgnoresCustomScopedMembers()
+        {
+            var obj = _CreateScopeObject("scope-1", sceneValue: 10, projectValue: 20, customValue: 30);
+            var target = (TestScopeClass)obj.target;
+
+            LiveObjectDefaultRegistry.CaptureDefaults(obj, _resolver);
+            Assert.IsFalse(obj.isDirty, "A freshly baselined object is clean.");
+
+            // dirty 判定は Scene scope 形状で比較するので、Custom メンバーの変更は載らない
+            // (所有者側が自前で未保存を申告する)。
+            target.customValue = 999;
+            Assert.IsFalse(obj.isDirty, "Changing a Custom-scoped member must not mark the live scene dirty.");
+
+            target.sceneValue = 999;
+            Assert.IsTrue(obj.isDirty, "Changing a Scene-scoped member still marks it dirty.");
+        }
+
+        [Test]
+        public void FromJson_AppliesCustomScopedMembers()
+        {
+            var obj = _CreateScopeObject("scope-1", sceneValue: 1, projectValue: 2, customValue: 3);
+            var target = (TestScopeClass)obj.target;
+
+            // デシリアライズは scope でフィルタしない。Custom へ移す前に書かれた
+            // (メンバーが inline で入っている) 旧ファイルがそのまま読めることの担保。
+            LivePropertySerializer.FromJson(
+                "{\"@type\":\"TestScopeClass\",\"customValue\":42}", obj, _resolver, captureDefaults: false);
+
+            Assert.AreEqual(42, target.customValue, "Deserialization must apply Custom-scoped members regardless of scope.");
         }
 
         [Test]

@@ -1260,11 +1260,11 @@ namespace Lilium.RemoteControl
                 this.isPersistable = true;
             }
 
-            // PersistScope.Project を指定しても persistable でなければどこにも保存されない。
+            // Scene 以外の PersistScope を指定しても persistable でなければどこにも保存されない。
             // (shadow field / [InlineReference] を持たない [LiveProperty] などが該当)。誤用を早期検知する。
-            if (this.persistScope == PersistScope.Project && !this.isPersistable)
+            if (this.persistScope != PersistScope.Scene && !this.isPersistable)
             {
-                Debug.LogWarning($"[RemoteControl] Member '{info?.DeclaringType?.Name}.{_name}' is marked PersistScope.Project but is not persistable, so it will not be saved anywhere. Pair it with a shadow field or make it a persistable [LiveField].");
+                Debug.LogWarning($"[RemoteControl] Member '{info?.DeclaringType?.Name}.{_name}' is marked PersistScope.{this.persistScope} but is not persistable, so it will not be saved anywhere. Pair it with a shadow field or make it a persistable [LiveField].");
             }
 
             // TypeSelectorAttributeの場合、派生型を自動計算してoptionsを設定

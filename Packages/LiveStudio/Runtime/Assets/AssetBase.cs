@@ -170,6 +170,16 @@ namespace Lilium.LiveStudio
         public virtual void CaptureState() { }
 
         /// <summary>
+        /// Deletes the files this entry owns, called by <see cref="ExternalAssetManager.DeleteAssetFile"/>
+        /// once it has decided the kind may be deleted. Kinds that own more than the one file they were
+        /// discovered by (a snapshot also has its thumbnail) override this; the caller only drops the entry.
+        /// </summary>
+        public virtual void DeleteFiles()
+        {
+            if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath)) File.Delete(filePath);
+        }
+
+        /// <summary>
         /// Reflects a failed load: clears <see cref="enabled"/> so the UI does not show the asset stuck
         /// "on", and <see cref="isLoaded"/> so the manager re-diffs cleanly. Call from a load failure path.
         /// </summary>

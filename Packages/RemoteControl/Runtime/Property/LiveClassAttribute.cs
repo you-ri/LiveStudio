@@ -9,12 +9,26 @@ namespace Lilium.RemoteControl
     /// 永続化メンバーの保存先を指定する。
     /// <see cref="Scene"/> はシーンファイル (*.live.json) に、<see cref="Project"/> は
     /// プロジェクト全体の設定ファイル ({projectPath}/Settings/{クラス名}.settings.json) に保存する。
+    /// <see cref="Custom"/> はどちらにも書かず、所有者が自前のファイルへ書き出す。
     /// 既定は <see cref="Scene"/> (=0) のため、未指定時は従来どおりシーンに保存される。
     /// </summary>
     public enum PersistScope
     {
         Scene = 0,
         Project = 1,
+
+        /// <summary>
+        /// The owner persists these members into its own file, so neither the live scene nor the
+        /// project settings write them. Serialization is still available — the owner asks for this
+        /// scope explicitly (see <c>LiveObjectSnapshot.Capture(handle, scope)</c>) — but the built-in
+        /// writers (scene / project settings) and the dirty comparison, which both filter on
+        /// <see cref="Scene"/> or <see cref="Project"/>, skip them. Such an owner is therefore
+        /// responsible for its own save and unsaved-state reporting; see
+        /// <c>LiveSceneSaveSystem.onAfterSave</c> / <c>unsavedChangesProbe</c>.
+        /// Deserialization ignores the scope, so a legacy file that still holds these members inline
+        /// keeps restoring them.
+        /// </summary>
+        Custom = 2,
     }
 
     /// <summary>
