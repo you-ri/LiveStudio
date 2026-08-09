@@ -1,0 +1,22 @@
+{
+    "name": "Lilium.LiveStudio.Social.Editor.Tests",
+    "rootNamespace": "Lilium.LiveStudio.Social.EditorTests",
+    "references": [
+        "Lilium.LiveStudio.Social",
+        "Lilium.LiveStudio"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,0 +1,15 @@
+{
+    "Social": "Social",
+    "SOCIAL_GATEWAY_AUTHTOKEN": "Require feeders to send this secret in an X-Social-Token header. Leave empty to accept any local connection, which is safe while the server only listens on this machine. Set it before allowing connections from other devices.",
+    "SOCIAL_GATEWAY_SERVERPORT": "The port to point your feeder at, e.g. http://127.0.0.1:3003/social/event. Taken from this scene's remote control server; 0 means it has not started yet.",
+    "SOCIAL_GATEWAY_EVENTSRECEIVED": "Events accepted since the app started. Use it to confirm a feeder is actually reaching this app.",
+    "SOCIAL_GATEWAY_EVENTSDROPPED": "Events discarded because they arrived faster than they could be handled. A number climbing here means a feeder is flooding.",
+    "SOCIAL_INPUT_SOURCE": "Only accept events from this platform, e.g. youtube. Leave empty for any platform.",
+    "SOCIAL_INPUT_EVENTTYPE": "Only accept this kind of event, e.g. chat or superchat. Leave empty for any kind.",
+    "SOCIAL_INPUT_KEYWORD": "Only fire when the message contains this text, e.g. !confetti. Case insensitive, and matched anywhere in the message. Leave empty to ignore the message.",
+    "SOCIAL_INPUT_USERFILTER": "Restrict who can fire this. Members Only accepts members and subscribers, and also moderators and you. Moderators Only accepts moderators and you.",
+    "SOCIAL_INPUT_MINAMOUNT": "Only fire when the tip or gift is at least this much. 0 accepts any amount.",
+    "SOCIAL_INPUT_COOLDOWNSECONDS": "Ignore further matches for this many seconds after firing. 0 disables the cooldown.",
+    "SOCIAL_INPUT_VALUEFROMAMOUNT": "Use the tip amount as the value and hold it until the next event, instead of firing a single pulse. For slider tiles. Leave off for button and toggle tiles, which would stay stuck on.",
+    "SOCIAL_INPUT_AMOUNTRANGE": "The amount that counts as full strength. Minimum Amount maps to 0 and this maps to 1; anything higher is clamped."
+}

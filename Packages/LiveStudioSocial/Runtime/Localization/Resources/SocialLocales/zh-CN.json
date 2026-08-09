@@ -1,0 +1,15 @@
+{
+    "Social": "社交",
+    "SOCIAL_GATEWAY_AUTHTOKEN": "要求数据源在 X-Social-Token 请求头中发送该密钥。留空则接受任意本地连接（服务器仅在本机监听时是安全的）。在允许其他设备连接之前请务必设置。",
+    "SOCIAL_GATEWAY_SERVERPORT": "数据源应发送到的端口（例如 http://127.0.0.1:3003/social/event）。取自本场景的远程控制服务器；为 0 表示尚未启动。",
+    "SOCIAL_GATEWAY_EVENTSRECEIVED": "应用启动以来接受的事件数。可用于确认数据源确实已连通。",
+    "SOCIAL_GATEWAY_EVENTSDROPPED": "因处理不及而丢弃的事件数。持续增长说明数据源发送过快。",
+    "SOCIAL_INPUT_SOURCE": "仅接受来自该平台的事件（例如 youtube）。留空则接受所有平台。",
+    "SOCIAL_INPUT_EVENTTYPE": "仅接受该类型的事件（例如 chat、superchat）。留空则接受所有类型。",
+    "SOCIAL_INPUT_KEYWORD": "仅当留言中包含该文本时触发（例如 !confetti）。不区分大小写，出现在留言任何位置均可匹配。留空则不检查留言内容。",
+    "SOCIAL_INPUT_USERFILTER": "限制谁可以触发。「仅会员」除会员与订阅者外，也接受管理员和主播本人。「仅管理员」接受管理员和主播本人。",
+    "SOCIAL_INPUT_MINAMOUNT": "仅当打赏或礼物达到该金额时触发。为 0 则不限金额。",
+    "SOCIAL_INPUT_COOLDOWNSECONDS": "触发后在该秒数内忽略后续匹配。为 0 则关闭冷却。",
+    "SOCIAL_INPUT_VALUEFROMAMOUNT": "将打赏金额作为数值并保持到下一次事件，而不是只触发一帧的脉冲。适用于滑杆磁贴。按钮与开关磁贴请保持关闭，否则会一直处于按下状态。",
+    "SOCIAL_INPUT_AMOUNTRANGE": "视为最大强度的金额。最小金额对应 0，该金额对应 1，超出部分按 1 处理。"
+}

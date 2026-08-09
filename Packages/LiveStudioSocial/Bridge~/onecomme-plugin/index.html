@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LiveStudio Social</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0;
+    padding: 24px;
+    font-family: system-ui, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  h1 { margin: 0 0 4px; font-size: 18px; }
+  .sub { margin: 0 0 24px; opacity: 0.7; font-size: 13px; }
+  label { display: block; margin-bottom: 20px; }
+  .name { font-weight: 600; }
+  .name .en { font-weight: 400; opacity: 0.6; margin-left: 6px; }
+  .hint { margin: 2px 0 6px; opacity: 0.7; font-size: 12px; }
+  input {
+    width: 100%;
+    max-width: 320px;
+    padding: 6px 8px;
+    font: inherit;
+    box-sizing: border-box;
+  }
+  button { padding: 6px 20px; font: inherit; }
+  #status { margin-left: 12px; font-size: 13px; }
+  #status.error { color: #c0392b; }
+</style>
+</head>
+<body>
+  <h1>LiveStudio Social</h1>
+  <p class="sub">コメントと投げ銭を LiveStudio アプリへ送ります。<br>Forwards comments and gifts to a LiveStudio app.</p>
+
+  <form id="form">
+    <label>
+      <span class="name">ポート<span class="en">Port</span></span>
+      <span class="hint">LiveStudio アプリの Social 画面に表示されている番号。<br>The number shown on the app's Social page.</span>
+      <input id="port" type="number" min="1" max="65535" required>
+    </label>
+
+    <label>
+      <span class="name">トークン<span class="en">Token</span></span>
+      <span class="hint">アプリ側で設定したときだけ入力します。空欄で構いません。<br>Only needed if the app has one set. Leave empty otherwise.</span>
+      <input id="token" type="text" autocomplete="off">
+    </label>
+
+    <button type="submit">保存 / Save</button>
+    <span id="status"></span>
+  </form>
+
+  <script src="script.js"></script>
+</body>
+</html>
