@@ -11,10 +11,10 @@ namespace Lilium.RemoteControl.Tests
 {
     /// <summary>
     /// Attribute-less exposure: define-based registration metadata overrides and the
-    /// LiveBindingPreset / LiveBindingResolver flow that exposes arbitrary components
+    /// LiveClassAsset / LiveClassBinding flow that exposes arbitrary components
     /// through preset assets + the standard IExposedPropertyTable scene reference table.
     /// </summary>
-    public class LiveBindingTests
+    public class LiveClassAssetTests
     {
         private readonly List<GameObject> _gameObjects = new List<GameObject>();
         private readonly List<ScriptableObject> _assets = new List<ScriptableObject>();
@@ -26,17 +26,17 @@ namespace Lilium.RemoteControl.Tests
             return go;
         }
 
-        private LiveBindingPreset _CreatePreset()
+        private LiveClassAsset _CreatePreset()
         {
-            var preset = ScriptableObject.CreateInstance<LiveBindingPreset>();
+            var preset = ScriptableObject.CreateInstance<LiveClassAsset>();
             _assets.Add(preset);
             return preset;
         }
 
-        private static LiveBindingPreset.InstanceBinding _AddBinding(
-            LiveBindingPreset preset, LiveBindingResolver resolver, UnityEngine.Object target)
+        private static LiveClassAsset.InstanceBinding _AddBinding(
+            LiveClassAsset preset, LiveClassBinding resolver, UnityEngine.Object target)
         {
-            var entry = new LiveBindingPreset.InstanceBinding
+            var entry = new LiveClassAsset.InstanceBinding
             {
                 key = System.Guid.NewGuid().ToString(),
                 typeName = target.GetType().AssemblyQualifiedName,
@@ -135,11 +135,11 @@ namespace Lilium.RemoteControl.Tests
         {
             var preset = _CreatePreset();
             var definition = preset.GetOrAddTypeDefinition(typeof(Light));
-            definition.members.Add(new LiveBindingMember { path = "intensity", control = new SliderControl { min = 0f, max = 8f } });
-            definition.members.Add(new LiveBindingMember { path = "enabled" });
-            definition.members.Add(new LiveBindingMember { path = "range", persistable = false });
+            definition.members.Add(new LiveClassAssetMember { path = "intensity", control = new SliderControl { min = 0f, max = 8f } });
+            definition.members.Add(new LiveClassAssetMember { path = "enabled" });
+            definition.members.Add(new LiveClassAssetMember { path = "range", persistable = false });
 
-            LiveBindingSystem.RegisterTypes(preset);
+            LiveClassAssetSystem.RegisterTypes(preset);
 
             var liveClass = LiveClass.Find(typeof(Light));
             Assert.That(liveClass, Is.Not.Null);
@@ -152,11 +152,11 @@ namespace Lilium.RemoteControl.Tests
 
         // --- Resolver: reference table + instance registration ---
 
-        private LiveBindingResolver _CreateResolver(LiveBindingPreset preset)
+        private LiveClassBinding _CreateResolver(LiveClassAsset preset)
         {
             var go = _CreateGameObject("Resolver");
-            var resolver = go.AddComponent<LiveBindingResolver>();
-            resolver.presets.Add(preset);
+            var resolver = go.AddComponent<LiveClassBinding>();
+            resolver.assets.Add(preset);
             return resolver;
         }
 
@@ -165,8 +165,8 @@ namespace Lilium.RemoteControl.Tests
         {
             var preset = _CreatePreset();
             var definition = preset.GetOrAddTypeDefinition(typeof(Light));
-            definition.members.Add(new LiveBindingMember { path = "intensity", control = new SliderControl { max = 8f } });
-            definition.members.Add(new LiveBindingMember { path = "Reset", isFunction = true, label = "Reset Light" });
+            definition.members.Add(new LiveClassAssetMember { path = "intensity", control = new SliderControl { max = 8f } });
+            definition.members.Add(new LiveClassAssetMember { path = "Reset", isFunction = true, label = "Reset Light" });
 
             var lightGo = _CreateGameObject("BindingLight");
             var light = lightGo.AddComponent<Light>();
@@ -194,10 +194,10 @@ namespace Lilium.RemoteControl.Tests
         {
             var preset = _CreatePreset();
             var definition = preset.GetOrAddTypeDefinition(typeof(Light));
-            definition.members.Add(new LiveBindingMember { path = "intensity" });
+            definition.members.Add(new LiveClassAssetMember { path = "intensity" });
 
             var resolver = _CreateResolver(preset);
-            var entry = new LiveBindingPreset.InstanceBinding
+            var entry = new LiveClassAsset.InstanceBinding
             {
                 key = System.Guid.NewGuid().ToString(),
                 typeName = typeof(Light).AssemblyQualifiedName,
@@ -212,7 +212,7 @@ namespace Lilium.RemoteControl.Tests
         public void Resolver_Disable_UnregistersInstances()
         {
             var preset = _CreatePreset();
-            preset.GetOrAddTypeDefinition(typeof(Light)).members.Add(new LiveBindingMember { path = "intensity" });
+            preset.GetOrAddTypeDefinition(typeof(Light)).members.Add(new LiveClassAssetMember { path = "intensity" });
 
             var lightGo = _CreateGameObject("BindingLightDisable");
             var light = lightGo.AddComponent<Light>();
@@ -232,8 +232,8 @@ namespace Lilium.RemoteControl.Tests
         {
             var preset = _CreatePreset();
             var definition = preset.GetOrAddTypeDefinition(typeof(Light));
-            definition.members.Add(new LiveBindingMember { path = "intensity" });
-            definition.members.Add(new LiveBindingMember { path = "range" });
+            definition.members.Add(new LiveClassAssetMember { path = "intensity" });
+            definition.members.Add(new LiveClassAssetMember { path = "range" });
 
             var lightA = _CreateGameObject("LightA").AddComponent<Light>();
             var lightB = _CreateGameObject("LightB").AddComponent<Light>();
@@ -257,7 +257,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var preset = _CreatePreset();
             var definition = preset.GetOrAddTypeDefinition(typeof(Light));
-            definition.members.Add(new LiveBindingMember { path = "intensity", persistable = true });
+            definition.members.Add(new LiveClassAssetMember { path = "intensity", persistable = true });
 
             var lightGo = _CreateGameObject("BindingLightSave");
             var light = lightGo.AddComponent<Light>();
@@ -266,8 +266,8 @@ namespace Lilium.RemoteControl.Tests
             // runtime wrappers into its object list, which the live-scene save enumerates.
             var hostGo = _CreateGameObject("BindingHost");
             var host = hostGo.AddComponent<RemoteControlContainer>();
-            var resolver = hostGo.AddComponent<LiveBindingResolver>();
-            resolver.presets.Add(preset);
+            var resolver = hostGo.AddComponent<LiveClassBinding>();
+            resolver.assets.Add(preset);
             var entry = _AddBinding(preset, resolver, light);
             resolver.Reload();
 

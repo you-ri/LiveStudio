@@ -11,14 +11,14 @@ namespace Lilium.RemoteControl.Editor
     /// preset-defined types first, then every pickable Component / ScriptableObject type
     /// grouped by namespace.
     /// </summary>
-    internal class LiveBindingTypeDropdown : AdvancedDropdown
+    internal class LiveClassAssetTypeDropdown : AdvancedDropdown
     {
         private readonly List<Type> _presetTypes;
         private readonly Func<IEnumerable<Type>> _enumerateTypes;
         private readonly Action<Type> _onSelected;
         private readonly List<Type> _typesById = new List<Type>();
 
-        public LiveBindingTypeDropdown(AdvancedDropdownState state, List<Type> presetTypes,
+        public LiveClassAssetTypeDropdown(AdvancedDropdownState state, List<Type> presetTypes,
             Func<IEnumerable<Type>> enumerateTypes, Action<Type> onSelected) : base(state)
         {
             _presetTypes = presetTypes;

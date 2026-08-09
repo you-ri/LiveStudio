@@ -19,11 +19,11 @@ namespace Lilium.RemoteControl.Editor
     }
 
     /// <summary>
-    /// Type-level expose/unexpose logic shared by <see cref="LiveBindingWindow"/> and
-    /// <see cref="LiveBindingAddMemberWindow"/>, both of which edit the same
-    /// <see cref="LiveBindingPreset"/> / <see cref="LiveBindingResolver"/> pair.
+    /// Type-level expose/unexpose logic shared by <see cref="LiveClassAssetWindow"/> and
+    /// <see cref="LiveClassAssetAddMemberWindow"/>, both of which edit the same
+    /// <see cref="LiveClassAsset"/> / <see cref="LiveClassBinding"/> pair.
     /// </summary>
-    internal static class LiveBindingMemberExposure
+    internal static class LiveClassAssetMemberExposure
     {
         private static readonly HashSet<Type> kSupportedValueTypes = new HashSet<Type>
         {
@@ -91,7 +91,7 @@ namespace Lilium.RemoteControl.Editor
             return member.GetCustomAttribute<ObsoleteAttribute>() != null;
         }
 
-        public static LiveBindingMember FindMember(LiveBindingPreset.TypeDefinition definition, string path, bool isFunction)
+        public static LiveClassAssetMember FindMember(LiveClassAsset.TypeDefinition definition, string path, bool isFunction)
         {
             foreach (var m in definition.members)
             {
@@ -104,17 +104,17 @@ namespace Lilium.RemoteControl.Editor
         }
 
         // Ensures the edited preset is registered on the resolver (so its bindings resolve at runtime).
-        public static void EnsurePresetOnResolver(LiveBindingPreset preset, LiveBindingResolver resolver)
+        public static void EnsurePresetOnResolver(LiveClassAsset preset, LiveClassBinding resolver)
         {
             if (resolver == null || preset == null) return;
-            if (resolver.presets.Contains(preset)) return;
+            if (resolver.assets.Contains(preset)) return;
             Undo.RecordObject(resolver, "Add Preset To Resolver");
-            resolver.presets.Add(preset);
+            resolver.assets.Add(preset);
             EditorUtility.SetDirty(resolver);
         }
 
         // Drops every instance binding pointing at the given type (its definition is gone).
-        public static void RemoveBindingsOfType(LiveBindingPreset preset, LiveBindingResolver resolver, Type type)
+        public static void RemoveBindingsOfType(LiveClassAsset preset, LiveClassBinding resolver, Type type)
         {
             for (int i = preset.bindings.Count - 1; i >= 0; i--)
             {
@@ -125,7 +125,7 @@ namespace Lilium.RemoteControl.Editor
             }
         }
 
-        public static void ExposeTypeMember(LiveBindingPreset preset, LiveBindingResolver resolver, Type type, in MemberCandidate candidate)
+        public static void ExposeTypeMember(LiveClassAsset preset, LiveClassBinding resolver, Type type, in MemberCandidate candidate)
         {
             if (preset == null) return;
             EnsurePresetOnResolver(preset, resolver);
@@ -134,7 +134,7 @@ namespace Lilium.RemoteControl.Editor
             var definition = preset.GetOrAddTypeDefinition(type);
             if (FindMember(definition, candidate.path, candidate.isFunction) == null)
             {
-                definition.members.Add(new LiveBindingMember
+                definition.members.Add(new LiveClassAssetMember
                 {
                     path = candidate.path,
                     isFunction = candidate.isFunction,
@@ -148,7 +148,7 @@ namespace Lilium.RemoteControl.Editor
             EditorUtility.SetDirty(preset);
         }
 
-        public static void UnexposeTypeMember(LiveBindingPreset preset, LiveBindingResolver resolver, Type type, in MemberCandidate candidate)
+        public static void UnexposeTypeMember(LiveClassAsset preset, LiveClassBinding resolver, Type type, in MemberCandidate candidate)
         {
             if (preset == null) return;
             var definition = preset.FindTypeDefinition(type);

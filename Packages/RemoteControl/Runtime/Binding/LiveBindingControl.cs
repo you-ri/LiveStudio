@@ -6,7 +6,7 @@ namespace Lilium.RemoteControl
 {
     /// <summary>
     /// Polymorphic controller definition for an exposed binding member, serialized with
-    /// [SerializeReference] on <see cref="LiveBindingMember.control"/> so the RemoteApp control
+    /// [SerializeReference] on <see cref="LiveClassAssetMember.control"/> so the RemoteApp control
     /// can be switched generically in the editor. Derive and implement
     /// <see cref="ToControlAttribute"/> to add new controls. Null means the default control for
     /// the member's value type.

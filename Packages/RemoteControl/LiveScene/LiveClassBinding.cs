@@ -2,29 +2,30 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 using Lilium.RemoteControl;
 
 namespace Lilium.RemoteControl.LiveScene
 {
     /// <summary>
-    /// Scene-side counterpart of <see cref="LiveBindingPreset"/> assets: implements the standard
+    /// Scene-side counterpart of <see cref="LiveClassAsset"/> assets: implements the standard
     /// <see cref="IExposedPropertyTable"/> (the same mechanism PlayableDirector uses) to map the
-    /// preset's binding keys to actual scene objects, and turns each resolved binding into a
+    /// asset's binding keys to actual scene objects, and turns each resolved binding into a
     /// runtime <see cref="LiveBinding"/> registered through the normal LiveObject flow.
     ///
     /// The reference table holds direct object references serialized in the scene, so bindings
-    /// survive renames and hierarchy moves. The same preset asset can be used in multiple scenes;
-    /// each scene's resolver supplies its own objects for the same keys, and because the key is
+    /// survive renames and hierarchy moves. The same asset can be used in multiple scenes;
+    /// each scene's binding supplies its own objects for the same keys, and because the key is
     /// also the LiveObject id, persisted values (live.json) stay stable across scenes.
     /// </summary>
-    [AddComponentMenu("Lilium/Remote Control/Live Binding Resolver")]
+    [AddComponentMenu("Lilium/Remote Control/Live Class Binding")]
     [DefaultExecutionOrder(-32700)]
     [ExecuteAlways]
-    public class LiveBindingResolver : MonoBehaviour, IExposedPropertyTable
+    public class LiveClassBinding : MonoBehaviour, IExposedPropertyTable
     {
-        [SerializeField]
-        private List<LiveBindingPreset> _presets = new List<LiveBindingPreset>();
+        [SerializeField, FormerlySerializedAs("_presets")]
+        private List<LiveClassAsset> _assets = new List<LiveClassAsset>();
 
         [Serializable]
         private struct SceneReference
@@ -41,8 +42,8 @@ namespace Lilium.RemoteControl.LiveScene
         private readonly List<LiveBinding> _active = new List<LiveBinding>();
         private List<ILiveObject> _hostList;
 
-        /// <summary>Preset assets registered by this resolver. Editable from the Live Binding panel.</summary>
-        public List<LiveBindingPreset> presets => _presets;
+        /// <summary>Live class assets registered by this binding. Editable from the Live Class Asset window.</summary>
+        public List<LiveClassAsset> assets => _assets;
 
         // --- IExposedPropertyTable ---
 
@@ -117,8 +118,8 @@ namespace Lilium.RemoteControl.LiveScene
         }
 
         /// <summary>
-        /// Re-registers everything after the presets or the reference table changed
-        /// (called by the Live Binding editor panel).
+        /// Re-registers everything after the assets or the reference table changed
+        /// (called by the Live Class Asset editor window).
         /// </summary>
         public void Reload()
         {
@@ -128,27 +129,27 @@ namespace Lilium.RemoteControl.LiveScene
 
         private void _RegisterAll()
         {
-            foreach (var preset in _presets)
+            foreach (var asset in _assets)
             {
-                if (preset == null) continue;
-                LiveBindingSystem.RegisterTypes(preset);
+                if (asset == null) continue;
+                LiveClassAssetSystem.RegisterTypes(asset);
             }
 
-            foreach (var preset in _presets)
+            foreach (var asset in _assets)
             {
-                if (preset == null) continue;
-                foreach (var entry in preset.bindings)
+                if (asset == null) continue;
+                foreach (var entry in asset.bindings)
                 {
                     if (entry == null || string.IsNullOrEmpty(entry.key)) continue;
                     var target = ResolveKey(entry.key);
                     if (target == null)
                     {
-                        // Unbound in this scene — not an error: the same preset may be shared by
+                        // Unbound in this scene — not an error: the same asset may be shared by
                         // scenes that only bind a subset of its entries.
                         continue;
                     }
 
-                    // Look the host list up lazily so a resolver with nothing to expose stays silent.
+                    // Look the host list up lazily so a binding with nothing to expose stays silent.
                     _hostList ??= _FindHostList();
 
                     var binding = new LiveBinding(entry.key, target);
@@ -185,7 +186,7 @@ namespace Lilium.RemoteControl.LiveScene
             var containers = FindObjectsByType<RemoteControlContainer>(FindObjectsInactive.Include, FindObjectsSortMode.InstanceID);
             if (containers.Length > 0) return containers[0]._objects;
 
-            Debug.LogWarning("[RemoteControl] LiveBindingResolver found no RemoteControlBehaviour/RemoteControlContainer; bindings will not be listed or persisted.");
+            Debug.LogWarning("[RemoteControl] LiveClassBinding found no RemoteControlBehaviour/RemoteControlContainer; bindings will not be listed or persisted.");
             return null;
         }
     }

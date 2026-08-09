@@ -8,12 +8,12 @@ using Lilium.RemoteControl.Reflection;
 namespace Lilium.RemoteControl
 {
     /// <summary>
-    /// Owns the type-level LiveClass registrations driven by <see cref="LiveBindingPreset"/>
+    /// Owns the type-level LiveClass registrations driven by <see cref="LiveClassAsset"/>
     /// assets, and tracks the active <see cref="LiveBinding"/> instances so their registry
     /// handles can be refreshed when a type definition is re-registered (handles capture the
     /// LiveClass, so a rebuild invalidates them).
     /// </summary>
-    public static class LiveBindingSystem
+    public static class LiveClassAssetSystem
     {
         // Active runtime bindings per type (for handle refresh on type rebuild).
         private static readonly Dictionary<Type, List<LiveBinding>> _activeByType
@@ -24,10 +24,10 @@ namespace Lilium.RemoteControl
         private static readonly Dictionary<Type, string> _signatureByType
             = new Dictionary<Type, string>();
 
-        // Which preset most recently registered each type — used to warn when two presets
+        // Which asset most recently registered each type — used to warn when two assets
         // define the same type with different member sets (last one wins).
-        private static readonly Dictionary<Type, LiveBindingPreset> _ownerByType
-            = new Dictionary<Type, LiveBindingPreset>();
+        private static readonly Dictionary<Type, LiveClassAsset> _ownerByType
+            = new Dictionary<Type, LiveClassAsset>();
 
         [ThreadStatic]
         private static System.Text.StringBuilder _signatureBuilder;
@@ -43,28 +43,28 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// Registers (or re-registers) the LiveClass of every type definition in the preset.
+        /// Registers (or re-registers) the LiveClass of every type definition in the asset.
         /// Idempotent: unchanged definitions are skipped via a signature check.
         /// </summary>
-        public static void RegisterTypes(LiveBindingPreset preset)
+        public static void RegisterTypes(LiveClassAsset asset)
         {
-            if (preset == null) return;
-            foreach (var definition in preset.typeDefinitions)
+            if (asset == null) return;
+            foreach (var definition in asset.typeDefinitions)
             {
                 if (definition == null) continue;
                 var type = definition.ResolveType();
                 if (type == null)
                 {
-                    Debug.LogWarning($"[RemoteControl] Live binding preset '{preset.name}' references unresolvable type '{definition.typeName}'.");
+                    Debug.LogWarning($"[RemoteControl] Live class asset '{asset.name}' references unresolvable type '{definition.typeName}'.");
                     continue;
                 }
-                _RegisterType(preset, type, definition);
+                _RegisterType(asset, type, definition);
             }
         }
 
         /// <summary>
         /// Resolves the LiveClass a binding instance of <paramref name="type"/> should use.
-        /// Attribute-based [LiveClass] types keep their own definition; preset-defined types
+        /// Attribute-based [LiveClass] types keep their own definition; asset-defined types
         /// must have been registered through <see cref="RegisterTypes"/> first.
         /// </summary>
         internal static LiveClass ResolveLiveClass(Type type)
@@ -94,7 +94,7 @@ namespace Lilium.RemoteControl
             var liveClass = ResolveLiveClass(type);
             if (liveClass == null)
             {
-                Debug.LogWarning($"[RemoteControl] No live binding type definition registered for '{type.Name}'. Register the preset before enabling bindings.");
+                Debug.LogWarning($"[RemoteControl] No live class asset type definition registered for '{type.Name}'. Register the asset before enabling bindings.");
                 return;
             }
             binding.RefreshHandle(liveClass);
@@ -118,14 +118,14 @@ namespace Lilium.RemoteControl
             }
         }
 
-        private static void _RegisterType(LiveBindingPreset preset, Type type, LiveBindingPreset.TypeDefinition definition)
+        private static void _RegisterType(LiveClassAsset asset, Type type, LiveClassAsset.TypeDefinition definition)
         {
-            // Attribute-based types own their member definition; presets only add instances.
+            // Attribute-based types own their member definition; assets only add instances.
             // Rebuilding here would clobber the attribute-registered LiveClass (and its
             // source-generated declaration order), so leave it untouched.
             if (TypeReflectionSystem.GetCustomAttribute<LiveClassAttribute>(type) != null)
             {
-                Debug.LogWarning($"[RemoteControl] Type '{type.Name}' already has an attribute-based [LiveClass] definition; the preset member definition is ignored (instances are still exposed).");
+                Debug.LogWarning($"[RemoteControl] Type '{type.Name}' already has an attribute-based [LiveClass] definition; the asset member definition is ignored (instances are still exposed).");
                 return;
             }
 
@@ -145,11 +145,11 @@ namespace Lilium.RemoteControl
                 member.AppendSignature(sb);
             }
 
-            if (_ownerByType.TryGetValue(type, out var owner) && owner != null && owner != preset)
+            if (_ownerByType.TryGetValue(type, out var owner) && owner != null && owner != asset)
             {
-                Debug.LogWarning($"[RemoteControl] Type '{type.Name}' is defined by multiple live binding presets ('{owner.name}' and '{preset.name}'); the last registered definition wins.");
+                Debug.LogWarning($"[RemoteControl] Type '{type.Name}' is defined by multiple live class assets ('{owner.name}' and '{asset.name}'); the last registered definition wins.");
             }
-            _ownerByType[type] = preset;
+            _ownerByType[type] = asset;
 
             var signature = sb.ToString();
             var liveClass = LiveClass.Find(type);

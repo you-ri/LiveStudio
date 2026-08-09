@@ -12,12 +12,12 @@ namespace Lilium.RemoteControl.Editor
     /// against the preset. Kept open (unlike the single-pick searchable dropdown it replaces) so
     /// several members can be added or removed in one sitting.
     /// </summary>
-    internal class LiveBindingAddMemberWindow : EditorWindow
+    internal class LiveClassAssetAddMemberWindow : EditorWindow
     {
         private static readonly Vector2 kWindowSize = new Vector2(320f, 400f);
 
-        private Func<LiveBindingPreset> _getPreset;
-        private Func<LiveBindingResolver> _getResolver;
+        private Func<LiveClassAsset> _getPreset;
+        private Func<LiveClassBinding> _getResolver;
         private Type _type;
         private Action _onChanged;
 
@@ -25,12 +25,12 @@ namespace Lilium.RemoteControl.Editor
         private Vector2 _scroll;
 
         // Preset mutations are deferred to the next Layout event so no draw pass ever runs on a
-        // half-modified list, same reasoning as LiveBindingWindow.
+        // half-modified list, same reasoning as LiveClassAssetWindow.
         private Action _pendingAction;
 
-        public static void Open(Func<LiveBindingPreset> getPreset, Func<LiveBindingResolver> getResolver, Type type, Action onChanged, Rect screenRect)
+        public static void Open(Func<LiveClassAsset> getPreset, Func<LiveClassBinding> getResolver, Type type, Action onChanged, Rect screenRect)
         {
-            var window = CreateInstance<LiveBindingAddMemberWindow>();
+            var window = CreateInstance<LiveClassAssetAddMemberWindow>();
             window.titleContent = new GUIContent("Add Member");
             window.minSize = kWindowSize;
             window._getPreset = getPreset;
@@ -58,13 +58,13 @@ namespace Lilium.RemoteControl.Editor
             }
             var resolver = _getResolver?.Invoke();
 
-            EditorGUILayout.LabelField(_type.FullName, EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(new GUIContent(_type.Name, _type.FullName), LiveClassAssetStyles.paneHeader);
             _memberFilter = EditorGUILayout.TextField("Filter", _memberFilter);
 
             var definition = preset.FindTypeDefinition(_type);
 
             _scroll = EditorGUILayout.BeginScrollView(_scroll);
-            foreach (var candidate in LiveBindingMemberExposure.EnumerateCandidates(_type))
+            foreach (var candidate in LiveClassAssetMemberExposure.EnumerateCandidates(_type))
             {
                 if (!string.IsNullOrEmpty(_memberFilter)
                     && candidate.path.IndexOf(_memberFilter, StringComparison.OrdinalIgnoreCase) < 0)
@@ -73,17 +73,17 @@ namespace Lilium.RemoteControl.Editor
                 }
 
                 bool exposed = definition != null
-                    && LiveBindingMemberExposure.FindMember(definition, candidate.path, candidate.isFunction) != null;
+                    && LiveClassAssetMemberExposure.FindMember(definition, candidate.path, candidate.isFunction) != null;
 
                 EditorGUILayout.BeginHorizontal();
                 bool next = EditorGUILayout.ToggleLeft(candidate.isFunction ? $"{candidate.path} ()" : candidate.path, exposed);
-                GUILayout.Label(candidate.typeLabel, EditorStyles.miniLabel, GUILayout.MinWidth(60));
+                GUILayout.Label(candidate.typeLabel, LiveClassAssetStyles.rowMeta, GUILayout.MinWidth(60));
                 EditorGUILayout.EndHorizontal();
 
                 if (next == exposed) continue;
                 var picked = candidate;
-                if (next) _Defer(() => { LiveBindingMemberExposure.ExposeTypeMember(preset, resolver, _type, picked); _Applied(resolver); });
-                else _Defer(() => { LiveBindingMemberExposure.UnexposeTypeMember(preset, resolver, _type, picked); _Applied(resolver); });
+                if (next) _Defer(() => { LiveClassAssetMemberExposure.ExposeTypeMember(preset, resolver, _type, picked); _Applied(resolver); });
+                else _Defer(() => { LiveClassAssetMemberExposure.UnexposeTypeMember(preset, resolver, _type, picked); _Applied(resolver); });
             }
             EditorGUILayout.EndScrollView();
         }
@@ -94,7 +94,7 @@ namespace Lilium.RemoteControl.Editor
             Repaint();
         }
 
-        private void _Applied(LiveBindingResolver resolver)
+        private void _Applied(LiveClassBinding resolver)
         {
             if (resolver != null) resolver.Reload();
             _onChanged?.Invoke();

@@ -10,21 +10,21 @@ namespace Lilium.RemoteControl.Editor
     /// global type search "Add Class" uses. Adds a (still empty) type definition for the picked
     /// component's type; member exposure itself happens afterward through "Add Member".
     /// </summary>
-    internal class LiveBindingFromSelectedWindow : EditorWindow
+    internal class LiveClassAssetFromSelectedWindow : EditorWindow
     {
         private static readonly Vector2 kWindowSize = new Vector2(280f, 320f);
 
-        private Func<LiveBindingPreset> _getPreset;
+        private Func<LiveClassAsset> _getPreset;
         private Action<string> _onAdded;
         private Vector2 _scroll;
 
         // Preset mutations are deferred to the next Layout event so no draw pass ever runs on a
-        // half-modified list, same reasoning as LiveBindingWindow.
+        // half-modified list, same reasoning as LiveClassAssetWindow.
         private Action _pendingAction;
 
-        public static void Open(Func<LiveBindingPreset> getPreset, Action<string> onAdded, Rect screenRect)
+        public static void Open(Func<LiveClassAsset> getPreset, Action<string> onAdded, Rect screenRect)
         {
-            var window = CreateInstance<LiveBindingFromSelectedWindow>();
+            var window = CreateInstance<LiveClassAssetFromSelectedWindow>();
             window.titleContent = new GUIContent("From Selected");
             window.minSize = kWindowSize;
             window._getPreset = getPreset;
@@ -55,7 +55,7 @@ namespace Lilium.RemoteControl.Editor
             var preset = _getPreset?.Invoke();
             if (preset == null)
             {
-                EditorGUILayout.HelpBox("Assign a preset in the Live Binding window first.", MessageType.Info);
+                EditorGUILayout.HelpBox("Assign a Live Class Asset in the Live Class Asset window first.", MessageType.Info);
                 return;
             }
 
@@ -66,7 +66,7 @@ namespace Lilium.RemoteControl.Editor
                 return;
             }
 
-            EditorGUILayout.LabelField(go.name, EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(go.name, LiveClassAssetStyles.paneHeader);
 
             _scroll = EditorGUILayout.BeginScrollView(_scroll);
             foreach (var component in go.GetComponents<Component>())
@@ -77,12 +77,13 @@ namespace Lilium.RemoteControl.Editor
             EditorGUILayout.EndScrollView();
         }
 
-        private void _DrawRow(LiveBindingPreset preset, Type type)
+        private void _DrawRow(LiveClassAsset preset, Type type)
         {
             bool added = preset.FindTypeDefinition(type) != null;
 
             EditorGUILayout.BeginHorizontal();
-            GUILayout.Label(type.Name, added ? EditorStyles.boldLabel : EditorStyles.label);
+            GUILayout.Label(new GUIContent(type.Name, type.FullName),
+                added ? LiveClassAssetStyles.memberTitle : LiveClassAssetStyles.rowTitle);
             GUILayout.FlexibleSpace();
             using (new EditorGUI.DisabledScope(added))
             {

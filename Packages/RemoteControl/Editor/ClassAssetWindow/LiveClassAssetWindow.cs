@@ -10,41 +10,41 @@ namespace Lilium.RemoteControl.Editor
 {
     /// <summary>
     /// UE Remote Control-style panel: build the exposure class-first. "Add Class" (searchable
-    /// dropdown over every type) or "From Selected" (<see cref="LiveBindingFromSelectedWindow"/>,
+    /// dropdown over every type) or "From Selected" (<see cref="LiveClassAssetFromSelectedWindow"/>,
     /// scoped to the selected GameObject's own components) adds an empty type definition to the
-    /// class list on the left; "Add Member" (<see cref="LiveBindingAddMemberWindow"/>, a checkbox
+    /// class list on the left; "Add Member" (<see cref="LiveClassAssetAddMemberWindow"/>, a checkbox
     /// list kept open for multi-select) fills it with members and methods — then edit the
     /// metadata (label, control, persistence) of the exposed members in the detail pane on the
     /// right.
     ///
-    /// Layout: the header holds the preset asset, the body is a two-pane class list / class
-    /// detail split, and the footer collects everything instance-related (the resolver and the
-    /// instance bindings).
+    /// Layout: the header holds the class asset and the resolver, the body is a two-pane class
+    /// list / class detail split, and the footer lists the instance bindings — hidden entirely
+    /// until a resolver is assigned, since there is nothing to bind into without one.
     ///
-    /// Exposure settings are stored in a <see cref="LiveBindingPreset"/> asset (shared across
-    /// scenes); the scene-object references live in a <see cref="LiveBindingResolver"/> in the
+    /// Exposure settings are stored in a <see cref="LiveClassAsset"/> asset (shared across
+    /// scenes); the scene-object references live in a <see cref="LiveClassBinding"/> in the
     /// scene, using the standard IExposedPropertyTable mechanism.
     /// </summary>
-    public class LiveBindingWindow : EditorWindow
+    public class LiveClassAssetWindow : EditorWindow
     {
-        [MenuItem("Window/Lilium Remote Control/Live Binding")]
+        [MenuItem("Window/Lilium Remote Control/Live Class Asset")]
         public static void Open()
         {
-            GetWindow<LiveBindingWindow>("Live Binding");
+            GetWindow<LiveClassAssetWindow>("Live Class Asset");
         }
 
+        private const float kHeaderLabelWidth = 58f;
         private const float kSplitterThickness = 4f;
         private const float kMinPaneWidth = 160f;
         private const float kMinFooterHeight = 60f;
 
-        private LiveBindingResolver _resolver;
-        private LiveBindingPreset _preset;
+        private LiveClassBinding _resolver;
+        private LiveClassAsset _preset;
 
         // Two-pane body + footer geometry (persisted for the window's lifetime only).
         [SerializeField] private float _classPaneWidth = 240f;
         [SerializeField] private float _footerHeight = 220f;
         [SerializeField] private string _selectedTypeName;
-        [SerializeField] private bool _resolverFoldout = true;
         [SerializeField] private bool _bindingsFoldout = true;
 
         private Vector2 _classListScroll;
@@ -71,7 +71,9 @@ namespace Lilium.RemoteControl.Editor
 
             _DrawHeader();
             _DrawBody();
-            _DrawFooter();
+            // No resolver means nothing to bind into, so the instance-bindings footer has
+            // nothing to show; hide the whole pane rather than leave an empty box.
+            if (_resolver != null) _DrawFooter();
         }
 
         // Queues a preset/resolver mutation for the next Layout event.
@@ -87,32 +89,44 @@ namespace Lilium.RemoteControl.Editor
         {
             if (_resolver == null)
             {
-                var resolvers = FindObjectsByType<LiveBindingResolver>(FindObjectsInactive.Include, FindObjectsSortMode.InstanceID);
+                var resolvers = FindObjectsByType<LiveClassBinding>(FindObjectsInactive.Include, FindObjectsSortMode.InstanceID);
                 if (resolvers.Length > 0) _resolver = resolvers[0];
             }
-            if (_preset == null && _resolver != null && _resolver.presets.Count > 0)
+            if (_preset == null && _resolver != null && _resolver.assets.Count > 0)
             {
-                _preset = _resolver.presets[0];
+                _preset = _resolver.assets[0];
             }
         }
 
         private void _DrawHeader()
         {
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
-            GUILayout.Label("Preset", EditorStyles.miniLabel, GUILayout.Width(40));
-            _preset = (LiveBindingPreset)EditorGUILayout.ObjectField(
-                _preset, typeof(LiveBindingPreset), allowSceneObjects: false, GUILayout.Height(EditorGUIUtility.singleLineHeight));
+            GUILayout.Label("Preset", LiveClassAssetStyles.rowTitle, GUILayout.Width(kHeaderLabelWidth));
+            _preset = (LiveClassAsset)EditorGUILayout.ObjectField(
+                _preset, typeof(LiveClassAsset), allowSceneObjects: false, GUILayout.Height(EditorGUIUtility.singleLineHeight));
             if (GUILayout.Button("New", EditorStyles.toolbarButton, GUILayout.Width(40)))
             {
-                var path = EditorUtility.SaveFilePanelInProject("Create Live Binding Preset", "LiveBindingPreset", "asset", "");
+                var path = EditorUtility.SaveFilePanelInProject("Create Live Class Asset", "LiveClassAsset", "asset", "");
                 if (!string.IsNullOrEmpty(path))
                 {
-                    var created = ScriptableObject.CreateInstance<LiveBindingPreset>();
+                    var created = ScriptableObject.CreateInstance<LiveClassAsset>();
                     AssetDatabase.CreateAsset(created, path);
                     AssetDatabase.SaveAssets();
                     _preset = created;
                     _selectedTypeName = null;
                 }
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
+            GUILayout.Label("Resolver", LiveClassAssetStyles.rowTitle, GUILayout.Width(kHeaderLabelWidth));
+            _resolver = (LiveClassBinding)EditorGUILayout.ObjectField(
+                _resolver, typeof(LiveClassBinding), allowSceneObjects: true, GUILayout.Height(EditorGUIUtility.singleLineHeight));
+            if (_resolver == null && GUILayout.Button("Create", EditorStyles.toolbarButton, GUILayout.Width(48)))
+            {
+                var go = new GameObject("Live Binding Resolver");
+                Undo.RegisterCreatedObjectUndo(go, "Create Live Binding Resolver");
+                _resolver = Undo.AddComponent<LiveClassBinding>(go);
             }
             EditorGUILayout.EndHorizontal();
         }
@@ -134,7 +148,7 @@ namespace Lilium.RemoteControl.Editor
             EditorGUILayout.BeginVertical(GUILayout.Width(_classPaneWidth), GUILayout.ExpandHeight(true));
 
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
-            GUILayout.Label("Classes", EditorStyles.miniBoldLabel);
+            GUILayout.Label("Classes", LiveClassAssetStyles.paneHeader);
             GUILayout.FlexibleSpace();
             using (new EditorGUI.DisabledScope(_preset == null))
             {
@@ -143,7 +157,7 @@ namespace Lilium.RemoteControl.Editor
                 var addClassRect = GUILayoutUtility.GetRect(new GUIContent("Add Class"), EditorStyles.toolbarButton, GUILayout.Width(72));
                 if (GUI.Button(addClassRect, "Add Class", EditorStyles.toolbarButton))
                 {
-                    new LiveBindingTypeDropdown(_classDropdownState, new List<Type>(), _EnumerateCandidateTypes,
+                    new LiveClassAssetTypeDropdown(_classDropdownState, new List<Type>(), _EnumerateCandidateTypes,
                         selected => _Defer(() => _AddClass(selected))).Show(addClassRect);
                 }
 
@@ -152,7 +166,7 @@ namespace Lilium.RemoteControl.Editor
                 var fromSelectedRect = GUILayoutUtility.GetRect(new GUIContent("From Selected"), EditorStyles.toolbarButton, GUILayout.Width(90));
                 if (GUI.Button(fromSelectedRect, "From Selected", EditorStyles.toolbarButton))
                 {
-                    LiveBindingFromSelectedWindow.Open(() => _preset,
+                    LiveClassAssetFromSelectedWindow.Open(() => _preset,
                         typeName => { _selectedTypeName = typeName; _ApplyChanges(); },
                         GUIUtility.GUIToScreenRect(fromSelectedRect));
                 }
@@ -162,7 +176,7 @@ namespace Lilium.RemoteControl.Editor
             _classListScroll = EditorGUILayout.BeginScrollView(_classListScroll, GUILayout.ExpandHeight(true));
             if (_preset == null)
             {
-                EditorGUILayout.HelpBox("Assign or create a LiveBindingPreset asset above. It stores which members are exposed, shared across scenes.", MessageType.Info);
+                EditorGUILayout.HelpBox("Assign or create a Live Class Asset above. It stores which members are exposed, shared across scenes.", MessageType.Info);
             }
             else if (_preset.typeDefinitions.Count == 0)
             {
@@ -180,7 +194,7 @@ namespace Lilium.RemoteControl.Editor
             EditorGUILayout.EndVertical();
         }
 
-        private void _DrawClassRow(LiveBindingPreset.TypeDefinition definition)
+        private void _DrawClassRow(LiveClassAsset.TypeDefinition definition)
         {
             if (definition == null) return;
             var type = definition.ResolveType();
@@ -194,10 +208,14 @@ namespace Lilium.RemoteControl.Editor
                 EditorGUI.DrawRect(rowRect, GUI.skin.settings.selectionColor);
             }
 
-            var countRect = new Rect(rowRect.xMax - 66f, rowRect.y, 62f, rowRect.height);
-            var labelRect = new Rect(rowRect.x + 4f, rowRect.y, Mathf.Max(0f, countRect.x - rowRect.x - 6f), rowRect.height);
-            GUI.Label(labelRect, title, type != null ? EditorStyles.label : EditorStyles.centeredGreyMiniLabel);
-            GUI.Label(countRect, $"{definition.members.Count} members", EditorStyles.miniLabel);
+            int count = definition.members.Count;
+            var countContent = new GUIContent(count == 1 ? "1 member" : $"{count} members");
+            float countWidth = LiveClassAssetStyles.rowMeta.CalcSize(countContent).x;
+            var countRect = new Rect(rowRect.xMax - countWidth - 6f, rowRect.y, countWidth, rowRect.height);
+            var labelRect = new Rect(rowRect.x + 4f, rowRect.y, Mathf.Max(0f, countRect.x - rowRect.x - 8f), rowRect.height);
+            GUI.Label(labelRect, new GUIContent(title, type?.FullName),
+                type != null ? LiveClassAssetStyles.rowTitle : LiveClassAssetStyles.rowMeta);
+            GUI.Label(countRect, countContent, LiveClassAssetStyles.rowMeta);
 
             if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && rowRect.Contains(Event.current.mousePosition))
             {
@@ -217,9 +235,7 @@ namespace Lilium.RemoteControl.Editor
             var type = definition?.ResolveType();
 
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
-            GUILayout.Label(definition == null
-                ? "Class Detail"
-                : (type != null ? type.FullName : $"(unresolved: {definition.typeName})"), EditorStyles.miniBoldLabel);
+            _DrawDetailTitle(definition, type);
             GUILayout.FlexibleSpace();
             if (definition != null)
             {
@@ -229,13 +245,14 @@ namespace Lilium.RemoteControl.Editor
                 {
                     if (GUI.Button(addMemberRect, "Add Member", EditorStyles.toolbarButton))
                     {
-                        LiveBindingAddMemberWindow.Open(() => _preset, () => _resolver, type, _ApplyChanges,
+                        LiveClassAssetAddMemberWindow.Open(() => _preset, () => _resolver, type, _ApplyChanges,
                             GUIUtility.GUIToScreenRect(addMemberRect));
                     }
                 }
                 // Create an unbound instance entry, then assign the object in Instance Bindings
-                // in the footer (or bind another scene's object through its resolver).
-                if (GUILayout.Button("Add Binding", EditorStyles.toolbarButton, GUILayout.Width(78)))
+                // in the footer (or bind another scene's object through its resolver). Needs a
+                // resolver to bind into, so it's hidden without one.
+                if (_resolver != null && GUILayout.Button("Add Binding", EditorStyles.toolbarButton, GUILayout.Width(78)))
                 {
                     _Defer(() => _AddBinding(definition));
                 }
@@ -270,6 +287,30 @@ namespace Lilium.RemoteControl.Editor
             EditorGUILayout.EndVertical();
         }
 
+        // Type name in bold with the namespace trailing in dimmed text, so the part that
+        // identifies the class stays readable when the pane is narrow.
+        private static void _DrawDetailTitle(LiveClassAsset.TypeDefinition definition, Type type)
+        {
+            if (definition == null)
+            {
+                GUILayout.Label("Class Detail", LiveClassAssetStyles.paneHeader);
+                return;
+            }
+            if (type == null)
+            {
+                GUILayout.Label(new GUIContent("(unresolved)", definition.typeName), LiveClassAssetStyles.paneHeaderDetail);
+                return;
+            }
+
+            var nameContent = new GUIContent(type.Name, type.AssemblyQualifiedName);
+            GUILayout.Label(nameContent, LiveClassAssetStyles.paneHeader,
+                GUILayout.Width(LiveClassAssetStyles.paneHeader.CalcSize(nameContent).x));
+            if (!string.IsNullOrEmpty(type.Namespace))
+            {
+                GUILayout.Label(type.Namespace, LiveClassAssetStyles.paneHeaderDetail);
+            }
+        }
+
         private int _FindSelectedDefinitionIndex()
         {
             if (_preset == null || string.IsNullOrEmpty(_selectedTypeName)) return -1;
@@ -284,7 +325,7 @@ namespace Lilium.RemoteControl.Editor
             return -1;
         }
 
-        // --- Footer: resolver, instance bindings ---
+        // --- Footer: instance bindings ---
 
         private void _DrawFooter()
         {
@@ -294,34 +335,13 @@ namespace Lilium.RemoteControl.Editor
             EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.Height(_footerHeight));
             _footerScroll = EditorGUILayout.BeginScrollView(_footerScroll);
 
-            _DrawResolverSection();
-            EditorGUILayout.Space(2f);
             _DrawInstanceBindingsSection();
 
             EditorGUILayout.EndScrollView();
             EditorGUILayout.EndVertical();
         }
 
-        private void _DrawResolverSection()
-        {
-            _resolverFoldout = EditorGUILayout.Foldout(_resolverFoldout, "Resolver", toggleOnLabelClick: true);
-            if (!_resolverFoldout) return;
-
-            EditorGUI.indentLevel++;
-            _resolver = (LiveBindingResolver)EditorGUILayout.ObjectField("Resolver", _resolver, typeof(LiveBindingResolver), allowSceneObjects: true);
-            if (_resolver == null)
-            {
-                EditorGUILayout.HelpBox("No LiveBindingResolver in the open scenes. It holds the key → scene object reference table.", MessageType.Info);
-                if (GUILayout.Button("Create Resolver In Scene"))
-                {
-                    var go = new GameObject("Live Binding Resolver");
-                    Undo.RegisterCreatedObjectUndo(go, "Create Live Binding Resolver");
-                    _resolver = Undo.AddComponent<LiveBindingResolver>(go);
-                }
-            }
-            EditorGUI.indentLevel--;
-        }
-
+        // Only called with a resolver present (see OnGUI) — the footer pane itself is hidden without one.
         private void _DrawInstanceBindingsSection()
         {
             int count = _preset != null ? _preset.bindings.Count : 0;
@@ -332,10 +352,6 @@ namespace Lilium.RemoteControl.Editor
             if (_preset == null)
             {
                 EditorGUILayout.HelpBox("Assign a preset to bind instances.", MessageType.None);
-            }
-            else if (_resolver == null)
-            {
-                EditorGUILayout.HelpBox("A resolver is required to bind scene objects to the preset's keys.", MessageType.None);
             }
             else if (count == 0)
             {
@@ -356,7 +372,7 @@ namespace Lilium.RemoteControl.Editor
         // Ensures the edited preset is registered on the resolver (so its bindings resolve at runtime).
         private void _EnsurePresetOnResolver()
         {
-            LiveBindingMemberExposure.EnsurePresetOnResolver(_preset, _resolver);
+            LiveClassAssetMemberExposure.EnsurePresetOnResolver(_preset, _resolver);
         }
 
         private void _ApplyChanges()
@@ -380,12 +396,12 @@ namespace Lilium.RemoteControl.Editor
             _ApplyChanges();
         }
 
-        private void _AddBinding(LiveBindingPreset.TypeDefinition definition)
+        private void _AddBinding(LiveClassAsset.TypeDefinition definition)
         {
             if (_preset == null || definition == null) return;
             _EnsurePresetOnResolver();
             Undo.RecordObject(_preset, "Add Binding");
-            _preset.bindings.Add(new LiveBindingPreset.InstanceBinding
+            _preset.bindings.Add(new LiveClassAsset.InstanceBinding
             {
                 key = Guid.NewGuid().ToString(),
                 typeName = definition.typeName,
@@ -394,7 +410,7 @@ namespace Lilium.RemoteControl.Editor
             _ApplyChanges();
         }
 
-        private void _RemoveTypeDefinition(LiveBindingPreset.TypeDefinition definition)
+        private void _RemoveTypeDefinition(LiveClassAsset.TypeDefinition definition)
         {
             if (_preset == null || definition == null) return;
             var type = definition.ResolveType();
@@ -403,7 +419,7 @@ namespace Lilium.RemoteControl.Editor
             if (_resolver != null) Undo.RecordObject(_resolver, "Remove Type Definition");
 
             _preset.typeDefinitions.Remove(definition);
-            LiveBindingMemberExposure.RemoveBindingsOfType(_preset, _resolver, type);
+            LiveClassAssetMemberExposure.RemoveBindingsOfType(_preset, _resolver, type);
             if (string.Equals(_selectedTypeName, definition.typeName, StringComparison.Ordinal)) _selectedTypeName = null;
             _ApplyChanges();
         }
@@ -425,7 +441,7 @@ namespace Lilium.RemoteControl.Editor
         private static bool _IsPickableType(Type type)
         {
             if (type.IsAbstract || type.IsGenericType) return false;
-            if (LiveBindingMemberExposure.IsObsolete(type)) return false;
+            if (LiveClassAssetMemberExposure.IsObsolete(type)) return false;
             // Editor-only types are never resolvable in a player; keep them out of the picker.
             var ns = type.Namespace;
             if (ns != null && ns.StartsWith("UnityEditor", StringComparison.Ordinal)) return false;
@@ -436,16 +452,18 @@ namespace Lilium.RemoteControl.Editor
 
         // --- Member detail rows ---
 
-        private bool _DrawMember(int definitionIndex, List<LiveBindingMember> members, int index)
+        private bool _DrawMember(int definitionIndex, List<LiveClassAssetMember> members, int index)
         {
             var member = members[index];
             bool changed = false;
 
             EditorGUILayout.BeginHorizontal();
             // The label is derived from the member name at expose time and needs no editing;
-            // show it as the row title with the wire name alongside.
+            // show it as the row title with the wire name alongside. GUILayout.Label (not
+            // LabelField) so the title starts at the pane edge instead of the field column.
             string rowTitle = string.IsNullOrEmpty(member.label) ? member.path : $"{member.label}  ({member.path})";
-            EditorGUILayout.LabelField(member.isFunction ? $"{rowTitle} ()" : rowTitle, EditorStyles.miniBoldLabel);
+            if (member.isFunction) rowTitle += " ()";
+            GUILayout.Label(new GUIContent(rowTitle, member.path), LiveClassAssetStyles.memberTitle);
 
             using (new EditorGUI.DisabledScope(index == 0))
             {
@@ -520,7 +538,7 @@ namespace Lilium.RemoteControl.Editor
             return false;
         }
 
-        private void _DrawInstanceBinding(LiveBindingPreset.InstanceBinding entry)
+        private void _DrawInstanceBinding(LiveClassAsset.InstanceBinding entry)
         {
             if (entry == null) return;
             var expectedType = entry.ResolveType() ?? typeof(UnityEngine.Object);
@@ -539,7 +557,7 @@ namespace Lilium.RemoteControl.Editor
             }
             if (current == null)
             {
-                GUILayout.Label("(unbound)", EditorStyles.miniLabel, GUILayout.Width(60));
+                GUILayout.Label("(unbound)", LiveClassAssetStyles.rowMeta, GUILayout.Width(64));
             }
             if (GUILayout.Button("✕", GUILayout.Width(24)))
             {
