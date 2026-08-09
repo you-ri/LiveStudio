@@ -7,8 +7,9 @@ namespace Lilium.RemoteControl.Editor
 {
     /// <summary>
     /// Class picker sourced from the currently selected GameObject's components, instead of the
-    /// global type search "Add Class" uses. Adds a (still empty) type definition for the picked
-    /// component's type; member exposure itself happens afterward through "Add Member".
+    /// global type search the class list's "+" uses. Adds a (still empty) type definition for the
+    /// picked component's type; member exposure itself happens afterward through the detail
+    /// pane's "+".
     /// </summary>
     internal class LiveClassAssetFromSelectedWindow : EditorWindow
     {
@@ -91,7 +92,7 @@ namespace Lilium.RemoteControl.Editor
                 {
                     _Defer(() =>
                     {
-                        Undo.RecordObject(preset, "Add Class");
+                        LiveClassAssetMemberExposure.BeginEdit(preset, null, "Add Class");
                         var definition = preset.GetOrAddTypeDefinition(type);
                         EditorUtility.SetDirty(preset);
                         _onAdded?.Invoke(definition.typeName);

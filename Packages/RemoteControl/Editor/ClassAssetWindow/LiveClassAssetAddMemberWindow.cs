@@ -41,6 +41,23 @@ namespace Lilium.RemoteControl.Editor
             window.ShowUtility();
         }
 
+        private void OnEnable()
+        {
+            Undo.undoRedoPerformed += _OnUndoRedo;
+        }
+
+        private void OnDisable()
+        {
+            Undo.undoRedoPerformed -= _OnUndoRedo;
+        }
+
+        // The checkbox states are read straight off the asset, so an undo elsewhere has to
+        // repaint this list — and rebuild the resolver's lookup table with it.
+        private void _OnUndoRedo()
+        {
+            _Applied(_getResolver?.Invoke());
+        }
+
         private void OnGUI()
         {
             if (_pendingAction != null && Event.current.type == EventType.Layout)

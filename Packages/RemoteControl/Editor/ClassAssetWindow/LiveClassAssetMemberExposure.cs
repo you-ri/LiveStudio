@@ -103,12 +103,36 @@ namespace Lilium.RemoteControl.Editor
             return null;
         }
 
+        /// <summary>
+        /// Opens one undo step covering the asset and, when present, the resolver.
+        /// Both are snapshotted whole: these edits change list sizes and [SerializeReference]
+        /// controls, which <see cref="Undo.RecordObject"/>'s incremental diff does not capture
+        /// reliably. Everything registered until the next <c>BeginEdit</c> undoes together.
+        /// </summary>
+        public static void BeginEdit(LiveClassAsset preset, LiveClassBinding resolver, string name)
+        {
+            Undo.IncrementCurrentGroup();
+            Undo.SetCurrentGroupName(name);
+            if (preset != null && resolver != null)
+            {
+                Undo.RegisterCompleteObjectUndo(new UnityEngine.Object[] { preset, resolver }, name);
+            }
+            else if (preset != null)
+            {
+                Undo.RegisterCompleteObjectUndo(preset, name);
+            }
+            else if (resolver != null)
+            {
+                Undo.RegisterCompleteObjectUndo(resolver, name);
+            }
+        }
+
         // Ensures the edited preset is registered on the resolver (so its bindings resolve at runtime).
         public static void EnsurePresetOnResolver(LiveClassAsset preset, LiveClassBinding resolver)
         {
             if (resolver == null || preset == null) return;
             if (resolver.assets.Contains(preset)) return;
-            Undo.RecordObject(resolver, "Add Preset To Resolver");
+            Undo.RegisterCompleteObjectUndo(resolver, "Add Preset To Resolver");
             resolver.assets.Add(preset);
             EditorUtility.SetDirty(resolver);
         }
@@ -128,8 +152,8 @@ namespace Lilium.RemoteControl.Editor
         public static void ExposeTypeMember(LiveClassAsset preset, LiveClassBinding resolver, Type type, in MemberCandidate candidate)
         {
             if (preset == null) return;
+            BeginEdit(preset, resolver, "Expose Member");
             EnsurePresetOnResolver(preset, resolver);
-            Undo.RecordObject(preset, "Expose Member");
 
             var definition = preset.GetOrAddTypeDefinition(type);
             if (FindMember(definition, candidate.path, candidate.isFunction) == null)
@@ -156,8 +180,7 @@ namespace Lilium.RemoteControl.Editor
             var member = FindMember(definition, candidate.path, candidate.isFunction);
             if (member == null) return;
 
-            Undo.RecordObject(preset, "Unexpose Member");
-            if (resolver != null) Undo.RecordObject(resolver, "Unexpose Member");
+            BeginEdit(preset, resolver, "Unexpose Member");
 
             definition.members.Remove(member);
             if (definition.members.Count == 0)
