@@ -17,12 +17,12 @@ namespace Lilium.RemoteControl.Editor
     /// multi-select) fills it with members and methods — then edit the metadata (label, control,
     /// persistence) of the exposed members in the detail pane on the right.
     ///
-    /// Layout: the header holds the class asset and the resolver, the body is a two-pane class
+    /// Layout: the header holds the class asset and the container, the body is a two-pane class
     /// list / class detail split, and the footer lists the instance bindings — hidden entirely
-    /// until a resolver is assigned, since there is nothing to bind into without one.
+    /// until a container is assigned, since there is nothing to bind into without one.
     ///
     /// Exposure settings are stored in a <see cref="LiveClassAsset"/> asset (shared across
-    /// scenes); the scene-object references live in a <see cref="LiveClassBinding"/> in the
+    /// scenes); the scene-object references live in a <see cref="RemoteControlContainer"/> in the
     /// scene, using the standard IExposedPropertyTable mechanism.
     /// </summary>
     public class LiveClassAssetWindow : EditorWindow
@@ -55,7 +55,7 @@ namespace Lilium.RemoteControl.Editor
             return new GUIContent(EditorGUIUtility.IconContent("Toolbar Plus")) { tooltip = tooltip };
         }
 
-        private LiveClassBinding _resolver;
+        private RemoteControlContainer _container;
         private LiveClassAsset _preset;
 
         // Two-pane body + footer geometry (persisted for the window's lifetime only).
@@ -85,11 +85,11 @@ namespace Lilium.RemoteControl.Editor
             Undo.undoRedoPerformed -= _OnUndoRedo;
         }
 
-        // An undo restores the serialized state only; the resolver's runtime lookup table has to
+        // An undo restores the serialized state only; the container's runtime lookup table has to
         // be rebuilt from it, or the bindings keep resolving to the pre-undo objects.
         private void _OnUndoRedo()
         {
-            if (_resolver != null) _resolver.Reload();
+            if (_container != null) _container.Reload();
             Repaint();
         }
 
@@ -102,16 +102,16 @@ namespace Lilium.RemoteControl.Editor
                 action();
             }
 
-            _AcquireResolverAndPreset();
+            _AcquireContainerAndPreset();
 
             _DrawHeader();
             _DrawBody();
-            // No resolver means nothing to bind into, so the instance-bindings footer has
+            // No container means nothing to bind into, so the instance-bindings footer has
             // nothing to show; hide the whole pane rather than leave an empty box.
-            if (_resolver != null) _DrawFooter();
+            if (_container != null) _DrawFooter();
         }
 
-        // Queues a preset/resolver mutation for the next Layout event.
+        // Queues a preset/container mutation for the next Layout event.
         private void _Defer(Action action)
         {
             _pendingAction = action;
@@ -120,16 +120,16 @@ namespace Lilium.RemoteControl.Editor
 
         // --- Header: preset asset ---
 
-        private void _AcquireResolverAndPreset()
+        private void _AcquireContainerAndPreset()
         {
-            if (_resolver == null)
+            if (_container == null)
             {
-                var resolvers = FindObjectsByType<LiveClassBinding>(FindObjectsInactive.Include, FindObjectsSortMode.InstanceID);
-                if (resolvers.Length > 0) _resolver = resolvers[0];
+                var containers = FindObjectsByType<RemoteControlContainer>(FindObjectsInactive.Include, FindObjectsSortMode.InstanceID);
+                if (containers.Length > 0) _container = containers[0];
             }
-            if (_preset == null && _resolver != null && _resolver.assets.Count > 0)
+            if (_preset == null && _container != null && _container.assets.Count > 0)
             {
-                _preset = _resolver.assets[0];
+                _preset = _container.assets[0];
             }
         }
 
@@ -154,14 +154,14 @@ namespace Lilium.RemoteControl.Editor
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
-            GUILayout.Label("Resolver", LiveClassAssetStyles.rowTitle, GUILayout.Width(kHeaderLabelWidth));
-            _resolver = (LiveClassBinding)EditorGUILayout.ObjectField(
-                _resolver, typeof(LiveClassBinding), allowSceneObjects: true, GUILayout.Height(EditorGUIUtility.singleLineHeight));
-            if (_resolver == null && GUILayout.Button("Create", EditorStyles.toolbarButton, GUILayout.Width(48)))
+            GUILayout.Label("Container", LiveClassAssetStyles.rowTitle, GUILayout.Width(kHeaderLabelWidth));
+            _container = (RemoteControlContainer)EditorGUILayout.ObjectField(
+                _container, typeof(RemoteControlContainer), allowSceneObjects: true, GUILayout.Height(EditorGUIUtility.singleLineHeight));
+            if (_container == null && GUILayout.Button("Create", EditorStyles.toolbarButton, GUILayout.Width(48)))
             {
-                var go = new GameObject("Live Binding Resolver");
-                Undo.RegisterCreatedObjectUndo(go, "Create Live Binding Resolver");
-                _resolver = Undo.AddComponent<LiveClassBinding>(go);
+                var go = new GameObject("Remote Control Container");
+                Undo.RegisterCreatedObjectUndo(go, "Create Remote Control Container");
+                _container = Undo.AddComponent<RemoteControlContainer>(go);
             }
             EditorGUILayout.EndHorizontal();
         }
@@ -287,14 +287,14 @@ namespace Lilium.RemoteControl.Editor
                 {
                     if (GUI.Button(addMemberRect, _AddMemberContent, EditorStyles.toolbarButton))
                     {
-                        LiveClassAssetAddMemberWindow.Open(() => _preset, () => _resolver, type, _ApplyChanges,
+                        LiveClassAssetAddMemberWindow.Open(() => _preset, () => _container, type, _ApplyChanges,
                             GUIUtility.GUIToScreenRect(addMemberRect));
                     }
                 }
                 // Create an unbound instance entry, then assign the object in Instance Bindings
-                // in the footer (or bind another scene's object through its resolver). Needs a
-                // resolver to bind into, so it's hidden without one.
-                if (_resolver != null && GUILayout.Button("Add Binding", EditorStyles.toolbarButton, GUILayout.Width(78)))
+                // in the footer (or bind another scene's object through its container). Needs a
+                // container to bind into, so it's hidden without one.
+                if (_container != null && GUILayout.Button("Add Binding", EditorStyles.toolbarButton, GUILayout.Width(78)))
                 {
                     _Defer(() => _AddBinding(definition));
                 }
@@ -379,7 +379,7 @@ namespace Lilium.RemoteControl.Editor
             EditorGUILayout.EndVertical();
         }
 
-        // Only called with a resolver present (see OnGUI) — the footer pane itself is hidden without one.
+        // Only called with a container present (see OnGUI) — the footer pane itself is hidden without one.
         private void _DrawInstanceBindingsSection()
         {
             int count = _preset != null ? _preset.bindings.Count : 0;
@@ -407,34 +407,34 @@ namespace Lilium.RemoteControl.Editor
 
         // --- Preset mutations (all run from the deferred queue) ---
 
-        // Ensures the edited preset is registered on the resolver (so its bindings resolve at runtime).
-        private void _EnsurePresetOnResolver()
+        // Ensures the edited preset is registered on the container (so its bindings resolve at runtime).
+        private void _EnsurePresetOnContainer()
         {
-            LiveClassAssetMemberExposure.EnsurePresetOnResolver(_preset, _resolver);
+            LiveClassAssetMemberExposure.EnsurePresetOnContainer(_preset, _container);
         }
 
         private void _ApplyChanges()
         {
             if (_preset != null) EditorUtility.SetDirty(_preset);
-            if (_resolver != null)
+            if (_container != null)
             {
-                EditorUtility.SetDirty(_resolver);
-                _resolver.Reload();
+                EditorUtility.SetDirty(_container);
+                _container.Reload();
             }
             Repaint();
         }
 
-        // Opens one undo step over the asset + resolver; see LiveClassAssetMemberExposure.BeginEdit.
+        // Opens one undo step over the asset + container; see LiveClassAssetMemberExposure.BeginEdit.
         private void _BeginEdit(string name)
         {
-            LiveClassAssetMemberExposure.BeginEdit(_preset, _resolver, name);
+            LiveClassAssetMemberExposure.BeginEdit(_preset, _container, name);
         }
 
         private void _AddClass(Type type)
         {
             if (_preset == null) return;
             _BeginEdit("Add Class");
-            _EnsurePresetOnResolver();
+            _EnsurePresetOnContainer();
             var added = _preset.GetOrAddTypeDefinition(type);
             _selectedTypeName = added.typeName;
             _ApplyChanges();
@@ -444,7 +444,7 @@ namespace Lilium.RemoteControl.Editor
         {
             if (_preset == null || definition == null) return;
             _BeginEdit("Add Binding");
-            _EnsurePresetOnResolver();
+            _EnsurePresetOnContainer();
             _preset.bindings.Add(new LiveClassAsset.InstanceBinding
             {
                 key = Guid.NewGuid().ToString(),
@@ -462,7 +462,7 @@ namespace Lilium.RemoteControl.Editor
             _BeginEdit("Remove Class");
 
             _preset.typeDefinitions.Remove(definition);
-            LiveClassAssetMemberExposure.RemoveBindingsOfType(_preset, _resolver, type);
+            LiveClassAssetMemberExposure.RemoveBindingsOfType(_preset, _container, type);
             if (string.Equals(_selectedTypeName, definition.typeName, StringComparison.Ordinal)) _selectedTypeName = null;
             _ApplyChanges();
         }
@@ -587,7 +587,7 @@ namespace Lilium.RemoteControl.Editor
         {
             if (entry == null) return;
             var expectedType = entry.ResolveType() ?? typeof(UnityEngine.Object);
-            var current = _resolver.ResolveKey(entry.key);
+            var current = _container.ResolveKey(entry.key);
 
             EditorGUILayout.BeginHorizontal();
             EditorGUI.BeginChangeCheck();
@@ -595,7 +595,7 @@ namespace Lilium.RemoteControl.Editor
             if (EditorGUI.EndChangeCheck())
             {
                 _BeginEdit("Rebind Instance");
-                _resolver.SetReferenceValue(new PropertyName(entry.key), next);
+                _container.SetReferenceValue(new PropertyName(entry.key), next);
                 if (next != null) entry.typeName = next.GetType().AssemblyQualifiedName;
                 _ApplyChanges();
             }
@@ -608,7 +608,7 @@ namespace Lilium.RemoteControl.Editor
                 _Defer(() =>
                 {
                     _BeginEdit("Remove Binding");
-                    _resolver.ClearReferenceValue(new PropertyName(entry.key));
+                    _container.ClearReferenceValue(new PropertyName(entry.key));
                     _preset.bindings.Remove(entry);
                     _ApplyChanges();
                 });

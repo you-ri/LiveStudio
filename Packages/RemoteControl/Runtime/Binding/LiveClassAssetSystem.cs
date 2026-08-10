@@ -63,6 +63,26 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
+        /// Undoes <see cref="RegisterTypes"/> for every type definition in the asset, so an asset
+        /// carried in by an asset bundle can be dropped again when the bundle unloads.
+        /// Conservative by design: a type is only really unregistered when this asset is the one
+        /// that defined it and no binding instance of it is left (see <see cref="_UnregisterType"/>).
+        /// </summary>
+        public static void UnregisterTypes(LiveClassAsset asset)
+        {
+            if (asset == null) return;
+            foreach (var definition in asset.typeDefinitions)
+            {
+                if (definition == null) continue;
+                var type = definition.ResolveType();
+                // An unresolvable type was never registered, so there is nothing to undo. Warning
+                // about it here would only repeat what RegisterTypes already said.
+                if (type == null) continue;
+                _UnregisterType(asset, type);
+            }
+        }
+
+        /// <summary>
         /// Resolves the LiveClass a binding instance of <paramref name="type"/> should use.
         /// Attribute-based [LiveClass] types keep their own definition; asset-defined types
         /// must have been registered through <see cref="RegisterTypes"/> first.
@@ -169,6 +189,27 @@ namespace Lilium.RemoteControl
             {
                 foreach (var b in active) b.RefreshHandle(liveClass);
             }
+        }
+
+        private static void _UnregisterType(LiveClassAsset asset, Type type)
+        {
+            // Attribute-based types keep their own definition; the asset never registered one
+            // (see _RegisterType), so there is nothing of ours to take away.
+            if (TypeReflectionSystem.GetCustomAttribute<LiveClassAttribute>(type) != null) return;
+
+            // Another asset defines this type too and registered last, so the live definition is
+            // not ours. Dropping it here would take that asset's members away with it.
+            if (!_ownerByType.TryGetValue(type, out var owner) || owner != asset) return;
+
+            // Instances are still exposed — by a container that is staying, or by one whose own
+            // unapply has not run yet. The handles hold this LiveClass, so it has to outlive them;
+            // the last container to leave is the one that gets past this check.
+            if (_activeByType.TryGetValue(type, out var active) && active.Count > 0) return;
+
+            if (LiveClass.TryGet(type, out var liveClass)) LiveClass.Unregister(liveClass);
+            _signatureByType.Remove(type);
+            _ownerByType.Remove(type);
+            _activeByType.Remove(type);
         }
     }
 }

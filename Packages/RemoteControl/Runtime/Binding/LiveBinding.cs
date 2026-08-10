@@ -7,8 +7,8 @@ namespace Lilium.RemoteControl
 {
     /// <summary>
     /// Runtime ILiveObject wrapper for one resolved <see cref="LiveClassAsset.InstanceBinding"/>:
-    /// a scene object exposed without attributes. Created by a <c>LiveClassBinding</c> after it
-    /// resolves the binding key through its <see cref="IExposedPropertyTable"/>; the id is the
+    /// a scene object exposed without attributes. Created by a <c>RemoteControlContainer</c> after
+    /// it resolves the binding key through its <see cref="IExposedPropertyTable"/>; the id is the
     /// binding key GUID, so persisted values stay stable across scenes.
     /// Not serialized anywhere — the asset and the resolver's reference table are the
     /// persistent state.

@@ -17,7 +17,7 @@ namespace Lilium.RemoteControl.Editor
         private static readonly Vector2 kWindowSize = new Vector2(320f, 400f);
 
         private Func<LiveClassAsset> _getPreset;
-        private Func<LiveClassBinding> _getResolver;
+        private Func<RemoteControlContainer> _getContainer;
         private Type _type;
         private Action _onChanged;
 
@@ -28,13 +28,13 @@ namespace Lilium.RemoteControl.Editor
         // half-modified list, same reasoning as LiveClassAssetWindow.
         private Action _pendingAction;
 
-        public static void Open(Func<LiveClassAsset> getPreset, Func<LiveClassBinding> getResolver, Type type, Action onChanged, Rect screenRect)
+        public static void Open(Func<LiveClassAsset> getPreset, Func<RemoteControlContainer> getContainer, Type type, Action onChanged, Rect screenRect)
         {
             var window = CreateInstance<LiveClassAssetAddMemberWindow>();
             window.titleContent = new GUIContent("Add Member");
             window.minSize = kWindowSize;
             window._getPreset = getPreset;
-            window._getResolver = getResolver;
+            window._getContainer = getContainer;
             window._type = type;
             window._onChanged = onChanged;
             window.position = new Rect(screenRect.x, screenRect.yMax, kWindowSize.x, kWindowSize.y);
@@ -52,10 +52,10 @@ namespace Lilium.RemoteControl.Editor
         }
 
         // The checkbox states are read straight off the asset, so an undo elsewhere has to
-        // repaint this list — and rebuild the resolver's lookup table with it.
+        // repaint this list — and rebuild the container's lookup table with it.
         private void _OnUndoRedo()
         {
-            _Applied(_getResolver?.Invoke());
+            _Applied(_getContainer?.Invoke());
         }
 
         private void OnGUI()
@@ -73,7 +73,7 @@ namespace Lilium.RemoteControl.Editor
                 EditorGUILayout.HelpBox("No class selected.", MessageType.Info);
                 return;
             }
-            var resolver = _getResolver?.Invoke();
+            var container = _getContainer?.Invoke();
 
             EditorGUILayout.LabelField(new GUIContent(_type.Name, _type.FullName), LiveClassAssetStyles.paneHeader);
             _memberFilter = EditorGUILayout.TextField("Filter", _memberFilter);
@@ -99,8 +99,8 @@ namespace Lilium.RemoteControl.Editor
 
                 if (next == exposed) continue;
                 var picked = candidate;
-                if (next) _Defer(() => { LiveClassAssetMemberExposure.ExposeTypeMember(preset, resolver, _type, picked); _Applied(resolver); });
-                else _Defer(() => { LiveClassAssetMemberExposure.UnexposeTypeMember(preset, resolver, _type, picked); _Applied(resolver); });
+                if (next) _Defer(() => { LiveClassAssetMemberExposure.ExposeTypeMember(preset, container, _type, picked); _Applied(container); });
+                else _Defer(() => { LiveClassAssetMemberExposure.UnexposeTypeMember(preset, container, _type, picked); _Applied(container); });
             }
             EditorGUILayout.EndScrollView();
         }
@@ -111,9 +111,9 @@ namespace Lilium.RemoteControl.Editor
             Repaint();
         }
 
-        private void _Applied(LiveClassBinding resolver)
+        private void _Applied(RemoteControlContainer container)
         {
-            if (resolver != null) resolver.Reload();
+            if (container != null) container.Reload();
             _onChanged?.Invoke();
             Repaint();
         }

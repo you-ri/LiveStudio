@@ -18,10 +18,15 @@ namespace Lilium.RemoteControl.LiveScene
     /// Replaces the four-component combo of <see cref="RemoteControlServerRunner"/>,
     /// <see cref="LiveObjectContainer"/>, <see cref="LiveSceneSaveSystem"/>, plus the
     /// optional UI add-on.
+    ///
+    /// It is a <see cref="RemoteControlContainer"/> itself — the host scene's own object list and
+    /// live class assets are the base class's — and merges the other containers in the loaded
+    /// scenes on top of its own. It is therefore in <see cref="RemoteControlContainer.all"/> like
+    /// any other container, and skips itself when gathering sources.
     /// </remarks>
     [DefaultExecutionOrder(-32760)]
     [ExecuteAlways]
-    public class RemoteControlBehaviour : MonoBehaviour
+    public class RemoteControlBehaviour : RemoteControlContainer
     {
         // --- Serialized configuration ---
 
@@ -34,10 +39,6 @@ namespace Lilium.RemoteControl.LiveScene
                  "objects that must outlive a live-scene switch; scene-scoped objects live in a " +
                  "RemoteControlContainer in the (reloaded) base scene instead.")]
         private bool _persistAcrossScenes;
-
-        [SerializeReference, Select]
-        [LiveField(persistable = false)]
-        public List<ILiveObject> _objects = new List<ILiveObject>();
 
         // --- Runtime helpers ---
 
@@ -215,12 +216,16 @@ namespace Lilium.RemoteControl.LiveScene
             return false;
         }
 
-        protected virtual void OnEnable()
+        protected override void OnEnable()
         {
             if (_isDuplicate) return;
             // Play-enter registration when Awake did not re-run (Disable Scene Reload); a no-op when Awake
             // already registered this instance. Bails if this turned out to be a duplicate.
             if (_EnsurePersistenceRegistration()) return;
+
+            // Applies this host's own live class assets into _objects and joins the container
+            // registry, before the list below is handed to the LiveObjectContainer.
+            base.OnEnable();
 
             _BuildHelpers();
             _container.SetName(gameObject.name);
@@ -231,7 +236,12 @@ namespace Lilium.RemoteControl.LiveScene
             for (int i = 0; i < containers.Count; i++)
             {
                 var c = containers[i];
-                if (c != null) _container.AddSource(c._objects, c);
+                if (c == null) continue;
+                // Skip self for _objects: it is already the container's main list, not a source.
+                // The binding wrappers are a source either way — they are runtime-only and live
+                // outside _objects, self included.
+                if (c != this) _container.AddSource(c._objects, c);
+                _container.AddSource(c.bindingObjects, c.bindingObjects);
             }
             RemoteControlContainer.onRegistered += _OnContainerRegistered;
             RemoteControlContainer.onUnregistered += _OnContainerUnregistered;
@@ -283,7 +293,7 @@ namespace Lilium.RemoteControl.LiveScene
             LoadCurrentData();
         }
 
-        protected virtual void OnDisable()
+        protected override void OnDisable()
         {
             if (_isDuplicate) return;
 
@@ -308,6 +318,10 @@ namespace Lilium.RemoteControl.LiveScene
             }
 
             _container?.Shutdown();
+
+            // Last: the save above (autoSaveOnQuit) has to see the asset-declared types still
+            // registered, or their values would be missing from the file it writes.
+            base.OnDisable();
         }
 
         protected virtual void LateUpdate()
@@ -351,9 +365,12 @@ namespace Lilium.RemoteControl.LiveScene
 
         private void _OnContainerRegistered(RemoteControlContainer container)
         {
-            if (container == null) return;
+            if (container == null || container == this) return;
             _container.AddSource(container._objects, container);
             _container.InitializeSource(container);
+
+            _container.AddSource(container.bindingObjects, container.bindingObjects);
+            _container.InitializeSource(container.bindingObjects);
         }
 
         // Re-deserialize after a base-scene switch on a persistent host. There is no new host in the
@@ -381,7 +398,13 @@ namespace Lilium.RemoteControl.LiveScene
 
         private void _OnContainerUnregistered(RemoteControlContainer container)
         {
-            if (container == null) return;
+            if (container == null || container == this) return;
+
+            // Bindings first: they are the ones the container is about to drop in its own
+            // _UnapplyAssets, which runs right after this.
+            _container.ShutdownSource(container.bindingObjects);
+            _container.RemoveSource(container.bindingObjects);
+
             _container.ShutdownSource(container);
             _container.RemoveSource(container);
         }

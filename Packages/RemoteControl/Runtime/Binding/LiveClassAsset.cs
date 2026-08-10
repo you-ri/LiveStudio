@@ -19,7 +19,7 @@ namespace Lilium.RemoteControl
     /// - <see cref="InstanceBinding"/>: which scene objects are exposed. Each entry holds only a
     ///   stable GUID key; the actual scene reference is resolved through the standard
     ///   <see cref="IExposedPropertyTable"/> mechanism (same as PlayableDirector/Timeline) by a
-    ///   <c>LiveClassBinding</c> component in the scene. The key doubles as the LiveObject id,
+    ///   <c>RemoteControlContainer</c> in the scene. The key doubles as the LiveObject id,
     ///   so persisted values stay stable across scenes and renames.
     /// </summary>
     [MovedFrom(false, null, null, "LiveBindingPreset")]

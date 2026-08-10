@@ -98,8 +98,24 @@ namespace Lilium.RemoteControl
 
         private void AddEventToClient(string clientId, EventItem eventItem)
         {
-            var clientQueue = _clientQueues.GetOrAdd(clientId, id => new ClientEventQueue(id, _maxEventsPerClient));
-            clientQueue.AddEvent(eventItem);
+            _GetOrCreateClientQueue(clientId).AddEvent(eventItem);
+        }
+
+        /// <summary>
+        /// クライアントの受信箱を取得し、初見なら作る。
+        /// GetOrAdd のファクトリ版はラムダが _maxEventsPerClient (= this) を捕捉するため
+        /// コンパイラにキャッシュされず、呼び出しごとにデリゲートを確保してしまう。
+        /// 定期ポーリングから毎回通る経路なので、既存分は TryGetValue で素通りさせる。
+        /// </summary>
+        private ClientEventQueue _GetOrCreateClientQueue(string clientId)
+        {
+            if (_clientQueues.TryGetValue(clientId, out var clientQueue))
+            {
+                return clientQueue;
+            }
+
+            // 初見のみ。競合で負けた側のインスタンスは捨てられるが、受信箱はまだ空なので影響はない。
+            return _clientQueues.GetOrAdd(clientId, new ClientEventQueue(clientId, _maxEventsPerClient));
         }
 
         /// <summary>
@@ -113,8 +129,7 @@ namespace Lilium.RemoteControl
         {
             UpdateClientActivity(clientId);
 
-            var clientQueue = _clientQueues.GetOrAdd(clientId, id => new ClientEventQueue(id, _maxEventsPerClient));
-            return clientQueue.DrainInto(lastEventId, buffer);
+            return _GetOrCreateClientQueue(clientId).DrainInto(lastEventId, buffer);
         }
 
         /// <summary>
@@ -134,10 +149,10 @@ namespace Lilium.RemoteControl
         /// </summary>
         public void UpdateClientActivity(string clientId)
         {
-            _clientActivity.AddOrUpdate(clientId, DateTime.UtcNow, (key, oldValue) => DateTime.UtcNow);
+            _clientActivity[clientId] = DateTime.UtcNow;
 
             // クライアントキューも作成/更新
-            _clientQueues.GetOrAdd(clientId, id => new ClientEventQueue(id, _maxEventsPerClient));
+            _GetOrCreateClientQueue(clientId);
         }
 
         /// <summary>

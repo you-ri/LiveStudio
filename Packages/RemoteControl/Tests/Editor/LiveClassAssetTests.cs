@@ -11,7 +11,7 @@ namespace Lilium.RemoteControl.Tests
 {
     /// <summary>
     /// Attribute-less exposure: define-based registration metadata overrides and the
-    /// LiveClassAsset / LiveClassBinding flow that exposes arbitrary components
+    /// LiveClassAsset / RemoteControlContainer flow that exposes arbitrary components
     /// through preset assets + the standard IExposedPropertyTable scene reference table.
     /// </summary>
     public class LiveClassAssetTests
@@ -34,7 +34,7 @@ namespace Lilium.RemoteControl.Tests
         }
 
         private static LiveClassAsset.InstanceBinding _AddBinding(
-            LiveClassAsset preset, LiveClassBinding resolver, UnityEngine.Object target)
+            LiveClassAsset preset, RemoteControlContainer container, UnityEngine.Object target)
         {
             var entry = new LiveClassAsset.InstanceBinding
             {
@@ -42,14 +42,14 @@ namespace Lilium.RemoteControl.Tests
                 typeName = target.GetType().AssemblyQualifiedName,
             };
             preset.bindings.Add(entry);
-            resolver.SetReferenceValue(new PropertyName(entry.key), target);
+            container.SetReferenceValue(new PropertyName(entry.key), target);
             return entry;
         }
 
         [TearDown]
         public void TearDown()
         {
-            // Destroying the resolver GameObjects fires OnDisable, which unregisters bindings.
+            // Destroying the container GameObjects fires OnDisable, which unregisters bindings.
             foreach (var go in _gameObjects)
             {
                 if (go != null) Object.DestroyImmediate(go);
@@ -150,18 +150,18 @@ namespace Lilium.RemoteControl.Tests
             Assert.That(liveClass.FindProperty("range").isPersistable, Is.False);
         }
 
-        // --- Resolver: reference table + instance registration ---
+        // --- Container: reference table + instance registration ---
 
-        private LiveClassBinding _CreateResolver(LiveClassAsset preset)
+        private RemoteControlContainer _CreateContainer(LiveClassAsset preset)
         {
-            var go = _CreateGameObject("Resolver");
-            var resolver = go.AddComponent<LiveClassBinding>();
-            resolver.assets.Add(preset);
-            return resolver;
+            var go = _CreateGameObject("Container");
+            var container = go.AddComponent<RemoteControlContainer>();
+            container.assets.Add(preset);
+            return container;
         }
 
         [Test]
-        public void Resolver_ResolvesAndRegistersInstance()
+        public void Container_ResolvesAndRegistersInstance()
         {
             var preset = _CreatePreset();
             var definition = preset.GetOrAddTypeDefinition(typeof(Light));
@@ -171,9 +171,9 @@ namespace Lilium.RemoteControl.Tests
             var lightGo = _CreateGameObject("BindingLight");
             var light = lightGo.AddComponent<Light>();
 
-            var resolver = _CreateResolver(preset);
-            var entry = _AddBinding(preset, resolver, light);
-            resolver.Reload();
+            var container = _CreateContainer(preset);
+            var entry = _AddBinding(preset, container, light);
+            container.Reload();
 
             var handle = LiveObjectRegistry.FindById(entry.key);
             Assert.That(handle, Is.Not.Null, "Binding key must be registered as the LiveObject id");
@@ -190,26 +190,26 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void Resolver_UnboundKey_IsSkippedWithoutError()
+        public void Container_UnboundKey_IsSkippedWithoutError()
         {
             var preset = _CreatePreset();
             var definition = preset.GetOrAddTypeDefinition(typeof(Light));
             definition.members.Add(new LiveClassAssetMember { path = "intensity" });
 
-            var resolver = _CreateResolver(preset);
+            var container = _CreateContainer(preset);
             var entry = new LiveClassAsset.InstanceBinding
             {
                 key = System.Guid.NewGuid().ToString(),
                 typeName = typeof(Light).AssemblyQualifiedName,
             };
             preset.bindings.Add(entry);
-            resolver.Reload();
+            container.Reload();
 
             Assert.That(LiveObjectRegistry.FindById(entry.key), Is.Null);
         }
 
         [Test]
-        public void Resolver_Disable_UnregistersInstances()
+        public void Container_Disable_UnregistersInstances()
         {
             var preset = _CreatePreset();
             preset.GetOrAddTypeDefinition(typeof(Light)).members.Add(new LiveClassAssetMember { path = "intensity" });
@@ -217,18 +217,76 @@ namespace Lilium.RemoteControl.Tests
             var lightGo = _CreateGameObject("BindingLightDisable");
             var light = lightGo.AddComponent<Light>();
 
-            var resolver = _CreateResolver(preset);
-            var entry = _AddBinding(preset, resolver, light);
-            resolver.Reload();
+            var container = _CreateContainer(preset);
+            var entry = _AddBinding(preset, container, light);
+            container.Reload();
 
             Assert.That(LiveObjectRegistry.FindById(entry.key), Is.Not.Null);
 
-            resolver.enabled = false;
+            container.enabled = false;
             Assert.That(LiveObjectRegistry.FindById(entry.key), Is.Null);
         }
 
         [Test]
-        public void Resolver_SameType_TwoInstances_ShareDefinition()
+        public void Container_Disable_UnregistersAssetDefinedType()
+        {
+            var preset = _CreatePreset();
+            preset.GetOrAddTypeDefinition(typeof(Light)).members.Add(new LiveClassAssetMember { path = "intensity" });
+
+            var container = _CreateContainer(preset);
+            container.Reload();
+            Assert.That(LiveClass.Has(typeof(Light)), Is.True);
+
+            container.enabled = false;
+            Assert.That(LiveClass.Has(typeof(Light)), Is.False,
+                "The last container to drop an asset takes its type registration with it, so an " +
+                "asset carried in by a bundle leaves nothing behind when the bundle unloads");
+        }
+
+        [Test]
+        public void Container_Disable_KeepsTypeStillBoundByAnotherContainer()
+        {
+            var preset = _CreatePreset();
+            preset.GetOrAddTypeDefinition(typeof(Light)).members.Add(new LiveClassAssetMember { path = "intensity" });
+
+            var lightA = _CreateGameObject("SharedLightA").AddComponent<Light>();
+            var lightB = _CreateGameObject("SharedLightB").AddComponent<Light>();
+
+            var containerA = _CreateContainer(preset);
+            var entryA = _AddBinding(preset, containerA, lightA);
+            containerA.Reload();
+
+            var containerB = _CreateContainer(preset);
+            var entryB = _AddBinding(preset, containerB, lightB);
+            containerB.Reload();
+
+            containerA.enabled = false;
+
+            Assert.That(LiveObjectRegistry.FindById(entryA.key), Is.Null);
+            Assert.That(LiveClass.Has(typeof(Light)), Is.True,
+                "B still exposes an instance of the type, and its handle holds this LiveClass");
+            Assert.That(LiveObjectRegistry.FindById(entryB.key), Is.Not.Null);
+        }
+
+        [Test]
+        public void Container_RuntimeBindings_StayOutOfSerializedObjectList()
+        {
+            var preset = _CreatePreset();
+            preset.GetOrAddTypeDefinition(typeof(Light)).members.Add(new LiveClassAssetMember { path = "intensity" });
+
+            var light = _CreateGameObject("BindingLightSerialize").AddComponent<Light>();
+
+            var container = _CreateContainer(preset);
+            _AddBinding(preset, container, light);
+            container.Reload();
+
+            // _objects is [SerializeReference]: anything put there is written into the scene file.
+            Assert.That(container._objects, Is.Empty);
+            Assert.That(container.bindingObjects.Count, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void Container_SameType_TwoInstances_ShareDefinition()
         {
             var preset = _CreatePreset();
             var definition = preset.GetOrAddTypeDefinition(typeof(Light));
@@ -238,10 +296,10 @@ namespace Lilium.RemoteControl.Tests
             var lightA = _CreateGameObject("LightA").AddComponent<Light>();
             var lightB = _CreateGameObject("LightB").AddComponent<Light>();
 
-            var resolver = _CreateResolver(preset);
-            var entryA = _AddBinding(preset, resolver, lightA);
-            var entryB = _AddBinding(preset, resolver, lightB);
-            resolver.Reload();
+            var container = _CreateContainer(preset);
+            var entryA = _AddBinding(preset, container, lightA);
+            var entryB = _AddBinding(preset, container, lightB);
+            container.Reload();
 
             var liveClass = LiveClass.Find(typeof(Light));
             var handleA = LiveObjectRegistry.FindById(entryA.key);
@@ -253,7 +311,7 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void Resolver_HostContainer_PersistenceRoundTrip()
+        public void Container_HostContainer_PersistenceRoundTrip()
         {
             var preset = _CreatePreset();
             var definition = preset.GetOrAddTypeDefinition(typeof(Light));
@@ -262,22 +320,26 @@ namespace Lilium.RemoteControl.Tests
             var lightGo = _CreateGameObject("BindingLightSave");
             var light = lightGo.AddComponent<Light>();
 
-            // Host container on the same GameObject as the resolver: the resolver injects the
-            // runtime wrappers into its object list, which the live-scene save enumerates.
+            // The container is the host. Its runtime wrappers are a source of their own (they are
+            // deliberately kept out of the serialized _objects list), which is what
+            // RemoteControlBehaviour merges and the live-scene save then enumerates.
             var hostGo = _CreateGameObject("BindingHost");
             var host = hostGo.AddComponent<RemoteControlContainer>();
-            var resolver = hostGo.AddComponent<LiveClassBinding>();
-            resolver.assets.Add(preset);
-            var entry = _AddBinding(preset, resolver, light);
-            resolver.Reload();
+            host.assets.Add(preset);
+            var entry = _AddBinding(preset, host, light);
+            host.Reload();
 
             var container = new LiveObjectContainer(hostGo.name, host._objects);
+            container.AddSource(host.bindingObjects, host.bindingObjects);
             container.Initialize();
             try
             {
                 light.intensity = 7.25f;
 
-                var resolved = LiveObjectGraph.ResolveLiveObjects(container.objects, container);
+                // EnumerateAllObjects, not .objects: the save path walks the main list plus every
+                // merged source, and the binding wrappers are a source.
+                var all = new List<ILiveObject>(container.EnumerateAllObjects());
+                var resolved = LiveObjectGraph.ResolveLiveObjects(all, container);
                 var saved = LiveSceneSerializer.LiveSceneToJson(resolved, container, SerializeMode.Snapshot);
 
                 var parsed = JObject.Parse(saved);

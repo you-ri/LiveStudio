@@ -21,7 +21,7 @@ namespace Lilium.RemoteControl.Editor
     /// <summary>
     /// Type-level expose/unexpose logic shared by <see cref="LiveClassAssetWindow"/> and
     /// <see cref="LiveClassAssetAddMemberWindow"/>, both of which edit the same
-    /// <see cref="LiveClassAsset"/> / <see cref="LiveClassBinding"/> pair.
+    /// <see cref="LiveClassAsset"/> / <see cref="RemoteControlContainer"/> pair.
     /// </summary>
     internal static class LiveClassAssetMemberExposure
     {
@@ -104,56 +104,56 @@ namespace Lilium.RemoteControl.Editor
         }
 
         /// <summary>
-        /// Opens one undo step covering the asset and, when present, the resolver.
+        /// Opens one undo step covering the asset and, when present, the container.
         /// Both are snapshotted whole: these edits change list sizes and [SerializeReference]
         /// controls, which <see cref="Undo.RecordObject"/>'s incremental diff does not capture
         /// reliably. Everything registered until the next <c>BeginEdit</c> undoes together.
         /// </summary>
-        public static void BeginEdit(LiveClassAsset preset, LiveClassBinding resolver, string name)
+        public static void BeginEdit(LiveClassAsset preset, RemoteControlContainer container, string name)
         {
             Undo.IncrementCurrentGroup();
             Undo.SetCurrentGroupName(name);
-            if (preset != null && resolver != null)
+            if (preset != null && container != null)
             {
-                Undo.RegisterCompleteObjectUndo(new UnityEngine.Object[] { preset, resolver }, name);
+                Undo.RegisterCompleteObjectUndo(new UnityEngine.Object[] { preset, container }, name);
             }
             else if (preset != null)
             {
                 Undo.RegisterCompleteObjectUndo(preset, name);
             }
-            else if (resolver != null)
+            else if (container != null)
             {
-                Undo.RegisterCompleteObjectUndo(resolver, name);
+                Undo.RegisterCompleteObjectUndo(container, name);
             }
         }
 
-        // Ensures the edited preset is registered on the resolver (so its bindings resolve at runtime).
-        public static void EnsurePresetOnResolver(LiveClassAsset preset, LiveClassBinding resolver)
+        // Ensures the edited preset is registered on the container (so its bindings resolve at runtime).
+        public static void EnsurePresetOnContainer(LiveClassAsset preset, RemoteControlContainer container)
         {
-            if (resolver == null || preset == null) return;
-            if (resolver.assets.Contains(preset)) return;
-            Undo.RegisterCompleteObjectUndo(resolver, "Add Preset To Resolver");
-            resolver.assets.Add(preset);
-            EditorUtility.SetDirty(resolver);
+            if (container == null || preset == null) return;
+            if (container.assets.Contains(preset)) return;
+            Undo.RegisterCompleteObjectUndo(container, "Add Preset To Container");
+            container.assets.Add(preset);
+            EditorUtility.SetDirty(container);
         }
 
         // Drops every instance binding pointing at the given type (its definition is gone).
-        public static void RemoveBindingsOfType(LiveClassAsset preset, LiveClassBinding resolver, Type type)
+        public static void RemoveBindingsOfType(LiveClassAsset preset, RemoteControlContainer container, Type type)
         {
             for (int i = preset.bindings.Count - 1; i >= 0; i--)
             {
                 var entry = preset.bindings[i];
                 if (entry == null || entry.ResolveType() != type) continue;
-                if (resolver != null) resolver.ClearReferenceValue(new PropertyName(entry.key));
+                if (container != null) container.ClearReferenceValue(new PropertyName(entry.key));
                 preset.bindings.RemoveAt(i);
             }
         }
 
-        public static void ExposeTypeMember(LiveClassAsset preset, LiveClassBinding resolver, Type type, in MemberCandidate candidate)
+        public static void ExposeTypeMember(LiveClassAsset preset, RemoteControlContainer container, Type type, in MemberCandidate candidate)
         {
             if (preset == null) return;
-            BeginEdit(preset, resolver, "Expose Member");
-            EnsurePresetOnResolver(preset, resolver);
+            BeginEdit(preset, container, "Expose Member");
+            EnsurePresetOnContainer(preset, container);
 
             var definition = preset.GetOrAddTypeDefinition(type);
             if (FindMember(definition, candidate.path, candidate.isFunction) == null)
@@ -172,7 +172,7 @@ namespace Lilium.RemoteControl.Editor
             EditorUtility.SetDirty(preset);
         }
 
-        public static void UnexposeTypeMember(LiveClassAsset preset, LiveClassBinding resolver, Type type, in MemberCandidate candidate)
+        public static void UnexposeTypeMember(LiveClassAsset preset, RemoteControlContainer container, Type type, in MemberCandidate candidate)
         {
             if (preset == null) return;
             var definition = preset.FindTypeDefinition(type);
@@ -180,18 +180,18 @@ namespace Lilium.RemoteControl.Editor
             var member = FindMember(definition, candidate.path, candidate.isFunction);
             if (member == null) return;
 
-            BeginEdit(preset, resolver, "Unexpose Member");
+            BeginEdit(preset, container, "Unexpose Member");
 
             definition.members.Remove(member);
             if (definition.members.Count == 0)
             {
                 // Last member of the type gone: drop the definition and every binding of that type.
                 preset.typeDefinitions.Remove(definition);
-                RemoveBindingsOfType(preset, resolver, type);
+                RemoveBindingsOfType(preset, container, type);
             }
 
             EditorUtility.SetDirty(preset);
-            if (resolver != null) EditorUtility.SetDirty(resolver);
+            if (container != null) EditorUtility.SetDirty(container);
         }
     }
 }
