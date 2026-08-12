@@ -1,9 +1,9 @@
 // Copyright (c) You-Ri, 2026
 
-using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Lilium.LiveStudio.Social
 {
@@ -22,6 +22,24 @@ namespace Lilium.LiveStudio.Social
         public const int kMaxBodyBytes = 64 * 1024;
 
         private const int kReadChunkBytes = 8 * 1024;
+
+        /// <summary>
+        /// How the wire is read. Spelled out rather than left to <c>JsonConvert</c>'s defaults, because
+        /// those defaults are reachable through <c>JsonConvert.DefaultSettings</c> — a process-global hook
+        /// any project consuming this package may set for its own reasons. The published contract must not
+        /// be something a third party can change by accident.
+        ///
+        /// <c>NullValueHandling.Ignore</c> applies while reading too, and that is the point: it makes an
+        /// explicit <c>null</c> mean the same thing as an omitted field. Without it, a feeder that
+        /// serializes its unset members as <c>null</c> — the default in plenty of libraries — gets a 400
+        /// on <c>"amount": null</c>, since a null cannot be assigned to a float. "Optional" has to hold
+        /// for every field or it is not a useful word.
+        /// </summary>
+        private static readonly JsonSerializerSettings kReadSettings = new JsonSerializerSettings
+        {
+            NullValueHandling = NullValueHandling.Ignore,
+            MissingMemberHandling = MissingMemberHandling.Ignore,
+        };
 
         /// <summary>
         /// True when the request may proceed. An empty configured token means the endpoint is open, which
@@ -95,7 +113,7 @@ namespace Lilium.LiveStudio.Social
             SocialEvent e;
             try
             {
-                e = JsonConvert.DeserializeObject<SocialEvent>(body);
+                e = JsonConvert.DeserializeObject<SocialEvent>(body, kReadSettings);
             }
             catch (JsonException ex)
             {
@@ -121,6 +139,12 @@ namespace Lilium.LiveStudio.Social
         /// than failing the whole request: a feeder batching 50 comments should not lose 49 good ones to a
         /// single bad entry. Only a body that is not a JSON array at all is an error.
         ///
+        /// That promise is why the array is walked as a <see cref="JArray"/> and converted one entry at a
+        /// time, instead of being deserialized into a list in one call. List deserialization is
+        /// all-or-nothing: a single entry that is not an object, or that carries a field of the wrong JSON
+        /// type, throws and takes every well-formed sibling down with it — which is exactly the outcome
+        /// this method claims to prevent.
+        ///
         /// Rejection here is not the same thing as the hub's queue overflow — an entry counted as rejected
         /// never reached the hub, whereas a dropped one did and was displaced by newer traffic.
         /// </summary>
@@ -135,26 +159,37 @@ namespace Lilium.LiveStudio.Social
                 return false;
             }
 
-            List<SocialEvent> events;
+            JArray entries;
             try
             {
-                events = JsonConvert.DeserializeObject<List<SocialEvent>>(body);
+                // Also how "not an array" is caught: a bare object or a JSON null fails to parse as one.
+                entries = JArray.Parse(body);
             }
             catch (JsonException ex)
             {
-                error = "[Social] Invalid batch JSON: " + ex.Message;
+                error = "[Social] Request body must be a JSON array of events: " + ex.Message;
                 return false;
             }
 
-            if (events == null)
-            {
-                error = "[Social] Request body must be a JSON array of events.";
-                return false;
-            }
+            var serializer = JsonSerializer.Create(kReadSettings);
 
-            for (int i = 0; i < events.Count; i++)
+            for (int i = 0; i < entries.Count; i++)
             {
-                var e = events[i];
+                SocialEvent e;
+                try
+                {
+                    e = entries[i].ToObject<SocialEvent>(serializer);
+                }
+                catch (JsonException)
+                {
+                    // The entry is not shaped like an event at all — a number, a string, a field holding
+                    // the wrong type. Its own problem, not the batch's. The message is not reported:
+                    // per-entry diagnostics would need a shape the response does not have, and a feeder
+                    // that sees a non-zero count has a bug to find on its own side regardless.
+                    rejected++;
+                    continue;
+                }
+
                 if (e == null || !_HasRequiredFields(e, out _))
                 {
                     rejected++;

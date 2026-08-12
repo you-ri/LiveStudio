@@ -221,6 +221,22 @@ namespace Lilium.LiveStudio.Social.EditorTests
         }
 
         [Test]
+        public void TrySubmitOne_TreatsAnExplicitNullAsAnOmittedField()
+        {
+            // Plenty of serializers write unset members as null rather than leaving them out. A null into
+            // a non-nullable float or bool would otherwise be a 400, which makes "optional" untrue for
+            // exactly the fields a feeder is most likely to leave unset.
+            Assert.IsTrue(SocialEventIntake.TrySubmitOne(
+                @"{""source"":""test"",""type"":""chat"",""id"":null,""message"":null,""amount"":null," +
+                @"""currency"":null,""user"":{""name"":null,""isMember"":null}}", out var error), error);
+
+            var e = SocialEventHub.currentEvents[0];
+            Assert.AreEqual(0f, e.amount);
+            Assert.AreEqual(string.Empty, e.message);
+            Assert.IsFalse(e.user.isMember);
+        }
+
+        [Test]
         public void TrySubmitOne_TruncatesAnOverlongMessageInsteadOfRejecting()
         {
             string message = new string('x', SocialEvent.kMaxMessageLength + 50);
@@ -315,6 +331,31 @@ namespace Lilium.LiveStudio.Social.EditorTests
             Assert.AreEqual(1, accepted);
             Assert.AreEqual(3, rejected);
             Assert.AreEqual("good", SocialEventHub.currentEvents[0].message);
+        }
+
+        [Test]
+        public void TrySubmitBatch_AnEntryOfTheWrongShapeDoesNotSinkTheBatch()
+        {
+            // Deserializing the array in one call would make this all-or-nothing: a number where an object
+            // belongs, or a field carrying the wrong JSON type, throws for the whole body and the good
+            // entries are lost with it. Each entry has to be converted on its own.
+            const string json = @"[
+                {""source"":""test"",""type"":""chat"",""message"":""good""},
+                42,
+                ""a string"",
+                {""source"":""test"",""type"":""chat"",""amount"":""not a number""},
+                {""source"":""test"",""type"":""chat"",""user"":""not an object""},
+                {""source"":""test"",""type"":""chat"",""message"":""also good""}
+            ]";
+
+            Assert.IsTrue(SocialEventIntake.TrySubmitBatch(json, out int accepted, out int rejected, out var error), error);
+            Assert.AreEqual(2, accepted);
+            Assert.AreEqual(4, rejected);
+
+            var events = SocialEventHub.currentEvents;
+            Assert.AreEqual(2, events.Count);
+            Assert.AreEqual("good", events[0].message);
+            Assert.AreEqual("also good", events[1].message);
         }
 
         [Test]
