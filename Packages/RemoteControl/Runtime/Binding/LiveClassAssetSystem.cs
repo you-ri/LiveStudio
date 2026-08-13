@@ -152,10 +152,14 @@ namespace Lilium.RemoteControl
             var sb = _signatureBuilder ??= new System.Text.StringBuilder(256);
             sb.Clear();
 
+            // Category and icon are part of the registration too, so a change to either has to
+            // reach the signature — otherwise editing them looks like it did nothing.
+            sb.Append("t:").Append(definition.category).Append('|').Append(definition.icon).Append(';');
+
             var propertyDefines = new List<LivePropertyDefine>();
             var functionDefines = new List<LiveFunctionDefine>();
             var seen = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var member in definition.members)
+            foreach (var member in definition.OrderedMembers())
             {
                 if (member == null || string.IsNullOrEmpty(member.path)) continue;
                 if (!seen.Add((member.isFunction ? "f:" : "p:") + member.path)) continue;
@@ -180,7 +184,8 @@ namespace Lilium.RemoteControl
                 liveClass = LiveClass.Register(type, type.Name,
                     propertyDefines.ToArray(),
                     functionDefines.Count > 0 ? functionDefines.ToArray() : null,
-                    category: "Binding");
+                    category: string.IsNullOrEmpty(definition.category) ? "Binding" : definition.category,
+                    icon: string.IsNullOrEmpty(definition.icon) ? null : definition.icon);
                 _signatureByType[type] = signature;
             }
 

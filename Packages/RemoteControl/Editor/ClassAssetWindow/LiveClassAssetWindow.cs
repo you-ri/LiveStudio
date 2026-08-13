@@ -306,17 +306,21 @@ namespace Lilium.RemoteControl.Editor
             {
                 EditorGUILayout.HelpBox("Select a class on the left to edit its exposed members.", MessageType.None);
             }
-            else if (definition.members.Count == 0)
-            {
-                EditorGUILayout.HelpBox("No member exposed on this class yet. Use \"+\" above.", MessageType.None);
-            }
             else
             {
-                bool changed = false;
-                var members = definition.members;
-                for (int i = 0; i < members.Count; i++)
+                bool changed = _DrawClassMetadata(definition);
+
+                if (definition.members.Count == 0)
                 {
-                    changed |= _DrawMember(index, members, i);
+                    EditorGUILayout.HelpBox("No member exposed on this class yet. Use \"+\" above.", MessageType.None);
+                }
+                else
+                {
+                    var members = definition.members;
+                    for (int i = 0; i < members.Count; i++)
+                    {
+                        changed |= _DrawMember(index, members, i);
+                    }
                 }
                 if (changed) _ApplyChanges();
             }
@@ -493,6 +497,28 @@ namespace Lilium.RemoteControl.Editor
             return true;
         }
 
+        // --- Class-level metadata ---
+
+        // Category and icon describe the type itself rather than any member, so they sit above the
+        // member list. Both are optional: empty category falls back to "Binding" (the value assets
+        // registered before these fields existed were given), empty icon to the type's default.
+        private bool _DrawClassMetadata(LiveClassAsset.TypeDefinition definition)
+        {
+            EditorGUI.BeginChangeCheck();
+            string category = EditorGUILayout.TextField(
+                new GUIContent("Category", "Type category shown in RemoteApp. Empty falls back to \"Binding\""),
+                definition.category);
+            string icon = EditorGUILayout.TextField(
+                new GUIContent("Icon", "Material Icons name. Empty uses the type's default icon"),
+                definition.icon);
+            if (!EditorGUI.EndChangeCheck()) return false;
+
+            Undo.RecordObject(_preset, "Edit Class Metadata");
+            definition.category = category;
+            definition.icon = icon;
+            return true;
+        }
+
         // --- Member detail rows ---
 
         private bool _DrawMember(int definitionIndex, List<LiveClassAssetMember> members, int index)
@@ -540,11 +566,38 @@ namespace Lilium.RemoteControl.Editor
             EditorGUI.indentLevel++;
             EditorGUI.BeginChangeCheck();
             string help = EditorGUILayout.TextField("Help", member.help);
+
             bool persistable = member.persistable;
-            if (!member.isFunction)
+            bool readOnly = member.readOnly;
+            string icon = member.icon;
+            if (member.isFunction)
+            {
+                icon = EditorGUILayout.TextField(
+                    new GUIContent("Icon", "Material Icons name shown on the button"), member.icon);
+            }
+            else
             {
                 persistable = EditorGUILayout.Toggle("Persistable", member.persistable);
+                readOnly = EditorGUILayout.Toggle(
+                    new GUIContent("Read Only", "Forbid writes through the API and show as display-only"),
+                    member.readOnly);
             }
+
+            // The section starts at this member and runs until the next one that declares a title,
+            // so an empty title is the normal state — do not treat it as unset metadata.
+            string sectionTitle = EditorGUILayout.TextField(
+                new GUIContent("Section Title", "Leave empty to keep the member in the current section"),
+                member.section?.title);
+            string sectionSubtitle = member.section?.subtitle;
+            string sectionIcon = member.section?.icon;
+            if (!string.IsNullOrEmpty(sectionTitle))
+            {
+                EditorGUI.indentLevel++;
+                sectionSubtitle = EditorGUILayout.TextField("Subtitle", sectionSubtitle);
+                sectionIcon = EditorGUILayout.TextField("Icon", sectionIcon);
+                EditorGUI.indentLevel--;
+            }
+
             if (EditorGUI.EndChangeCheck())
             {
                 // A scalar field edit, so the incremental diff is enough here — the full snapshot
@@ -552,6 +605,12 @@ namespace Lilium.RemoteControl.Editor
                 Undo.RecordObject(_preset, "Edit Member Metadata");
                 member.help = help;
                 member.persistable = persistable;
+                member.readOnly = readOnly;
+                member.icon = icon;
+                member.section ??= new LiveClassAssetSection();
+                member.section.title = sectionTitle;
+                member.section.subtitle = sectionSubtitle;
+                member.section.icon = sectionIcon;
                 changed = true;
             }
 

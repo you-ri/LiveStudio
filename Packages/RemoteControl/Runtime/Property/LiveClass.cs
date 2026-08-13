@@ -48,6 +48,13 @@ namespace Lilium.RemoteControl
 
         /// <summary>Section override. Takes precedence over any [Section] attribute on the member.</summary>
         public SectionAttribute section;
+
+        /// <summary>
+        /// Forbid writes through the API and show the member as display-only.
+        /// This only ever adds the restriction: a member that reflection already reports as
+        /// read-only (no setter, readonly/const field) stays read-only regardless of this flag.
+        /// </summary>
+        public bool isReadOnly;
     }
 
     /// <summary>
@@ -1199,7 +1206,8 @@ namespace Lilium.RemoteControl
 
 
         public LivePropertyType(string name, MemberInfo info, bool isPersistable = true, FieldInfo shadowField = null, PersistScope persistScope = PersistScope.Scene,
-            ControlAttribute controlOverride = null, string labelOverride = null, string helpOverride = null, SectionAttribute sectionOverride = null)
+            ControlAttribute controlOverride = null, string labelOverride = null, string helpOverride = null, SectionAttribute sectionOverride = null,
+            bool readOnlyOverride = false)
         {
             Debug.Assert(info != null, "PropertyInfo cannot be null");
 
@@ -1241,6 +1249,10 @@ namespace Lilium.RemoteControl
                 this.isReadOnly = true; // 無効な場合は読み取り専用扱い
                 this.isStatic = false;
             }
+
+            // Declared read-only (attribute-less registration) can only add the restriction.
+            // Never clear a reflection-derived one — there is no setter to call.
+            if (readOnlyOverride) this.isReadOnly = true;
 
             var valueType = properyInfo != null ? properyInfo.PropertyType : fieldInfo.FieldType;
             if (LiveClass.Has(valueType))
