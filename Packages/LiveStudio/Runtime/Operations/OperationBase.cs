@@ -11,7 +11,7 @@ namespace Lilium.LiveStudio
     /// <see cref="OperationContext"/> (continuous <c>value</c> vs the <c>pressed</c> edge vs <c>active</c>).
     ///
     /// Named <c>OperationBase</c> (not bare <c>Operation</c>) so the abstract base and its concrete kinds read
-    /// distinctly, mirroring <see cref="InputSource"/> / <see cref="ICameraController"/>; the user-facing
+    /// distinctly, mirroring <see cref="InputSource"/> / <see cref="CameraControllerBase"/>; the user-facing
     /// concept is "Operation". <c>[LiveClass]</c> on the base lets the owning field's <c>[TypeSelector]</c>
     /// enumerate the concrete kinds; only the concrete kinds are ever instantiated.
     /// </summary>

@@ -24,7 +24,7 @@ namespace Lilium.LiveStudio
 
     [Serializable]
     [LiveClass]
-    public abstract class ICameraController
+    public abstract class CameraControllerBase
     {
         public abstract void Setup(CinemachineCamera camera);
 

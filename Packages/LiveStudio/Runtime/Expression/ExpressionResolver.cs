@@ -10,7 +10,7 @@ namespace Lilium.LiveStudio
 {
     /// <summary>
     /// 表情計算の抽象基底クラス
-    /// ICameraControllerと同じ [SerializeReference, Select] パターンで利用可能
+    /// CameraControllerBaseと同じ [SerializeReference, Select] パターンで利用可能
     /// </summary>
     [Serializable]
     [LiveClass(Icon = "psychology")]

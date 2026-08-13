@@ -8,6 +8,8 @@
 
 ### Changed
 
+- `ICameraController` is renamed `CameraControllerBase`: it has always been an `abstract class`, not an interface, and the `I` prefix misled — the new name matches the package's other abstract bases (`AssetBase`, `OperationBase`, `MotionSourceBase`). No serialized data is affected: `[SerializeReference]` and the live `@type` both record concrete controller types only, and the base is never instantiated.
+
 - Snapshots are one of the project's asset kinds, so a `*.snapshot.json` file is listed on the project page beside the live scenes and decks that already were — with a `Restore` button on it and the ordinary delete (which takes the `*.snapshot.png` thumbnail with it, since which files an entry owns is now the kind's own business through `AssetBase.DeleteFiles`). Snapshots were the one file the app itself authors that the project listing could not see: `SnapshotManager` scanned the `Snapshots` folder on its own and never went through `AssetTypeRegistry`. It still owns the dedicated snapshot page — the thumbnails, the capture-time ordering and the take/restore/delete flow are unchanged — and now also asks for a re-crawl when a snapshot appears or goes away, so both views agree.
 
 - The Remote app toolbar button is hosted by Remote Control's shared toolbar host and takes its tints from there, so it and the new Remote Control server toggle read as one pair: the Remote app button sits immediately right of the server toggle whatever order the two assemblies happen to initialize in. The button itself is unchanged.

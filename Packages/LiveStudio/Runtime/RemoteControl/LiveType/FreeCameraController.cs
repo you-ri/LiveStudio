@@ -8,7 +8,7 @@ namespace Lilium.LiveStudio
 {
     [Serializable]
     [LiveClass]
-    public class FreeCameraController : ICameraController, ILiveSerializeCallback, ILiveDeserializeCallback
+    public class FreeCameraController : CameraControllerBase, ILiveSerializeCallback, ILiveDeserializeCallback
     {
         [SerializeField, LiveField]
         TransformRef _target = new TransformRef("", "");

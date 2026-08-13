@@ -10,7 +10,7 @@ namespace Lilium.LiveStudio
     [Serializable]
     [LiveClass]
     [MovedFrom(false, "Lilium.Virgo.Studio", "Lilium.Virgo.Studio2", null)]
-    public class CaptureCameraController : ICameraController
+    public class CaptureCameraController : CameraControllerBase
     {
         private CaptureCameraTracker _captureCameraTracker;
 

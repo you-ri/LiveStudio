@@ -23,7 +23,7 @@ namespace Lilium.LiveStudio
     /// </summary>
     [Serializable]
     [LiveClass]
-    public class LookAtCameraController : ICameraController
+    public class LookAtCameraController : CameraControllerBase
     {
         [SerializeField, LiveField]
         TransformRef _target = new TransformRef("Main Avatar", "S_Head", TransformRef.SearchType.Name);

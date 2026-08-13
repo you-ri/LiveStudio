@@ -52,7 +52,7 @@ namespace Lilium.LiveStudio
 
         [LiveField, CameraController]
         [SerializeReference, Select]
-        public ICameraController controller = new OrbitalFollowCameraController();
+        public CameraControllerBase controller = new OrbitalFollowCameraController();
 
         // Shadow Field for priority. The live value lives on the CinemachineCamera (the Brain
         // derives the live camera from the highest priority), so persisting it is what makes the
@@ -289,10 +289,10 @@ namespace Lilium.LiveStudio
             if (property.owner != _liveObject) return;
             if (property.type.name != "controller") return;
 
-            if (oldValue is ICameraController oldController)
+            if (oldValue is CameraControllerBase oldController)
                 oldController.Teardown(_reference);
 
-            if (property.GetValue() is ICameraController newController)
+            if (property.GetValue() is CameraControllerBase newController)
                 newController.Setup(_reference);
         }
 

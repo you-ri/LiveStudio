@@ -15,7 +15,7 @@ namespace Lilium.LiveStudio
     /// rising/falling edges into an <see cref="OperationContext"/>. The mode is not stored here: the control
     /// kind is the single behaviour axis (see <see cref="DeckControl.mode"/>), passed in to <see cref="Evaluate"/>.
     ///
-    /// Marked <c>[LiveClass]</c> on the abstract base (like <see cref="ICameraController"/>) so the
+    /// Marked <c>[LiveClass]</c> on the abstract base (like <see cref="CameraControllerBase"/>) so the
     /// <c>[TypeSelector]</c> on the owning field can enumerate the concrete kinds; the base itself is
     /// never instantiated (the field always defaults to a concrete kind and @type only ever names one).
     /// </summary>
@@ -31,7 +31,7 @@ namespace Lilium.LiveStudio
         /// <summary>
         /// Builds whatever runtime input the source needs into the shared map. Called by
         /// <see cref="OperationManager"/> when the source is bound (and rebuilt on a type swap), mirroring
-        /// <see cref="ICameraController.Setup"/>. <paramref name="actionName"/> is unique per operation set.
+        /// <see cref="CameraControllerBase.Setup"/>. <paramref name="actionName"/> is unique per operation set.
         /// </summary>
         public virtual void Setup(InputActionMap map, string actionName) { }
 

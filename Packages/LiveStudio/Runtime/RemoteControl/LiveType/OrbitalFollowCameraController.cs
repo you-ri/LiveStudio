@@ -7,7 +7,7 @@ namespace Lilium.LiveStudio
 {
     [Serializable]
     [LiveClass]
-    public class OrbitalFollowCameraController : ICameraController, ILiveSerializeCallback, ILiveDeserializeCallback
+    public class OrbitalFollowCameraController : CameraControllerBase, ILiveSerializeCallback, ILiveDeserializeCallback
     {
         [SerializeField, LiveField]
         TransformRef _target = new TransformRef("Main Avatar", "S_Head", TransformRef.SearchType.Name);
