@@ -74,7 +74,7 @@ namespace Lilium.RemoteControl.Server
         {
             if (_isServerOwner && _server != null)
             {
-                _server.StopServer();
+                // RemoveServer disposes the instance, which stops it first.
                 RemoteControlServerManager.RemoveServer(GetPort());
             }
             _server = null;

@@ -12,8 +12,7 @@ using Lilium.RemoteControl.Server;
 namespace Lilium.RemoteControl.Editor
 {
     /// <summary>
-    /// Start/stop of this project's Remote Control server from the editor toolbar, mirroring the
-    /// Unreal editor's server toggle (<c>FLiliumRemoteControlEditorModule</c>). The server runs on its
+    /// Start/stop of this project's Remote Control server from the editor toolbar. The server runs on its
     /// own threads, so it serves the remote app just as well with the editor merely open as it does
     /// in play mode - which is exactly what this button is for.
     /// </summary>
@@ -61,8 +60,9 @@ namespace Lilium.RemoteControl.Editor
                 return;
             }
 
-            // Stopping tears the server down rather than parking it: HttpServerCore.StopServer cleans
-            // up every registered route, so a kept instance would come back up answering nothing.
+            // Stopping tears the server down rather than parking it. A parked instance would keep
+            // its routes (Stop/Start are symmetric), but tearing down keeps the toolbar's stopped
+            // state identical to "never started", which is simpler to reason about here.
             if (IsRunning) RemoteControlServerManager.RemoveAllServers();
             else _Start();
 
@@ -148,7 +148,7 @@ namespace Lilium.RemoteControl.Editor
     /// <summary>The toolbar icon shared by every editor-version branch below.</summary>
     static class RemoteControlServerToolbarIcon
     {
-        // The same Material Symbols "devices" artwork the Unreal editor toggle uses.
+        // Material Symbols "devices" artwork.
         public const string path = "Packages/jp.lilium.remotecontrol/Editor/Icons/devices.png";
 
         public static string Tooltip(bool running)

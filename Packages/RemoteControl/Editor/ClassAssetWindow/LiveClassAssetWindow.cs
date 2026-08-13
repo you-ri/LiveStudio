@@ -9,7 +9,7 @@ using Lilium.RemoteControl.LiveScene;
 namespace Lilium.RemoteControl.Editor
 {
     /// <summary>
-    /// UE Remote Control-style panel: build the exposure class-first. The class list's "+"
+    /// Panel that builds the exposure class-first. The class list's "+"
     /// (searchable dropdown over every type) or "From Selected"
     /// (<see cref="LiveClassAssetFromSelectedWindow"/>, scoped to the selected GameObject's own
     /// components) adds an empty type definition to the class list on the left; the detail

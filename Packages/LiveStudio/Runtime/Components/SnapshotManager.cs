@@ -25,7 +25,7 @@ namespace Lilium.LiveStudio
     }
 
     /// <summary>
-    /// Scene-state snapshots, modeled after UE Remote Control's snapshot feature.
+    /// Scene-state snapshots.
     ///
     /// A snapshot is a FULL serialization of the live scene (every exposed value, including
     /// prop/avatar instances), not the delta a scene save writes — so restoring one reproduces

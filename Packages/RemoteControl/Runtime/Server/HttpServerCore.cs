@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.Net;
-using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -43,25 +42,6 @@ namespace Lilium.RemoteControl.Server
             _port = port;
             _enableCors = enableCors;
             _allowExternalConnections = allowExternalConnections;
-        }
-
-        /// <summary>
-        /// ポートが使用可能かどうかをチェックします（TCPレベル、診断用）
-        /// </summary>
-        public static bool IsPortAvailable(int port)
-        {
-            try
-            {
-                using (var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp))
-                {
-                    socket.Bind(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, port));
-                    return true;
-                }
-            }
-            catch (SocketException)
-            {
-                return false;
-            }
         }
 
         public virtual void StartServer()
@@ -207,6 +187,14 @@ namespace Lilium.RemoteControl.Server
                     // Listener not started or stopped - normal shutdown
                     break;
                 }
+                catch (System.Exception ex)
+                {
+                    // Anything else would otherwise be swallowed by Task.Run and leave the server
+                    // silently dead while still reporting IsRunning. Exit the loop so the state
+                    // and the OnServerStopped notification below tell the truth.
+                    Debug.LogError($"[RemoteControl] Listener loop crashed on port {_port}: {ex}");
+                    break;
+                }
             }
 
             _isRunning = false;
@@ -255,14 +243,6 @@ namespace Lilium.RemoteControl.Server
 
         protected virtual Task ProcessRequest(HttpListenerContext context)
         {
-            // [Debug] quit リクエスト受信の可視化
-            if (context.Request.Url != null &&
-                context.Request.Url.AbsolutePath.IndexOf("/api/commands/quit", System.StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                Debug.Log($"[Debug][RemoteControl] quit request received at HttpServerCore: " +
-                          $"method={context.Request.HttpMethod} from={context.Request.RemoteEndPoint}");
-            }
-
             if (_enableCors)
             {
                 AddCorsHeaders(context.Response);
@@ -280,12 +260,6 @@ namespace Lilium.RemoteControl.Server
             {
                 if (handler.CanHandle(context.Request))
                 {
-                    // [Debug] quit ルートに到達したか可視化
-                    if (context.Request.Url != null &&
-                        context.Request.Url.AbsolutePath.IndexOf("/api/commands/quit", System.StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        Debug.Log($"[Debug][RemoteControl] quit route matched: handler={handler.GetType().Name}");
-                    }
                     return handler.HandleRequest(context);
                 }
             }
@@ -343,12 +317,9 @@ namespace Lilium.RemoteControl.Server
 
         private void CloseServer()
         {
-            // ルートのクリーンアップ
-            foreach (var handler in _handlers)
-            {
-                handler?.Cleanup();
-            }
-            _handlers.Clear();
+            // Handlers survive a stop on purpose: StopServer/StartServer are symmetric, so a
+            // stopped server can come back up still answering its routes. Handlers are torn
+            // down only in Dispose, when the server instance itself is discarded.
 
             // キャンセレーショントークンの解放
             DisposeCancellationToken();
@@ -386,8 +357,18 @@ namespace Lilium.RemoteControl.Server
         {
             if (_isDisposed) return;
 
-            _isDisposed = true;
+            // Stop before flagging disposed: StopServer refuses to run on a disposed instance.
             StopServer();
+            // StopServer is a no-op when the server is not running (e.g. the listener loop already
+            // died), so release the listener here as well. CloseServer is idempotent.
+            CloseServer();
+            _isDisposed = true;
+
+            foreach (var handler in _handlers)
+            {
+                handler?.Cleanup();
+            }
+            _handlers.Clear();
         }
     }
 }

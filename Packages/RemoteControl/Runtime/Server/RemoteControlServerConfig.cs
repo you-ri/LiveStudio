@@ -5,11 +5,10 @@ using UnityEngine;
 namespace Lilium.RemoteControl.Server
 {
     /// <summary>
-    /// Server configuration stored as a ScriptableObject.
-    /// Each server instance is configured by its own asset file.
-    /// Concrete: instantiates a generic <see cref="RemoteControlServerCore"/>.
-    /// Application-specific routes are registered by external components
-    /// (e.g. MonoBehaviours next to <see cref="RemoteControlServerRunner"/>),
+    /// Server configuration stored as a ScriptableObject. Pure data:
+    /// server creation and registration live in <see cref="RemoteControlServerManager"/>
+    /// (see GetOrCreateServer). Application-specific routes are registered by external
+    /// components (e.g. MonoBehaviours next to <see cref="RemoteControlServerRunner"/>),
     /// not by subclassing this config.
     /// </summary>
     [CreateAssetMenu(fileName = "RemoteControlServerConfig", menuName = "Live Studio/Remote Control/Server Config")]
@@ -38,27 +37,5 @@ namespace Lilium.RemoteControl.Server
         [Tooltip("Switch the active Unity scene to the file's baseSceneName when loading. " +
                  "Turn off for apps that always run in a single scene (e.g. Fusion).")]
         public bool switchSceneOnLoad = true;
-
-        public RemoteControlServerCore CreateServer()
-        {
-            return CreateServer(null);
-        }
-
-        public RemoteControlServerCore CreateServer(LiveObjectContainer container)
-        {
-            if (RemoteControlServerManager.servers.TryGetValue(port, out var existing))
-            {
-                Debug.LogWarning($"[RemoteControl] Server already exists on port {port}");
-                return existing.server;
-            }
-
-            var context = new RemoteControlContext($"port_{port}", container);
-            var server = new RemoteControlServerCore(port, enableCors, context, allowExternalConnections);
-            server.OnServerError += ex => Debug.LogError($"[RemoteControl] Server on port {port} error: {ex.Message}");
-
-            RemoteControlServerManager.AddServer(port, server, context);
-
-            return server;
-        }
     }
 }

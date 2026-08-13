@@ -9,8 +9,7 @@ namespace Lilium.RemoteControl
     /// <summary>
     /// Asset that declares a <see cref="LiveClass"/> without code — the counterpart of
     /// <see cref="LiveClassAttribute"/> for types you cannot decorate (built-in Unity types,
-    /// third-party components) or don't want to. Modeled on Unreal Engine's Remote Control
-    /// Preset asset.
+    /// third-party components) or don't want to.
     ///
     /// The asset carries two kinds of data:
     /// - <see cref="TypeDefinition"/>: which members of a type are exposed, with their UI metadata.

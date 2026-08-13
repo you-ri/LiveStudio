@@ -616,7 +616,7 @@ namespace Lilium.RemoteControl
 
 
         // ---- Batch (POST /live/batch) ----
-        // Epic Remote Control の /remote/batch 相当。複数サブリクエストを 1 リクエストで
+        // 複数サブリクエストを 1 リクエストで
         // 順次適用し、各結果を集約して返す。全件を 1 回のメインスレッドホップ内で適用するため
         // フレーム内で一貫する。各 item は独立 (continue-on-error)。
 

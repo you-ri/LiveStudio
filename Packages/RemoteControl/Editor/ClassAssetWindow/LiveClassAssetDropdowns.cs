@@ -7,7 +7,7 @@ using UnityEngine;
 namespace Lilium.RemoteControl.Editor
 {
     /// <summary>
-    /// Searchable class picker (UE Remote Control style dropdown with a search field):
+    /// Searchable class picker (dropdown with a search field):
     /// preset-defined types first, then every pickable Component / ScriptableObject type
     /// grouped by namespace.
     /// </summary>

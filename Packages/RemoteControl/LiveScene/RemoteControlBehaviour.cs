@@ -313,7 +313,7 @@ namespace Lilium.RemoteControl.LiveScene
                 Application.wantsToQuit -= _OnWantsToQuit;
 #endif
 
-                _UnregisterHandlersAndStopServer();
+                _UnregisterHandlers();
                 _sceneSave.OnDisable();
             }
 
@@ -440,7 +440,8 @@ namespace Lilium.RemoteControl.LiveScene
             _handlersRegistered = true;
         }
 
-        private void _UnregisterHandlersAndStopServer()
+        // The server itself stays alive here; OnDestroy handles ShutdownServer.
+        private void _UnregisterHandlers()
         {
             var srv = _serverRunner?.server;
             if (_handlersRegistered && srv != null)
@@ -452,7 +453,6 @@ namespace Lilium.RemoteControl.LiveScene
                 _sceneIoHandler = null;
                 _handlersRegistered = false;
             }
-            // Note: server itself stays alive; OnDestroy handles ShutdownServer.
             _serverStarted = false;
         }
 

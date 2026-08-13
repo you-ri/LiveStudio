@@ -133,18 +133,6 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// クライアントのイベントをクリア
-        /// </summary>
-        public void ClearEvents(string clientId)
-        {
-            if (_clientQueues.TryGetValue(clientId, out var clientQueue))
-            {
-                clientQueue.Clear();
-                Debug.Log($"[RemoteControl] EventQueue: Cleared events for client {clientId}");
-            }
-        }
-
-        /// <summary>
         /// クライアントアクティビティを更新
         /// </summary>
         public void UpdateClientActivity(string clientId)
@@ -156,35 +144,11 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// クライアントが有効期限内にアクティブだったか（O(1) 判定、Alloc 無し）。
-        /// </summary>
-        private bool _IsClientActive(string clientId)
-        {
-            if (!_clientActivity.TryGetValue(clientId, out var lastActivity))
-            {
-                return false;
-            }
-            return lastActivity > DateTime.UtcNow.Subtract(_clientTimeout);
-        }
-
-        /// <summary>
         /// 接続中のクライアント数を取得
         /// </summary>
         public int GetConnectedClientCount()
         {
             return _clientActivity.Count;
-        }
-
-        /// <summary>
-        /// アクティブなクライアントIDリストを取得
-        /// </summary>
-        public List<string> GetActiveClientIds()
-        {
-            var cutoff = DateTime.UtcNow.Subtract(_clientTimeout);
-            return _clientActivity
-                .Where(kvp => kvp.Value > cutoff)
-                .Select(kvp => kvp.Key)
-                .ToList();
         }
 
         /// <summary>
@@ -194,24 +158,6 @@ namespace Lilium.RemoteControl
         {
             _clientQueues.TryRemove(clientId, out _);
             _clientActivity.TryRemove(clientId, out _);
-        }
-
-        /// <summary>
-        /// サーバー統計情報を取得
-        /// </summary>
-        public EventQueueStats GetStats()
-        {
-            var activeClients = GetActiveClientIds();
-            var totalEvents = _clientQueues.Values.Sum(q => q.EventCount);
-
-            return new EventQueueStats
-            {
-                ActiveClientCount = activeClients.Count,
-                TotalClientCount = _clientQueues.Count,
-                TotalEvents = totalEvents,
-                NextEventId = _nextEventId,
-                ActiveClients = activeClients
-            };
         }
 
         /// <summary>
@@ -228,57 +174,6 @@ namespace Lilium.RemoteControl
             }
 
             return Task.FromResult(deliveredCount);
-        }
-
-        /// <summary>
-        /// 特定クライアントのリストにメッセージを送信
-        /// </summary>
-        public Task<int> SendToClientsAsync(object message, string[] targetClients)
-        {
-            var targetedMessage = new TargetedMessage
-            {
-                Type = "targeted",
-                Payload = message,
-                TargetClients = targetClients,
-                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                MessageId = Guid.NewGuid().ToString()
-            };
-
-            var deliveredCount = 0;
-            foreach (var clientId in targetClients)
-            {
-                if (_IsClientActive(clientId))
-                {
-                    AddEventToClient(clientId, targetedMessage);
-                    deliveredCount++;
-                }
-            }
-
-            return Task.FromResult(deliveredCount);
-        }
-
-        /// <summary>
-        /// 特定クライアントにメッセージを送信
-        /// </summary>
-        public Task<bool> SendToClientAsync(string clientId, object message)
-        {
-            if (!_IsClientActive(clientId))
-            {
-                Debug.LogWarning($"[RemoteControl] EventQueue: Client {clientId} is not active");
-                return Task.FromResult(false);
-            }
-
-            var directMessage = new DirectMessage
-            {
-                Type = "direct",
-                Payload = message,
-                TargetClient = clientId,
-                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                MessageId = Guid.NewGuid().ToString()
-            };
-
-            AddEventToClient(clientId, directMessage);
-            return Task.FromResult(true);
         }
 
         /// <summary>
@@ -556,42 +451,6 @@ namespace Lilium.RemoteControl
             _payload = payload;
             return payload;
         }
-    }
-
-    /// <summary>
-    /// EventQueue統計情報
-    /// </summary>
-    public class EventQueueStats
-    {
-        public int ActiveClientCount { get; set; }
-        public int TotalClientCount { get; set; }
-        public long TotalEvents { get; set; }
-        public long NextEventId { get; set; }
-        public List<string> ActiveClients { get; set; }
-    }
-
-    /// <summary>
-    /// ターゲット指定メッセージ
-    /// </summary>
-    public class TargetedMessage
-    {
-        public string Type { get; set; }
-        public object Payload { get; set; }
-        public string[] TargetClients { get; set; }
-        public long Timestamp { get; set; }
-        public string MessageId { get; set; }
-    }
-
-    /// <summary>
-    /// ダイレクトメッセージ
-    /// </summary>
-    public class DirectMessage
-    {
-        public string Type { get; set; }
-        public object Payload { get; set; }
-        public string TargetClient { get; set; }
-        public long Timestamp { get; set; }
-        public string MessageId { get; set; }
     }
 
     /// <summary>

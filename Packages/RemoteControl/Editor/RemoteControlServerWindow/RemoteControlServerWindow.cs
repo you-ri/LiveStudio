@@ -26,10 +26,11 @@ namespace Lilium.RemoteControl
 
             foreach (var config in settings.serverConfigs)
             {
-                if (!config.runningInEditor) continue;
+                // 設定リストに壊れた参照 (削除済みアセット) が残っていることがあるため null を許容する
+                if (config == null || !config.runningInEditor) continue;
                 if (RemoteControlServerManager.HasServer(config.port)) continue;
 
-                var server = config.CreateServer();
+                var server = RemoteControlServerManager.GetOrCreateServer(config.port, config);
                 if (server != null)
                 {
                     RemoteControlServerManager.StartServer(config.port);
@@ -110,6 +111,9 @@ namespace Lilium.RemoteControl
 
             for (int i = 0; i < _settings.serverConfigs.Count; i++)
             {
+                // 参照先アセットが現在のプロジェクトに存在しない (別プロジェクト由来・削除済み) 場合がある
+                if (_settings.serverConfigs[i] == null) continue;
+
                 DrawServerInstance(_settings.serverConfigs[i], i);
                 EditorGUILayout.Space();
             }
@@ -195,7 +199,7 @@ namespace Lilium.RemoteControl
                 GUI.color = Color.green;
                 if (GUILayout.Button("Start Server", GUILayout.Height(25)))
                 {
-                    var server = config.CreateServer();
+                    var server = RemoteControlServerManager.GetOrCreateServer(config.port, config);
                     if (server != null)
                     {
                         RemoteControlServerManager.StartServer(config.port);

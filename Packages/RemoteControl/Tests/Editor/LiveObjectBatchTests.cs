@@ -9,7 +9,7 @@ using Lilium.RemoteControl;
 namespace Lilium.RemoteControl.Tests
 {
     /// <summary>
-    /// POST /live/batch (Epic Remote Control の /remote/batch 相当) の検証。
+    /// POST /live/batch の検証。
     /// <see cref="LiveObjectHandler.ExecuteBatch"/> は HTTP 非依存コアなので、サーバーを
     /// 立てずにコンテナ + リゾルバを直接渡して駆動できる (CollectLiveObjects と同じ流儀)。
     ///

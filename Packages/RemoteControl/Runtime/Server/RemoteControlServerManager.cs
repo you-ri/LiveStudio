@@ -39,13 +39,22 @@ namespace Lilium.RemoteControl.Server
 #if UNITY_EDITOR
             EditorApplication.quitting += OnEditorQuitting;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
-            AssemblyReloadEvents.beforeAssemblyReload += () =>
-            {
-                RemoveAllServers();
-            };
+            AssemblyReloadEvents.beforeAssemblyReload += OnBeforeAssemblyReload;
 #endif
-            
+
             _isInitialized = true;
+        }
+
+        // In a player build nothing above runs (all the teardown hooks are editor events), so the
+        // servers and their background cleanup tasks would only die with the process. Hook the
+        // runtime quit signal as well; in the editor this fires alongside ExitingPlayMode, where
+        // the second RemoveAllServers is a no-op. Unsubscribe-first keeps this safe when Domain
+        // Reload is disabled and the method runs again on the next play.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void _RegisterRuntimeQuitHook()
+        {
+            Application.quitting -= RemoveAllServers;
+            Application.quitting += RemoveAllServers;
         }
 
         public static void AddServer(int port, RemoteControlServerCore server, RemoteControlContext context)
@@ -59,24 +68,27 @@ namespace Lilium.RemoteControl.Server
             _servers[port] = instance;
         }
 
-        public static RemoteControlServerCore GetServer(int port)
-        {
-            return _servers.TryGetValue(port, out var instance) ? instance.server : null;
-        }
-
+        /// <summary>
+        /// Returns the server registered for <paramref name="port"/>, creating and registering one
+        /// from <paramref name="serverConfig"/> when there is none. The config is pure data here;
+        /// creation and registration are this manager's job.
+        /// </summary>
         public static RemoteControlServerCore GetOrCreateServer(int port, RemoteControlServerConfig serverConfig, LiveObjectContainer container = null)
         {
-            if (_servers.ContainsKey(port))
+            if (_servers.TryGetValue(port, out var existing))
             {
-                return _servers[port].server;
+                return existing.server;
             }
 
-            if (container != null)
-            {
-                return serverConfig.CreateServer(container);
-            }
+            if (serverConfig == null) return null;
 
-            return serverConfig.CreateServer();
+            var context = new RemoteControlContext($"port_{port}", container);
+            var server = new RemoteControlServerCore(port, serverConfig.enableCors, context, serverConfig.allowExternalConnections);
+            server.OnServerError += ex => Debug.LogError($"[RemoteControl] Server on port {port} error: {ex.Message}");
+
+            AddServer(port, server, context);
+
+            return server;
         }
 
         public static void RemoveServer(int port)
@@ -86,14 +98,10 @@ namespace Lilium.RemoteControl.Server
                 return;
             }
 
-            if (instance.server != null)
-            {
-                instance.server.StopServer();
-                instance.server.Dispose();
-            }
+            // Dispose stops the server first, then tears down its handlers.
+            instance.server?.Dispose();
 
             _servers.Remove(port);
-            //Debug.Log($"[Studio] Removed server on port {port}");
         }
 
         public static void RemoveAllServers()
@@ -145,11 +153,6 @@ namespace Lilium.RemoteControl.Server
             return _servers.ContainsKey(port);
         }
 
-        public static IEnumerable<int> GetAllPorts()
-        {
-            return _servers.Keys;
-        }
-
 #if UNITY_EDITOR
         private static void OnPlayModeStateChanged(PlayModeStateChange state)
         {
@@ -160,6 +163,11 @@ namespace Lilium.RemoteControl.Server
         }
 
         private static void OnEditorQuitting()
+        {
+            RemoveAllServers();
+        }
+
+        private static void OnBeforeAssemblyReload()
         {
             RemoveAllServers();
         }

@@ -86,24 +86,11 @@ namespace Lilium.RemoteControl.Server
             _confirmHandler = null;
         }
         
-        public override void StartServer()
-        {
-            base.StartServer();
-
-            if (IsRunning)
-            {
-                _connectionManager?.RemoveAllClients();
-                _ = BroadcastSystemNotification("Remote Control Server started", "info");
-            }
-        }
-
-        public override void StopServer()
-        {
-            // Do not broadcast a "stopping" notification here: the server is shutting
-            // down, so the message would only race the disconnect and surface a
-            // misleading warning on the RemoteApp side.
-            base.StopServer();
-        }
+        // Start/stop deliberately add nothing over the base implementation. No "started"
+        // broadcast: on a fresh server no inbox exists yet, and on a restart the clients
+        // notice by themselves. No "stopping" broadcast either: it would only race the
+        // disconnect and surface a misleading warning on the RemoteApp side. Client presence
+        // self-heals through the /api/status heartbeat and its timeout.
 
         private void HandleClientConnected(RestApiClient client)
         {
@@ -119,13 +106,6 @@ namespace Lilium.RemoteControl.Server
         {
             return _eventQueue != null
                 ? _eventQueue.BroadcastAsync(message, eventType)
-                : Task.CompletedTask;
-        }
-
-        public Task SendToClient(string clientId, object message)
-        {
-            return _eventQueue != null
-                ? _eventQueue.SendToClientAsync(clientId, message)
                 : Task.CompletedTask;
         }
 

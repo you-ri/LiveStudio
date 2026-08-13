@@ -33,16 +33,19 @@ namespace Lilium.RemoteControl
         
         public event Action<RestApiClient> OnClientConnected;
         public event Action<RestApiClient> OnClientDisconnected;
-        public event Action<RestApiClient, object> OnClientMessageReceived;
-        
+
         public int ConnectionCount
         {
             get
             {
-                lock (_lockObject)
+                // Plain loop instead of LINQ Count(predicate): this is polled every frame by the
+                // editor toolbar and must not allocate a delegate per call.
+                int count = 0;
+                foreach (var kvp in _clients)
                 {
-                    return _clients.Count(kvp => kvp.Value.IsActive);
+                    if (kvp.Value.IsActive) count++;
                 }
+                return count;
             }
         }
         
@@ -84,22 +87,6 @@ namespace Lilium.RemoteControl
         }
         
         /// <summary>
-        /// クライアントのアクティビティを更新
-        /// </summary>
-        public void UpdateClientActivity(string clientId)
-        {
-            if (_clients.TryGetValue(clientId, out var client))
-            {
-                client.UpdateActivity();
-            }
-            else
-            {
-                // 新規クライアントとして登録
-                RegisterClient(clientId);
-            }
-        }
-        
-        /// <summary>
         /// クライアントを削除
         /// </summary>
         public void RemoveClient(string clientId)
@@ -130,75 +117,6 @@ namespace Lilium.RemoteControl
                     Debug.Log($"[RemoteControl] RestApiConnectionManager: Removed all {allClients.Count} clients");
                 }
             }
-        }
-        
-        /// <summary>
-        /// クライアント情報を取得
-        /// </summary>
-        public RestApiClient GetClient(string clientId)
-        {
-            return _clients.TryGetValue(clientId, out var client) ? client : null;
-        }
-        
-        /// <summary>
-        /// アクティブなクライアント一覧を取得
-        /// </summary>
-        public List<RestApiClient> GetActiveClients()
-        {
-            lock (_lockObject)
-            {
-                return _clients.Values
-                    .Where(client => client.IsActive)
-                    .ToList();
-            }
-        }
-        
-        /// <summary>
-        /// 全クライアント一覧を取得
-        /// </summary>
-        public List<RestApiClient> GetAllClients()
-        {
-            return _clients.Values.ToList();
-        }
-        
-        /// <summary>
-        /// クライアントIDのリストを取得
-        /// </summary>
-        public List<string> GetActiveClientIds()
-        {
-            return GetActiveClients().Select(client => client.ClientId).ToList();
-        }
-        
-        /// <summary>
-        /// クライアントメッセージを処理
-        /// </summary>
-        public void ProcessClientMessage(string clientId, object message)
-        {
-            var client = GetClient(clientId);
-            if (client != null)
-            {
-                client.UpdateActivity();
-                client.IncrementMessageCount();
-                OnClientMessageReceived?.Invoke(client, message);
-            }
-        }
-        
-        /// <summary>
-        /// 統計情報を取得
-        /// </summary>
-        public ConnectionManagerStats GetStats()
-        {
-            var activeClients = GetActiveClients();
-            var totalClients = GetAllClients();
-            
-            return new ConnectionManagerStats
-            {
-                ActiveClientCount = activeClients.Count,
-                TotalClientCount = totalClients.Count,
-                TotalMessages = totalClients.Sum(c => c.MessageCount),
-                AverageResponseTime = activeClients.Any() ? activeClients.Average(c => c.AverageResponseTime) : 0,
-                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-            };
         }
         
         private void StartCleanupTask()
@@ -268,16 +186,9 @@ namespace Lilium.RemoteControl
         public string IpAddress { get; }
         public DateTime ConnectedAt { get; }
         public DateTime LastActivity { get; private set; }
-        private long _messageCount;
-        public long MessageCount => _messageCount;
-        public double AverageResponseTime { get; private set; }
-        
-        private readonly List<double> _responseTimes = new List<double>();
-        private readonly object _lockObject = new object();
-        
+
         public bool IsActive => (DateTime.UtcNow - LastActivity) < RestApiConnectionManager.kClientTimeout;
-        public TimeSpan ConnectionDuration => DateTime.UtcNow - ConnectedAt;
-        
+
         public RestApiClient(string clientId, string userAgent = null, string ipAddress = null)
         {
             ClientId = clientId;
@@ -285,78 +196,11 @@ namespace Lilium.RemoteControl
             IpAddress = ipAddress ?? "Unknown";
             ConnectedAt = DateTime.UtcNow;
             LastActivity = DateTime.UtcNow;
-            _messageCount = 0;
-            AverageResponseTime = 0;
         }
-        
+
         public void UpdateActivity()
         {
             LastActivity = DateTime.UtcNow;
         }
-        
-        public void IncrementMessageCount()
-        {
-            Interlocked.Increment(ref _messageCount);
-        }
-        
-        public void AddResponseTime(double responseTimeMs)
-        {
-            lock (_lockObject)
-            {
-                _responseTimes.Add(responseTimeMs);
-                
-                // 最新の100件のレスポンス時間のみを保持
-                if (_responseTimes.Count > 100)
-                {
-                    _responseTimes.RemoveAt(0);
-                }
-                
-                AverageResponseTime = _responseTimes.Average();
-            }
-        }
-        
-        public RestApiClientInfo GetInfo()
-        {
-            return new RestApiClientInfo
-            {
-                ClientId = ClientId,
-                UserAgent = UserAgent,
-                IpAddress = IpAddress,
-                ConnectedAt = ConnectedAt,
-                LastActivity = LastActivity,
-                MessageCount = MessageCount,
-                AverageResponseTime = AverageResponseTime,
-                IsActive = IsActive,
-                ConnectionDuration = ConnectionDuration
-            };
-        }
-    }
-    
-    /// <summary>
-    /// REST APIクライアント情報（シリアライズ用）
-    /// </summary>
-    public class RestApiClientInfo
-    {
-        public string ClientId { get; set; }
-        public string UserAgent { get; set; }
-        public string IpAddress { get; set; }
-        public DateTime ConnectedAt { get; set; }
-        public DateTime LastActivity { get; set; }
-        public long MessageCount { get; set; }
-        public double AverageResponseTime { get; set; }
-        public bool IsActive { get; set; }
-        public TimeSpan ConnectionDuration { get; set; }
-    }
-    
-    /// <summary>
-    /// ConnectionManager統計情報
-    /// </summary>
-    public class ConnectionManagerStats
-    {
-        public int ActiveClientCount { get; set; }
-        public int TotalClientCount { get; set; }
-        public long TotalMessages { get; set; }
-        public double AverageResponseTime { get; set; }
-        public long Timestamp { get; set; }
     }
 }

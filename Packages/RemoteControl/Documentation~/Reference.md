@@ -27,7 +27,8 @@ The README's Quick Start covers the common case. This document is for cases wher
 
 ## REST API endpoints
 
-All endpoints are served by `HttpServerCore` under the configured base URL (default `http://localhost:9095`).
+All endpoints are served by `HttpServerCore` under the configured base URL (default `http://localhost:3002`).
+Applications override the port through their own `ServerConfig` asset — LiveStudio uses 3003.
 
 ### System
 
