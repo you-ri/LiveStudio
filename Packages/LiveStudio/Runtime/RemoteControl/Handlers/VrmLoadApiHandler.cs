@@ -24,8 +24,8 @@ namespace Lilium.LiveStudio
 
         public VrmLoadApiHandler(RemoteControlServerCore server)
             : base(server,
-                new RouteRule("/api/vrm/load", RouteMatch.Exact),
-                new RouteRule("/api/vrm/reset", RouteMatch.Exact))
+                new RouteRule("/live/vrm/load", RouteMatch.Exact),
+                new RouteRule("/live/vrm/reset", RouteMatch.Exact))
         {
             // IVRMLoadObserverとしてサービスに登録
             Service<IVRMLoadObserver>.Register(this);
@@ -66,12 +66,12 @@ namespace Lilium.LiveStudio
         {
             var path = context.Request.Url.AbsolutePath;
 
-            if (path.Equals("/api/vrm/load", StringComparison.OrdinalIgnoreCase))
+            if (path.Equals("/live/vrm/load", StringComparison.OrdinalIgnoreCase))
             {
                 await HandleVrmLoadRequest(context);
                 return;
             }
-            if (path.Equals("/api/vrm/reset", StringComparison.OrdinalIgnoreCase))
+            if (path.Equals("/live/vrm/reset", StringComparison.OrdinalIgnoreCase))
             {
                 await HandleVrmResetRequest(context);
                 return;

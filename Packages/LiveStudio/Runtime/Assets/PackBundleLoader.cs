@@ -53,7 +53,7 @@ namespace Lilium.LiveStudio
             _memberCache.Clear();
             _inflight.Clear();
 
-            // Teach the generic asset-name resolver (GET /api/asset) how to label an external member key
+            // Teach the generic asset-name resolver (GET /live/asset) how to label an external member key
             // whose pack is not loaded yet: derive the name from the key's member segment. Keeps the file:
             // scheme's semantics in this (LiveStudio) layer, not in RemoteControl core.
             AssetRegistry.SetNameFallback(_DeriveExternalMemberName);

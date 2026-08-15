@@ -15,7 +15,7 @@ namespace Lilium.RemoteControl.UI
     ///
     /// Serves a side menu merged from the host's primary <see cref="UIDefinition"/> plus any
     /// definitions added at runtime through <see cref="UIDefinitionRegistry"/>. Because a single
-    /// handler owns <c>/ui/sidemenu</c>, dynamic pages must be merged here rather than by
+    /// handler owns <c>/live/ui/sidemenu</c>, dynamic pages must be merged here rather than by
     /// registering a second handler.
     /// </summary>
     public class UIHandler : BaseRemoteControlApiHandler
@@ -61,7 +61,7 @@ namespace Lilium.RemoteControl.UI
             else _UnregisterDefinition(definition);
 
             // Recorded, not sent: the client notices it while polling /live/changes and refetches
-            // /ui/sidemenu (consistent with how the types tables are published).
+            // /live/ui/sidemenu (consistent with how the types tables are published).
             LiveChangeLog.Record(LiveChangeLog.kUiId);
         }
 
@@ -167,7 +167,7 @@ namespace Lilium.RemoteControl.UI
         public override bool CanHandle(HttpListenerRequest request)
         {
             var path = request.Url.AbsolutePath.ToLower();
-            return path.StartsWith("/ui/");
+            return path.StartsWith("/live/ui/");
         }
 
         protected override bool SupportsGet() => true;
@@ -176,12 +176,12 @@ namespace Lilium.RemoteControl.UI
         {
             var path = context.Request.Url.AbsolutePath.ToLower();
 
-            if (path == "/ui/sidemenu")
+            if (path == "/live/ui/sidemenu")
             {
                 return HandleGetSideMenu(context);
             }
 
-            if (path == "/ui/info")
+            if (path == "/live/ui/info")
             {
                 return HandleGetInfo(context);
             }

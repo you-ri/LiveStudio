@@ -7,7 +7,7 @@ using Lilium.RemoteControl.Server;
 namespace Lilium.RemoteControl.RestApi.Controllers
 {
     /// <summary>
-    /// <c>GET /api/events?since=N</c> — collects the one-shot notices queued for the calling client.
+    /// <c>GET /live/events?since=N</c> — collects the one-shot notices queued for the calling client.
     ///
     /// The remote app normally picks these up as a sub-request of <c>POST /live/batch</c> so it
     /// spends no extra round trip on them; this standalone route exists for clients that do not

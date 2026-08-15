@@ -644,7 +644,7 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// Resolves any inbox sub-requests (<c>GET /api/events</c>) up front, returning a body per
+        /// Resolves any inbox sub-requests (<c>GET /live/events</c>) up front, returning a body per
         /// item position and null for everything the batch executor handles itself. Returns null
         /// when the batch carries no inbox request, which is the case for every batch except the
         /// remote app's poll loop.

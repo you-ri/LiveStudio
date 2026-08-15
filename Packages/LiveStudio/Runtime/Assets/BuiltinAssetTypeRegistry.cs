@@ -50,14 +50,14 @@ namespace Lilium.LiveStudio
         /// asset type — <see cref="Find"/> resolves an entry by this key, so two <c>GameObject</c> kinds
         /// (a built-in prop and a built-in avatar) must carry distinct keys to be told apart. Null falls back
         /// to the asset type's simple name (the default for a type owned by a single kind, e.g. an animation
-        /// clip, which also keeps that key equal to what <c>GET /api/assets?type=</c> filters by).
+        /// clip, which also keeps that key equal to what <c>GET /live/assets?type=</c> filters by).
         /// </summary>
         public string kind;
 
         /// <summary>
         /// The key this kind is baked under (<see cref="BuiltinAssetCatalog.Entry.type"/>): the explicit
         /// <see cref="kind"/> when set, otherwise the asset type's simple name — which for a single-kind type
-        /// is also what <c>GET /api/assets?type=</c> filters by (see <c>AssetRegistry.CollectAssets</c>).
+        /// is also what <c>GET /live/assets?type=</c> filters by (see <c>AssetRegistry.CollectAssets</c>).
         /// </summary>
         public string typeName => !string.IsNullOrEmpty(kind)
             ? kind

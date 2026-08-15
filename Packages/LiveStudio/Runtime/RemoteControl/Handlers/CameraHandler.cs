@@ -74,9 +74,9 @@ namespace Lilium.LiveStudio
         
         public CameraApiHandler(RemoteControlServerCore server)
             : base(server,
-                new RouteRule("/api/camera", RouteMatch.Exact),
-                new RouteRule("/api/camera/image", RouteMatch.Exact),
-                new RouteRule("/api/camera/switch", RouteMatch.Exact))
+                new RouteRule("/live/camera", RouteMatch.Exact),
+                new RouteRule("/live/camera/image", RouteMatch.Exact),
+                new RouteRule("/live/camera/switch", RouteMatch.Exact))
         {
         }
 
@@ -155,14 +155,14 @@ namespace Lilium.LiveStudio
         {
             var path = context.Request.Url.AbsolutePath;
 
-            // Handle /api/camera/image endpoint (バイナリ直接送信)
-            if (path.Equals("/api/camera/image", StringComparison.OrdinalIgnoreCase))
+            // Handle /live/camera/image endpoint (バイナリ直接送信)
+            if (path.Equals("/live/camera/image", StringComparison.OrdinalIgnoreCase))
             {
                 await HandleGetCameraImageRequest(context);
                 return;
             }
 
-            // Handle standard /api/camera endpoint
+            // Handle standard /live/camera endpoint
             var response = await ExecuteOnMainThread(() => new CameraListResponse
             {
                 success = true,
@@ -250,14 +250,14 @@ namespace Lilium.LiveStudio
         {
             var path = context.Request.Url.AbsolutePath;
 
-            // /api/camera/switch エンドポイント
-            if (path.Equals("/api/camera/switch", StringComparison.OrdinalIgnoreCase))
+            // /live/camera/switch エンドポイント
+            if (path.Equals("/live/camera/switch", StringComparison.OrdinalIgnoreCase))
             {
                 await HandleSwitchRequest(context);
                 return;
             }
 
-            // /api/camera エンドポイント
+            // /live/camera エンドポイント
             var (ok, request, error) = await TryReadRequest<CameraControlRequest>(context.Request);
             if (!ok)
             {

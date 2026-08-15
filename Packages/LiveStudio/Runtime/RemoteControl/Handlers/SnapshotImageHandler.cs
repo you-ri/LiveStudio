@@ -11,7 +11,7 @@ namespace Lilium.LiveStudio
     /// <summary>
     /// Serves a snapshot's camera screenshot as raw PNG bytes.
     ///
-    /// <c>GET /api/snapshot/image?name=&lt;snapshotName&gt;</c> resolves
+    /// <c>GET /live/snapshot/image?name=&lt;snapshotName&gt;</c> resolves
     /// "{projectPath}/Snapshots/&lt;name&gt;.snapshot.png" (written by
     /// <see cref="SnapshotManager.TakeSnapshot"/>) and streams it. The name is validated by
     /// <see cref="SnapshotManager"/> to be a plain file name, so a request can never escape the
@@ -20,7 +20,7 @@ namespace Lilium.LiveStudio
     public class SnapshotImageHandler : BaseRemoteControlApiHandler
     {
         public SnapshotImageHandler(RemoteControlServerCore server)
-            : base(server, new RouteRule("/api/snapshot/image", RouteMatch.Exact))
+            : base(server, new RouteRule("/live/snapshot/image", RouteMatch.Exact))
         {
         }
 

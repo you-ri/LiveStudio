@@ -47,7 +47,7 @@ namespace Lilium.LiveStudio
         [LiveField, Hide]
         public int h = 1;
 
-        /// <summary>Optional asset id whose preview thumbnail (served by <c>/api/avatar/image?id=</c>) the
+        /// <summary>Optional asset id whose preview thumbnail (served by <c>/live/avatar/image?id=</c>) the
         /// remote app draws as this tile's full-frame background. Empty = no background (the tile keeps its
         /// plain glass face). Set by the remote app's "add avatar switch tile" affordance to the switched
         /// avatar's id so the deck tile shows that avatar. Hidden from the generic editor (an asset id is not

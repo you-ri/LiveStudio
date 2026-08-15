@@ -230,14 +230,14 @@ namespace Lilium.LiveStudio
         // エディタの OnValidate で焼き込み、選択中クリップ自身を AssetRegistry へ登録して往復解決に使う。
         // 選択肢のカタログは AvatarController が持たない。組み込み (Resources) クリップは
         // BuiltinAssetRegistry、外部アセットパック (*.pack.lsb) は PackBundleLoader が AssetRegistry へ
-        // 登録し、GET /api/assets?type=AnimationClip が一覧化してセレクタの候補を供給する。
+        // 登録し、GET /live/assets?type=AnimationClip が一覧化してセレクタの候補を供給する。
         [SerializeField, HideInInspector]
         private string _bodyOverrideClipGuid = string.Empty;
 
         // 未トラッキング部位を上書きするクリップ。null＝「変更しない」で、その場合は
         // アバター側 (VRM1Avatar の Inspector 設定など) の値を尊重して転送しない。
         // RemoteControl のシリアライズ (live.json 等) にはアセット GUID が保存される。候補は
-        // GET /api/assets?type=AnimationClip (組み込み Resources + 外部バンドル) から供給される。
+        // GET /live/assets?type=AnimationClip (組み込み Resources + 外部バンドル) から供給される。
         [SerializeField]
         [LiveField(label="AVATAR_BODYOVERRIDECLIP"), AssetSelector(refPropertyName: nameof(_bodyOverrideClipRef))]
         private AnimationClip _bodyOverrideClip;
@@ -667,7 +667,7 @@ namespace Lilium.LiveStudio
         }
 
         // 選択中クリップ (_bodyOverrideClip) 自身を AssetRegistry へ登録する。AssetSelector の GUID
-        // シリアライズと GET /api/asset の解決は、この登録を前提とする。選択肢のカタログは
+        // シリアライズと GET /live/asset の解決は、この登録を前提とする。選択肢のカタログは
         // 組み込み (BuiltinAssetRegistry) / 外部アセットパック (PackBundleLoader) が別途登録する。
         private void _RegisterBodyOverrideClips()
         {

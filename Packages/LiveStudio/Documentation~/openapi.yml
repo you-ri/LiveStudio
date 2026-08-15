@@ -3,18 +3,25 @@ info:
   title: LiveStudio API
   version: '0.1'
   description: |
-    The HTTP routes `jp.lilium.livestudio` adds on top of the
-    [Remote Control API](../../RemoteControl/Documentation~/openapi.yml). They are registered by
-    `LiveStudioRemoteControl` onto the same server and the same port — there is no second listener.
+    `jp.lilium.livestudio` が [Remote Control API](../remotecontrol/index.md)
+    の上に足す HTTP ルートです。`LiveStudioRemoteControl` が同じサーバー・同じポートへ登録するので、
+    2 つ目のリスナーが立つわけではありません。
 
-    Everything here is one of two things that the generic live-object surface cannot express:
+    ここにあるのは、汎用のライブオブジェクト面では表せない 2 種類だけです。
 
-    - **binary** — camera previews, avatar thumbnails, snapshot thumbnails, manipulator frames
-    - **stateful or long-running** — loading a VRM, holding a manipulator session, rebinding an input action
+    - **バイナリ** — カメラのプレビュー、アバターのサムネイル、スナップショットのサムネイル、
+      マニピュレーターのフレーム
+    - **状態を持つ / 時間がかかる** — VRM の読み込み、マニピュレーターのセッション保持、
+      入力アクションの再バインド
 
-    Anything that is an ordinary value (a light's intensity, a camera's field of view, an expression's
-    weight) is *not* here: it is an exposed property, read and written through
-    `GET|PUT /live/object/{id}/{path}`. Reach for this reference only when the generic one does not cover it.
+    ただの値であるもの (ライトの明るさ、カメラの画角、表情のウェイト) は*ここにはありません*。
+    それらは公開プロパティで、`GET|PUT /live/object/{id}/{path}` から読み書きします。汎用側で
+    足りないときにだけ、このリファレンスを見てください。
+
+    ここのルートもすべて `/live/` の下にあります。このパッケージは特定のアプリに依存しない
+    汎用基盤で、ホストアプリとルートテーブルを共有するため、`camera` や `assets` のような
+    一般名を `/api/` 側で押さえないようにしています。`/api/` は組み込む側のアプリのために
+    空けてあります (詳細は Remote Control API の「名前空間」)。
 
 servers:
   - url: http://localhost:{port}
@@ -22,57 +29,59 @@ servers:
       port:
         default: '3002'
         description: >
-          The port the app's RemoteControl server binds. 3002 is the package default; a shipped
-          LiveStudio app usually overrides it.
+          アプリの RemoteControl サーバーが待ち受けるポート。3002 はパッケージ既定値で、
+          出荷される LiveStudio アプリでは上書きされているのが普通です。
 
 tags:
-  - name: Camera
-    description: The camera list, the live camera, and preview frames.
-  - name: Avatar
-    description: Loading a VRM, its thumbnail, and the expression list.
-  - name: Assets
+  - name: カメラ
+    x-slug: camera
+    description: カメラの一覧、ライブカメラの切り替え、プレビュー画像。
+  - name: アバター
+    x-slug: avatar
+    description: VRM の読み込み、サムネイル、表情の一覧。
+  - name: アセット
+    x-slug: assets
     description: >
-      Discovering what a reference slot can be pointed at. Both endpoints return unified asset keys —
-      a bare GUID for a baked or built-in asset, `file:<path>#<name>` for a member of an external pack.
-  - name: Snapshot
-    description: Thumbnails of saved snapshots.
-  - name: Manipulator
+      参照スロットに何を差せるかを調べる口。返るのは統一アセットキーです — ベイク済みや
+      組み込みのアセットは素の GUID、外部パックのメンバーは `file:<path>#<name>` です。
+  - name: スナップショット
+    x-slug: snapshot
+    description: 保存済みスナップショットのサムネイル。
+  - name: マニピュレーター
+    x-slug: manipulator
     description: >
-      The off-screen camera that drives the remote app's transform gizmo. A session is opened against
-      one property, polled for frames while the user drags, and closed.
-  - name: Input
-    description: The runtime key bindings and interactive rebinding.
-  - name: Deprecated
-    description: Kept so an older remote app build keeps working. Do not build anything new on these.
+      リモートアプリの Transform ギズモを支えるオフスクリーンカメラ。1 つのプロパティに対して
+      セッションを開き、ドラッグ中はフレームをポーリングし、終わったら閉じます。
+  - name: 入力
+    x-slug: input
+    description: ランタイムのキーバインドと、対話的な再バインド。
 
 x-tagGroups:
-  - name: Scene
-    tags: [Camera, Avatar, Snapshot]
-  - name: Authoring
-    tags: [Assets, Manipulator, Input]
-  - name: Deprecated
-    tags: [Deprecated]
+  - name: シーン
+    tags: [カメラ, アバター, スナップショット]
+  - name: オーサリング
+    tags: [アセット, マニピュレーター, 入力]
 
 paths:
-  # ---------------------------------------------------------------- Camera
-  /api/camera:
+  # ---------------------------------------------------------------- カメラ
+  /live/camera:
     get:
-      tags: [Camera]
-      summary: List the cameras
+      tags: [カメラ]
+      summary: カメラを一覧する
       responses:
         '200':
-          description: Every camera in the scene, with the live one flagged.
+          description: シーン上のすべてのカメラ。ライブのものには印が付きます。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CameraListResponse"
     post:
-      tags: [Camera]
-      summary: Act on a camera
+      tags: [カメラ]
+      summary: カメラを操作する
       description: >
-        A single verb-in-the-body endpoint kept for the actions that are not plain properties.
-        Field of view and look-at target are ordinary exposed properties — prefer
-        `PUT /live/object/{cameraId}/{path}` for those.
+        本文に動詞を入れる形の 1 本口で、ただのプロパティではない操作のために残しています。
+        画角や注視先は通常の公開プロパティなので、それらは
+        `PUT /live/object/{cameraId}/{path}` を使ってください。
       requestBody:
         required: true
         content:
@@ -81,22 +90,22 @@ paths:
               $ref: "#/components/schemas/CameraControlRequest"
       responses:
         '200':
-          description: Whether the action was applied.
+          description: 操作が適用されたかどうか。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CommandResponse"
         '400':
-          description: Malformed body, or no `data`.
+          description: 本文が不正、または `data` がない。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /api/camera/switch:
+  /live/camera/switch:
     post:
-      tags: [Camera]
-      summary: Make a camera live
+      tags: [カメラ]
+      summary: カメラをライブにする
       requestBody:
         required: true
         content:
@@ -111,25 +120,25 @@ paths:
                   example: "2e910ddf-8cd8-4fb2-92f3-44b1ccd20c5f"
       responses:
         '200':
-          description: The switch was applied.
+          description: 切り替えた。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CommandResponse"
         '400':
-          description: Missing or unparseable `cameraId`.
+          description: "`cameraId` がない、または解釈できない。"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /api/camera/image:
+  /live/camera/image:
     get:
-      tags: [Camera]
-      summary: Get a camera preview frame
+      tags: [カメラ]
+      summary: カメラのプレビュー画像を取得する
       description: >
-        Renders the camera once and returns a downscaled PNG that keeps the camera's aspect ratio.
-        Poll it to drive a preview; there is no stream.
+        そのカメラを 1 回レンダリングし、アスペクト比を保った縮小 PNG を返します。プレビューは
+        これをポーリングして作ります。ストリームはありません。
       parameters:
         - in: query
           name: camera
@@ -137,32 +146,32 @@ paths:
           schema:
             type: string
             format: uuid
-          description: "Camera id. Omit to capture whichever camera is live."
+          description: "カメラ id。省略するとライブのカメラを撮ります。"
       responses:
         '200':
-          description: The frame.
+          description: 画像。
           content:
             image/png:
               schema:
                 type: string
                 format: binary
         '404':
-          description: No such camera, or it has produced no image yet.
+          description: そのカメラがない、またはまだ画像が無い。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  # ---------------------------------------------------------------- Avatar
-  /api/vrm/load:
+  # ---------------------------------------------------------------- アバター
+  /live/vrm/load:
     post:
-      tags: [Avatar]
-      summary: Load a VRM file as the avatar
+      tags: [アバター]
+      summary: VRM ファイルをアバターとして読み込む
       description: >
-        Answers as soon as the load is accepted, not when it finishes — a large VRM takes seconds and
-        the request must not hold a connection that long. Progress and completion arrive as
-        `vrm_load_*` events in the client's inbox (`GET /api/events`). A client that connects
-        mid-load is told about it as soon as it identifies itself.
+        読み込みが受け付けられた時点で応答します。完了は待ちません。大きな VRM は数秒かかり、
+        その間リクエストで接続を掴んでいるわけにはいかないためです。進捗と完了は
+        `vrm_load_*` イベントとして受信箱 (`GET /live/events`) に届きます。読み込み中に接続してきた
+        クライアントにも、名乗った時点で知らされます。
       requestBody:
         required: true
         content:
@@ -176,40 +185,40 @@ paths:
                   example: "C:/Users/me/Documents/avatars/mine.vrm"
       responses:
         '200':
-          description: The load was accepted and started.
+          description: 読み込みを受け付けて開始した。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CommandResponse"
         '400':
-          description: Empty body, missing `filePath`, or a path that is not an acceptable VRM.
+          description: 本文が空、`filePath` がない、または VRM として受け付けられないパス。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /api/vrm/reset:
+  /live/vrm/reset:
     post:
-      tags: [Avatar]
-      summary: Unload the current avatar
+      tags: [アバター]
+      summary: 現在のアバターを降ろす
       responses:
         '200':
-          description: The avatar was reset.
+          description: アバターをリセットした。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CommandResponse"
 
-  /api/avatar/image:
+  /live/avatar/image:
     get:
-      tags: [Avatar]
-      summary: Get an asset's thumbnail
+      tags: [アバター]
+      summary: アセットのサムネイルを取得する
       description: >
-        Serves the preview image for any registered asset, not just avatars (the path predates the
-        generalization and is kept). A VRM/glb's embedded thumbnail is extracted and cached on first
-        request; a bundle's packed thumbnail is cached when the bundle is loaded, so it is available
-        only **after** that asset has been loaded at least once. The cache is on disk, so previews
-        survive restarts.
+        アバターに限らず、登録済みのどのアセットのプレビュー画像も返します (パス名は一般化する前の
+        名残で、そのまま残しています)。VRM/glb は初回リクエスト時に埋め込みサムネイルを抽出して
+        キャッシュします。バンドルのサムネイルはバンドルを読み込んだときにキャッシュされるので、
+        **一度は読み込まれた後**でないと出ません。キャッシュはディスク上にあるので、再起動しても
+        残ります。
       parameters:
         - in: query
           name: id
@@ -217,11 +226,11 @@ paths:
           schema:
             type: string
           description: >
-            Asset id or reference. Both a session-local id and a persisted project-relative reference
-            resolve.
+            アセットの id または参照。セッション内の id と、永続化されたプロジェクト相対の参照の
+            どちらでも解決します。
       responses:
         '200':
-          description: The thumbnail.
+          description: サムネイル。
           content:
             image/png:
               schema:
@@ -232,35 +241,35 @@ paths:
                 type: string
                 format: binary
         '404':
-          description: Unknown asset, or it has no thumbnail (yet).
+          description: そのアセットが無い、または (まだ) サムネイルが無い。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /api/expressions:
+  /live/expressions:
     get:
-      tags: [Avatar]
-      summary: List the active avatar's expressions
+      tags: [アバター]
+      summary: 現在のアバターの表情を一覧する
       description: >
-        Live weights are **not** served from here. A weight is an ordinary exposed property
-        (`expressions[<name>].weight`), so it syncs through the normal displayed-property polling —
-        only while the expression cards are on screen, and only to the client looking at them.
+        ウェイトの現在値は**ここからは流れません**。ウェイトは通常の公開プロパティ
+        (`expressions[<name>].weight`) なので、表示中プロパティの同期に乗ります — 表情カードが
+        画面に出ているあいだだけ、それを見ているクライアントにだけ届きます。
       responses:
         '200':
           description: >
-            The available expressions. An empty list means no avatar is loaded, or it exposes no
-            expressions.
+            使える表情。空のときは、アバターが読み込まれていないか、表情を公開していません。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ExpressionListResponse"
     post:
-      tags: [Avatar]
-      summary: Set an expression weight
+      tags: [アバター]
+      summary: 表情のウェイトを設定する
       description: >
-        Equivalent to writing the exposed property, and kept for clients that address expressions by
-        name without holding the avatar object. Prefer `PUT /live/object/{avatarId}/expressions[<name>]/weight`.
+        公開プロパティへの書き込みと等価で、アバターオブジェクトを持たずに名前で表情を指したい
+        クライアントのために残しています。`PUT /live/object/{avatarId}/expressions[<name>]/weight`
+        を優先してください。
       requestBody:
         required: true
         content:
@@ -270,29 +279,39 @@ paths:
       responses:
         '200':
           description: >
-            The outcome. Note that a rejected action (no avatar, unknown action, missing name) is
-            still a 200 with `success: false`.
+            結果。拒否された場合 (アバターがいない、未知の action、名前がない) も 200 で返り、
+            `success: false` になる点に注意してください。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ExpressionControlResponse"
         '400':
-          description: Malformed body, or no `data`.
+          description: 本文が不正、または `data` がない。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  # ---------------------------------------------------------------- Assets
-  /api/assets:
+  # ---------------------------------------------------------------- アセット
+  /live/assets:
     get:
-      tags: [Assets]
-      summary: List the assets that can fill a reference slot
+      tags: [アセット]
+      summary: 参照スロットに差せるアセットを一覧する
       description: >
-        One flat catalog per type, unifying baked, built-in and external assets. External packs are
-        opened once (cached) before the list is built, because a pack's name says nothing about what
-        it holds — there is no type for which that can be skipped. That makes the first call of a
-        session the expensive one.
+        絞り込みの軸は 2 つあり、組み合わせられます。応答の形はどちらでも同じなので、クライアントは
+        どちらを使ったかを意識する必要がありません。
+
+
+        `type` — その型のアセットを 1 枚の平坦なカタログにして、ベイク済み・組み込み・外部を区別せず
+        並べます。外部パックは一覧を作る前に一度だけ開かれます (以降キャッシュ)。パック名からは中身の
+        種類が分からないので、「この型なら開かなくてよい」という判断ができないためです。結果として、
+        セッション最初の 1 回だけが重くなります。
+
+
+        `pack` — 特定のパック 1 つを開いて中身を掘る 2 段目です。ユーザーがそのパックに実際に踏み込んだ
+        ときだけ使います (例: プロジェクトのアセット一覧で行を展開する)。開くのはそのパックだけなので、
+        カタログ全体の事前展開のコストは払いません。一覧する行為がメンバーの登録も兼ねるので、その後の
+        選択ではパックを読み直さずに解決できます。
       parameters:
         - in: query
           name: type
@@ -300,57 +319,42 @@ paths:
           schema:
             type: string
           example: "AnimationClip"
-          description: "Asset type name. Omit to list everything registered."
+          description: "アセットの型名。省略すると登録済みのすべてを返します。"
+        - in: query
+          name: pack
+          required: false
+          schema:
+            type: string
+          description: >
+            アセットパックの id。指定するとそのパックのメンバーだけを一覧します。`type` と併用すると
+            パック内をさらに型で絞り込めます。
       responses:
         '200':
-          description: The catalog.
+          description: カタログ。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssetListResponse"
-
-  /api/animation/clips:
-    get:
-      tags: [Assets]
-      summary: List the members of one asset pack
-      description: >
-        The second level of discovery, for drilling into a specific pack rather than listing a whole
-        type. The route name and the `clips` field predate generic packs and are kept verbatim so an
-        existing remote app build keeps working — the array lists every member, whatever its type.
-        Listing also registers the members, so selecting one afterwards resolves without re-reading
-        the pack.
-      parameters:
-        - in: query
-          name: id
-          required: true
-          schema:
-            type: string
-          description: "Id of a pack asset."
-      responses:
-        '200':
-          description: The pack's members, each with a ready-to-use asset key.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PackMembersResponse"
         '404':
-          description: Unknown id, or the asset is not a pack.
+          description: >
+            `pack` の id が不明、またはそのアセットがパックではない。`type` が何にも一致しない場合は
+            エラーではなく空のカタログです。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         '500':
-          description: The pack could not be opened.
+          description: パックを開けなかった。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  # ---------------------------------------------------------------- Snapshot
-  /api/snapshot/image:
+  # ---------------------------------------------------------------- スナップショット
+  /live/snapshot/image:
     get:
-      tags: [Snapshot]
-      summary: Get a snapshot's thumbnail
+      tags: [スナップショット]
+      summary: スナップショットのサムネイルを取得する
       parameters:
         - in: query
           name: name
@@ -358,30 +362,30 @@ paths:
           schema:
             type: string
           example: "take-03"
-          description: "Snapshot name, as listed by the snapshot live object."
+          description: "スナップショット名。スナップショットのライブオブジェクトが列挙するもの。"
       responses:
         '200':
-          description: The thumbnail.
+          description: サムネイル。
           content:
             image/png:
               schema:
                 type: string
                 format: binary
         '404':
-          description: Unknown snapshot, or it was saved without a screenshot.
+          description: そのスナップショットが無い、または画面キャプチャなしで保存された。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  # ---------------------------------------------------------------- Manipulator
-  /api/manipulator/open:
+  # ---------------------------------------------------------------- マニピュレーター
+  /live/manipulator/open:
     post:
-      tags: [Manipulator]
-      summary: Open a manipulator session
+      tags: [マニピュレーター]
+      summary: マニピュレーターのセッションを開く
       description: >
-        Binds an off-screen camera to one transform-valued property. The returned `sessionId` is the
-        handle for every other manipulator call.
+        オフスクリーンカメラを、Transform 値を持つプロパティ 1 つに結び付けます。返ってくる
+        `sessionId` が、以降のマニピュレーター呼び出しすべてのハンドルです。
       requestBody:
         required: true
         content:
@@ -396,67 +400,68 @@ paths:
                 propertyPath:
                   type: string
                   example: "transform"
-                  description: "Property to edit. Omit for the object's own transform."
+                  description: "編集対象のプロパティ。オブジェクト自身の transform なら省略。"
       responses:
         '200':
-          description: The session and the size of the frames it will produce.
+          description: セッションと、これから返るフレームの大きさ。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ManipulatorOpenResponse"
         '400':
-          description: Empty body, or no `objectId`.
+          description: 本文が空、または `objectId` がない。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         '404':
-          description: The object does not exist, or the property is not editable this way.
+          description: そのオブジェクトが無い、またはこの方式で編集できないプロパティ。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     delete:
-      tags: [Manipulator]
-      summary: Close a manipulator session
-      description: "Idempotent — closing an already-closed (or unknown) session still answers 204."
+      tags: [マニピュレーター]
+      summary: マニピュレーターのセッションを閉じる
+      description: "冪等です。すでに閉じた (または不明な) セッションでも 204 を返します。"
       parameters:
         - $ref: "#/components/parameters/ManipulatorSession"
       responses:
         '204':
-          description: Closed.
+          description: 閉じた。
 
-  /api/manipulator/image:
+  /live/manipulator/image:
     get:
-      tags: [Manipulator]
-      summary: Get a manipulator frame with its camera state
+      tags: [マニピュレーター]
+      summary: マニピュレーターのフレームを、そのカメラ状態と一緒に取得する
       description: >
-        The PNG alone is not enough to draw a gizmo over: the client needs the exact matrices the
-        frame was rendered with. They ride along in the `X-Manipulator-State` response header rather
-        than a second request, so the image and the state can never disagree.
+        PNG だけではギズモを重ねて描けません。そのフレームがどの行列で描かれたかが要ります。
+        別リクエストにせず `X-Manipulator-State` レスポンスヘッダーに同乗させているので、画像と
+        状態が食い違うことは原理的に起きません。
 
-        The header is base64 of a UTF-8 JSON object:
+        ヘッダーの中身は UTF-8 JSON を base64 にしたものです。
 
         ```json
         {
-          "view":       [16 floats, column-major],
-          "projection": [16 floats, column-major],
+          "view":       [16 個の float, 列優先],
+          "projection": [16 個の float, 列優先],
           "parent":     { "position": {x,y,z}, "rotation": {x,y,z,w}, "scale": {x,y,z} },
           "target":     { "position": {x,y,z}, "rotation": {x,y,z,w}, "scale": {x,y,z} },
           "viewport":   { "width": 512, "height": 512 }
         }
         ```
 
-        `parent` is the edited object's parent in world space, `target` its own local transform.
-        `Access-Control-Expose-Headers` is set, so a browser client can read the header cross-origin.
+        `parent` は編集対象の親のワールド変換、`target` は対象自身のローカル変換です。
+        `Access-Control-Expose-Headers` を付けてあるので、ブラウザからでもクロスオリジンで
+        ヘッダーを読めます。
       parameters:
         - $ref: "#/components/parameters/ManipulatorSession"
       responses:
         '200':
-          description: The frame. Camera state is in `X-Manipulator-State`.
+          description: フレーム。カメラ状態は `X-Manipulator-State` に入っています。
           headers:
             X-Manipulator-State:
-              description: "base64(UTF-8(JSON)) camera state for this exact frame."
+              description: "このフレームちょうどのカメラ状態。base64(UTF-8(JSON))。"
               schema:
                 type: string
           content:
@@ -465,25 +470,25 @@ paths:
                 type: string
                 format: binary
         '404':
-          description: Unknown or closed session.
+          description: セッションが不明、または閉じている。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         '500':
-          description: The capture failed.
+          description: キャプチャに失敗した。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /api/manipulator/camera:
+  /live/manipulator/camera:
     put:
-      tags: [Manipulator]
-      summary: Move the manipulator camera
+      tags: [マニピュレーター]
+      summary: マニピュレーターのカメラを動かす
       description: >
-        Every field is optional and they compose: send only what the current gesture changed. Fetch a
-        new frame afterwards to see the result.
+        すべてのフィールドが任意で、同時に指定すれば合成されます。今の操作で変わった分だけを
+        送ってください。結果を見るには、その後フレームを取り直します。
       parameters:
         - $ref: "#/components/parameters/ManipulatorSession"
       requestBody:
@@ -494,40 +499,40 @@ paths:
               $ref: "#/components/schemas/ManipulatorCameraPoseRequest"
       responses:
         '204':
-          description: Applied.
+          description: 適用した。
         '400':
-          description: Empty or malformed body.
+          description: 本文が空、または不正。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         '404':
-          description: Unknown or closed session.
+          description: セッションが不明、または閉じている。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  # ---------------------------------------------------------------- Input
-  /api/input-actions:
+  # ---------------------------------------------------------------- 入力
+  /live/input-actions:
     get:
-      tags: [Input]
-      summary: List the runtime input actions and their bindings
+      tags: [入力]
+      summary: ランタイムの入力アクションとバインドを一覧する
       responses:
         '200':
-          description: Every action of every enabled action map.
+          description: 有効なアクションマップに属するすべてのアクション。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/InputActionsListResponse"
 
-  /api/input-actions/bind:
+  /live/input-actions/bind:
     post:
-      tags: [Input]
-      summary: Rebind an input action interactively
+      tags: [入力]
+      summary: 入力アクションを対話的に再バインドする
       description: >
-        Starts an interactive rebind: the app listens for the next control the user actuates and
-        assigns it. The response reports the binding that was captured.
+        対話的な再バインドを開始します。アプリはユーザーが次に動かしたコントロールを待ち受け、
+        それを割り当てます。レスポンスは、実際に取り込まれたバインドを報告します。
       requestBody:
         required: true
         content:
@@ -542,63 +547,22 @@ paths:
                 bindingIndex:
                   type: integer
                   example: 0
-                  description: "Which binding of the action to replace."
+                  description: "そのアクションの何番目のバインドを置き換えるか。"
       responses:
         '200':
           description: >
-            The outcome. A rebind that could not start (unknown action, already listening) is still a
-            200 with `success: false`.
+            結果。開始できなかった場合 (アクションが無い、すでに待ち受け中) も 200 で返り、
+            `success: false` になります。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/InputActionBindResponse"
         '400':
-          description: Malformed body, or no `actionName`.
+          description: 本文が不正、または `actionName` がない。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-
-  # ---------------------------------------------------------------- Deprecated
-  /api/commands:
-    post:
-      tags: [Deprecated]
-      deprecated: true
-      summary: Run a named command
-      description: >
-        Superseded by exposed functions (`POST /live/function/{id}/{path}`), which are discoverable
-        from the type table instead of being a hard-coded vocabulary. Only `input_action` was ever
-        implemented. Do not add to it.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [type]
-              properties:
-                type:
-                  type: string
-                  example: "input_action"
-                actionName:
-                  type: string
-                  example: "ToggleCamera"
-                pressed:
-                  type: boolean
-                  example: true
-      responses:
-        '200':
-          description: The command ran.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CommandResponse"
-        '400':
-          description: Missing `type`, or the command failed.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CommandResponse"
 
 components:
   parameters:
@@ -609,7 +573,7 @@ components:
       schema:
         type: string
         format: uuid
-      description: "Session id from `POST /api/manipulator/open`."
+      description: "`POST /live/manipulator/open` が返したセッション id。"
 
   schemas:
       ErrorResponse:
@@ -645,7 +609,7 @@ components:
           isLive:
             type: boolean
             example: true
-            description: "True for the camera currently being output."
+            description: "いま出力に使われているカメラなら true。"
           fov:
             type: number
             example: 35
@@ -683,7 +647,7 @@ components:
               id:
                 type: string
                 format: uuid
-                description: "Target camera."
+                description: "対象のカメラ。"
               action:
                 type: string
                 enum: [switch, start_stream, stop_stream]
@@ -705,7 +669,7 @@ components:
           isPreset:
             type: boolean
             example: true
-            description: "True for the VRM standard expressions, false for avatar-specific ones."
+            description: "VRM 標準の表情なら true、アバター固有なら false。"
           weight:
             type: number
             example: 0
@@ -771,7 +735,7 @@ components:
           type:
             type: string
             example: "AnimationClip"
-            description: "Echo of the requested type (empty when none was given)."
+            description: "要求された型のエコー (指定が無ければ空)。"
           assets:
             type: array
             items:
@@ -781,32 +745,13 @@ components:
                   type: string
                   example: "file:Assets/Packs/dances.pack.lsb#Wave"
                   description: >
-                    Unified asset key. Write this into an asset reference property as-is.
+                    統一アセットキー。アセット参照プロパティへは、これをそのまま書き込みます。
                 name:
                   type: string
                   example: "Wave"
                 type:
                   type: string
                   example: "AnimationClip"
-
-      PackMembersResponse:
-        type: object
-        properties:
-          id:
-            type: string
-            description: "Echo of the requested pack id."
-          clips:
-            type: array
-            description: "Every member of the pack, whatever its type — the field name is historical."
-            items:
-              type: object
-              properties:
-                name:
-                  type: string
-                  example: "Wave"
-                key:
-                  type: string
-                  example: "file:Assets/Packs/dances.pack.lsb#Wave"
 
       ManipulatorOpenResponse:
         type: object
@@ -834,24 +779,24 @@ components:
         properties:
           yaw:
             type: number
-            description: "Absolute orbit yaw, in degrees."
+            description: "周回のヨー角 (度)。絶対値。"
           pitch:
             type: number
-            description: "Absolute orbit pitch, in degrees."
+            description: "周回のピッチ角 (度)。絶対値。"
           distance:
             type: number
-            description: "Absolute distance from the pivot."
+            description: "注視点からの距離。絶対値。"
           focus:
             type: boolean
-            description: "Re-anchor the pivot onto the edited object. Combines with the other fields."
+            description: "注視点を編集対象へ取り直す。ほかのフィールドと併用できます。"
           panDx:
             type: number
             description: >
-              Pivot translation in screen pixels, positive to the right. Converted to world units from
-              the current distance and field of view — the middle-drag of a scene view.
+              注視点を画面ピクセル単位で平行移動する量。右方向が正。現在の距離と画角からワールド
+              単位へ換算します — シーンビューの中ボタンドラッグ相当です。
           panDy:
             type: number
-            description: "Pivot translation in screen pixels, positive downward."
+            description: "注視点を画面ピクセル単位で平行移動する量。下方向が正。"
 
       InputActionInfo:
         type: object
@@ -864,13 +809,13 @@ components:
             items:
               type: string
             example: ["<Keyboard>/f1"]
-            description: "Effective control paths, in binding order."
+            description: "実効のコントロールパス。バインド順。"
           bindingDisplayNames:
             type: array
             items:
               type: string
             example: ["F1"]
-            description: "Human-readable form of `bindings`, same order."
+            description: "`bindings` を人が読める形にしたもの。同じ順序。"
           isEnabled:
             type: boolean
             example: true

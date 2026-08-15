@@ -72,5 +72,5 @@ Runtime/
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/language` | Returns the active language and the list of registered languages. |
-| `PUT` | `/api/language` | Switches the active language. Body: `{"language":"ja"}`. |
+| `GET` | `/live/language` | Returns the active language and the list of registered languages. |
+| `PUT` | `/live/language` | Switches the active language. Body: `{"language":"ja"}`. |

@@ -12,7 +12,7 @@ namespace Lilium.LiveStudio
     /// <summary>
     /// Serves an avatar's (or prop's) preview thumbnail as raw image bytes.
     ///
-    /// <c>GET /api/avatar/image?id=&lt;assetId&gt;</c> looks up the matching asset in
+    /// <c>GET /live/avatar/image?id=&lt;assetId&gt;</c> looks up the matching asset in
     /// <see cref="ExternalAssetManager"/> and returns its thumbnail via <see cref="ThumbnailCache"/>:
     /// <list type="bullet">
     ///   <item>VRM (.vrm / .glb): the embedded VRM thumbnail, extracted from the file via
@@ -27,7 +27,7 @@ namespace Lilium.LiveStudio
     public class AvatarImageHandler : BaseRemoteControlApiHandler
     {
         public AvatarImageHandler(RemoteControlServerCore server)
-            : base(server, new RouteRule("/api/avatar/image", RouteMatch.Exact))
+            : base(server, new RouteRule("/live/avatar/image", RouteMatch.Exact))
         {
         }
 

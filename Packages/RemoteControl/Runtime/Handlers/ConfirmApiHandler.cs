@@ -13,7 +13,7 @@ namespace Lilium.RemoteControl.RestApi
     /// Carries a remote app's answer to a confirmation raised by
     /// <see cref="RemoteConfirmSystem"/> back to the app.
     ///
-    /// POST /api/confirm  { "id": "confirm-3", "choice": "yes" | "no" | "cancel" }
+    /// POST /live/confirm  { "id": "confirm-3", "choice": "yes" | "no" | "cancel" }
     ///
     /// Answering is a race between the surfaces showing the same prompt, so a POST for an id that is
     /// already resolved (or never existed) is not an error: it reports <c>settled: false</c> and the
@@ -22,7 +22,7 @@ namespace Lilium.RemoteControl.RestApi
     public class ConfirmApiHandler : BaseRemoteControlApiHandler
     {
         public ConfirmApiHandler(RemoteControlServerCore server)
-            : base(server, new RouteRule("/api/confirm", RouteMatch.Exact))
+            : base(server, new RouteRule("/live/confirm", RouteMatch.Exact))
         {
         }
 

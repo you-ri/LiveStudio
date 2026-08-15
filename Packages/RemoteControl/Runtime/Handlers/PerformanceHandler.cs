@@ -29,7 +29,7 @@ namespace Lilium.RemoteControl
     public class PerformanceHandler : BaseRemoteControlApiHandler
     {
         public PerformanceHandler(RemoteControlServerCore server)
-            : base(server, new RouteRule("/api/performance", RouteMatch.Exact))
+            : base(server, new RouteRule("/live/performance", RouteMatch.Exact))
         {
         }
 

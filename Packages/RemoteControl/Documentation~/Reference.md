@@ -34,8 +34,8 @@ Applications override the port through their own `ServerConfig` asset — LiveSt
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/status` | Application status (name, version, FPS, server instance id). Polling it also marks the client present. |
-| `GET` | `/api/events?since={lastEventId}` | Collect the one-shot notices queued for this client. |
+| `GET` | `/live/status` | Application status (name, version, FPS, server instance id). Polling it also marks the client present. |
+| `GET` | `/live/events?since={lastEventId}` | Collect the one-shot notices queued for this client. |
 
 ### Live objects
 
@@ -59,11 +59,11 @@ not looking at, and a change costs the same whether zero or five clients are con
 
 Nothing is pushed at all: there is no held-open connection. The few notices that cannot be recovered by
 re-reading state — toast notifications and confirmation prompts — are queued per client and collected
-from `/api/events`, which the client sends as a sub-request of `/live/batch` alongside the change
+from `/live/events`, which the client sends as a sub-request of `/live/batch` alongside the change
 feed so it costs no extra round trip. Each client tracks its own `lastEventId` and passes it back as
 `?since=`; missing a poll delays a notice but never drops it.
 
-`/api/status` carries an `instanceId` that changes whenever the server is rebuilt. Both cursors
+`/live/status` carries an `instanceId` that changes whenever the server is rebuilt. Both cursors
 (`since` on the change feed and on the inbox) restart with it, so a client that sees a new value must
 discard what it holds and resync — polling cannot otherwise notice a restart it polled straight
 through.
@@ -98,4 +98,4 @@ full unbounded expansion. Property reads, PUT responses and persistence are alwa
 
 ### Localization
 
-See [Localization.md](Localization.md) for `/api/language`.
+See [Localization.md](Localization.md) for `/live/language`.

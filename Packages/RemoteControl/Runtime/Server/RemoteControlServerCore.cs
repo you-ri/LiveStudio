@@ -90,7 +90,7 @@ namespace Lilium.RemoteControl.Server
         // broadcast: on a fresh server no inbox exists yet, and on a restart the clients
         // notice by themselves. No "stopping" broadcast either: it would only race the
         // disconnect and surface a misleading warning on the RemoteApp side. Client presence
-        // self-heals through the /api/status heartbeat and its timeout.
+        // self-heals through the /live/status heartbeat and its timeout.
 
         private void HandleClientConnected(RestApiClient client)
         {

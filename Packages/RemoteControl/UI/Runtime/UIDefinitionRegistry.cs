@@ -10,7 +10,7 @@ namespace Lilium.RemoteControl.UI
     /// Process-wide registry of extra <see cref="UIDefinition"/>s that active Remote Control
     /// side menus merge on top of each host's primary definition. Lets a feature add or remove
     /// its pages at runtime (e.g. embedded capture) without owning a server or a second
-    /// <c>/ui/sidemenu</c> route.
+    /// <c>/live/ui/sidemenu</c> route.
     ///
     /// A live <see cref="UIHandler"/> registers the added definition's selectors and records a UI
     /// change in <see cref="LiveChangeLog"/> so polling clients refetch the side menu.

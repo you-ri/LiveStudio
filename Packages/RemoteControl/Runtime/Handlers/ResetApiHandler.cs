@@ -13,7 +13,7 @@ namespace Lilium.RemoteControl
     public class ResetApiHandler : BaseRemoteControlApiHandler
     {
         public ResetApiHandler(RemoteControlServerCore server)
-            : base(server, new RouteRule("/api/commands/reset", RouteMatch.Exact))
+            : base(server, new RouteRule("/live/commands/reset", RouteMatch.Exact))
         {
         }
 

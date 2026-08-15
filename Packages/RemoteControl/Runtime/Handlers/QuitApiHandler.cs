@@ -9,7 +9,7 @@ namespace Lilium.RemoteControl.RestApi
 {
     /// <summary>
     /// アプリケーション終了用APIハンドラー
-    /// POST /api/commands/quit
+    /// POST /live/commands/quit
     /// </summary>
     public class QuitApiHandler : BaseRemoteControlApiHandler
     {
@@ -59,7 +59,7 @@ namespace Lilium.RemoteControl.RestApi
         }
 
         public QuitApiHandler(RemoteControlServerCore server)
-            : base(server, new RouteRule("/api/commands/quit", RouteMatch.Exact))
+            : base(server, new RouteRule("/live/commands/quit", RouteMatch.Exact))
         {
         }
 

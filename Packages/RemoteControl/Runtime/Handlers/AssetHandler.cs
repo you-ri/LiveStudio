@@ -12,7 +12,7 @@ namespace Lilium.RemoteControl
     /// <summary>
     /// Resolves an asset GUID to the registered asset's display info.
     ///
-    /// <c>GET /api/asset?guid=&lt;key&gt;</c> looks up <see cref="AssetRegistry"/> and returns
+    /// <c>GET /live/asset?guid=&lt;key&gt;</c> looks up <see cref="AssetRegistry"/> and returns
     /// <c>{ "guid", "name", "type" }</c>. Clients use this to label AssetSelector options,
     /// whose choice lists carry keys only. The key may be a baked GUID or an external
     /// <c>file:&lt;path&gt;#&lt;clip&gt;</c> reference: a loaded target resolves to its real name/type,
@@ -22,7 +22,7 @@ namespace Lilium.RemoteControl
     public class AssetHandler : BaseRemoteControlApiHandler
     {
         public AssetHandler(RemoteControlServerCore server)
-            : base(server, new RouteRule("/api/asset", RouteMatch.Exact))
+            : base(server, new RouteRule("/live/asset", RouteMatch.Exact))
         {
         }
 

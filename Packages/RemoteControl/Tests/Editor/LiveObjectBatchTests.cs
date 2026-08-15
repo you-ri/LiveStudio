@@ -288,7 +288,7 @@ namespace Lilium.RemoteControl.Tests
             {
                 ["requests"] = new JArray
                 {
-                    new JObject { ["id"] = 1, ["method"] = "GET", ["path"] = "/api/status" },
+                    new JObject { ["id"] = 1, ["method"] = "GET", ["path"] = "/live/status" },
                 }
             };
 
@@ -321,9 +321,9 @@ namespace Lilium.RemoteControl.Tests
         public void Batch_IdTypes_EchoedFaithfully()
         {
             var json = @"{""requests"":[
-                {""id"":""str-id"",""method"":""GET"",""path"":""/api/status""},
-                {""method"":""GET"",""path"":""/api/status""},
-                {""id"":null,""method"":""GET"",""path"":""/api/status""}
+                {""id"":""str-id"",""method"":""GET"",""path"":""/live/status""},
+                {""method"":""GET"",""path"":""/live/status""},
+                {""id"":null,""method"":""GET"",""path"":""/live/status""}
             ]}";
 
             var responses = RunBatchRaw(json);
@@ -351,7 +351,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Batch_NonObjectElements_ReportInvalidWithNullId()
         {
-            var json = @"{""requests"":[5, null, {""id"":9,""method"":""GET"",""path"":""/api/status""}]}";
+            var json = @"{""requests"":[5, null, {""id"":9,""method"":""GET"",""path"":""/live/status""}]}";
 
             var responses = RunBatchRaw(json);
 
@@ -366,7 +366,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Batch_UnknownFields_Ignored()
         {
-            var json = @"{""requests"":[{""id"":1,""extra"":{""nested"":[1,2,3]},""method"":""GET"",""foo"":42,""path"":""/api/status""}]}";
+            var json = @"{""requests"":[{""id"":1,""extra"":{""nested"":[1,2,3]},""method"":""GET"",""foo"":42,""path"":""/live/status""}]}";
 
             var responses = RunBatchRaw(json);
 
@@ -412,7 +412,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Batch_Comments_SkippedLikeJObjectLoad()
         {
-            var json = @"/* leading */ {""requests"":[{""id"":1, /* mid */ ""method"":""GET"",""path"":""/api/status"" /* trail */ }]}";
+            var json = @"/* leading */ {""requests"":[{""id"":1, /* mid */ ""method"":""GET"",""path"":""/live/status"" /* trail */ }]}";
 
             var responses = RunBatchRaw(json);
 

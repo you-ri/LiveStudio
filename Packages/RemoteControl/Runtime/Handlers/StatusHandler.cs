@@ -39,7 +39,7 @@ namespace Lilium.RemoteControl
         private readonly string _applicationVersion;
 
         public StatusHandler(RemoteControlServerCore server)
-            : base(server, new RouteRule("/api/status", RouteMatch.Exact))
+            : base(server, new RouteRule("/live/status", RouteMatch.Exact))
         {
             _applicationName = Application.productName;
             _applicationVersion = Application.version;

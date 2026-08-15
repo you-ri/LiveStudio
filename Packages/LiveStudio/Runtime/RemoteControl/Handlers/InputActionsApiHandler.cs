@@ -61,8 +61,8 @@ namespace Lilium.LiveStudio
 
         public InputActionsApiHandler(RemoteControlServerCore server)
             : base(server,
-                new RouteRule("/api/input-actions", RouteMatch.Exact),
-                new RouteRule("/api/input-actions/bind", RouteMatch.Exact))
+                new RouteRule("/live/input-actions", RouteMatch.Exact),
+                new RouteRule("/live/input-actions/bind", RouteMatch.Exact))
         {
         }
 
@@ -93,7 +93,7 @@ namespace Lilium.LiveStudio
 
         protected override async Task HandleGetRequest(HttpListenerContext context)
         {
-            if (context.Request.Url.AbsolutePath.Equals("/api/input-actions", StringComparison.OrdinalIgnoreCase))
+            if (context.Request.Url.AbsolutePath.Equals("/live/input-actions", StringComparison.OrdinalIgnoreCase))
             {
                 await HandleGetActionsRequest(context);
                 return;
@@ -104,7 +104,7 @@ namespace Lilium.LiveStudio
 
         protected override async Task HandlePostRequest(HttpListenerContext context)
         {
-            if (context.Request.Url.AbsolutePath.Equals("/api/input-actions/bind", StringComparison.OrdinalIgnoreCase))
+            if (context.Request.Url.AbsolutePath.Equals("/live/input-actions/bind", StringComparison.OrdinalIgnoreCase))
             {
                 await HandleBindRequest(context);
                 return;

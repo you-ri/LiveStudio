@@ -10,7 +10,7 @@ namespace Lilium.RemoteControl
     /// Components that expose asset references through <see cref="AssetSelectorAttribute"/>
     /// register their candidate assets here (typically in OnEnable) with GUIDs baked at edit
     /// time, so asset references can be serialized as GUIDs and resolved back at runtime,
-    /// where AssetDatabase is unavailable. Also backs <c>GET /api/asset?guid=...</c>.
+    /// where AssetDatabase is unavailable. Also backs <c>GET /live/asset?guid=...</c>.
     /// </summary>
     public static class AssetRegistry
     {
@@ -36,7 +36,7 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// Registers a fallback that derives a display name for a key the registry cannot resolve to a
         /// live Object (returns null when it does not recognize the key). Lets a higher layer teach the
-        /// generic <c>GET /api/asset</c> resolver about its own key scheme (e.g. LiveStudio's
+        /// generic <c>GET /live/asset</c> resolver about its own key scheme (e.g. LiveStudio's
         /// <c>file:&lt;path&gt;#&lt;clip&gt;</c>) without this core type depending on it.
         /// </summary>
         public static void SetNameFallback(System.Func<string, string> fallback) => _nameFallback = fallback;
@@ -84,7 +84,7 @@ namespace Lilium.RemoteControl
         /// assets when it is null/empty. Fills <paramref name="results"/> with (key, asset) pairs; keys are
         /// the registered ids (a bare GUID for a baked asset, or a scheme-prefixed reference such as
         /// LiveStudio's <c>file:&lt;path&gt;#&lt;clip&gt;</c>). Destroyed/unloaded (null) Unity objects are
-        /// skipped. Backs the type-filtered <c>GET /api/assets?type=...</c> listing. Must be called on the
+        /// skipped. Backs the type-filtered <c>GET /live/assets?type=...</c> listing. Must be called on the
         /// main thread (reads UnityEngine.Object type/state).
         /// </summary>
         public static void CollectAssets(string typeName, List<KeyValuePair<string, Object>> results)

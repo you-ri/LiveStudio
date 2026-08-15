@@ -35,7 +35,7 @@ namespace Lilium.LiveStudio
         /// <returns>成功した場合はtrue</returns>
         public bool RequestQuit()
         {
-            return _SendCommand("/api/commands/quit");
+            return _SendCommand("/live/commands/quit");
         }
 
         /// <summary>
@@ -44,7 +44,7 @@ namespace Lilium.LiveStudio
         /// <returns>成功した場合はtrue</returns>
         public bool RequestReset()
         {
-            return _SendCommand("/api/commands/reset");
+            return _SendCommand("/live/commands/reset");
         }
 
         /// <summary>

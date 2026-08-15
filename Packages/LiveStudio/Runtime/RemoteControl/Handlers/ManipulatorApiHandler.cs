@@ -50,15 +50,15 @@ namespace Lilium.LiveStudio
 
     /// <summary>
     /// Transform マニピュレーター編集用カメラの REST API ハンドラ。
-    /// - POST /api/manipulator/open           : セッション作成
-    /// - GET  /api/manipulator/image?session= : 画像取得（PNG + ヘッダーに座標系メタ）
-    /// - DELETE /api/manipulator/open?session=: セッション破棄
-    /// - PUT  /api/manipulator/camera?session=: カメラ姿勢更新
+    /// - POST /live/manipulator/open           : セッション作成
+    /// - GET  /live/manipulator/image?session= : 画像取得（PNG + ヘッダーに座標系メタ）
+    /// - DELETE /live/manipulator/open?session=: セッション破棄
+    /// - PUT  /live/manipulator/camera?session=: カメラ姿勢更新
     /// </summary>
     public class ManipulatorApiHandler : BaseRemoteControlApiHandler
     {
         public ManipulatorApiHandler(RemoteControlServerCore server)
-            : base(server, new RouteRule("/api/manipulator/", RouteMatch.Prefix))
+            : base(server, new RouteRule("/live/manipulator/", RouteMatch.Prefix))
         {
             // セッションの破棄は Close エンドポイント経由で行う。
             // 残存セッションはアプリ終了時に自動で破棄される想定のため Cleanup は不要。
@@ -72,7 +72,7 @@ namespace Lilium.LiveStudio
         protected override Task HandleGetRequest(HttpListenerContext context)
         {
             var path = context.Request.Url.AbsolutePath;
-            if (path.Equals("/api/manipulator/image", StringComparison.OrdinalIgnoreCase))
+            if (path.Equals("/live/manipulator/image", StringComparison.OrdinalIgnoreCase))
             {
                 return HandleGetImage(context);
             }
@@ -82,7 +82,7 @@ namespace Lilium.LiveStudio
         protected override Task HandlePostRequest(HttpListenerContext context)
         {
             var path = context.Request.Url.AbsolutePath;
-            if (path.Equals("/api/manipulator/open", StringComparison.OrdinalIgnoreCase))
+            if (path.Equals("/live/manipulator/open", StringComparison.OrdinalIgnoreCase))
             {
                 return HandlePostOpen(context);
             }
@@ -92,7 +92,7 @@ namespace Lilium.LiveStudio
         protected override Task HandlePutRequest(HttpListenerContext context)
         {
             var path = context.Request.Url.AbsolutePath;
-            if (path.Equals("/api/manipulator/camera", StringComparison.OrdinalIgnoreCase))
+            if (path.Equals("/live/manipulator/camera", StringComparison.OrdinalIgnoreCase))
             {
                 return HandlePutCamera(context);
             }
@@ -102,7 +102,7 @@ namespace Lilium.LiveStudio
         protected override Task HandleDeleteRequest(HttpListenerContext context)
         {
             var path = context.Request.Url.AbsolutePath;
-            if (path.Equals("/api/manipulator/open", StringComparison.OrdinalIgnoreCase))
+            if (path.Equals("/live/manipulator/open", StringComparison.OrdinalIgnoreCase))
             {
                 return HandleDeleteOpen(context);
             }

@@ -34,7 +34,7 @@ namespace Lilium.RemoteControl.Server
         /// Identifies this run of the server. A new value means the event queue and the exposed
         /// object registry were rebuilt, so every cursor a remote app is holding (inbox read
         /// position, change-feed revision) refers to a state that no longer exists. Clients watch
-        /// this on <c>/api/status</c> and resync when it changes — polling alone cannot notice a
+        /// this on <c>/live/status</c> and resync when it changes — polling alone cannot notice a
         /// restart it happened to poll straight through.
         /// </summary>
         public string instanceId { get; }

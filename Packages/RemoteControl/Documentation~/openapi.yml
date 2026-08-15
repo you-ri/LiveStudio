@@ -3,114 +3,142 @@ info:
   title: Remote Control API
   version: '0.3'
   description: |
-    The HTTP surface of `jp.lilium.remotecontrol`. It turns a running Unity app into a REST
-    server: any object registered as a *live object* can be listed, read, written and invoked
-    from outside the process, and the app's own state (status, language, performance, scene
-    file, side menu) is reachable through a small set of fixed endpoints.
+    `jp.lilium.remotecontrol` が提供する HTTP インターフェースです。動作中の Unity アプリを
+    REST サーバーに変えます。*ライブオブジェクト* として登録されたものは、プロセスの外から
+    列挙・読み書き・呼び出しができ、アプリ自身の状態 (接続・言語・パフォーマンス・シーンファイル・
+    サイドメニュー) も少数の固定エンドポイントから届きます。
 
-    This reference covers **only** the routes the RemoteControl package itself registers.
-    Routes added by other packages are documented in their own reference:
+    このリファレンスが収録するのは **RemoteControl パッケージ自身が登録するルートだけ**です。
+    ほかのパッケージが足すルートは、それぞれのリファレンスにあります。
 
-    - **LiveStudio** — camera, avatar, assets, manipulator, input actions
-    - **Virgo Extension** — capture status, device info, calibration
+    - **LiveStudio** — カメラ、アバター、アセット、マニピュレーター、入力アクション
+    - **Virgo Extension** — キャプチャー状態、デバイス情報、キャリブレーション
 
-    ## Conventions
+    ## 名前空間
 
-    - Every response is JSON unless the operation says otherwise (images are `image/png`).
-    - Errors carry `{ "error": "<message>" }` with the status code in the response line.
-    - `X-Client-ID` identifies the calling client. Send a stable value per client: the event
-      inbox, the presence check and confirmation prompts are all keyed by it. Without the
-      header the server falls back to `<address>:<port>`, which is not stable across reconnects.
-    - Nothing is pushed. A client polls `GET /live/changes` for *which* objects changed and
-      refetches only what it is displaying; `POST /live/batch` folds those polls and the
-      refetches into one round trip.
+    このパッケージが登録するルートはすべて `/live/` の下にあります。`/api/` には何も置きません。
 
-    ## Ports
+    RemoteControl はライブラリで、自分のハンドラとホストアプリのハンドラが同じサーバー・同じ
+    ルートテーブルを共有します。ここで `/api/status` のような一般名を取ると、その名前はアプリ側が
+    二度と使えなくなります。だから提供するものは `/live/` に寄せ、**`/api/` は組み込む側のアプリの
+    ために丸ごと空けてあります**。
 
-    The server listens on **3002** by default. A host app usually overrides it — check the app's
-    RemoteControl settings for the port it actually binds.
+    同じ理由で `jp.lilium.livestudio` も `/live/` を使います。VirgoMotion の各アプリ
+    (Studio / Fusion / Capture) は自分のルートも `/live/` に載せていますが、これは同じ開発元が
+    出荷するスタック全体を 1 つのプレフィックスに揃えているだけで、`/api/` が空いている事実は
+    変わりません。第三者がこのパッケージを組み込むときは `/api/` を使ってください。
+
+    `/live/` 直下はこのパッケージの予約領域です。どうしても `/live/` に足したいときは
+    `/live/app/*` のように 1 段掘って、将来ライブラリが同じ名前を取っても当たらないように
+    してください。
+
+    ## 約束ごと
+
+    - 明記のない限りレスポンスはすべて JSON です (画像は `image/png`)。
+    - エラーは `{ "error": "<メッセージ>" }` を返し、種別はステータスコードで表します。
+    - `X-Client-ID` が呼び出し元の識別子です。クライアントごとに安定した値を送ってください。
+      受信箱・接続の存在確認・確認ダイアログの宛先が、すべてこのキーで引かれます。
+      省略すると `<アドレス>:<ポート>` にフォールバックしますが、これは再接続をまたいで
+      安定しません。
+    - **push はありません。** クライアントは `GET /live/changes` で「どのオブジェクトが変わったか」
+      だけを受け取り、自分が表示しているものだけ取り直します。それらのポーリングと取り直しは
+      `POST /live/batch` に束ねて 1 往復にできます。
+
+    ## ポート
+
+    既定では **3002** で待ち受けます。組み込んだアプリ側で上書きするのが普通なので、実際の
+    ポートはアプリの RemoteControl 設定を確認してください。
 
 servers:
   - url: http://localhost:{port}
     variables:
       port:
         default: '3002'
-        description: The port the app's RemoteControl server binds. 3002 is the package default.
+        description: アプリの RemoteControl サーバーが待ち受けるポート。3002 はパッケージ既定値。
 
 tags:
-  - name: Session
+  - name: セッション
+    x-slug: session
     description: >
-      Connection check, per-client event inbox, and answers to confirmation prompts. These are
-      what a remote client talks to before it knows anything about the app's contents.
-  - name: Runtime
-    description: Process-wide state — performance samples, UI language, shutdown and reset.
-  - name: Types
+      接続確認、クライアントごとの受信箱、確認ダイアログへの回答。リモート側がアプリの中身を
+      知る前に話しかける相手がここです。
+  - name: ランタイム
+    x-slug: runtime
+    description: プロセス全体の状態 — パフォーマンス計測、UI 言語、終了とリセット。
+  - name: 型
+    x-slug: types
     description: >
-      The type tables. A client fetches these once (and again when `/live/changes` reports the
-      `@types` pseudo id) to know how to render the properties and functions it will receive.
-  - name: Objects
-    description: The live object list, individual objects, and the parent/child relation between them.
-  - name: Properties
+      型テーブル。クライアントは最初に一度取得し (以降は `/live/changes` が擬似 id `@types` を
+      報告したときに取り直し)、受け取ったプロパティや関数をどう描画するかを決めます。
+  - name: オブジェクト
+    x-slug: objects
+    description: ライブオブジェクトの一覧・個別取得と、オブジェクト間の親子関係。
+  - name: プロパティ
+    x-slug: properties
     description: >
-      Reading and writing a single property of a live object. Array properties are edited through
-      the same path with POST (append), DELETE (remove) and PATCH (reorder).
-  - name: Functions
-    description: Invoking a method exposed on a live object.
-  - name: Sync
-    description: The change feed and the batch endpoint — how a client stays current cheaply.
-  - name: Assets
-    description: Resolving an asset key to a display name.
-  - name: Live Scene
+      ライブオブジェクトのプロパティ 1 つを読み書きします。配列プロパティも同じパスに
+      POST (末尾追加) / DELETE (削除) / PATCH (並べ替え) で編集します。
+  - name: 関数
+    x-slug: functions
+    description: ライブオブジェクトに公開されたメソッドの呼び出し。
+  - name: 同期
+    x-slug: sync
+    description: 変更フィードとバッチ — クライアントが安く最新を保つための仕組み。
+  - name: アセット
+    x-slug: assets
+    description: アセットキーから表示名を引く。
+  - name: ライブシーン
+    x-slug: live-scene
     description: >
-      Saving and loading the whole live scene as a file, and resolving references whose target
-      no longer exists.
+      ライブシーン全体のファイルへの保存と読み込み、および参照先が存在しなくなった
+      エントリの解決。
   - name: Web UI
+    x-slug: web-ui
     description: >
-      The app-authored description of the remote UI: which pages exist, what they are called, and
-      what the app is named. A remote app renders its navigation from this rather than hard-coding it.
+      リモート UI の構成をアプリ側が宣言したもの。どのページがあり、何という名前で、アプリ自身が
+      何と呼ばれているか。リモートアプリはナビゲーションをハードコードせず、これを見て描画します。
 
 x-tagGroups:
-  - name: Application
-    tags: [Session, Runtime]
-  - name: Live Objects
-    tags: [Types, Objects, Properties, Functions, Sync]
-  - name: Assets
-    tags: [Assets]
-  - name: Live Scene
-    tags: [Live Scene]
+  - name: アプリケーション
+    tags: [セッション, ランタイム]
+  - name: ライブオブジェクト
+    tags: [型, オブジェクト, プロパティ, 関数, 同期]
+  - name: アセット
+    tags: [アセット]
+  - name: ライブシーン
+    tags: [ライブシーン]
   - name: Web UI
     tags: [Web UI]
 
 paths:
-  # ---------------------------------------------------------------- Session
-  /api/status:
+  # ---------------------------------------------------------------- セッション
+  /live/status:
     get:
-      tags: [Session]
-      summary: Check the connection and register as present
+      tags: [セッション]
+      summary: 接続を確認し、自分を「居る」ものとして登録する
       description: >-
-        Also marks the calling client (X-Client-ID) as present, which is how the app knows
-        whether a confirmation prompt has any remote to show on. The response carries an
-        instanceId that changes whenever the server is rebuilt; clients that see a new value
-        must discard the cursors and cached data they hold.
+        呼び出し元 (X-Client-ID) を接続中として記録します。確認ダイアログを出す先が
+        あるかどうかを、アプリはこれで判断しています。レスポンスの instanceId はサーバーが
+        建て直されるたびに変わります。値が変わったのを見たクライアントは、手元の
+        カーソルとキャッシュをすべて捨ててください。
       parameters:
         - $ref: "#/components/parameters/ClientId"
       responses:
         '200':
-          description: The application identity and this run's instance id.
+          description: アプリの識別情報と、この起動のインスタンス id。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/StatusResponse"
 
-  /api/events:
+  /live/events:
     get:
-      tags: [Session]
-      summary: Collect the one-shot notices queued for this client
+      tags: [セッション]
+      summary: このクライアント宛に溜まった 1 回限りの通知を受け取る
       description: >-
-        Notifications and confirmation prompts are queued per client (identified by
-        X-Client-ID) rather than pushed. Pass the lastEventId from the previous response as
-        `since` to receive what came after it. The remote app sends this as a sub-request of
-        /live/batch so it costs no extra round trip.
+        通知や確認ダイアログは push されず、クライアント (X-Client-ID) ごとに積まれます。
+        前回のレスポンスの lastEventId を `since` に渡すと、その続きだけが返ります。
+        リモートアプリはこれを /live/batch のサブリクエストとして送るので、往復は増えません。
       parameters:
         - $ref: "#/components/parameters/ClientId"
         - in: query
@@ -119,24 +147,24 @@ paths:
           schema:
             type: integer
             format: int64
-          description: "Read position from the previous response. Omit or 0 to take everything queued."
+          description: "前回のレスポンスが返した読み取り位置。省略または 0 で、溜まっている分をすべて受け取る。"
       responses:
         '200':
-          description: The events queued after `since`, and the new read position.
+          description: "`since` より後に積まれたイベントと、新しい読み取り位置。"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/EventsResponse"
 
-  /api/confirm:
+  /live/confirm:
     post:
-      tags: [Session]
-      summary: Answer a confirmation prompt raised by the app
+      tags: [セッション]
+      summary: アプリが出した確認ダイアログに回答する
       description: >
-        The app can ask a question (e.g. "discard unsaved changes?") that surfaces on every
-        connected remote at once. Answering is a race between those surfaces, so posting an id
-        that is already settled — or never existed — is not an error: the response reports
-        `settled: false` and the client just closes its modal.
+        アプリは「未保存の変更を破棄するか」といった問いを、接続中のすべてのリモートへ同時に
+        出せます。回答はそれらの競争になるので、すでに決着した id や存在しない id を POST しても
+        エラーではありません。`settled: false` が返るので、クライアントは自分のモーダルを
+        閉じるだけで構いません。
       requestBody:
         required: true
         content:
@@ -145,51 +173,51 @@ paths:
               $ref: "#/components/schemas/ConfirmRequest"
       responses:
         '200':
-          description: Whether this answer is the one that settled the prompt.
+          description: この回答が決着させたものかどうか。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConfirmResponse"
         '400':
-          description: Malformed body, or a missing id.
+          description: 本文が不正、または id がない。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  # ---------------------------------------------------------------- Runtime
-  /api/performance:
+  # ---------------------------------------------------------------- ランタイム
+  /live/performance:
     get:
-      tags: [Runtime]
-      summary: Sample frame rate and memory usage
+      tags: [ランタイム]
+      summary: フレームレートとメモリ使用量を計測する
       description: >
-        Kept out of /api/status so a client only pays for these samples while it is actually
-        showing them (e.g. a performance overlay polls this only while visible).
+        /live/status とは別にしてあります。表示しているあいだだけ支払えばよくするためです
+        (パフォーマンス表示は、それが見えているときだけこれをポーリングします)。
       responses:
         '200':
-          description: A single sample.
+          description: 1 サンプル分。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/PerformanceResponse"
 
-  /api/language:
+  /live/language:
     get:
-      tags: [Runtime]
-      summary: Get the current UI language and the available ones
+      tags: [ランタイム]
+      summary: 現在の UI 言語と、選べる言語の一覧を取得する
       responses:
         '200':
-          description: Current language and the list to choose from.
+          description: 現在の言語と選択肢。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/LanguageResponse"
     put:
-      tags: [Runtime]
-      summary: Switch the UI language
+      tags: [ランタイム]
+      summary: UI 言語を切り替える
       description: >
-        Applies to the app's own localization and to every translated label the server returns
-        afterwards (help text, side menu labels).
+        アプリ自身のローカライズと、以降サーバーが返す翻訳済みの文字列 (ヘルプ文、サイドメニューの
+        ラベル) の両方に効きます。
       requestBody:
         required: true
         content:
@@ -203,7 +231,7 @@ paths:
                   example: "ja"
       responses:
         '200':
-          description: The language that is now current.
+          description: 切り替わった後の言語。
           content:
             application/json:
               schema:
@@ -212,53 +240,53 @@ paths:
                   success: { type: boolean, example: true }
                   current: { type: string, example: "ja" }
         '400':
-          description: Missing or empty `language`.
+          description: "`language` がない、または空。"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /api/commands/quit:
+  /live/commands/quit:
     post:
-      tags: [Runtime]
-      summary: Ask the application to quit
+      tags: [ランタイム]
+      summary: アプリケーションの終了を要求する
       description: >
-        Answers immediately and quits shortly afterwards, so the caller is not left waiting on a
-        process that is tearing down. The app may hold the shutdown — an unsaved-changes prompt
-        raises a confirmation first, and the quit is re-requested once it is answered. A 200 here
-        therefore means "the request was accepted", not "the app has exited".
+        即座に応答し、その少し後に終了します (終了処理中のプロセスに応答を待たせないため)。
+        アプリ側が終了を保留することもあります。未保存の変更があれば先に確認ダイアログが上がり、
+        回答後に改めて終了が要求されます。したがってこの 200 は「要求を受け付けた」であって
+        「終了した」ではありません。
       responses:
         '200':
-          description: Shutdown initiated.
+          description: 終了処理を開始した。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CommandResponse"
 
-  /api/commands/reset:
+  /live/commands/reset:
     post:
-      tags: [Runtime]
-      summary: Clear saved settings and restart
+      tags: [ランタイム]
+      summary: 保存された設定を消して再起動する
       description: >
-        Deletes the app's persisted preferences and RemoteControl data, then quits. Intended as
-        the recovery path for a broken local configuration.
+        アプリの保存済み設定と RemoteControl のデータを削除してから終了します。ローカル設定が
+        壊れたときの復旧手段です。
       responses:
         '200':
-          description: Reset initiated.
+          description: リセットを開始した。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CommandResponse"
 
-  # ---------------------------------------------------------------- Types
+  # ---------------------------------------------------------------- 型
   /live/types:
     get:
-      tags: [Types]
-      summary: Get the type table for every live object type
+      tags: [型]
+      summary: すべてのライブオブジェクト型の型テーブルを取得する
       description: >
-        Describes each type's properties (name, type, read-only, array-ness, display controller)
-        and its callable functions. A client fetches this once and reuses it for every object of
-        that type; `/live/changes` reports the pseudo id `@types` when it must be refetched.
+        各型のプロパティ (名前・型・読み取り専用・配列かどうか・表示コントローラー) と、呼び出せる
+        関数を記述します。クライアントは一度取得すれば、その型のすべてのオブジェクトに使い回せます。
+        取り直しが要るときは `/live/changes` が擬似 id `@types` を報告します。
       parameters:
         - in: query
           name: type
@@ -266,10 +294,10 @@ paths:
           schema:
             type: string
           example: "Camera"
-          description: "Optional: Filter types by name. If omitted, returns all types."
+          description: "任意: 型名で絞り込む。省略時はすべての型を返す。"
       responses:
         '200':
-          description: The requested type descriptions.
+          description: 要求された型の記述。
           content:
             application/json:
               schema:
@@ -277,12 +305,11 @@ paths:
 
   /live/enums:
     get:
-      tags: [Types]
-      summary: Get the value tables for exposed enums
+      tags: [型]
+      summary: 公開された列挙型の値テーブルを取得する
       description: >
-        Enum-typed properties travel as their name only; this is where a client learns the choices
-        to offer for one. Includes enums declared outside the app (registered via
-        `[assembly: ExposedExternalEnum]`).
+        enum 型のプロパティは名前だけで流れるので、選択肢を提示するにはこれが要ります。アプリの外で
+        宣言された enum (`[assembly: ExposedExternalEnum]` で登録したもの) も含みます。
       parameters:
         - in: query
           name: type
@@ -290,20 +317,20 @@ paths:
           schema:
             type: string
           example: "CameraProjection"
-          description: "Optional: Filter enums by type name. If omitted, returns all exposed enums."
+          description: "任意: 型名で絞り込む。省略時は公開されたすべての enum を返す。"
       responses:
         '200':
-          description: The requested enum descriptions.
+          description: 要求された enum の記述。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/EnumsGettingResponse"
 
-  # ---------------------------------------------------------------- Objects
+  # ---------------------------------------------------------------- オブジェクト
   /live/objects:
     get:
-      tags: [Objects]
-      summary: List the live objects
+      tags: [オブジェクト]
+      summary: ライブオブジェクトを一覧する
       parameters:
         - in: query
           name: type
@@ -311,7 +338,7 @@ paths:
           schema:
             type: string
           example: "Light"
-          description: "Optional: Filter objects by type. If omitted, returns all objects."
+          description: "任意: 型で絞り込む。省略時はすべてのオブジェクトを返す。"
         - in: query
           name: category
           required: false
@@ -319,14 +346,14 @@ paths:
             type: string
           example: "Avatar"
           description: >
-            Optional: Filter by the category declared on the object's type. This is what a side menu
-            page uses to show only the objects that belong on it. Matched against the **declared**
-            string, not the translated label that `/live/types` reports — pass the category key, not
-            what the UI shows. Takes precedence over `type`: when both are given, `type` is ignored.
+            任意: オブジェクトの型が宣言したカテゴリで絞り込む。サイドメニューの各ページが、
+            そのページに属するオブジェクトだけを出すのに使います。照合されるのは**宣言された
+            文字列**で、`/live/types` が返す翻訳済みラベルではありません。UI の表示ではなく
+            カテゴリキーを渡してください。`type` より優先されます (両方指定すると `type` は無視)。
         - $ref: "#/components/parameters/Nested"
       responses:
         '200':
-          description: The matching objects, serialized at the requested depth.
+          description: 一致したオブジェクトを、要求された深さでシリアライズしたもの。
           content:
             application/json:
               schema:
@@ -334,20 +361,20 @@ paths:
 
   /live/object/{id}:
     get:
-      tags: [Objects]
-      summary: Get one live object with all its properties
+      tags: [オブジェクト]
+      summary: ライブオブジェクト 1 つを全プロパティ付きで取得する
       parameters:
         - $ref: "#/components/parameters/ObjectId"
         - $ref: "#/components/parameters/Nested"
       responses:
         '200':
-          description: The object at the requested depth.
+          description: 要求された深さのオブジェクト。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ObjectGettingResponse"
         '404':
-          description: No object with that id.
+          description: その id のオブジェクトがない。
           content:
             application/json:
               schema:
@@ -355,12 +382,12 @@ paths:
 
   /live/object/{id}/@parent:
     put:
-      tags: [Objects]
-      summary: Reparent a live object
+      tags: [オブジェクト]
+      summary: ライブオブジェクトの親を付け替える
       description: >
-        `@parent` is a pseudo property: it is not part of the type table, it is the registry's
-        own parent/child relation. Pass `null` to detach the object to the root. The response is
-        the reparented object, fully expanded.
+        `@parent` は擬似プロパティです。型テーブルには載っておらず、レジストリが持つ親子関係
+        そのものを指します。`null` を渡すとルート直下へ切り離します。レスポンスは付け替えた後の
+        オブジェクトを完全展開したものです。
       parameters:
         - $ref: "#/components/parameters/ObjectId"
       requestBody:
@@ -373,50 +400,50 @@ paths:
                 parentId:
                   type: [string, "null"]
                   example: "e79efd50-5ea6-4cc0-a7a7-49110eb3b0da"
-                  description: "Id of the new parent, or null to move the object to the root."
+                  description: "新しい親の id。ルートへ移すときは null。"
       responses:
         '200':
-          description: The reparented object.
+          description: 付け替えた後のオブジェクト。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ObjectGettingResponse"
         '400':
-          description: The move was rejected (unknown parent, or it would create a cycle).
+          description: 移動が拒否された (親が存在しない、または循環する)。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  # ---------------------------------------------------------------- Properties
+  # ---------------------------------------------------------------- プロパティ
   /live/object/{id}/{path}:
     get:
-      tags: [Properties]
-      summary: Get one property
+      tags: [プロパティ]
+      summary: プロパティを 1 つ取得する
       description: >
-        Always fully (unbounded) expanded — the `nested` flag does not apply here, because the
-        path already scopes the response to a single branch. This is how a client lazily fetches
-        a child that `/live/objects` truncated.
+        常に完全展開 (深さ無制限) で返ります。パスの時点で応答が 1 本の枝に限定されているので、
+        `nested` フラグはここでは効きません。`/live/objects` が省略した子を、必要になった時点で
+        取りに行くのがこのエンドポイントです。
       parameters:
         - $ref: "#/components/parameters/ObjectId"
         - $ref: "#/components/parameters/PropertyPath"
       responses:
         '200':
-          description: The property value and where it lives.
+          description: プロパティの値と、それがどこにあるか。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/PropertyGettingResponse"
         '404':
-          description: No such object or property.
+          description: そのオブジェクトまたはプロパティがない。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
     put:
-      tags: [Properties]
-      summary: Set one property
+      tags: [プロパティ]
+      summary: プロパティを 1 つ書き換える
       parameters:
         - $ref: "#/components/parameters/ObjectId"
         - $ref: "#/components/parameters/PropertyPath"
@@ -428,21 +455,21 @@ paths:
               $ref: "#/components/schemas/PropertySettingRequest"
       responses:
         '200':
-          description: The value as it now stands, read back from the object.
+          description: オブジェクトから読み直した、書き込み後の値。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/PropertyGettingResponse"
         '400':
-          description: The value could not be converted to the property's type.
+          description: 値をプロパティの型へ変換できなかった。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
     post:
-      tags: [Properties]
-      summary: Append an element to an array property
+      tags: [プロパティ]
+      summary: 配列プロパティの末尾に要素を追加する
       parameters:
         - $ref: "#/components/parameters/ObjectId"
         - $ref: "#/components/parameters/PropertyPath"
@@ -452,19 +479,19 @@ paths:
             schema:
               $ref: "#/components/schemas/PropertySettingRequest"
         description: >
-          Omit the body to append a default-constructed element. For a polymorphic element type,
-          send `{ "value": { "@type": "<TypeName>" } }` to choose the concrete type.
+          本文を省略すると既定値の要素を追加します。要素型が多態なら
+          `{ "value": { "@type": "<型名>" } }` で具象型を指定します。
       responses:
         '200':
-          description: The array after the append.
+          description: 追加した後の配列。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/PropertyGettingResponse"
 
     delete:
-      tags: [Properties]
-      summary: Remove an element from an array property
+      tags: [プロパティ]
+      summary: 配列プロパティから要素を削除する
       parameters:
         - $ref: "#/components/parameters/ObjectId"
         - $ref: "#/components/parameters/PropertyPath"
@@ -475,15 +502,15 @@ paths:
               $ref: "#/components/schemas/PropertyDeleteRequest"
       responses:
         '200':
-          description: The array after the removal.
+          description: 削除した後の配列。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/PropertyGettingResponse"
 
     patch:
-      tags: [Properties]
-      summary: Reorder an element of an array property
+      tags: [プロパティ]
+      summary: 配列プロパティの要素を並べ替える
       parameters:
         - $ref: "#/components/parameters/ObjectId"
         - $ref: "#/components/parameters/PropertyPath"
@@ -495,7 +522,7 @@ paths:
               $ref: "#/components/schemas/PropertyReorderRequest"
       responses:
         '200':
-          description: The array after the move.
+          description: 移動した後の配列。
           content:
             application/json:
               schema:
@@ -503,31 +530,31 @@ paths:
 
   /live/object/{id}/{path}/reset:
     post:
-      tags: [Properties]
-      summary: Reset a property to its default value
+      tags: [プロパティ]
+      summary: プロパティを既定値へ戻す
       description: >
-        The default is the value the property held when the object was first registered, which is
-        also what `changed` in a property response is compared against.
+        既定値とは、そのオブジェクトが最初に登録されたときにプロパティが持っていた値です。
+        プロパティ応答の `changed` が比較しているのも、この値です。
       parameters:
         - $ref: "#/components/parameters/ObjectId"
         - $ref: "#/components/parameters/PropertyPath"
       responses:
         '200':
-          description: The property after the reset.
+          description: 戻した後のプロパティ。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/PropertyGettingResponse"
 
-  # ---------------------------------------------------------------- Functions
+  # ---------------------------------------------------------------- 関数
   /live/function/{id}/{path}:
     post:
-      tags: [Functions]
-      summary: Call a function on a live object
+      tags: [関数]
+      summary: ライブオブジェクトの関数を呼び出す
       description: >
-        `path` is the function name, lowercased, optionally prefixed by the property path it
-        hangs off (e.g. `controller/resetyawangle`). Arguments go in the body; a parameterless
-        function needs no body. The result — `void` included — comes back under `result`.
+        `path` は関数名を小文字にしたもので、ぶら下がっているプロパティパスを前に付けられます
+        (例: `controller/resetyawangle`)。引数は本文に入れます。引数のない関数なら本文は不要です。
+        戻り値は `void` も含めて `result` に入って返ります。
       parameters:
         - $ref: "#/components/parameters/ObjectId"
         - in: path
@@ -536,7 +563,7 @@ paths:
           schema:
             type: string
           example: "toggle"
-          description: "Function name, lowercased. May be prefixed by a property path."
+          description: "関数名 (小文字)。前にプロパティパスを付けられる。"
       requestBody:
         content:
           application/json:
@@ -546,37 +573,37 @@ paths:
                 args:
                   type: array
                   items: {}
-                  description: "Positional arguments, in declaration order."
+                  description: "宣言順に並べた引数。"
                   example: ["Camera 1"]
       responses:
         '200':
-          description: The return value.
+          description: 戻り値。
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   result:
-                    description: "The function's return value, or null for void."
+                    description: "関数の戻り値。void なら null。"
         '404':
-          description: No such object or function.
+          description: そのオブジェクトまたは関数がない。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  # ---------------------------------------------------------------- Sync
+  # ---------------------------------------------------------------- 同期
   /live/changes:
     get:
-      tags: [Sync]
-      summary: Get the ids of live objects that changed since a revision
+      tags: [同期]
+      summary: ある revision 以降に変化したライブオブジェクトの id を取得する
       description: >
-        Property changes are not pushed. The server records only the id of each changed
-        object; a client polls this endpoint and refetches the objects it actually holds,
-        so nobody receives data for a page they are not looking at. Omit `since` to get
-        the current revision with an empty change list — how a client syncs up on connect
-        without being handed every id recorded so far. The pseudo ids `@types` and `@ui`
-        mean "refetch the type tables" and "refetch the side menu".
+        プロパティの変化は push されません。サーバーが記録するのは変化したオブジェクトの id だけで、
+        クライアントはこれをポーリングし、自分が実際に持っているオブジェクトだけを取り直します。
+        見ていないページのデータが誰にも流れないのは、このためです。`since` を省略すると、現在の
+        revision と空の変更リストが返ります。接続直後に、それまでの全 id を渡されることなく
+        同期を合わせるための形です。擬似 id `@types` と `@ui` は、それぞれ「型テーブルを取り直せ」
+        「サイドメニューを取り直せ」を意味します。
       parameters:
         - in: query
           name: since
@@ -585,10 +612,10 @@ paths:
             type: integer
             format: int64
           example: 57
-          description: "Optional: the revision the client last saw. Omitted means sync-up only."
+          description: "任意: クライアントが最後に見た revision。省略すると同期合わせのみ。"
       responses:
         '200':
-          description: Current revision and the ids changed after `since`.
+          description: "現在の revision と、`since` より後に変化した id。"
           content:
             application/json:
               schema:
@@ -596,22 +623,22 @@ paths:
 
   /live/batch:
     post:
-      tags: [Sync]
-      summary: Apply several operations in a single request
+      tags: [同期]
+      summary: 複数の操作を 1 リクエストにまとめて適用する
       description: >
-        Each sub-request is applied in order within a single frame. Items are independent: one
-        failing item does not abort the others (continue-on-error). The overall response is always
-        200; per-item results carry their own status.
+        各サブリクエストは順に、同一フレーム内で適用されます。項目どうしは独立していて、1 つ失敗しても
+        残りは中断されません (continue-on-error)。全体のレスポンスは常に 200 で、成否は項目ごとの
+        status が持ちます。
 
-        Accepted sub-request paths:
+        受け付けるサブリクエストのパス:
 
-        - `GET /api/events` — the per-client inbox
-        - `GET /live/changes` — the change feed
-        - `GET|PUT|POST|DELETE|PATCH /live/object/{id}/{path}` (including `.../reset`)
+        - `GET /live/events` — クライアントごとの受信箱
+        - `GET /live/changes` — 変更フィード
+        - `GET|PUT|POST|DELETE|PATCH /live/object/{id}/{path}` (`.../reset` を含む)
         - `POST /live/function/{id}/{path}`
 
-        This is what lets a remote app poll the change feed, drain its inbox and refresh the
-        properties on screen in one round trip.
+        リモートアプリが、変更フィードのポーリング・受信箱の回収・画面に出ているプロパティの更新を
+        1 往復で済ませられるのは、これがあるためです。
       requestBody:
         required: true
         content:
@@ -620,22 +647,21 @@ paths:
               $ref: "#/components/schemas/BatchRequest"
       responses:
         '200':
-          description: Per-item results in request order.
+          description: リクエストと同じ順に並んだ項目ごとの結果。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/BatchResponse"
 
-  # ---------------------------------------------------------------- Assets
-  /api/asset:
+  # ---------------------------------------------------------------- アセット
+  /live/asset:
     get:
-      tags: [Assets]
-      summary: Resolve an asset key to its display info
+      tags: [アセット]
+      summary: アセットキーから表示用の情報を引く
       description: >
-        Asset-valued properties travel as a key only, so a client needs this to label them. The
-        key may be a baked GUID or an external `file:<path>#<name>` reference: a loaded target
-        resolves to its real name and type, an unloaded external key still resolves to a name
-        derived from the key (with an empty type).
+        アセット型のプロパティはキーだけで流れるので、ラベルを出すにはこれが要ります。キーは
+        ベイク済みの GUID でも、外部参照の `file:<path>#<name>` でも構いません。読み込み済みなら
+        本当の名前と型が、未読み込みの外部キーでもキーから導いた名前が (型は空で) 返ります。
       parameters:
         - in: query
           name: guid
@@ -643,32 +669,32 @@ paths:
           schema:
             type: string
           example: "b1f2c3d4e5f60718293a4b5c6d7e8f90"
-          description: "The asset key to resolve."
+          description: "解決したいアセットキー。"
       responses:
         '200':
-          description: The asset's display info.
+          description: アセットの表示用情報。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssetInfoResponse"
         '400':
-          description: The `guid` parameter is missing.
+          description: "`guid` がない。"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         '404':
-          description: The key resolves to nothing at all.
+          description: キーが何にも解決できない。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  # ---------------------------------------------------------------- Live Scene
+  # ---------------------------------------------------------------- ライブシーン
   /live/export:
     post:
-      tags: [Live Scene]
-      summary: Write the whole live scene to a file
+      tags: [ライブシーン]
+      summary: ライブシーン全体をファイルへ書き出す
       requestBody:
         required: true
         content:
@@ -677,13 +703,13 @@ paths:
               $ref: "#/components/schemas/ScenePathRequest"
       responses:
         '200':
-          description: Written.
+          description: 書き出した。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SuccessResponse"
         '400':
-          description: Missing path, or the write failed.
+          description: パスがない、または書き出しに失敗した。
           content:
             application/json:
               schema:
@@ -691,11 +717,11 @@ paths:
 
   /live/import:
     post:
-      tags: [Live Scene]
-      summary: Read a live scene file and apply it
+      tags: [ライブシーン]
+      summary: ライブシーンのファイルを読み込んで適用する
       description: >
-        Values are applied to the objects already registered. A reference whose target is not
-        present is kept as a pending entry rather than dropped — see `GET /live/orphans`.
+        値は、すでに登録されているオブジェクトへ適用されます。参照先が存在しないものは捨てられず、
+        保留エントリとして残ります (`GET /live/orphans` を参照)。
       requestBody:
         required: true
         content:
@@ -704,13 +730,13 @@ paths:
               $ref: "#/components/schemas/ScenePathRequest"
       responses:
         '200':
-          description: Applied.
+          description: 適用した。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SuccessResponse"
         '400':
-          description: Missing path, or the file does not exist.
+          description: パスがない、またはファイルが存在しない。
           content:
             application/json:
               schema:
@@ -718,15 +744,15 @@ paths:
 
   /live/orphans:
     get:
-      tags: [Live Scene]
-      summary: List references whose target no longer exists
+      tags: [ライブシーン]
+      summary: 参照先が存在しなくなったエントリを一覧する
       description: >
-        Entries the current scene refers to but cannot resolve — a prop file that was moved, an
-        avatar that was deleted. They are kept, not silently dropped, so a client can present them
-        as "Missing" and the user decides whether to restore the file or remove the entry.
+        現在のシーンが参照しているのに解決できないもの — 移動されたプロップファイル、削除された
+        アバターなどです。黙って捨てずに残してあるので、クライアントは「Missing」として提示でき、
+        ファイルを戻すか、エントリを消すかをユーザーが決められます。
       responses:
         '200':
-          description: The unresolved entries.
+          description: 未解決のエントリ。
           content:
             application/json:
               schema:
@@ -746,11 +772,10 @@ paths:
 
   /live/orphans/remove:
     post:
-      tags: [Live Scene]
-      summary: Drop an unresolved reference
+      tags: [ライブシーン]
+      summary: 未解決の参照を捨てる
       description: >
-        Removes the entry from the pending store. Saving the scene afterwards is what makes the
-        removal permanent.
+        保留ストアからエントリを取り除きます。恒久的に消えるのは、この後シーンを保存したときです。
       requestBody:
         required: true
         content:
@@ -764,7 +789,7 @@ paths:
                   example: "file:Assets/Props/chair.prop.lsb"
       responses:
         '200':
-          description: Whether an entry was actually removed.
+          description: 実際にエントリが取り除かれたかどうか。
           content:
             application/json:
               schema:
@@ -773,37 +798,36 @@ paths:
                   success: { type: boolean, example: true }
                   removed: { type: boolean, example: true }
         '400':
-          description: Missing `sourceKey`.
+          description: "`sourceKey` がない。"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
   # ---------------------------------------------------------------- Web UI
-  /ui/sidemenu:
+  /live/ui/sidemenu:
     get:
       tags: [Web UI]
-      summary: Get the side menu authored in Unity
+      summary: Unity 側で構成したサイドメニューを取得する
       description: >
-        The pages a remote app should offer, in order, with their labels already translated into
-        the current language. Each item says what kind of page it is and, where applicable, which
-        live object backs its selector or its "+" button. Refetch when `/live/changes` reports the
-        pseudo id `@ui`.
+        リモートアプリが出すべきページを順序どおりに、ラベルは現在の言語へ翻訳済みで返します。
+        各項目はページの種類と、該当すればセレクターや「+」ボタンを支えるライブオブジェクトを
+        示します。`/live/changes` が擬似 id `@ui` を報告したら取り直してください。
       responses:
         '200':
-          description: The menu items.
+          description: メニュー項目。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/UISideMenuResponse"
 
-  /ui/info:
+  /live/ui/info:
     get:
       tags: [Web UI]
-      summary: Get the app title
+      summary: アプリのタイトルを取得する
       responses:
         '200':
-          description: The title to show in a remote app's title bar.
+          description: リモートアプリのタイトルバーに出す名前。
           content:
             application/json:
               schema:
@@ -819,8 +843,8 @@ components:
         type: string
       example: "remote-app-9f2c"
       description: >
-        Stable identifier for the calling client. Falls back to `<address>:<port>` when absent,
-        which is not stable across reconnects.
+        呼び出し元クライアントの安定した識別子。省略すると `<アドレス>:<ポート>` に
+        フォールバックしますが、これは再接続をまたいで安定しません。
 
     ObjectId:
       in: path
@@ -829,7 +853,7 @@ components:
       schema:
         type: string
       example: "3470a41c-f079-4d30-a002-3468fda088f7"
-      description: "Live object id. Never contains a slash."
+      description: "ライブオブジェクトの id。スラッシュを含むことはありません。"
 
     PropertyPath:
       in: path
@@ -839,8 +863,8 @@ components:
         type: string
       example: "intensity"
       description: >
-        Property path from the object root. May contain slashes for nested members and array
-        indices — `controller/distance`, `expressions/0/weight`.
+        オブジェクトのルートからのプロパティパス。入れ子のメンバーや配列添字のためにスラッシュを
+        含むことがあります — `controller/distance`、`expressions/0/weight` のように。
 
     Nested:
       in: query
@@ -850,13 +874,14 @@ components:
         type: boolean
       example: true
       description: >
-        Optional flag. When absent (default) each object is returned at depth 1: its own
-        property values are serialized but nested inline (unregistered) composite children are
-        replaced by a truncation stub (`{ "@type": ..., "@truncated": true }`) so the payload stays
-        small and scalable. Arrays do not consume depth, so element count and per-element type
-        stay visible. Fetch a stubbed child on demand via `GET /live/object/{id}/{path}`.
-        Pass `?nested` (or `?nested=true`) to restore full unbounded expansion.
-        (The depth is 1 vs. unbounded today; a future `?nested=<N>` numeric form may expose it.)
+        任意のフラグ。指定がなければ (既定) 各オブジェクトは深さ 1 で返ります。自身のプロパティ値は
+        シリアライズされますが、入れ子の (登録されていない) 複合的な子は切り詰めスタブ
+        (`{ "@type": ..., "@truncated": true }`) に置き換わります。ペイロードを小さく保ち、規模に
+        耐えさせるためです。配列は深さを消費しないので、要素数と要素ごとの型は見えたままです。
+        切り詰められた子は `GET /live/object/{id}/{path}` で必要になった時点で取得します。
+        `?nested` (または `?nested=true`) を渡すと完全展開に戻ります。
+        (今のところ深さは 1 か無制限かの 2 択です。将来 `?nested=<N>` の数値形式で露出するかも
+        しれません)
 
   schemas:
       StatusResponse:
@@ -878,8 +903,8 @@ components:
             type: string
             example: "8f6a1b30-2f0e-4a2f-9d1a-8c2f0a1b3c4d"
             description: >
-              Identifies this run of the server. A client that sees a new value must discard the
-              revisions, event cursors and cached objects it holds.
+              サーバーのこの起動を識別する値。新しい値を見たクライアントは、手元の revision・
+              イベントカーソル・キャッシュ済みオブジェクトをすべて捨ててください。
 
       EventsResponse:
         type: object
@@ -889,14 +914,13 @@ components:
             format: int64
             example: 42
             description: >
-              Pass this back as `since` on the next poll. An empty inbox echoes the `since` that was
-              sent, so the read position holds steady.
+              次回のポーリングで `since` に渡す値。受信箱が空のときは送った `since` がそのまま
+              返るので、読み取り位置は動きません。
           events:
             type: array
             description: >
-              Queued notices, oldest first. Each item is the event's own payload with `type` and
-              `timestamp` always filled in — a client dispatches on `type` and reads the rest of the
-              object according to it.
+              溜まっている通知を古い順に。各項目はイベント自身のペイロードで、`type` と `timestamp`
+              は常に埋まっています。クライアントは `type` で振り分け、それに従って残りを読みます。
             items:
               type: object
               properties:
@@ -904,14 +928,15 @@ components:
                   type: string
                   example: "system_notification"
                   description: >
-                    Open vocabulary. Well-known values: `system_notification` (a toast to show),
-                    `confirm_request` / `confirm_dismiss` (a prompt to raise or take down — answer it
-                    via `POST /api/confirm`). Other packages add their own; an unknown type is ignored.
+                    語彙は開いています。よく使う値: `system_notification` (表示するトースト)、
+                    `confirm_request` / `confirm_dismiss` (確認ダイアログの表示・取り下げ。回答は
+                    `POST /live/confirm`)。ほかのパッケージが独自の型を足します。知らない型は
+                    無視してください。
                 timestamp:
                   type: string
                   format: date-time
               additionalProperties:
-                description: "Fields specific to this event type."
+                description: "このイベント型に固有のフィールド。"
 
       ConfirmRequest:
         type: object
@@ -934,7 +959,7 @@ components:
           settled:
             type: boolean
             example: true
-            description: "False when another surface answered first, or the prompt no longer exists."
+            description: "ほかの画面が先に回答した、または問い自体がもう無いときは false。"
           timestamp:
             type: string
             format: date-time
@@ -948,12 +973,12 @@ components:
           fps:
             type: number
             example: 59.8
-            description: "Rolling one-second average frame rate."
+            description: "直近 1 秒の移動平均フレームレート。"
           memory:
             type: integer
             format: int64
             example: 1073741824
-            description: "Process working set, in bytes."
+            description: "プロセスのワーキングセット (バイト)。"
 
       LanguageResponse:
         type: object
@@ -992,7 +1017,7 @@ components:
           type:
             type: string
             example: "AnimationClip"
-            description: "Empty when the key resolves by name only (target not loaded)."
+            description: "名前だけで解決した場合 (対象が未読み込み) は空。"
 
       ScenePathRequest:
         type: object
@@ -1002,13 +1027,13 @@ components:
             type: string
             example: "data.json"
             description: >
-              Absolute, or relative to the app's `Saved` folder.
+              絶対パス、またはアプリの `Saved` フォルダからの相対パス。
 
       PropertySettingRequest:
         type: object
         properties:
           value:
-            description: "The new value, in the property's JSON representation."
+            description: "新しい値。そのプロパティの JSON 表現で。"
             example: 100
           changed:
             type: boolean
@@ -1018,20 +1043,20 @@ components:
         type: object
         properties:
           value:
-            description: "The property value, in its JSON representation."
+            description: "プロパティの値。その JSON 表現で。"
             example: 100
           id:
             type: string
             example: "3470a41c-f079-4d30-a002-3468fda088f7"
-            description: "The owner object ID. May differ from the request {id} when accessed via selector."
+            description: "所有オブジェクトの id。セレクター経由でたどった場合、リクエストの {id} と異なることがあります。"
           path:
             type: string
             example: "intensity"
-            description: "Slash-separated property path from the owner object root (e.g. 'objects/0/_config')."
+            description: "所有オブジェクトのルートからのスラッシュ区切りプロパティパス (例: 'objects/0/_config')。"
           changed:
             type: boolean
             example: true
-            description: "Whether the property value differs from its default. Used for UI 'revert' indication, not for update success."
+            description: "値が既定値と異なるかどうか。UI の「元に戻す」表示のためのもので、更新の成否ではありません。"
 
       ChangesResponse:
         type: object
@@ -1063,20 +1088,20 @@ components:
           - path
         properties:
           id:
-            description: "Client-supplied correlation id echoed back verbatim in the matching response item. Any JSON value; may be omitted (echoed as null)."
+            description: "クライアントが付ける相関 id。対応するレスポンス項目にそのまま返ります。任意の JSON 値。省略可 (その場合 null で返る)。"
             example: 1
           method:
             type: string
-            description: "HTTP method of the sub-request (case-insensitive)."
+            description: "サブリクエストの HTTP メソッド (大文字小文字は問わない)。"
             enum: [GET, PUT, POST, DELETE, PATCH]
             example: PUT
           path:
             type: string
-            description: "Absolute path of the sub-request, query included."
+            description: "サブリクエストの絶対パス。クエリを含む。"
             example: "/live/object/3470a41c-f079-4d30-a002-3468fda088f7/intensity"
           body:
             type: object
-            description: "Sub-request JSON body (e.g. {\"value\": 100} for PUT, {\"args\": [..]} for a function call). Omit when not needed."
+            description: "サブリクエストの JSON 本文 (PUT なら {\"value\": 100}、関数呼び出しなら {\"args\": [..]} など)。不要なら省略。"
             example: { "value": 100 }
 
       BatchResponse:
@@ -1091,14 +1116,14 @@ components:
         type: object
         properties:
           id:
-            description: "Echo of the sub-request id (null when the sub-request omitted it)."
+            description: "サブリクエストの id のエコー (省略されていた場合は null)。"
             example: 1
           status:
             type: integer
-            description: "Per-item HTTP-style status (200 success; 400/404/405/500 on failure)."
+            description: "項目ごとの HTTP 相当ステータス (成功は 200、失敗は 400/404/405/500)。"
             example: 200
           body:
-            description: "On success, the operation's normal response JSON (e.g. PropertyGettingResponse, or {\"result\": ..} for a function). On failure, {\"error\": <message>}."
+            description: "成功時はその操作の通常のレスポンス JSON (PropertyGettingResponse、関数なら {\"result\": ..} など)。失敗時は {\"error\": <メッセージ>}。"
             example: { "value": 100, "id": "3470a41c-f079-4d30-a002-3468fda088f7", "path": "intensity", "changed": true }
 
       PropertyDeleteRequest:
@@ -1107,7 +1132,7 @@ components:
           index:
             type: number
             example: -1
-            description: Index of the element to remove from the array property. -1 means the last element.
+            description: 配列プロパティから取り除く要素の添字。-1 は末尾。
 
       PropertyReorderRequest:
         type: object
@@ -1118,17 +1143,17 @@ components:
           fromIndex:
             type: integer
             example: 2
-            description: Current index of the element to move
+            description: 動かす要素の現在の添字
           toIndex:
             type: integer
             example: 0
-            description: Target index to move the element to
+            description: 移動先の添字
 
       ObjectGettingResponse:
         type: object
         description: >
-          A live object is its own property bag: `@type`, `@id` and `@name` are always present and
-          every exposed property appears alongside them under its own name.
+          ライブオブジェクト自体がプロパティの入れ物です。`@type` / `@id` / `@name` は常にあり、
+          公開された各プロパティがそれぞれの名前で同じ階層に並びます。
         properties:
           "@type":
             type: string
@@ -1140,7 +1165,7 @@ components:
             type: string
             example: "Directional Light"
         additionalProperties:
-          description: "One exposed property, in its JSON representation."
+          description: "公開プロパティ 1 つ。その JSON 表現で。"
 
       ObjectsGettingResponse:
         type: object
@@ -1165,9 +1190,9 @@ components:
                   type: string
                   example: "Lighting"
                   description: >
-                    The side-menu page this type belongs to, **already translated** for display.
-                    Omitted when the type declares none. Filtering `/live/objects?category=` needs the
-                    untranslated key instead, so do not feed this value back into that query.
+                    この型が属するサイドメニューのページ。表示用に**翻訳済み**です。型がカテゴリを
+                    宣言していなければ省略されます。`/live/objects?category=` の絞り込みには翻訳前の
+                    キーが要るので、この値をそのまま渡さないでください。
                 properties:
                   type: array
                   items:
@@ -1188,16 +1213,16 @@ components:
                       order:
                         type: integer
                         example: 0
-                        description: "Declaration order for mixed property/function display"
+                        description: "プロパティと関数を混ぜて並べるための宣言順"
                       help:
                         type: string
                         example: "Brightness of the light"
-                        description: "Translated help text, when the property declares a help key."
+                        description: "プロパティがヘルプキーを宣言している場合の、翻訳済みヘルプ文。"
                       controller:
                         $ref: "#/components/schemas/PropertyController"
                 functions:
                   type: array
-                  description: "Functions callable on this type"
+                  description: "この型で呼び出せる関数"
                   items:
                     type: object
                     properties:
@@ -1210,7 +1235,7 @@ components:
                       order:
                         type: integer
                         example: 5
-                        description: "Declaration order for mixed property/function display"
+                        description: "プロパティと関数を混ぜて並べるための宣言順"
                       help:
                         type: string
                         example: "Reset physics simulation"
@@ -1218,15 +1243,15 @@ components:
       PropertyController:
         type: object
         description: >
-          How a client should render the property. `type` is open — an unknown controller should
-          fall back to the plain editor for the property's type.
+          クライアントがそのプロパティをどう描画すべきか。`type` は開いた語彙なので、知らない
+          コントローラーはプロパティの型に応じた素のエディタへフォールバックしてください。
         properties:
           type:
             type: string
             example: "Slider"
             description: >
-              Known values: Default, Hide, Slider, CameraController, TypeSelector, StringSelector,
-              GLTFFileSelector, AssetSelector, InlineReference.
+              よく使う値: Default, Hide, Slider, CameraController, TypeSelector, StringSelector,
+              GLTFFileSelector, AssetSelector, InlineReference。
           min:
             type: number
             example: 0
@@ -1248,7 +1273,7 @@ components:
                 help:
                   type: string
                   example: "How the camera projects the scene"
-                  description: "Translated help text, when the enum declares a help key."
+                  description: "enum がヘルプキーを宣言している場合の、翻訳済みヘルプ文。"
                 values:
                   type: array
                   items:
@@ -1263,7 +1288,7 @@ components:
                       displayName:
                         type: string
                         example: "Perspective"
-                        description: "The label to show. Falls back to `name` when none was declared."
+                        description: "表示するラベル。宣言がなければ `name` にフォールバックします。"
 
       ErrorResponse:
         type: object
@@ -1293,7 +1318,7 @@ components:
           title:
             type: string
             example: "LiveStudio"
-            description: "App title shown on a remote app's title bar (Unity Application.productName)."
+            description: "リモートアプリのタイトルバーに出すアプリ名 (Unity の Application.productName)。"
 
       UIMenuItem:
         type: object
@@ -1307,23 +1332,22 @@ components:
           label:
             type: string
             example: "Avatar"
-            description: "Already translated into the current language."
+            description: "現在の言語へ翻訳済み。"
           pageType:
             type: string
             enum: [category, scene, navigate, ""]
             example: "category"
             description: >
-              `category` lists the objects of one category; `scene` shows the live object tree;
-              `navigate` is a page whose contents are chosen by a selector. Empty when the page
-              kind is not one of these.
+              `category` は 1 つのカテゴリのオブジェクトを並べるページ、`scene` はライブオブジェクトの
+              ツリー、`navigate` は中身をセレクターで選ぶページ。どれでもない場合は空です。
           selectorObjectId:
             type: string
             example: "ui.selector.avatar"
-            description: "Live object backing the page's selector, or empty when it has none."
+            description: "そのページのセレクターを支えるライブオブジェクト。無ければ空。"
           factoryObjectId:
             type: string
             example: "ui.factory.avatar"
-            description: "Live object backing the page's \"+\" button, or empty when it has none."
+            description: "そのページの「+」ボタンを支えるライブオブジェクト。無ければ空。"
           position:
             type: string
             enum: [main, bottom]
@@ -1334,4 +1358,4 @@ components:
           accessLevel:
             type: integer
             example: 0
-            description: "Visibility tier of the page. A client hides items above the level it runs at."
+            description: "そのページの公開段階。クライアントは自分の動作段階を超える項目を隠します。"

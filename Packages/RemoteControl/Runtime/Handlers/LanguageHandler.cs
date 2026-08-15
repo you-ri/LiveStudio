@@ -15,7 +15,7 @@ namespace Lilium.RemoteControl
     public class LanguageHandler : BaseRemoteControlApiHandler
     {
         public LanguageHandler(RemoteControlServerCore server)
-            : base(server, new RouteRule("/api/language", RouteMatch.Exact))
+            : base(server, new RouteRule("/live/language", RouteMatch.Exact))
         {
         }
 

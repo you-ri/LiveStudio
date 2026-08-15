@@ -482,7 +482,7 @@ namespace Lilium.RemoteControl
 
     /// <summary>
     /// Control attribute that renders a live image preview.
-    /// The property value is a server-relative image URL path (e.g. "/api/camera/image").
+    /// The property value is a server-relative image URL path (e.g. "/live/camera/image").
     /// The client polls the URL while the control is visible and renders the response image.
     /// The property is read-only on the client.
     /// </summary>
@@ -591,7 +591,7 @@ namespace Lilium.RemoteControl
     /// 対象アセットは AssetRegistry に登録されている必要がある。
     /// sourcePropertyName には候補 GUID の string[] を返すプロパティ名を指定する
     /// (先頭の空文字は「未選択」を表す)。クライアントは各 GUID の表示名と型を
-    /// <c>GET /api/asset?guid=...</c> で解決して表示する。
+    /// <c>GET /live/asset?guid=...</c> で解決して表示する。
     /// </summary>
     [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
     public class AssetSelectorAttribute : ControlAttribute
@@ -621,7 +621,7 @@ namespace Lilium.RemoteControl
             {
                 ["type"] = controlName,
             };
-            // Optional: the client sources its options from GET /api/assets?type=<assetType> (emitted
+            // Optional: the client sources its options from GET /live/assets?type=<assetType> (emitted
             // separately), so a fixed candidate-GUID sourceProperty is no longer required.
             if (!string.IsNullOrEmpty(sourcePropertyName)) obj["sourceProperty"] = sourcePropertyName;
             if (!string.IsNullOrEmpty(refPropertyName)) obj["refProperty"] = refPropertyName;
@@ -900,7 +900,7 @@ namespace Lilium.RemoteControl
     /// [Section("videocam", "Camera")]
     /// [LiveProperty, ImagePreview]
     /// [Layout("row/right")]
-    /// public static string cameraPreview => "/api/camera/image";
+    /// public static string cameraPreview => "/live/camera/image";
     ///
     /// [LiveProperty]
     /// [Layout("row/left")]

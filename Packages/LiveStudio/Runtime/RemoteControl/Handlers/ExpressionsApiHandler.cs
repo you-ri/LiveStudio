@@ -67,7 +67,7 @@ namespace Lilium.LiveStudio
     public class ExpressionsApiHandler : BaseRemoteControlApiHandler
     {
         public ExpressionsApiHandler(RemoteControlServerCore server)
-            : base(server, new RouteRule("/api/expressions", RouteMatch.Exact))
+            : base(server, new RouteRule("/live/expressions", RouteMatch.Exact))
         {
         }
 

@@ -21,7 +21,7 @@ namespace Lilium.LiveStudio
     /// A pack carries no payload kind in its name, so what it holds is known only once it is opened. That
     /// is deliberate: two-level discovery keeps the project crawl content-free — the crawl lists
     /// <c>*.pack.lsb</c> files as these entries by path alone (no pack is opened), and only the pack a user
-    /// actually drills into is opened, to enumerate its member names (<see cref="GetMemberNamesAsync"/>).
+    /// actually drills into is opened, to enumerate its members (<see cref="GetMembersAsync"/>).
     /// </summary>
     [Serializable]
     [LiveClass("PackBundleAsset", Category = "Asset", Icon = "animation")]
@@ -58,20 +58,15 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
-        /// Loads the pack (once, cached) and returns its member names — the second level of discovery, run
-        /// only when a user drills into this pack in a selector. Empty on failure.
+        /// Loads the pack (once, cached) and returns its members — the second level of discovery, run only
+        /// when a user drills into this pack (a selector, or expanding its row on the project assets page).
+        /// Loading also registers every member in <see cref="AssetRegistry"/> under its file key, so a
+        /// caller can read the keys back from there rather than rebuilding them. Empty on failure.
+        ///
+        /// Must be STARTED on the main thread (Unity AssetBundle API); the returned Task may be awaited
+        /// anywhere.
         /// </summary>
-        public async Task<string[]> GetMemberNamesAsync()
-        {
-            var members = await PackBundleLoader.LoadMembersAsync(filePath, relativePath);
-            if (members == null || members.Length == 0) return Array.Empty<string>();
-
-            var names = new string[members.Length];
-            for (int i = 0; i < members.Length; i++)
-            {
-                names[i] = members[i] != null ? members[i].name : string.Empty;
-            }
-            return names;
-        }
+        public Task<UnityEngine.Object[]> GetMembersAsync()
+            => PackBundleLoader.LoadMembersAsync(filePath, relativePath);
     }
 }

@@ -18,14 +18,14 @@ namespace Lilium.RemoteControl
     /// for what comes next.
     ///
     /// Reachable two ways, both resolving to the same body: on its own as
-    /// <c>GET /api/events</c>, and as a sub-request of <c>POST /live/batch</c>, which is how the
+    /// <c>GET /live/events</c>, and as a sub-request of <c>POST /live/batch</c>, which is how the
     /// remote app actually collects it — riding the poll it already sends for displayed values
     /// costs no extra round trip.
     /// </summary>
     public static class EventInbox
     {
         /// <summary>The inbox path, without query. Shared by the single and batch routes.</summary>
-        public const string kPath = "/api/events";
+        public const string kPath = "/live/events";
 
         // Per-thread scratch. The endpoint is polled continuously by every connected remote app, so
         // the steady state (an empty inbox) must not allocate beyond the response string itself.
