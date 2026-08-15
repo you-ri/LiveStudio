@@ -1,6 +1,7 @@
 // Copyright (c) You-Ri, 2026
 
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
 
 namespace Lilium.RemoteControl
@@ -25,6 +26,13 @@ namespace Lilium.RemoteControl
         // key scheme's semantics, so this core registry stays generic. NOT cleared with the per-session
         // maps below — it is a one-time wiring, not session state.
         static System.Func<string, string> _nameFallback;
+
+        // The registry only knows the keys it has been handed, and some assets are not registered until
+        // something opens the file holding them. A listing therefore has to give the owning layer a chance
+        // to populate first. Same shape and lifetime as _nameFallback above: injected once by the layer
+        // that owns the key scheme, so this core type stays free of it.
+        static System.Func<Task> _catalogPrewarm;
+        static System.Func<string, Task<Object[]>> _groupExpander;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         public static void Clear()
@@ -51,6 +59,38 @@ namespace Lilium.RemoteControl
             if (TryFind(guid, out var asset)) return asset.name;
             return _nameFallback?.Invoke(guid);
         }
+
+        /// <summary>
+        /// Registers the step that makes lazily-registered assets visible to a full listing (e.g. LiveStudio
+        /// opening every asset pack once so its members enter the registry). Called before the catalog is
+        /// read by <c>GET /live/assets?type=...</c>. Without it a listing simply reports what is already
+        /// registered, which is the correct answer for an app that registers everything up front.
+        /// </summary>
+        public static void SetCatalogPrewarm(System.Func<Task> prewarm) => _catalogPrewarm = prewarm;
+
+        /// <summary>
+        /// Registers the resolver for one *group* of assets — a file or bundle that holds several, such as
+        /// a LiveStudio asset pack. Given the group's key it opens it and returns its members (which also
+        /// registers them), or null when it does not recognize the key. Backs
+        /// <c>GET /live/assets?group=...</c>, which lets a client drill into one group without paying the
+        /// catalog-wide prewarm.
+        /// </summary>
+        public static void SetGroupExpander(System.Func<string, Task<Object[]>> expander) => _groupExpander = expander;
+
+        /// <summary>
+        /// Runs the registered prewarm, if any. Must be started on the main thread — the work behind it
+        /// typically touches Unity APIs — and awaited off it so the server does not stall.
+        /// </summary>
+        public static Task PrewarmCatalogAsync()
+            => _catalogPrewarm != null ? _catalogPrewarm() : Task.CompletedTask;
+
+        /// <summary>
+        /// Opens the group named by <paramref name="groupKey"/> and returns its members, or null when no
+        /// expander is registered or it does not recognize the key. Same threading rule as
+        /// <see cref="PrewarmCatalogAsync"/>.
+        /// </summary>
+        public static Task<Object[]> ExpandGroupAsync(string groupKey)
+            => _groupExpander != null ? _groupExpander(groupKey) : Task.FromResult<Object[]>(null);
 
         public static void Register(string guid, Object asset)
         {

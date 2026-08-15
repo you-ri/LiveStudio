@@ -11,7 +11,7 @@ info:
     このリファレンスが収録するのは **RemoteControl パッケージ自身が登録するルートだけ**です。
     ほかのパッケージが足すルートは、それぞれのリファレンスにあります。
 
-    - **LiveStudio** — カメラ、アバター、アセット、マニピュレーター、入力アクション
+    - **LiveStudio** — カメラ、アバター、スナップショット、マニピュレーター、入力アクション
     - **Virgo Extension** — キャプチャー状態、デバイス情報、キャリブレーション
 
     ## 名前空間
@@ -86,7 +86,14 @@ tags:
     description: 変更フィードとバッチ — クライアントが安く最新を保つための仕組み。
   - name: アセット
     x-slug: assets
-    description: アセットキーから表示名を引く。
+    description: >
+      アセットキーの解決と、スロットに差せる候補の一覧。
+
+
+      ライブオブジェクトが「インスタンス」を扱うのと同じ位置で、こちらは「ファイル」を扱います。
+      キーとアセットの台帳 (`AssetRegistry`) がこのパッケージのものなので、単数形も複数形もここに
+      あります。台帳に載せる側 — キーの文法や、ファイルをどう開くか — は組み込むアプリの担当で、
+      このパッケージは差し込まれた口を呼んでから台帳を読むだけです。
   - name: ライブシーン
     x-slug: live-scene
     description: >
@@ -662,6 +669,10 @@ paths:
         アセット型のプロパティはキーだけで流れるので、ラベルを出すにはこれが要ります。キーは
         ベイク済みの GUID でも、外部参照の `file:<path>#<name>` でも構いません。読み込み済みなら
         本当の名前と型が、未読み込みの外部キーでもキーから導いた名前が (型は空で) 返ります。
+
+
+        単数形であることに注意してください。こちらはキー 1 つの解決だけを行います。選択肢の**一覧**は
+        [`GET /live/assets`](#get-live-assets) です。
       parameters:
         - in: query
           name: guid
@@ -690,8 +701,64 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /live/assets:
+    get:
+      tags: [アセット]
+      summary: スロットに差せるアセットを一覧する
+      description: >
+        単数形の `/live/asset` がクライアントの持っているキーを解決するのに対し、こちらは**どんなキーが
+        あるか**を知るための口です。絞り込みの軸は 2 つあり、組み合わせられます。応答の形はどちらでも
+        同じなので、クライアントはどちらを使ったかを意識する必要がありません。
+
+
+        `type` — その型の登録済みアセットを 1 枚の平坦なカタログにします。ファイルを開くまで登録され
+        ないアセットは、そのままでは抜け落ちます。そこで一覧の前に組み込み側のアプリへ「台帳を満たす」
+        機会を渡します (LiveStudio ならアセットパックを一度だけ全部開く。以降キャッシュされるので、
+        重いのはセッション最初の 1 回だけです)。
+
+
+        `group` — 複数のアセットを抱えたファイルやバンドル 1 つ (LiveStudio ならアセットパック) を開いて
+        中身を掘る 2 段目です。ユーザーが実際にそこへ踏み込んだときだけ使うので、カタログ全体の事前展開の
+        コストは払いません。開く行為がメンバーの登録も兼ねるため、その後の選択では開き直さずに解決でき
+        ます。どの口も知らないキーは 404 です (`type` が何にも一致しない場合はエラーではなく空カタログ)。
+      parameters:
+        - in: query
+          name: type
+          required: false
+          schema:
+            type: string
+          example: "AnimationClip"
+          description: "アセットの型名。省略すると登録済みのすべてを返します。"
+        - in: query
+          name: group
+          required: false
+          schema:
+            type: string
+          description: >
+            まとまりのキー。指定するとその中のメンバーだけを一覧します。`type` と併用すると、
+            まとまりの中をさらに型で絞り込めます。
+      responses:
+        '200':
+          description: カタログ。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssetListResponse"
+        '404':
+          description: "`group` のキーを解決できるものが無い。"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        '500':
+          description: まとまりを開けなかった。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   # ---------------------------------------------------------------- ライブシーン
-  /live/export:
+  /live/scene/export:
     post:
       tags: [ライブシーン]
       summary: ライブシーン全体をファイルへ書き出す
@@ -715,13 +782,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /live/import:
+  /live/scene/import:
     post:
       tags: [ライブシーン]
       summary: ライブシーンのファイルを読み込んで適用する
       description: >
         値は、すでに登録されているオブジェクトへ適用されます。参照先が存在しないものは捨てられず、
-        保留エントリとして残ります (`GET /live/orphans` を参照)。
+        保留エントリとして残ります (`GET /live/scene/orphans` を参照)。
       requestBody:
         required: true
         content:
@@ -742,7 +809,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /live/orphans:
+  /live/scene/orphans:
     get:
       tags: [ライブシーン]
       summary: 参照先が存在しなくなったエントリを一覧する
@@ -770,7 +837,7 @@ paths:
                           type: string
                           example: "PropAsset"
 
-  /live/orphans/remove:
+  /live/scene/orphans/remove:
     post:
       tags: [ライブシーン]
       summary: 未解決の参照を捨てる
@@ -1004,6 +1071,31 @@ components:
           timestamp:
             type: string
             format: date-time
+
+      AssetListResponse:
+        type: object
+        properties:
+          type:
+            type: string
+            example: "AnimationClip"
+            description: "要求された型のエコー (指定が無ければ空)。"
+          assets:
+            type: array
+            items:
+              type: object
+              properties:
+                key:
+                  type: string
+                  example: "file:Assets/Packs/dances.pack.lsb#Wave"
+                  description: >
+                    アセット参照プロパティへ、そのまま書き込める値。ベイク済みや組み込みなら素の GUID、
+                    まとまりのメンバーなら組み込み側のアプリが決めた形式の参照です。
+                name:
+                  type: string
+                  example: "Wave"
+                type:
+                  type: string
+                  example: "AnimationClip"
 
       AssetInfoResponse:
         type: object

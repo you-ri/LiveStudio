@@ -57,6 +57,53 @@ namespace Lilium.LiveStudio
             // whose pack is not loaded yet: derive the name from the key's member segment. Keeps the file:
             // scheme's semantics in this (LiveStudio) layer, not in RemoteControl core.
             AssetRegistry.SetNameFallback(_DeriveExternalMemberName);
+
+            // Same split for the listing (GET /live/assets). A pack's members are not in the registry until
+            // the pack is opened, so the generic listing hands the work back here: the catalog prewarm opens
+            // every pack once, and the group expander opens just the one a client drilled into. RemoteControl
+            // stays free of the pack concept; it only knows "ask the owner, then read the registry".
+            AssetRegistry.SetCatalogPrewarm(_PrewarmCatalogAsync);
+            AssetRegistry.SetGroupExpander(_ExpandPackAsync);
+        }
+
+        // Opens every asset pack in the current catalog once (cached), so their members are registered and
+        // appear in a type-filtered listing. A pack's name says nothing about what it holds, so there is no
+        // requested type for which this can be skipped.
+        static Task _PrewarmCatalogAsync()
+        {
+            // App-embedded built-in assets (Resources catalog) list alongside baked and external ones.
+            // Idempotent — a no-op once already registered (e.g. by play start).
+            BuiltinAssetRegistry.EnsureRegistered();
+
+            var manager = ExternalAssetManager.current;
+            if (manager == null) return Task.CompletedTask;
+
+            // Start every open in this one pass, on the caller's thread. GetMembersAsync must be *started*
+            // on the main thread (Unity AssetBundle API) and the caller guarantees we are on it; doing the
+            // starts up front means we never depend on which thread an await resumes on. The actual
+            // open→read→unload windows are still serialized behind BundleLoadGate.
+            var view = manager.assetsView;
+            List<Task> opens = null;
+            for (int i = 0; i < view.Count; i++)
+            {
+                if (!(view[i] is PackBundleAsset pack)) continue;
+                if (opens == null) opens = new List<Task>(view.Count);
+                // A pack that fails to open is logged by the loader and skipped here, so one bad pack does
+                // not fail the whole listing.
+                opens.Add(pack.GetMembersAsync().ContinueWith(
+                    _ => { }, TaskContinuationOptions.ExecuteSynchronously));
+            }
+
+            return opens == null ? Task.CompletedTask : Task.WhenAll(opens);
+        }
+
+        // Opens one pack by its asset id and returns its members. Null means "not ours" — an unknown id, or
+        // an asset that is not a pack — which the generic listing reports as 404.
+        static Task<UnityEngine.Object[]> _ExpandPackAsync(string groupKey)
+        {
+            var pack = ExternalAssetManager.current?.FindAsset(groupKey) as PackBundleAsset;
+            if (pack == null) return Task.FromResult<UnityEngine.Object[]>(null);
+            return pack.GetMembersAsync();
         }
 
         // The display name for a file: member key is its member segment; other keys are not ours (null).

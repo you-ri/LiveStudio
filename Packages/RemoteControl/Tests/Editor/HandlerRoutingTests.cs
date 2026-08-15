@@ -97,9 +97,9 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Scene_ExportImport_AreExactAndDistinct()
         {
-            Assert.IsTrue(Probe.Exact("/live/export", "/live/export"));
-            Assert.IsTrue(Probe.Exact("/live/import", "/live/import"));
-            Assert.IsFalse(Probe.Exact("/live/export", "/live/import"));
+            Assert.IsTrue(Probe.Exact("/live/scene/export", "/live/scene/export"));
+            Assert.IsTrue(Probe.Exact("/live/scene/import", "/live/scene/import"));
+            Assert.IsFalse(Probe.Exact("/live/scene/export", "/live/scene/import"));
         }
     }
 }

@@ -89,12 +89,14 @@ full unbounded expansion. Property reads, PUT responses and persistence are alwa
 |---|---|---|
 | `POST` | `/live/function/{id}/{functionName}` | Invoke an `[LiveFunction]` method. |
 
-### Persistence
+### Live scene
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/live/export` | Export current settings to a file. |
-| `POST` | `/live/import` | Import settings from a file. |
+| `POST` | `/live/scene/export` | Export the live scene to a file. |
+| `POST` | `/live/scene/import` | Import a live scene from a file. |
+| `GET` | `/live/scene/orphans` | List entries whose referenced source no longer exists. |
+| `POST` | `/live/scene/orphans/remove` | Drop an unresolved entry. |
 
 ### Localization
 

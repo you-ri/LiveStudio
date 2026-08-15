@@ -39,11 +39,6 @@ tags:
   - name: アバター
     x-slug: avatar
     description: VRM の読み込み、サムネイル、表情の一覧。
-  - name: アセット
-    x-slug: assets
-    description: >
-      参照スロットに何を差せるかを調べる口。返るのは統一アセットキーです — ベイク済みや
-      組み込みのアセットは素の GUID、外部パックのメンバーは `file:<path>#<name>` です。
   - name: スナップショット
     x-slug: snapshot
     description: 保存済みスナップショットのサムネイル。
@@ -60,7 +55,7 @@ x-tagGroups:
   - name: シーン
     tags: [カメラ, アバター, スナップショット]
   - name: オーサリング
-    tags: [アセット, マニピュレーター, 入力]
+    tags: [マニピュレーター, 入力]
 
 paths:
   # ---------------------------------------------------------------- カメラ
@@ -287,64 +282,6 @@ paths:
                 $ref: "#/components/schemas/ExpressionControlResponse"
         '400':
           description: 本文が不正、または `data` がない。
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  # ---------------------------------------------------------------- アセット
-  /live/assets:
-    get:
-      tags: [アセット]
-      summary: 参照スロットに差せるアセットを一覧する
-      description: >
-        絞り込みの軸は 2 つあり、組み合わせられます。応答の形はどちらでも同じなので、クライアントは
-        どちらを使ったかを意識する必要がありません。
-
-
-        `type` — その型のアセットを 1 枚の平坦なカタログにして、ベイク済み・組み込み・外部を区別せず
-        並べます。外部パックは一覧を作る前に一度だけ開かれます (以降キャッシュ)。パック名からは中身の
-        種類が分からないので、「この型なら開かなくてよい」という判断ができないためです。結果として、
-        セッション最初の 1 回だけが重くなります。
-
-
-        `pack` — 特定のパック 1 つを開いて中身を掘る 2 段目です。ユーザーがそのパックに実際に踏み込んだ
-        ときだけ使います (例: プロジェクトのアセット一覧で行を展開する)。開くのはそのパックだけなので、
-        カタログ全体の事前展開のコストは払いません。一覧する行為がメンバーの登録も兼ねるので、その後の
-        選択ではパックを読み直さずに解決できます。
-      parameters:
-        - in: query
-          name: type
-          required: false
-          schema:
-            type: string
-          example: "AnimationClip"
-          description: "アセットの型名。省略すると登録済みのすべてを返します。"
-        - in: query
-          name: pack
-          required: false
-          schema:
-            type: string
-          description: >
-            アセットパックの id。指定するとそのパックのメンバーだけを一覧します。`type` と併用すると
-            パック内をさらに型で絞り込めます。
-      responses:
-        '200':
-          description: カタログ。
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AssetListResponse"
-        '404':
-          description: >
-            `pack` の id が不明、またはそのアセットがパックではない。`type` が何にも一致しない場合は
-            エラーではなく空のカタログです。
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        '500':
-          description: パックを開けなかった。
           content:
             application/json:
               schema:
@@ -728,30 +665,6 @@ components:
           timestamp:
             type: string
             format: date-time
-
-      AssetListResponse:
-        type: object
-        properties:
-          type:
-            type: string
-            example: "AnimationClip"
-            description: "要求された型のエコー (指定が無ければ空)。"
-          assets:
-            type: array
-            items:
-              type: object
-              properties:
-                key:
-                  type: string
-                  example: "file:Assets/Packs/dances.pack.lsb#Wave"
-                  description: >
-                    統一アセットキー。アセット参照プロパティへは、これをそのまま書き込みます。
-                name:
-                  type: string
-                  example: "Wave"
-                type:
-                  type: string
-                  example: "AnimationClip"
 
       ManipulatorOpenResponse:
         type: object

@@ -21,6 +21,7 @@ namespace Lilium.RemoteControl.Server
         private PerformanceHandler _performanceHandler;
         private LanguageHandler _languageHandler;
         private AssetHandler _assetHandler;
+        private AssetsHandler _assetsHandler;
         private ConfirmApiHandler _confirmHandler;
 
         public event Action<RestApiClient> onClientConnected;
@@ -61,6 +62,10 @@ namespace Lilium.RemoteControl.Server
             RegisterRoute(_languageHandler);
             _assetHandler = new AssetHandler(this);
             RegisterRoute(_assetHandler);
+            // Plural: the discovery counterpart of the resolver above. Both read AssetRegistry, which
+            // is this package's, so both live here — see AssetsHandler for the split with the host app.
+            _assetsHandler = new AssetsHandler(this);
+            RegisterRoute(_assetsHandler);
             // Carries a remote app's answer to a RemoteConfirmSystem prompt. A default route because
             // the prompt can be raised by the framework itself (unsaved changes), not just by an app.
             _confirmHandler = new ConfirmApiHandler(this);
@@ -82,6 +87,8 @@ namespace Lilium.RemoteControl.Server
             _languageHandler = null;
             UnregisterRoute(_assetHandler);
             _assetHandler = null;
+            UnregisterRoute(_assetsHandler);
+            _assetsHandler = null;
             UnregisterRoute(_confirmHandler);
             _confirmHandler = null;
         }

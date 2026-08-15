@@ -12,7 +12,7 @@ using Lilium.RemoteControl.RestApi;
 namespace Lilium.RemoteControl.LiveScene
 {
     /// <summary>
-    /// シーンの import/export REST ハンドラ (/live/export, /live/import)。
+    /// シーンの import/export REST ハンドラ (/live/scene/export, /live/scene/import)。
     /// 旧 ExposedObjectHandler (現 LiveObjectHandler) から分離。<see cref="LiveSceneSerializer"/> に依存するため
     /// シーン読み書きモジュール側に置く。<see cref="RemoteControlBehaviour"/> が登録/解除する。
     /// </summary>
@@ -41,20 +41,20 @@ namespace Lilium.RemoteControl.LiveScene
 
         public LiveSceneIoHandler(RemoteControlServerCore server)
             : base(server,
-                new RouteRule("/live/export", RouteMatch.Exact),
-                new RouteRule("/live/import", RouteMatch.Exact),
-                new RouteRule("/live/orphans", RouteMatch.Exact),
-                new RouteRule("/live/orphans/remove", RouteMatch.Exact))
+                new RouteRule("/live/scene/export", RouteMatch.Exact),
+                new RouteRule("/live/scene/import", RouteMatch.Exact),
+                new RouteRule("/live/scene/orphans", RouteMatch.Exact),
+                new RouteRule("/live/scene/orphans/remove", RouteMatch.Exact))
         {
             _postRoutes = new[]
             {
-                new EndpointRoute("/live/export", RouteMatch.Exact, HandleExport),
-                new EndpointRoute("/live/import", RouteMatch.Exact, HandleImport),
-                new EndpointRoute("/live/orphans/remove", RouteMatch.Exact, HandleRemoveOrphan),
+                new EndpointRoute("/live/scene/export", RouteMatch.Exact, HandleExport),
+                new EndpointRoute("/live/scene/import", RouteMatch.Exact, HandleImport),
+                new EndpointRoute("/live/scene/orphans/remove", RouteMatch.Exact, HandleRemoveOrphan),
             };
             _getRoutes = new[]
             {
-                new EndpointRoute("/live/orphans", RouteMatch.Exact, HandleGetOrphans),
+                new EndpointRoute("/live/scene/orphans", RouteMatch.Exact, HandleGetOrphans),
             };
         }
 
@@ -172,7 +172,7 @@ namespace Lilium.RemoteControl.LiveScene
             await WriteResponse(200, context.Response, "{\"success\":true}");
         }
 
-        // GET /live/orphans — 現在のライブシーンが参照するが実体が存在しない (未解決の) ルート
+        // GET /live/scene/orphans — 現在のライブシーンが参照するが実体が存在しない (未解決の) ルート
         // オブジェクトの一覧を返す。RemoteApp のシーンページが "Missing" として提示する。
         private async Task HandleGetOrphans(HttpListenerContext context)
         {
@@ -189,7 +189,7 @@ namespace Lilium.RemoteControl.LiveScene
             await WriteJson(context, new { orphans });
         }
 
-        // POST /live/orphans/remove — 指定 sourceKey の孤児エントリを pending store から除去する。
+        // POST /live/scene/orphans/remove — 指定 sourceKey の孤児エントリを pending store から除去する。
         // 以降シーンを保存すればファイルから消える (明示削除で解決)。
         private async Task HandleRemoveOrphan(HttpListenerContext context)
         {
