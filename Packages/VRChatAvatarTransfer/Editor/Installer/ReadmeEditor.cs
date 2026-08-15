@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 using System;
+using System.IO;
 
 namespace Lilium.VRChatAvatarTransfer.Editor
 {
@@ -10,7 +11,11 @@ namespace Lilium.VRChatAvatarTransfer.Editor
 [InitializeOnLoad]
 public class ReadmeEditor : UnityEditor.Editor
 {
-    static string s_ShowedReadmeSessionStateName = "ReadmeEditor.showedReadme";
+    // The readme is a first-run welcome, so the "already shown" flag has to outlive the editor
+    // session (SessionState would show it again on every launch). EditorPrefs is per user/machine
+    // and shared by every project, so the project is folded into the key: a different project still
+    // gets its own welcome. The prefix is package specific so packages never share the flag.
+    const string k_ShownPrefKeyPrefix = "Lilium.VRChatAvatarTransfer.ReadmeShown.";
 
     const float k_Space = 16f;
 
@@ -60,29 +65,42 @@ public class ReadmeEditor : UnityEditor.Editor
 
     static void SelectReadmeAutomatically()
     {
-        if (!SessionState.GetBool(s_ShowedReadmeSessionStateName, false))
+        var key = ShownPrefKey;
+        if (EditorPrefs.GetBool(key, false))
+            return;
+
+        // Only remember it as shown once the asset was really found and selected, so a project where
+        // the lookup fails (asset not imported yet, for instance) still gets its welcome later.
+        if (SelectReadme() != null)
+            EditorPrefs.SetBool(key, true);
+    }
+
+    static string ShownPrefKey
+    {
+        get
         {
-            SelectReadme();
-            SessionState.SetBool(s_ShowedReadmeSessionStateName, true);
+            // Application.dataPath is "<project>/Assets". Hashed so the key stays a fixed length.
+            var projectPath = (Path.GetDirectoryName(Application.dataPath) ?? Application.dataPath)
+                .Replace('\\', '/');
+            return k_ShownPrefKeyPrefix + Hash128.Compute(projectPath);
         }
     }
 
     static Readme SelectReadme()
     {
-        var ids = AssetDatabase.FindAssets("Readme t:Readme");
-        if (ids.Length == 1)
+        // Other packages and Unity's own project templates ship their own classes named Readme, so
+        // "t:Readme" alone is ambiguous. Load each candidate and keep the first one that actually is
+        // this package's Readme.
+        foreach (var id in AssetDatabase.FindAssets("t:Readme"))
         {
-            var readmeObject = AssetDatabase.LoadMainAssetAtPath(AssetDatabase.GUIDToAssetPath(ids[0]));
+            var readme = AssetDatabase.LoadAssetAtPath<Readme>(AssetDatabase.GUIDToAssetPath(id));
+            if (readme == null)
+                continue;
 
-            Selection.objects = new UnityEngine.Object[] { readmeObject };
-
-            return (Readme)readmeObject;
+            Selection.objects = new UnityEngine.Object[] { readme };
+            return readme;
         }
-        else
-        {
-            Debug.Log("Couldn't find a readme");
-            return null;
-        }
+        return null;
     }
 
     protected override void OnHeaderGUI()

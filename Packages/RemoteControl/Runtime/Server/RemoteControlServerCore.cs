@@ -22,6 +22,7 @@ namespace Lilium.RemoteControl.Server
         private LanguageHandler _languageHandler;
         private AssetHandler _assetHandler;
         private AssetsHandler _assetsHandler;
+        private AssetImageHandler _assetImageHandler;
         private ConfirmApiHandler _confirmHandler;
 
         public event Action<RestApiClient> onClientConnected;
@@ -66,6 +67,11 @@ namespace Lilium.RemoteControl.Server
             // is this package's, so both live here — see AssetsHandler for the split with the host app.
             _assetsHandler = new AssetsHandler(this);
             RegisterRoute(_assetsHandler);
+            // The picture for an asset the two routes above name. The bytes come from the host app through
+            // AssetRegistry's thumbnail provider, so the route exists even where nothing supplies one (it
+            // then answers 404, which is what "no picture" looks like anyway).
+            _assetImageHandler = new AssetImageHandler(this);
+            RegisterRoute(_assetImageHandler);
             // Carries a remote app's answer to a RemoteConfirmSystem prompt. A default route because
             // the prompt can be raised by the framework itself (unsaved changes), not just by an app.
             _confirmHandler = new ConfirmApiHandler(this);
@@ -89,6 +95,8 @@ namespace Lilium.RemoteControl.Server
             _assetHandler = null;
             UnregisterRoute(_assetsHandler);
             _assetsHandler = null;
+            UnregisterRoute(_assetImageHandler);
+            _assetImageHandler = null;
             UnregisterRoute(_confirmHandler);
             _confirmHandler = null;
         }

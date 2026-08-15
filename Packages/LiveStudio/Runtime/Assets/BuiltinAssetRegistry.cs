@@ -42,7 +42,7 @@ namespace Lilium.LiveStudio
 
         /// <summary>
         /// The <see cref="ThumbnailCache"/> key a built-in asset's pre-warmed thumbnail is stored under, or
-        /// null for an empty GUID. Both the startup pre-warm and <c>AvatarImageHandler</c> derive the key
+        /// null for an empty GUID. Both the startup pre-warm and <see cref="AssetThumbnailProvider"/> derive the key
         /// from the same GUID so a request finds the bytes without loading the asset itself.
         /// </summary>
         public static string ThumbnailCacheKey(string guid)
@@ -112,7 +112,7 @@ namespace Lilium.LiveStudio
                 // Pre-warm the preview into ThumbnailCache from the authored thumbnail sibling — bytes only,
                 // never the asset itself. Runs for every kind (props included) and regardless of whether the
                 // asset is already registered, so it must sit ahead of the registration continues below.
-                // Resources.Load runs here on the main thread; the image handler (a request worker thread)
+                // Resources.Load runs here on the main thread; AssetThumbnailProvider (off the main thread)
                 // then only reads the cache.
                 _PrewarmThumbnail(entry);
 
@@ -146,7 +146,7 @@ namespace Lilium.LiveStudio
 
         /// <summary>
         /// Loads the authored thumbnail sibling baked for <paramref name="entry"/> and stores its raw bytes in
-        /// <see cref="ThumbnailCache"/> under the built-in key, so the image handler can serve the preview
+        /// <see cref="ThumbnailCache"/> under the built-in key, so the image endpoint can serve the preview
         /// without ever loading the asset. No-op when the entry has no thumbnail or the sibling is missing /
         /// empty (the graceful "no preview" state — the remote app shows the entry's icon). Only the small
         /// <see cref="BundleThumbnail"/> asset is loaded, not the prefab; its byte array is captured by

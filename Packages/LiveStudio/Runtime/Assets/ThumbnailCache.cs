@@ -19,7 +19,7 @@ namespace Lilium.LiveStudio
     ///
     /// Thumbnails come from two sources, both routed here: a bundle's packed <see cref="BundleThumbnail"/>
     /// (stored by the bundle loaders while the bundle is open) and a VRM/glb's embedded thumbnail
-    /// (extracted and stored by the image handler on first request). Disk entries are invalidated by
+    /// (extracted and stored by <see cref="AssetThumbnailProvider"/> on first request). Disk entries are invalidated by
     /// modification time: a source file newer than its cached thumbnail is treated as a miss (and the
     /// stale file removed), so re-exported bundles / replaced VRM self-heal.
     ///

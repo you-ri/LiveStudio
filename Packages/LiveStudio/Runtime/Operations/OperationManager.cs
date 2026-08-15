@@ -445,7 +445,7 @@ namespace Lilium.LiveStudio
             string avatarName = asset?.name ?? string.Empty;
             // Persist a portable, project-relative reference for the tile background (the incoming id is an
             // absolute, machine-specific path), so a saved deck survives moving the project / another machine.
-            // AvatarImageHandler resolves it back through FindAssetByReference.
+            // AssetThumbnailProvider resolves it back through FindAssetByReference.
             string background = manager?.GetPortableAssetReference(avatarAssetId) ?? avatarAssetId ?? string.Empty;
             var control = new DeckButton { backgroundAssetId = background };
             var set = _AddOperationSet(

@@ -9,8 +9,7 @@ info:
 
     ここにあるのは、汎用のライブオブジェクト面では表せない 2 種類だけです。
 
-    - **バイナリ** — カメラのプレビュー、アバターのサムネイル、スナップショットのサムネイル、
-      マニピュレーターのフレーム
+    - **バイナリ** — カメラのプレビュー、マニピュレーターのフレーム
     - **状態を持つ / 時間がかかる** — VRM の読み込み、マニピュレーターのセッション保持、
       入力アクションの再バインド
 
@@ -38,10 +37,7 @@ tags:
     description: カメラの一覧、ライブカメラの切り替え、プレビュー画像。
   - name: アバター
     x-slug: avatar
-    description: VRM の読み込み、サムネイル、表情の一覧。
-  - name: スナップショット
-    x-slug: snapshot
-    description: 保存済みスナップショットのサムネイル。
+    description: VRM の読み込みと、表情の一覧。
   - name: マニピュレーター
     x-slug: manipulator
     description: >
@@ -53,7 +49,7 @@ tags:
 
 x-tagGroups:
   - name: シーン
-    tags: [カメラ, アバター, スナップショット]
+    tags: [カメラ, アバター]
   - name: オーサリング
     tags: [マニピュレーター, 入力]
 
@@ -204,116 +200,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/CommandResponse"
 
-  /live/avatar/image:
-    get:
-      tags: [アバター]
-      summary: アセットのサムネイルを取得する
-      description: >
-        アバターに限らず、登録済みのどのアセットのプレビュー画像も返します (パス名は一般化する前の
-        名残で、そのまま残しています)。VRM/glb は初回リクエスト時に埋め込みサムネイルを抽出して
-        キャッシュします。バンドルのサムネイルはバンドルを読み込んだときにキャッシュされるので、
-        **一度は読み込まれた後**でないと出ません。キャッシュはディスク上にあるので、再起動しても
-        残ります。
-      parameters:
-        - in: query
-          name: id
-          required: true
-          schema:
-            type: string
-          description: >
-            アセットの id または参照。セッション内の id と、永続化されたプロジェクト相対の参照の
-            どちらでも解決します。
-      responses:
-        '200':
-          description: サムネイル。
-          content:
-            image/png:
-              schema:
-                type: string
-                format: binary
-            image/jpeg:
-              schema:
-                type: string
-                format: binary
-        '404':
-          description: そのアセットが無い、または (まだ) サムネイルが無い。
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
+  # 表情に専用の口はありません。表情は汎用のライブオブジェクト面がそのまま扱えます —
+  # 使える表情の一覧は `POST /live/function/{avatarId}/getavailableexpressions`、
+  # 各ウェイトの読み書きは通常の公開プロパティ
+  # `GET/PUT /live/object/{avatarId}/expressions[<name>]/weight` です
+  # (ウェイトは表示中プロパティの同期に乗るので、表情カードが画面に出ているあいだだけ、
+  # それを見ているクライアントにだけ届きます)。
 
-  /live/expressions:
-    get:
-      tags: [アバター]
-      summary: 現在のアバターの表情を一覧する
-      description: >
-        ウェイトの現在値は**ここからは流れません**。ウェイトは通常の公開プロパティ
-        (`expressions[<name>].weight`) なので、表示中プロパティの同期に乗ります — 表情カードが
-        画面に出ているあいだだけ、それを見ているクライアントにだけ届きます。
-      responses:
-        '200':
-          description: >
-            使える表情。空のときは、アバターが読み込まれていないか、表情を公開していません。
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ExpressionListResponse"
-    post:
-      tags: [アバター]
-      summary: 表情のウェイトを設定する
-      description: >
-        公開プロパティへの書き込みと等価で、アバターオブジェクトを持たずに名前で表情を指したい
-        クライアントのために残しています。`PUT /live/object/{avatarId}/expressions[<name>]/weight`
-        を優先してください。
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ExpressionControlRequest"
-      responses:
-        '200':
-          description: >
-            結果。拒否された場合 (アバターがいない、未知の action、名前がない) も 200 で返り、
-            `success: false` になる点に注意してください。
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ExpressionControlResponse"
-        '400':
-          description: 本文が不正、または `data` がない。
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  # ---------------------------------------------------------------- スナップショット
-  /live/snapshot/image:
-    get:
-      tags: [スナップショット]
-      summary: スナップショットのサムネイルを取得する
-      parameters:
-        - in: query
-          name: name
-          required: true
-          schema:
-            type: string
-          example: "take-03"
-          description: "スナップショット名。スナップショットのライブオブジェクトが列挙するもの。"
-      responses:
-        '200':
-          description: サムネイル。
-          content:
-            image/png:
-              schema:
-                type: string
-                format: binary
-        '404':
-          description: そのスナップショットが無い、または画面キャプチャなしで保存された。
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
+  # スナップショットのサムネイルに専用の口はありません。スナップショットファイルもプロジェクトの
+  # 資産なので、撮影画像は資産共通の `GET /live/asset/image?id=` から取れます (id にはスナップ
+  # ショットのライブオブジェクトが各項目に載せている `reference` を渡します)。
 
   # ---------------------------------------------------------------- マニピュレーター
   /live/manipulator/open:
@@ -593,78 +489,6 @@ components:
                 type: number
               lookAt:
                 type: string
-
-      ExpressionApiInfo:
-        type: object
-        properties:
-          name:
-            type: string
-            example: "Joy"
-          displayName:
-            type: string
-            example: "Joy"
-          isPreset:
-            type: boolean
-            example: true
-            description: "VRM 標準の表情なら true、アバター固有なら false。"
-          weight:
-            type: number
-            example: 0
-
-      ExpressionListResponse:
-        type: object
-        properties:
-          success:
-            type: boolean
-            example: true
-          availableExpressions:
-            type: array
-            items:
-              $ref: "#/components/schemas/ExpressionApiInfo"
-          timestamp:
-            type: string
-            format: date-time
-
-      ExpressionControlRequest:
-        type: object
-        required: [data]
-        properties:
-          type:
-            type: string
-            example: "expression_control"
-          data:
-            type: object
-            required: [action, expressionName]
-            properties:
-              action:
-                type: string
-                enum: [set_weight]
-                example: "set_weight"
-              expressionName:
-                type: string
-                example: "Joy"
-              weight:
-                type: number
-                example: 1
-
-      ExpressionControlResponse:
-        type: object
-        properties:
-          success:
-            type: boolean
-            example: true
-          message:
-            type: string
-            example: "Expression weight set to 1"
-          expressionName:
-            type: string
-            example: "Joy"
-          action:
-            type: string
-            example: "set_weight"
-          timestamp:
-            type: string
-            format: date-time
 
       ManipulatorOpenResponse:
         type: object

@@ -22,6 +22,15 @@ namespace Lilium.LiveStudio
 
         [LiveField]
         public bool hasThumbnail;
+
+        /// <summary>
+        /// Project-relative reference to the snapshot file, which is also this snapshot's key as a project
+        /// asset — so a client fetches its picture from the generic <c>GET /live/asset/image?id=</c> like
+        /// any other asset, instead of a snapshot-specific route. Falls back to the absolute path when no
+        /// relative path can be formed. See <see cref="ExternalAssetManager.FindAssetByReference"/>.
+        /// </summary>
+        [LiveField]
+        public string reference;
     }
 
     /// <summary>
@@ -32,7 +41,8 @@ namespace Lilium.LiveStudio
     /// the captured state regardless of what changed since. Files are stored in the open
     /// project's "Snapshots" folder as "&lt;name&gt;.snapshot.json", with an optional camera
     /// screenshot "&lt;name&gt;.snapshot.png" taken from the live camera at capture time
-    /// (served to remote apps by <c>SnapshotImageHandler</c>).
+    /// (served to remote apps by the generic <c>GET /live/asset/image</c>, since a snapshot file is a
+    /// project asset like any other — see <see cref="SnapshotAsset"/>).
     ///
     /// Restoring applies the file on top of the live scene without adopting it as the current
     /// scene file (see <see cref="RemoteControlBehaviour.ApplyExternalData"/>): the restored
@@ -69,12 +79,30 @@ namespace Lilium.LiveStudio
                         name = name,
                         timestamp = File.GetLastWriteTime(file).ToString("o"),
                         hasThumbnail = File.Exists(Path.Combine(dir, name + kThumbnailFileExtension)),
+                        // The snapshot folder is always "{project}/Snapshots", so the project-relative
+                        // reference is this one concat — no need to relativize path-by-path (this getter is
+                        // polled while the snapshot page is open, and Uri-based relativization would
+                        // allocate per entry, per poll).
+                        reference = kSnapshotDirName + "/" + name + kSnapshotFileExtension,
                     });
                 }
                 // Newest first. The timestamp is ISO 8601, so ordinal string order is time order.
                 list.Sort((a, b) => string.CompareOrdinal(b.timestamp, a.timestamp));
                 return list.ToArray();
             }
+        }
+
+        /// <summary>
+        /// The screenshot file belonging to the snapshot file at <paramref name="snapshotFilePath"/>
+        /// (same folder, <c>.snapshot.png</c> in place of <c>.snapshot.json</c>), or null when the path is
+        /// not a snapshot file. Derived from the path rather than the name so it holds for any snapshot the
+        /// project crawl found. The file may not exist — the caller decides what "no picture" means.
+        /// </summary>
+        public static string ResolveThumbnailPath(string snapshotFilePath)
+        {
+            if (!IsSnapshotFile(snapshotFilePath)) return null;
+            return snapshotFilePath.Substring(0, snapshotFilePath.Length - kSnapshotFileExtension.Length)
+                + kThumbnailFileExtension;
         }
 
         /// <summary>

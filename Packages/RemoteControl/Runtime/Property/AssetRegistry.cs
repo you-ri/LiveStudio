@@ -34,6 +34,12 @@ namespace Lilium.RemoteControl
         static System.Func<Task> _catalogPrewarm;
         static System.Func<string, Task<Object[]>> _groupExpander;
 
+        // Turns an asset key into its preview image. Same injected-hook shape and lifetime as the two
+        // above: where the picture comes from (a VRM's embedded thumbnail, a bundle's packed one) and
+        // where it is cached belong to the layer that owns the assets, so this core type only carries
+        // the wiring that GET /live/asset/image needs.
+        static System.Func<string, Task<Thumbnail>> _thumbnailProvider;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         public static void Clear()
         {
@@ -78,6 +84,36 @@ namespace Lilium.RemoteControl
         public static void SetGroupExpander(System.Func<string, Task<Object[]>> expander) => _groupExpander = expander;
 
         /// <summary>
+        /// One asset's preview image: the encoded bytes and their MIME type. <see cref="isValid"/> is false
+        /// for "this asset has no picture", which the image endpoint answers with 404.
+        /// </summary>
+        public readonly struct Thumbnail
+        {
+            public readonly byte[] bytes;
+            public readonly string mimeType;
+
+            public Thumbnail(byte[] bytes, string mimeType)
+            {
+                this.bytes = bytes;
+                this.mimeType = mimeType;
+            }
+
+            public bool isValid => bytes != null && bytes.Length > 0;
+
+            /// <summary>No picture for this key.</summary>
+            public static Thumbnail none => default;
+        }
+
+        /// <summary>
+        /// Registers the resolver that turns an asset key into a preview image, backing
+        /// <c>GET /live/asset/image</c>. The key is whatever the host app hands its clients (a registry key,
+        /// or an app-specific asset reference such as LiveStudio's project-relative one) — this package
+        /// passes it through untouched. Returning <see cref="Thumbnail.none"/> means "no picture", which is
+        /// also the answer when no provider is registered.
+        /// </summary>
+        public static void SetThumbnailProvider(System.Func<string, Task<Thumbnail>> provider) => _thumbnailProvider = provider;
+
+        /// <summary>
         /// Runs the registered prewarm, if any. Must be started on the main thread — the work behind it
         /// typically touches Unity APIs — and awaited off it so the server does not stall.
         /// </summary>
@@ -91,6 +127,15 @@ namespace Lilium.RemoteControl
         /// </summary>
         public static Task<Object[]> ExpandGroupAsync(string groupKey)
             => _groupExpander != null ? _groupExpander(groupKey) : Task.FromResult<Object[]>(null);
+
+        /// <summary>
+        /// Resolves the preview image for <paramref name="assetKey"/>, or <see cref="Thumbnail.none"/> when
+        /// there is none (or no provider). Same threading rule as <see cref="PrewarmCatalogAsync"/>: the
+        /// provider looks the asset up through Unity state, so start it on the main thread and await the
+        /// returned task off it — decoding and disk reads must not stall the server.
+        /// </summary>
+        public static Task<Thumbnail> ResolveThumbnailAsync(string assetKey)
+            => _thumbnailProvider != null ? _thumbnailProvider(assetKey) : Task.FromResult(Thumbnail.none);
 
         public static void Register(string guid, Object asset)
         {

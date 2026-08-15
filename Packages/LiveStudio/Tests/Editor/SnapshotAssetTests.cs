@@ -38,5 +38,25 @@ namespace Lilium.LiveStudio.EditorTests
             Assert.IsFalse(SnapshotManager.IsSnapshotFile("C:/proj/Snapshots/NotASnapshot.json"));
             Assert.IsFalse(SnapshotManager.IsSnapshotFile(null));
         }
+
+        /// <summary>
+        /// A snapshot's preview is its sibling <c>*.snapshot.png</c>, reported through the generic
+        /// <see cref="AssetBase.thumbnailFilePath"/> so <c>GET /live/asset/image</c> serves it like every
+        /// other asset's picture. Path-only, so no file has to exist for this to hold.
+        /// </summary>
+        [Test]
+        public void SnapshotAsset_ReportsItsSiblingScreenshotAsThumbnailFile()
+        {
+            var asset = (SnapshotAsset)AssetTypeRegistry.Create("C:/proj/Snapshots/Demo.snapshot.json");
+            asset.filePath = "C:/proj/Snapshots/Demo.snapshot.json";
+
+            Assert.AreEqual("C:/proj/Snapshots/Demo.snapshot.png", asset.thumbnailFilePath);
+            // Derived from the path, not the name, so a snapshot found anywhere the crawl reaches works.
+            Assert.AreEqual("D:/elsewhere/A.B.snapshot.png",
+                SnapshotManager.ResolveThumbnailPath("D:/elsewhere/A.B.snapshot.json"));
+            // Only snapshots have one; every other kind keeps the base's "no picture file" answer.
+            Assert.IsNull(SnapshotManager.ResolveThumbnailPath("C:/proj/Start.live.json"));
+            Assert.IsNull(AssetTypeRegistry.Create("C:/proj/Start.live.json").thumbnailFilePath);
+        }
     }
 }

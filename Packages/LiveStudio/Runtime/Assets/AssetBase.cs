@@ -160,6 +160,18 @@ namespace Lilium.LiveStudio
         /// </summary>
         public virtual bool reloadsOnAvatarChange => false;
 
+        /// <summary>
+        /// Absolute path of a plain image file that IS this asset's preview, for kinds whose picture is a
+        /// file of its own next to the asset (a snapshot's <c>*.snapshot.png</c>). Null for everything else:
+        /// most kinds carry their picture inside the asset (a VRM's embedded thumbnail, a bundle's packed
+        /// one) and are served from <see cref="ThumbnailCache"/> instead. Read by
+        /// <see cref="AssetThumbnailProvider"/>, so <c>GET /live/asset/image</c> answers for every kind that
+        /// has a picture at all, whichever of the two shapes it takes. Such a file is served straight from
+        /// disk and deliberately NOT copied into the cache — it is already an image on disk, and caching it
+        /// would only duplicate it and add a staleness question.
+        /// </summary>
+        public virtual string thumbnailFilePath => null;
+
         /// <summary>Loads this asset. Implementations set <see cref="isLoaded"/> on success.</summary>
         public abstract Task LoadAsync(AssetLoadContext context);
 
