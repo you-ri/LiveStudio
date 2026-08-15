@@ -1,0 +1,914 @@
+openapi: '3.1.1'
+info:
+  title: LiveStudio API
+  version: '0.1'
+  description: |
+    The HTTP routes `jp.lilium.livestudio` adds on top of the
+    [Remote Control API](../../RemoteControl/Documentation~/openapi.yml). They are registered by
+    `LiveStudioRemoteControl` onto the same server and the same port — there is no second listener.
+
+    Everything here is one of two things that the generic live-object surface cannot express:
+
+    - **binary** — camera previews, avatar thumbnails, snapshot thumbnails, manipulator frames
+    - **stateful or long-running** — loading a VRM, holding a manipulator session, rebinding an input action
+
+    Anything that is an ordinary value (a light's intensity, a camera's field of view, an expression's
+    weight) is *not* here: it is an exposed property, read and written through
+    `GET|PUT /live/object/{id}/{path}`. Reach for this reference only when the generic one does not cover it.
+
+servers:
+  - url: http://localhost:{port}
+    variables:
+      port:
+        default: '3002'
+        description: >
+          The port the app's RemoteControl server binds. 3002 is the package default; a shipped
+          LiveStudio app usually overrides it.
+
+tags:
+  - name: Camera
+    description: The camera list, the live camera, and preview frames.
+  - name: Avatar
+    description: Loading a VRM, its thumbnail, and the expression list.
+  - name: Assets
+    description: >
+      Discovering what a reference slot can be pointed at. Both endpoints return unified asset keys —
+      a bare GUID for a baked or built-in asset, `file:<path>#<name>` for a member of an external pack.
+  - name: Snapshot
+    description: Thumbnails of saved snapshots.
+  - name: Manipulator
+    description: >
+      The off-screen camera that drives the remote app's transform gizmo. A session is opened against
+      one property, polled for frames while the user drags, and closed.
+  - name: Input
+    description: The runtime key bindings and interactive rebinding.
+  - name: Deprecated
+    description: Kept so an older remote app build keeps working. Do not build anything new on these.
+
+x-tagGroups:
+  - name: Scene
+    tags: [Camera, Avatar, Snapshot]
+  - name: Authoring
+    tags: [Assets, Manipulator, Input]
+  - name: Deprecated
+    tags: [Deprecated]
+
+paths:
+  # ---------------------------------------------------------------- Camera
+  /api/camera:
+    get:
+      tags: [Camera]
+      summary: List the cameras
+      responses:
+        '200':
+          description: Every camera in the scene, with the live one flagged.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraListResponse"
+    post:
+      tags: [Camera]
+      summary: Act on a camera
+      description: >
+        A single verb-in-the-body endpoint kept for the actions that are not plain properties.
+        Field of view and look-at target are ordinary exposed properties — prefer
+        `PUT /live/object/{cameraId}/{path}` for those.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CameraControlRequest"
+      responses:
+        '200':
+          description: Whether the action was applied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResponse"
+        '400':
+          description: Malformed body, or no `data`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/camera/switch:
+    post:
+      tags: [Camera]
+      summary: Make a camera live
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cameraId]
+              properties:
+                cameraId:
+                  type: string
+                  format: uuid
+                  example: "2e910ddf-8cd8-4fb2-92f3-44b1ccd20c5f"
+      responses:
+        '200':
+          description: The switch was applied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResponse"
+        '400':
+          description: Missing or unparseable `cameraId`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/camera/image:
+    get:
+      tags: [Camera]
+      summary: Get a camera preview frame
+      description: >
+        Renders the camera once and returns a downscaled PNG that keeps the camera's aspect ratio.
+        Poll it to drive a preview; there is no stream.
+      parameters:
+        - in: query
+          name: camera
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: "Camera id. Omit to capture whichever camera is live."
+      responses:
+        '200':
+          description: The frame.
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: No such camera, or it has produced no image yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ---------------------------------------------------------------- Avatar
+  /api/vrm/load:
+    post:
+      tags: [Avatar]
+      summary: Load a VRM file as the avatar
+      description: >
+        Answers as soon as the load is accepted, not when it finishes — a large VRM takes seconds and
+        the request must not hold a connection that long. Progress and completion arrive as
+        `vrm_load_*` events in the client's inbox (`GET /api/events`). A client that connects
+        mid-load is told about it as soon as it identifies itself.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filePath]
+              properties:
+                filePath:
+                  type: string
+                  example: "C:/Users/me/Documents/avatars/mine.vrm"
+      responses:
+        '200':
+          description: The load was accepted and started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResponse"
+        '400':
+          description: Empty body, missing `filePath`, or a path that is not an acceptable VRM.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/vrm/reset:
+    post:
+      tags: [Avatar]
+      summary: Unload the current avatar
+      responses:
+        '200':
+          description: The avatar was reset.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResponse"
+
+  /api/avatar/image:
+    get:
+      tags: [Avatar]
+      summary: Get an asset's thumbnail
+      description: >
+        Serves the preview image for any registered asset, not just avatars (the path predates the
+        generalization and is kept). A VRM/glb's embedded thumbnail is extracted and cached on first
+        request; a bundle's packed thumbnail is cached when the bundle is loaded, so it is available
+        only **after** that asset has been loaded at least once. The cache is on disk, so previews
+        survive restarts.
+      parameters:
+        - in: query
+          name: id
+          required: true
+          schema:
+            type: string
+          description: >
+            Asset id or reference. Both a session-local id and a persisted project-relative reference
+            resolve.
+      responses:
+        '200':
+          description: The thumbnail.
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Unknown asset, or it has no thumbnail (yet).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/expressions:
+    get:
+      tags: [Avatar]
+      summary: List the active avatar's expressions
+      description: >
+        Live weights are **not** served from here. A weight is an ordinary exposed property
+        (`expressions[<name>].weight`), so it syncs through the normal displayed-property polling —
+        only while the expression cards are on screen, and only to the client looking at them.
+      responses:
+        '200':
+          description: >
+            The available expressions. An empty list means no avatar is loaded, or it exposes no
+            expressions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExpressionListResponse"
+    post:
+      tags: [Avatar]
+      summary: Set an expression weight
+      description: >
+        Equivalent to writing the exposed property, and kept for clients that address expressions by
+        name without holding the avatar object. Prefer `PUT /live/object/{avatarId}/expressions[<name>]/weight`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExpressionControlRequest"
+      responses:
+        '200':
+          description: >
+            The outcome. Note that a rejected action (no avatar, unknown action, missing name) is
+            still a 200 with `success: false`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExpressionControlResponse"
+        '400':
+          description: Malformed body, or no `data`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ---------------------------------------------------------------- Assets
+  /api/assets:
+    get:
+      tags: [Assets]
+      summary: List the assets that can fill a reference slot
+      description: >
+        One flat catalog per type, unifying baked, built-in and external assets. External packs are
+        opened once (cached) before the list is built, because a pack's name says nothing about what
+        it holds — there is no type for which that can be skipped. That makes the first call of a
+        session the expensive one.
+      parameters:
+        - in: query
+          name: type
+          required: false
+          schema:
+            type: string
+          example: "AnimationClip"
+          description: "Asset type name. Omit to list everything registered."
+      responses:
+        '200':
+          description: The catalog.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssetListResponse"
+
+  /api/animation/clips:
+    get:
+      tags: [Assets]
+      summary: List the members of one asset pack
+      description: >
+        The second level of discovery, for drilling into a specific pack rather than listing a whole
+        type. The route name and the `clips` field predate generic packs and are kept verbatim so an
+        existing remote app build keeps working — the array lists every member, whatever its type.
+        Listing also registers the members, so selecting one afterwards resolves without re-reading
+        the pack.
+      parameters:
+        - in: query
+          name: id
+          required: true
+          schema:
+            type: string
+          description: "Id of a pack asset."
+      responses:
+        '200':
+          description: The pack's members, each with a ready-to-use asset key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackMembersResponse"
+        '404':
+          description: Unknown id, or the asset is not a pack.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        '500':
+          description: The pack could not be opened.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ---------------------------------------------------------------- Snapshot
+  /api/snapshot/image:
+    get:
+      tags: [Snapshot]
+      summary: Get a snapshot's thumbnail
+      parameters:
+        - in: query
+          name: name
+          required: true
+          schema:
+            type: string
+          example: "take-03"
+          description: "Snapshot name, as listed by the snapshot live object."
+      responses:
+        '200':
+          description: The thumbnail.
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Unknown snapshot, or it was saved without a screenshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ---------------------------------------------------------------- Manipulator
+  /api/manipulator/open:
+    post:
+      tags: [Manipulator]
+      summary: Open a manipulator session
+      description: >
+        Binds an off-screen camera to one transform-valued property. The returned `sessionId` is the
+        handle for every other manipulator call.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [objectId]
+              properties:
+                objectId:
+                  type: string
+                  example: "3470a41c-f079-4d30-a002-3468fda088f7"
+                propertyPath:
+                  type: string
+                  example: "transform"
+                  description: "Property to edit. Omit for the object's own transform."
+      responses:
+        '200':
+          description: The session and the size of the frames it will produce.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManipulatorOpenResponse"
+        '400':
+          description: Empty body, or no `objectId`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        '404':
+          description: The object does not exist, or the property is not editable this way.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags: [Manipulator]
+      summary: Close a manipulator session
+      description: "Idempotent — closing an already-closed (or unknown) session still answers 204."
+      parameters:
+        - $ref: "#/components/parameters/ManipulatorSession"
+      responses:
+        '204':
+          description: Closed.
+
+  /api/manipulator/image:
+    get:
+      tags: [Manipulator]
+      summary: Get a manipulator frame with its camera state
+      description: >
+        The PNG alone is not enough to draw a gizmo over: the client needs the exact matrices the
+        frame was rendered with. They ride along in the `X-Manipulator-State` response header rather
+        than a second request, so the image and the state can never disagree.
+
+        The header is base64 of a UTF-8 JSON object:
+
+        ```json
+        {
+          "view":       [16 floats, column-major],
+          "projection": [16 floats, column-major],
+          "parent":     { "position": {x,y,z}, "rotation": {x,y,z,w}, "scale": {x,y,z} },
+          "target":     { "position": {x,y,z}, "rotation": {x,y,z,w}, "scale": {x,y,z} },
+          "viewport":   { "width": 512, "height": 512 }
+        }
+        ```
+
+        `parent` is the edited object's parent in world space, `target` its own local transform.
+        `Access-Control-Expose-Headers` is set, so a browser client can read the header cross-origin.
+      parameters:
+        - $ref: "#/components/parameters/ManipulatorSession"
+      responses:
+        '200':
+          description: The frame. Camera state is in `X-Manipulator-State`.
+          headers:
+            X-Manipulator-State:
+              description: "base64(UTF-8(JSON)) camera state for this exact frame."
+              schema:
+                type: string
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Unknown or closed session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        '500':
+          description: The capture failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/manipulator/camera:
+    put:
+      tags: [Manipulator]
+      summary: Move the manipulator camera
+      description: >
+        Every field is optional and they compose: send only what the current gesture changed. Fetch a
+        new frame afterwards to see the result.
+      parameters:
+        - $ref: "#/components/parameters/ManipulatorSession"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ManipulatorCameraPoseRequest"
+      responses:
+        '204':
+          description: Applied.
+        '400':
+          description: Empty or malformed body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        '404':
+          description: Unknown or closed session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ---------------------------------------------------------------- Input
+  /api/input-actions:
+    get:
+      tags: [Input]
+      summary: List the runtime input actions and their bindings
+      responses:
+        '200':
+          description: Every action of every enabled action map.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InputActionsListResponse"
+
+  /api/input-actions/bind:
+    post:
+      tags: [Input]
+      summary: Rebind an input action interactively
+      description: >
+        Starts an interactive rebind: the app listens for the next control the user actuates and
+        assigns it. The response reports the binding that was captured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [actionName]
+              properties:
+                actionName:
+                  type: string
+                  example: "ToggleCamera"
+                bindingIndex:
+                  type: integer
+                  example: 0
+                  description: "Which binding of the action to replace."
+      responses:
+        '200':
+          description: >
+            The outcome. A rebind that could not start (unknown action, already listening) is still a
+            200 with `success: false`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InputActionBindResponse"
+        '400':
+          description: Malformed body, or no `actionName`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ---------------------------------------------------------------- Deprecated
+  /api/commands:
+    post:
+      tags: [Deprecated]
+      deprecated: true
+      summary: Run a named command
+      description: >
+        Superseded by exposed functions (`POST /live/function/{id}/{path}`), which are discoverable
+        from the type table instead of being a hard-coded vocabulary. Only `input_action` was ever
+        implemented. Do not add to it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type:
+                  type: string
+                  example: "input_action"
+                actionName:
+                  type: string
+                  example: "ToggleCamera"
+                pressed:
+                  type: boolean
+                  example: true
+      responses:
+        '200':
+          description: The command ran.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResponse"
+        '400':
+          description: Missing `type`, or the command failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResponse"
+
+components:
+  parameters:
+    ManipulatorSession:
+      in: query
+      name: session
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: "Session id from `POST /api/manipulator/open`."
+
+  schemas:
+      ErrorResponse:
+        type: object
+        properties:
+          error:
+            type: string
+            example: "Session not found."
+
+      CommandResponse:
+        type: object
+        properties:
+          success:
+            type: boolean
+            example: true
+          message:
+            type: string
+            example: "Camera switched."
+          timestamp:
+            type: string
+            format: date-time
+
+      CameraApiInfo:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+            example: "2e910ddf-8cd8-4fb2-92f3-44b1ccd20c5f"
+          name:
+            type: string
+            example: "Front"
+          isLive:
+            type: boolean
+            example: true
+            description: "True for the camera currently being output."
+          fov:
+            type: number
+            example: 35
+          aspect:
+            type: number
+            example: 1.7777778
+          lookAt:
+            type: string
+            example: "Head"
+
+      CameraListResponse:
+        type: object
+        properties:
+          success:
+            type: boolean
+            example: true
+          cameras:
+            type: array
+            items:
+              $ref: "#/components/schemas/CameraApiInfo"
+          timestamp:
+            type: string
+            format: date-time
+
+      CameraControlRequest:
+        type: object
+        required: [data]
+        properties:
+          type:
+            type: string
+            example: "camera_control"
+          data:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+                description: "Target camera."
+              action:
+                type: string
+                enum: [switch, start_stream, stop_stream]
+                example: "switch"
+              fov:
+                type: number
+              lookAt:
+                type: string
+
+      ExpressionApiInfo:
+        type: object
+        properties:
+          name:
+            type: string
+            example: "Joy"
+          displayName:
+            type: string
+            example: "Joy"
+          isPreset:
+            type: boolean
+            example: true
+            description: "True for the VRM standard expressions, false for avatar-specific ones."
+          weight:
+            type: number
+            example: 0
+
+      ExpressionListResponse:
+        type: object
+        properties:
+          success:
+            type: boolean
+            example: true
+          availableExpressions:
+            type: array
+            items:
+              $ref: "#/components/schemas/ExpressionApiInfo"
+          timestamp:
+            type: string
+            format: date-time
+
+      ExpressionControlRequest:
+        type: object
+        required: [data]
+        properties:
+          type:
+            type: string
+            example: "expression_control"
+          data:
+            type: object
+            required: [action, expressionName]
+            properties:
+              action:
+                type: string
+                enum: [set_weight]
+                example: "set_weight"
+              expressionName:
+                type: string
+                example: "Joy"
+              weight:
+                type: number
+                example: 1
+
+      ExpressionControlResponse:
+        type: object
+        properties:
+          success:
+            type: boolean
+            example: true
+          message:
+            type: string
+            example: "Expression weight set to 1"
+          expressionName:
+            type: string
+            example: "Joy"
+          action:
+            type: string
+            example: "set_weight"
+          timestamp:
+            type: string
+            format: date-time
+
+      AssetListResponse:
+        type: object
+        properties:
+          type:
+            type: string
+            example: "AnimationClip"
+            description: "Echo of the requested type (empty when none was given)."
+          assets:
+            type: array
+            items:
+              type: object
+              properties:
+                key:
+                  type: string
+                  example: "file:Assets/Packs/dances.pack.lsb#Wave"
+                  description: >
+                    Unified asset key. Write this into an asset reference property as-is.
+                name:
+                  type: string
+                  example: "Wave"
+                type:
+                  type: string
+                  example: "AnimationClip"
+
+      PackMembersResponse:
+        type: object
+        properties:
+          id:
+            type: string
+            description: "Echo of the requested pack id."
+          clips:
+            type: array
+            description: "Every member of the pack, whatever its type — the field name is historical."
+            items:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: "Wave"
+                key:
+                  type: string
+                  example: "file:Assets/Packs/dances.pack.lsb#Wave"
+
+      ManipulatorOpenResponse:
+        type: object
+        properties:
+          success:
+            type: boolean
+            example: true
+          sessionId:
+            type: string
+            format: uuid
+          width:
+            type: integer
+            example: 512
+          height:
+            type: integer
+            example: 512
+          aspect:
+            type: number
+            example: 1
+          message:
+            type: string
+
+      ManipulatorCameraPoseRequest:
+        type: object
+        properties:
+          yaw:
+            type: number
+            description: "Absolute orbit yaw, in degrees."
+          pitch:
+            type: number
+            description: "Absolute orbit pitch, in degrees."
+          distance:
+            type: number
+            description: "Absolute distance from the pivot."
+          focus:
+            type: boolean
+            description: "Re-anchor the pivot onto the edited object. Combines with the other fields."
+          panDx:
+            type: number
+            description: >
+              Pivot translation in screen pixels, positive to the right. Converted to world units from
+              the current distance and field of view — the middle-drag of a scene view.
+          panDy:
+            type: number
+            description: "Pivot translation in screen pixels, positive downward."
+
+      InputActionInfo:
+        type: object
+        properties:
+          name:
+            type: string
+            example: "ToggleCamera"
+          bindings:
+            type: array
+            items:
+              type: string
+            example: ["<Keyboard>/f1"]
+            description: "Effective control paths, in binding order."
+          bindingDisplayNames:
+            type: array
+            items:
+              type: string
+            example: ["F1"]
+            description: "Human-readable form of `bindings`, same order."
+          isEnabled:
+            type: boolean
+            example: true
+          actionType:
+            type: string
+            example: "Button"
+
+      InputActionsListResponse:
+        type: object
+        properties:
+          success:
+            type: boolean
+            example: true
+          actions:
+            type: array
+            items:
+              $ref: "#/components/schemas/InputActionInfo"
+          timestamp:
+            type: string
+            format: date-time
+
+      InputActionBindResponse:
+        type: object
+        properties:
+          success:
+            type: boolean
+            example: true
+          message:
+            type: string
+          actionName:
+            type: string
+            example: "ToggleCamera"
+          bindingIndex:
+            type: integer
+            example: 0
+          newBinding:
+            type: string
+            example: "<Keyboard>/f2"
+          timestamp:
+            type: string
+            format: date-time

@@ -1,24 +1,110 @@
 openapi: '3.1.1'
 info:
-  title: Virgo Motion Remote API
+  title: Remote Control API
   version: '0.3'
+  description: |
+    The HTTP surface of `jp.lilium.remotecontrol`. It turns a running Unity app into a REST
+    server: any object registered as a *live object* can be listed, read, written and invoked
+    from outside the process, and the app's own state (status, language, performance, scene
+    file, side menu) is reachable through a small set of fixed endpoints.
+
+    This reference covers **only** the routes the RemoteControl package itself registers.
+    Routes added by other packages are documented in their own reference:
+
+    - **LiveStudio** — camera, avatar, assets, manipulator, input actions
+    - **Virgo Extension** — capture status, device info, calibration
+
+    ## Conventions
+
+    - Every response is JSON unless the operation says otherwise (images are `image/png`).
+    - Errors carry `{ "error": "<message>" }` with the status code in the response line.
+    - `X-Client-ID` identifies the calling client. Send a stable value per client: the event
+      inbox, the presence check and confirmation prompts are all keyed by it. Without the
+      header the server falls back to `<address>:<port>`, which is not stable across reconnects.
+    - Nothing is pushed. A client polls `GET /live/changes` for *which* objects changed and
+      refetches only what it is displaying; `POST /live/batch` folds those polls and the
+      refetches into one round trip.
+
+    ## Ports
+
+    The server listens on **3002** by default. A host app usually overrides it — check the app's
+    RemoteControl settings for the port it actually binds.
+
 servers:
-  - url: http://localhost:3002
+  - url: http://localhost:{port}
+    variables:
+      port:
+        default: '3002'
+        description: The port the app's RemoteControl server binds. 3002 is the package default.
+
+tags:
+  - name: Session
+    description: >
+      Connection check, per-client event inbox, and answers to confirmation prompts. These are
+      what a remote client talks to before it knows anything about the app's contents.
+  - name: Runtime
+    description: Process-wide state — performance samples, UI language, shutdown and reset.
+  - name: Types
+    description: >
+      The type tables. A client fetches these once (and again when `/live/changes` reports the
+      `@types` pseudo id) to know how to render the properties and functions it will receive.
+  - name: Objects
+    description: The live object list, individual objects, and the parent/child relation between them.
+  - name: Properties
+    description: >
+      Reading and writing a single property of a live object. Array properties are edited through
+      the same path with POST (append), DELETE (remove) and PATCH (reorder).
+  - name: Functions
+    description: Invoking a method exposed on a live object.
+  - name: Sync
+    description: The change feed and the batch endpoint — how a client stays current cheaply.
+  - name: Assets
+    description: Resolving an asset key to a display name.
+  - name: Live Scene
+    description: >
+      Saving and loading the whole live scene as a file, and resolving references whose target
+      no longer exists.
+  - name: Web UI
+    description: >
+      The app-authored description of the remote UI: which pages exist, what they are called, and
+      what the app is named. A remote app renders its navigation from this rather than hard-coding it.
+
+x-tagGroups:
+  - name: Application
+    tags: [Session, Runtime]
+  - name: Live Objects
+    tags: [Types, Objects, Properties, Functions, Sync]
+  - name: Assets
+    tags: [Assets]
+  - name: Live Scene
+    tags: [Live Scene]
+  - name: Web UI
+    tags: [Web UI]
+
 paths:
+  # ---------------------------------------------------------------- Session
   /api/status:
     get:
-      summary: Get the current status of the Virgo Motion Remote
+      tags: [Session]
+      summary: Check the connection and register as present
       description: >-
         Also marks the calling client (X-Client-ID) as present, which is how the app knows
         whether a confirmation prompt has any remote to show on. The response carries an
         instanceId that changes whenever the server is rebuilt; clients that see a new value
         must discard the cursors and cached data they hold.
+      parameters:
+        - $ref: "#/components/parameters/ClientId"
       responses:
         '200':
-          description: Successful response with the current status
+          description: The application identity and this run's instance id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
 
   /api/events:
     get:
+      tags: [Session]
       summary: Collect the one-shot notices queued for this client
       description: >-
         Notifications and confirmation prompts are queued per client (identified by
@@ -26,6 +112,7 @@ paths:
         `since` to receive what came after it. The remote app sends this as a sub-request of
         /live/batch so it costs no extra round trip.
       parameters:
+        - $ref: "#/components/parameters/ClientId"
         - in: query
           name: since
           required: false
@@ -35,11 +122,143 @@ paths:
           description: "Read position from the previous response. Omit or 0 to take everything queued."
       responses:
         '200':
-          description: The events queued after `since`, and the new read position
+          description: The events queued after `since`, and the new read position.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventsResponse"
 
+  /api/confirm:
+    post:
+      tags: [Session]
+      summary: Answer a confirmation prompt raised by the app
+      description: >
+        The app can ask a question (e.g. "discard unsaved changes?") that surfaces on every
+        connected remote at once. Answering is a race between those surfaces, so posting an id
+        that is already settled — or never existed — is not an error: the response reports
+        `settled: false` and the client just closes its modal.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmRequest"
+      responses:
+        '200':
+          description: Whether this answer is the one that settled the prompt.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfirmResponse"
+        '400':
+          description: Malformed body, or a missing id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ---------------------------------------------------------------- Runtime
+  /api/performance:
+    get:
+      tags: [Runtime]
+      summary: Sample frame rate and memory usage
+      description: >
+        Kept out of /api/status so a client only pays for these samples while it is actually
+        showing them (e.g. a performance overlay polls this only while visible).
+      responses:
+        '200':
+          description: A single sample.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PerformanceResponse"
+
+  /api/language:
+    get:
+      tags: [Runtime]
+      summary: Get the current UI language and the available ones
+      responses:
+        '200':
+          description: Current language and the list to choose from.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LanguageResponse"
+    put:
+      tags: [Runtime]
+      summary: Switch the UI language
+      description: >
+        Applies to the app's own localization and to every translated label the server returns
+        afterwards (help text, side menu labels).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [language]
+              properties:
+                language:
+                  type: string
+                  example: "ja"
+      responses:
+        '200':
+          description: The language that is now current.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  current: { type: string, example: "ja" }
+        '400':
+          description: Missing or empty `language`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/commands/quit:
+    post:
+      tags: [Runtime]
+      summary: Ask the application to quit
+      description: >
+        Answers immediately and quits shortly afterwards, so the caller is not left waiting on a
+        process that is tearing down. The app may hold the shutdown — an unsaved-changes prompt
+        raises a confirmation first, and the quit is re-requested once it is answered. A 200 here
+        therefore means "the request was accepted", not "the app has exited".
+      responses:
+        '200':
+          description: Shutdown initiated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResponse"
+
+  /api/commands/reset:
+    post:
+      tags: [Runtime]
+      summary: Clear saved settings and restart
+      description: >
+        Deletes the app's persisted preferences and RemoteControl data, then quits. Intended as
+        the recovery path for a broken local configuration.
+      responses:
+        '200':
+          description: Reset initiated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResponse"
+
+  # ---------------------------------------------------------------- Types
   /live/types:
     get:
-      summary: Get all exposed object types. Optionally filter by type name.
+      tags: [Types]
+      summary: Get the type table for every live object type
+      description: >
+        Describes each type's properties (name, type, read-only, array-ness, display controller)
+        and its callable functions. A client fetches this once and reuses it for every object of
+        that type; `/live/changes` reports the pseudo id `@types` when it must be refetched.
       parameters:
         - in: query
           name: type
@@ -50,15 +269,41 @@ paths:
           description: "Optional: Filter types by name. If omitted, returns all types."
       responses:
         '200':
-          description: Successful response with the current status
+          description: The requested type descriptions.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TypesGettingResponse"  
+                $ref: "#/components/schemas/TypesGettingResponse"
 
+  /live/enums:
+    get:
+      tags: [Types]
+      summary: Get the value tables for exposed enums
+      description: >
+        Enum-typed properties travel as their name only; this is where a client learns the choices
+        to offer for one. Includes enums declared outside the app (registered via
+        `[assembly: ExposedExternalEnum]`).
+      parameters:
+        - in: query
+          name: type
+          required: false
+          schema:
+            type: string
+          example: "CameraProjection"
+          description: "Optional: Filter enums by type name. If omitted, returns all exposed enums."
+      responses:
+        '200':
+          description: The requested enum descriptions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnumsGettingResponse"
+
+  # ---------------------------------------------------------------- Objects
   /live/objects:
     get:
-      summary: Get the exposed object list. Optionally filter by type.
+      tags: [Objects]
+      summary: List the live objects
       parameters:
         - in: query
           name: type
@@ -68,22 +313,20 @@ paths:
           example: "Light"
           description: "Optional: Filter objects by type. If omitted, returns all objects."
         - in: query
-          name: nested
+          name: category
           required: false
           schema:
-            type: boolean
-          example: true
+            type: string
+          example: "Avatar"
           description: >
-            Optional flag. When absent (default) each object is returned at depth 1: its own
-            property values are serialized but nested inline (unregistered) composite children are
-            replaced by a truncation stub ({ "@type": ..., "@truncated": true }) so the payload stays
-            small and scalable. Arrays do not consume depth, so element count and per-element type
-            stay visible. Fetch a stubbed child on demand via GET /live/object/{id}/{path}.
-            Pass `?nested` (or `?nested=true`) to restore full unbounded expansion.
-            (The depth is 1 vs. unbounded today; a future `?nested=<N>` numeric form may expose it.)
+            Optional: Filter by the category declared on the object's type. This is what a side menu
+            page uses to show only the objects that belong on it. Matched against the **declared**
+            string, not the translated label that `/live/types` reports — pass the category key, not
+            what the UI shows. Takes precedence over `type`: when both are given, `type` is ignored.
+        - $ref: "#/components/parameters/Nested"
       responses:
         '200':
-          description: Successful response with the current status
+          description: The matching objects, serialized at the requested depth.
           content:
             application/json:
               schema:
@@ -91,207 +334,242 @@ paths:
 
   /live/object/{id}:
     get:
-      summary: Get all properties of the exposed object.
+      tags: [Objects]
+      summary: Get one live object with all its properties
       parameters:
-        - in: path
-          name: id
-          schema:
-            type: string
-          example: "3470a41c-f079-4d30-a002-3468fda088f7"
-        - in: query
-          name: nested
-          required: false
-          schema:
-            type: boolean
-          example: true
-          description: >
-            Optional flag, same semantics as on /live/objects. Absent (default) returns the object
-            at depth 1 with nested inline composites truncated; `?nested` returns full expansion.
+        - $ref: "#/components/parameters/ObjectId"
+        - $ref: "#/components/parameters/Nested"
       responses:
         '200':
-          description: Successful response with the current status
+          description: The object at the requested depth.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ObjectGettingResponse"  
+                $ref: "#/components/schemas/ObjectGettingResponse"
+        '404':
+          description: No object with that id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
+  /live/object/{id}/@parent:
+    put:
+      tags: [Objects]
+      summary: Reparent a live object
+      description: >
+        `@parent` is a pseudo property: it is not part of the type table, it is the registry's
+        own parent/child relation. Pass `null` to detach the object to the root. The response is
+        the reparented object, fully expanded.
+      parameters:
+        - $ref: "#/components/parameters/ObjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                parentId:
+                  type: [string, "null"]
+                  example: "e79efd50-5ea6-4cc0-a7a7-49110eb3b0da"
+                  description: "Id of the new parent, or null to move the object to the root."
+      responses:
+        '200':
+          description: The reparented object.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ObjectGettingResponse"
+        '400':
+          description: The move was rejected (unknown parent, or it would create a cycle).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
-  /live/object/{id}/{property}:
+  # ---------------------------------------------------------------- Properties
+  /live/object/{id}/{path}:
     get:
-      summary: >
-        Get the property of the exposed object. Always fully (unbounded) expanded — the `nested`
-        flag does not apply here, because the path already scopes the response to a single branch.
-        The client uses this to lazily fetch a child that /live/objects truncated.
+      tags: [Properties]
+      summary: Get one property
+      description: >
+        Always fully (unbounded) expanded — the `nested` flag does not apply here, because the
+        path already scopes the response to a single branch. This is how a client lazily fetches
+        a child that `/live/objects` truncated.
       parameters:
-        - in: path
-          name: id
-          schema:
-            type: string
-          example: "3470a41c-f079-4d30-a002-3468fda088f7"
-        - in: path
-          name: property
-          schema:
-            type: string
-          example: "rotation"
+        - $ref: "#/components/parameters/ObjectId"
+        - $ref: "#/components/parameters/PropertyPath"
       responses:
         '200':
-          description: Successful response with the current status
+          description: The property value and where it lives.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PropertyGettingResponse"              
+                $ref: "#/components/schemas/PropertyGettingResponse"
+        '404':
+          description: No such object or property.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
     put:
-      summary: Set the property of the exposed object.
+      tags: [Properties]
+      summary: Set one property
       parameters:
-        - in: path
-          name: id
-          schema:
-            type: string
-          example: "e79efd50-5ea6-4cc0-a7a7-49110eb3b0da"
-        - in: path
-          name: property
-          schema:
-            type: string
-          example: "enabled"      
+        - $ref: "#/components/parameters/ObjectId"
+        - $ref: "#/components/parameters/PropertyPath"
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/PropertySettingRequest"
       responses:
         '200':
-          description: Successful response with the current status
+          description: The value as it now stands, read back from the object.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PropertyGettingResponse"
+        '400':
+          description: The value could not be converted to the property's type.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
     post:
-      summary: Add to the array property of the exposed object.
+      tags: [Properties]
+      summary: Append an element to an array property
       parameters:
-        - in: path
-          name: id
-          schema:
-            type: string
-          example: "07dc5512-2a94-4f0b-aa10-17fe76d2087a"
-        - in: path
-          name: property
-          schema:
-            type: string
-          example: "expressions"      
+        - $ref: "#/components/parameters/ObjectId"
+        - $ref: "#/components/parameters/PropertyPath"
       requestBody:
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/PropertySettingRequest"
+        description: >
+          Omit the body to append a default-constructed element. For a polymorphic element type,
+          send `{ "value": { "@type": "<TypeName>" } }` to choose the concrete type.
+      responses:
+        '200':
+          description: The array after the append.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PropertyGettingResponse"
 
     delete:
-      summary: Remove from the array property of the exposed object.
+      tags: [Properties]
+      summary: Remove an element from an array property
       parameters:
-        - in: path
-          name: id
-          schema:
-            type: string
-          example: "07dc5512-2a94-4f0b-aa10-17fe76d2087a"
-        - in: path
-          name: property
-          schema:
-            type: string
-          example: "expressions"
+        - $ref: "#/components/parameters/ObjectId"
+        - $ref: "#/components/parameters/PropertyPath"
       requestBody:
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/PropertyDeleteRequest"
+      responses:
+        '200':
+          description: The array after the removal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PropertyGettingResponse"
 
     patch:
-      summary: Reorder an element in the array property of the exposed object.
+      tags: [Properties]
+      summary: Reorder an element of an array property
       parameters:
-        - in: path
-          name: id
-          schema:
-            type: string
-          example: "07dc5512-2a94-4f0b-aa10-17fe76d2087a"
-        - in: path
-          name: property
-          schema:
-            type: string
-          example: "expressions"
+        - $ref: "#/components/parameters/ObjectId"
+        - $ref: "#/components/parameters/PropertyPath"
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/PropertyReorderRequest"
       responses:
         '200':
-          description: Successfully reordered the array element
+          description: The array after the move.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PropertyGettingResponse"
 
-  /live/object/{id}/{property}/reset:
+  /live/object/{id}/{path}/reset:
     post:
-      summary: Reset the property of the exposed object to its default value.
+      tags: [Properties]
+      summary: Reset a property to its default value
+      description: >
+        The default is the value the property held when the object was first registered, which is
+        also what `changed` in a property response is compared against.
       parameters:
+        - $ref: "#/components/parameters/ObjectId"
+        - $ref: "#/components/parameters/PropertyPath"
+      responses:
+        '200':
+          description: The property after the reset.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PropertyGettingResponse"
+
+  # ---------------------------------------------------------------- Functions
+  /live/function/{id}/{path}:
+    post:
+      tags: [Functions]
+      summary: Call a function on a live object
+      description: >
+        `path` is the function name, lowercased, optionally prefixed by the property path it
+        hangs off (e.g. `controller/resetyawangle`). Arguments go in the body; a parameterless
+        function needs no body. The result — `void` included — comes back under `result`.
+      parameters:
+        - $ref: "#/components/parameters/ObjectId"
         - in: path
-          name: id
+          name: path
+          required: true
           schema:
             type: string
-          example: "07dc5512-2a94-4f0b-aa10-17fe76d2087a"
-        - in: path
-          name: property
-          schema:
-            type: string
-          example: "expressions"      
+          example: "toggle"
+          description: "Function name, lowercased. May be prefixed by a property path."
       requestBody:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/PropertyGettingResponse"
-
-  /live/function/{id}/{function}:
-    post:
-      summary: Call the function of the exposed object.
-      parameters:
-        - in: path
-          name: id
-          schema:
-            type: string
-          example: "3470a41c-f079-4d30-a002-3468fda088f7"
-        - in: path
-          name: function
-          schema:
-            type: string
-          example: "toggle"
+              type: object
+              properties:
+                args:
+                  type: array
+                  items: {}
+                  description: "Positional arguments, in declaration order."
+                  example: ["Camera 1"]
       responses:
         '200':
-          description: Successful response with the current status
+          description: The return value.
           content:
             application/json:
               schema:
                 type: object
-
-  /live/batch:
-    post:
-      summary: Apply multiple exposed-object operations in a single request.
-      description: >
-        Epic Remote Control's /remote/batch equivalent. Each sub-request targets an
-        /live/object/{id}/{path} operation (GET/PUT/POST/DELETE/PATCH) or a
-        POST /live/function/{id}/{path} call, and is applied in order within a single
-        frame. Items are independent: one failing item does not abort the others
-        (continue-on-error). The overall response is always 200; per-item results carry
-        their own status.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/BatchRequest"
-      responses:
-        '200':
-          description: Per-item results in request order.
+                properties:
+                  result:
+                    description: "The function's return value, or null for void."
+        '404':
+          description: No such object or function.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BatchResponse"
+                $ref: "#/components/schemas/ErrorResponse"
 
+  # ---------------------------------------------------------------- Sync
   /live/changes:
     get:
-      summary: Get the ids of exposed objects that changed since a revision.
+      tags: [Sync]
+      summary: Get the ids of live objects that changed since a revision
       description: >
         Property changes are not pushed. The server records only the id of each changed
         object; a client polls this endpoint and refetches the objects it actually holds,
@@ -314,48 +592,206 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  revision:
-                    type: integer
-                    format: int64
-                  changes:
-                    type: array
-                    items:
-                      type: string
+                $ref: "#/components/schemas/ChangesResponse"
+
+  /live/batch:
+    post:
+      tags: [Sync]
+      summary: Apply several operations in a single request
+      description: >
+        Each sub-request is applied in order within a single frame. Items are independent: one
+        failing item does not abort the others (continue-on-error). The overall response is always
+        200; per-item results carry their own status.
+
+        Accepted sub-request paths:
+
+        - `GET /api/events` — the per-client inbox
+        - `GET /live/changes` — the change feed
+        - `GET|PUT|POST|DELETE|PATCH /live/object/{id}/{path}` (including `.../reset`)
+        - `POST /live/function/{id}/{path}`
+
+        This is what lets a remote app poll the change feed, drain its inbox and refresh the
+        properties on screen in one round trip.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchRequest"
+      responses:
+        '200':
+          description: Per-item results in request order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchResponse"
+
+  # ---------------------------------------------------------------- Assets
+  /api/asset:
+    get:
+      tags: [Assets]
+      summary: Resolve an asset key to its display info
+      description: >
+        Asset-valued properties travel as a key only, so a client needs this to label them. The
+        key may be a baked GUID or an external `file:<path>#<name>` reference: a loaded target
+        resolves to its real name and type, an unloaded external key still resolves to a name
+        derived from the key (with an empty type).
+      parameters:
+        - in: query
+          name: guid
+          required: true
+          schema:
+            type: string
+          example: "b1f2c3d4e5f60718293a4b5c6d7e8f90"
+          description: "The asset key to resolve."
+      responses:
+        '200':
+          description: The asset's display info.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssetInfoResponse"
+        '400':
+          description: The `guid` parameter is missing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        '404':
+          description: The key resolves to nothing at all.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ---------------------------------------------------------------- Live Scene
+  /live/export:
+    post:
+      tags: [Live Scene]
+      summary: Write the whole live scene to a file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScenePathRequest"
+      responses:
+        '200':
+          description: Written.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        '400':
+          description: Missing path, or the write failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /live/import:
     post:
-      summary: Import exposed objects and their properties.
-      responses:
-        '200':
-          description: Successful response with the current status
+      tags: [Live Scene]
+      summary: Read a live scene file and apply it
+      description: >
+        Values are applied to the objects already registered. A reference whose target is not
+        present is kept as a pending entry rather than dropped — see `GET /live/orphans`.
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ImportRequest"
+              $ref: "#/components/schemas/ScenePathRequest"
+      responses:
+        '200':
+          description: Applied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        '400':
+          description: Missing path, or the file does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
-  /live/export:
+  /live/orphans:
+    get:
+      tags: [Live Scene]
+      summary: List references whose target no longer exists
+      description: >
+        Entries the current scene refers to but cannot resolve — a prop file that was moved, an
+        avatar that was deleted. They are kept, not silently dropped, so a client can present them
+        as "Missing" and the user decides whether to restore the file or remove the entry.
+      responses:
+        '200':
+          description: The unresolved entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orphans:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        sourceKey:
+                          type: string
+                          example: "file:Assets/Props/chair.prop.lsb"
+                        type:
+                          type: string
+                          example: "PropAsset"
+
+  /live/orphans/remove:
     post:
-      summary: Export all exposed objects and their properties.
-      responses:
-        '200':
-          description: Successful response with the current status
+      tags: [Live Scene]
+      summary: Drop an unresolved reference
+      description: >
+        Removes the entry from the pending store. Saving the scene afterwards is what makes the
+        removal permanent.
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ExportRequest"
+              type: object
+              required: [sourceKey]
+              properties:
+                sourceKey:
+                  type: string
+                  example: "file:Assets/Props/chair.prop.lsb"
+      responses:
+        '200':
+          description: Whether an entry was actually removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  removed: { type: boolean, example: true }
+        '400':
+          description: Missing `sourceKey`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
-
-
+  # ---------------------------------------------------------------- Web UI
   /ui/sidemenu:
     get:
-      summary: Get UI side menu definition configured in Unity
+      tags: [Web UI]
+      summary: Get the side menu authored in Unity
+      description: >
+        The pages a remote app should offer, in order, with their labels already translated into
+        the current language. Each item says what kind of page it is and, where applicable, which
+        live object backs its selector or its "+" button. Refetch when `/live/changes` reports the
+        pseudo id `@ui`.
       responses:
         '200':
-          description: Successful response with menu items
+          description: The menu items.
           content:
             application/json:
               schema:
@@ -363,98 +799,226 @@ paths:
 
   /ui/info:
     get:
-      summary: Get UI app info (Unity Application.productName etc.)
+      tags: [Web UI]
+      summary: Get the app title
       responses:
         '200':
-          description: Successful response with UI app info
+          description: The title to show in a remote app's title bar.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/UIInfoResponse"
 
-  /license:
-    get:
-      summary: Get the current license information
-      responses:
-        '200':
-          description: Successful response with license information
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/LicenseInfoResponse"
-        '404':
-          description: No license key found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-    put:
-      summary: Set or update the license key
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/LicenseKeyRequest"
-      responses:
-        '200':
-          description: License key successfully validated and saved
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/LicenseInfoResponse"
-        '400':
-          description: Invalid license key
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-    delete:
-      summary: Clear the current license key
-      responses:
-        '200':
-          description: License key successfully cleared
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SuccessResponse"
-
 components:
-  schemas:
-      ImportRequest:
-        type: object
-        properties:
-          path:
-            type: string
-            example: "data.json"
-            description: "Path to the import file. If relative, it's relative to the Virgo Motion Remote working directory."
+  parameters:
+    ClientId:
+      in: header
+      name: X-Client-ID
+      required: false
+      schema:
+        type: string
+      example: "remote-app-9f2c"
+      description: >
+        Stable identifier for the calling client. Falls back to `<address>:<port>` when absent,
+        which is not stable across reconnects.
 
-      ExportRequest:
+    ObjectId:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+      example: "3470a41c-f079-4d30-a002-3468fda088f7"
+      description: "Live object id. Never contains a slash."
+
+    PropertyPath:
+      in: path
+      name: path
+      required: true
+      schema:
+        type: string
+      example: "intensity"
+      description: >
+        Property path from the object root. May contain slashes for nested members and array
+        indices — `controller/distance`, `expressions/0/weight`.
+
+    Nested:
+      in: query
+      name: nested
+      required: false
+      schema:
+        type: boolean
+      example: true
+      description: >
+        Optional flag. When absent (default) each object is returned at depth 1: its own
+        property values are serialized but nested inline (unregistered) composite children are
+        replaced by a truncation stub (`{ "@type": ..., "@truncated": true }`) so the payload stays
+        small and scalable. Arrays do not consume depth, so element count and per-element type
+        stay visible. Fetch a stubbed child on demand via `GET /live/object/{id}/{path}`.
+        Pass `?nested` (or `?nested=true`) to restore full unbounded expansion.
+        (The depth is 1 vs. unbounded today; a future `?nested=<N>` numeric form may expose it.)
+
+  schemas:
+      StatusResponse:
         type: object
+        properties:
+          success:
+            type: boolean
+            example: true
+          applicationName:
+            type: string
+            example: "LiveStudio"
+          version:
+            type: string
+            example: "0.26.0"
+          fps:
+            type: number
+            example: 60
+          instanceId:
+            type: string
+            example: "8f6a1b30-2f0e-4a2f-9d1a-8c2f0a1b3c4d"
+            description: >
+              Identifies this run of the server. A client that sees a new value must discard the
+              revisions, event cursors and cached objects it holds.
+
+      EventsResponse:
+        type: object
+        properties:
+          lastEventId:
+            type: integer
+            format: int64
+            example: 42
+            description: >
+              Pass this back as `since` on the next poll. An empty inbox echoes the `since` that was
+              sent, so the read position holds steady.
+          events:
+            type: array
+            description: >
+              Queued notices, oldest first. Each item is the event's own payload with `type` and
+              `timestamp` always filled in — a client dispatches on `type` and reads the rest of the
+              object according to it.
+            items:
+              type: object
+              properties:
+                type:
+                  type: string
+                  example: "system_notification"
+                  description: >
+                    Open vocabulary. Well-known values: `system_notification` (a toast to show),
+                    `confirm_request` / `confirm_dismiss` (a prompt to raise or take down — answer it
+                    via `POST /api/confirm`). Other packages add their own; an unknown type is ignored.
+                timestamp:
+                  type: string
+                  format: date-time
+              additionalProperties:
+                description: "Fields specific to this event type."
+
+      ConfirmRequest:
+        type: object
+        required: [id, choice]
+        properties:
+          id:
+            type: string
+            example: "confirm-3"
+          choice:
+            type: string
+            enum: [yes, no, cancel]
+            example: "yes"
+
+      ConfirmResponse:
+        type: object
+        properties:
+          success:
+            type: boolean
+            example: true
+          settled:
+            type: boolean
+            example: true
+            description: "False when another surface answered first, or the prompt no longer exists."
+          timestamp:
+            type: string
+            format: date-time
+
+      PerformanceResponse:
+        type: object
+        properties:
+          success:
+            type: boolean
+            example: true
+          fps:
+            type: number
+            example: 59.8
+            description: "Rolling one-second average frame rate."
+          memory:
+            type: integer
+            format: int64
+            example: 1073741824
+            description: "Process working set, in bytes."
+
+      LanguageResponse:
+        type: object
+        properties:
+          current:
+            type: string
+            example: "ja"
+          available:
+            type: array
+            items:
+              type: string
+            example: ["en", "ja", "zh-CN"]
+
+      CommandResponse:
+        type: object
+        properties:
+          success:
+            type: boolean
+            example: true
+          message:
+            type: string
+            example: "Application quit initiated."
+          timestamp:
+            type: string
+            format: date-time
+
+      AssetInfoResponse:
+        type: object
+        properties:
+          guid:
+            type: string
+            example: "b1f2c3d4e5f60718293a4b5c6d7e8f90"
+          name:
+            type: string
+            example: "Idle"
+          type:
+            type: string
+            example: "AnimationClip"
+            description: "Empty when the key resolves by name only (target not loaded)."
+
+      ScenePathRequest:
+        type: object
+        required: [path]
         properties:
           path:
             type: string
             example: "data.json"
-            description: "Path to the export file. If relative, it's relative to the Virgo Motion Remote working directory."
+            description: >
+              Absolute, or relative to the app's `Saved` folder.
 
       PropertySettingRequest:
         type: object
         properties:
           value:
-            type: object
+            description: "The new value, in the property's JSON representation."
             example: 100
           changed:
             type: boolean
             example: true
 
-
       PropertyGettingResponse:
         type: object
         properties:
           value:
-            type: object
+            description: "The property value, in its JSON representation."
             example: 100
           id:
             type: string
@@ -468,6 +1032,19 @@ components:
             type: boolean
             example: true
             description: "Whether the property value differs from its default. Used for UI 'revert' indication, not for update success."
+
+      ChangesResponse:
+        type: object
+        properties:
+          revision:
+            type: integer
+            format: int64
+            example: 57
+          changes:
+            type: array
+            items:
+              type: string
+            example: ["2e910ddf-8cd8-4fb2-92f3-44b1ccd20c5f", "@types"]
 
       BatchRequest:
         type: object
@@ -495,7 +1072,7 @@ components:
             example: PUT
           path:
             type: string
-            description: "Absolute path of the sub-request. Limited to /live/object/{id}/{path} and /live/function/{id}/{path} families."
+            description: "Absolute path of the sub-request, query included."
             example: "/live/object/3470a41c-f079-4d30-a002-3468fda088f7/intensity"
           body:
             type: object
@@ -547,44 +1124,23 @@ components:
             example: 0
             description: Target index to move the element to
 
-      PropertyControllerResponse:
-        type: object
-        properties:
-          type:
-            type: string
-            example: "Single"
-          controller:
-            type: object
-            properties:
-              type:
-                type: string
-                example: "Slider"
-                description: "Controller type. Known values: Default, Hide, Slider, CameraController, TypeSelector, StringSelector, GLTFFileSelector, InlineReference"
-              min:
-                type: number
-                example: 0
-              max:
-                type: number
-                example: 100
-
       ObjectGettingResponse:
         type: object
+        description: >
+          A live object is its own property bag: `@type`, `@id` and `@name` are always present and
+          every exposed property appears alongside them under its own name.
         properties:
-          type:
+          "@type":
             type: string
             example: "Light"
-          id:
+          "@id":
             type: string
             example: "2e910ddf-8cd8-4fb2-92f3-44b1ccd20c5f"
-          name:
+          "@name":
             type: string
             example: "Directional Light"
-          position:
-            type: object
-            example: { x: 0, y: 10, z: 0 }
-          rotation:
-            type: object 
-            example: { x: 0, y: 0, z: 0 }
+        additionalProperties:
+          description: "One exposed property, in its JSON representation."
 
       ObjectsGettingResponse:
         type: object
@@ -592,25 +1148,7 @@ components:
           objects:
             type: array
             items:
-              type: object
-              properties:
-                type:
-                  type: string
-                  example: "Light"
-                id:
-                  type: string
-                  example: "2e910ddf-8cd8-4fb2-92f3-44b1ccd20c5f"
-                name:
-                  type: string
-                  example: "Directional Light"
-                position:
-                  type: object
-                  example: { x: 0, y: 10, z: 0 }
-                rotation:
-                  type: object 
-                  example: { x: 0, y: 0, z: 0 }
-
-
+              $ref: "#/components/schemas/ObjectGettingResponse"
 
       TypesGettingResponse:
         type: object
@@ -623,6 +1161,13 @@ components:
                 type:
                   type: string
                   example: "Light"
+                category:
+                  type: string
+                  example: "Lighting"
+                  description: >
+                    The side-menu page this type belongs to, **already translated** for display.
+                    Omitted when the type declares none. Filtering `/live/objects?category=` needs the
+                    untranslated key instead, so do not feed this value back into that query.
                 properties:
                   type: array
                   items:
@@ -644,21 +1189,15 @@ components:
                         type: integer
                         example: 0
                         description: "Declaration order for mixed property/function display"
+                      help:
+                        type: string
+                        example: "Brightness of the light"
+                        description: "Translated help text, when the property declares a help key."
                       controller:
-                        type: object
-                        properties:
-                          type:
-                            type: string
-                            example: "Slider"
-                          min:
-                            type: number
-                            example: 0
-                          max:
-                            type: number
-                            example: 100
+                        $ref: "#/components/schemas/PropertyController"
                 functions:
                   type: array
-                  description: "Parameterless functions available for this type"
+                  description: "Functions callable on this type"
                   items:
                     type: object
                     properties:
@@ -676,50 +1215,62 @@ components:
                         type: string
                         example: "Reset physics simulation"
 
-      LicenseInfoResponse:
+      PropertyController:
         type: object
+        description: >
+          How a client should render the property. `type` is open — an unknown controller should
+          fall back to the plain editor for the property's type.
         properties:
-          userName:
+          type:
             type: string
-            example: "John Doe"
-          licenseName:
-            type: string
-            example: "VirgoMotion Pro"
-          expiryDate:
-            type: string
-            format: date-time
-            example: "2025-12-31T23:59:59Z"
-          isValid:
-            type: boolean
-            example: true
-          daysRemaining:
-            type: integer
-            example: 365
-            description: Number of days until license expiration
+            example: "Slider"
+            description: >
+              Known values: Default, Hide, Slider, CameraController, TypeSelector, StringSelector,
+              GLTFFileSelector, AssetSelector, InlineReference.
+          min:
+            type: number
+            example: 0
+          max:
+            type: number
+            example: 100
 
-      LicenseKeyRequest:
+      EnumsGettingResponse:
         type: object
-        required:
-          - licenseKey
         properties:
-          licenseKey:
-            type: string
-            example: "SGVsbG8gV29ybGQhIFRoaXMgaXMgYSBsaWNlbnNlIGtleQ=="
-            description: Base64-encoded license key
-          session:
-            type: boolean
-            example: true
-            description: "If true, the license key will only be valid for the current session and won't be saved persistently."
+          enums:
+            type: array
+            items:
+              type: object
+              properties:
+                type:
+                  type: string
+                  example: "CameraProjection"
+                help:
+                  type: string
+                  example: "How the camera projects the scene"
+                  description: "Translated help text, when the enum declares a help key."
+                values:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        example: "Perspective"
+                      value:
+                        type: integer
+                        example: 0
+                      displayName:
+                        type: string
+                        example: "Perspective"
+                        description: "The label to show. Falls back to `name` when none was declared."
 
       ErrorResponse:
         type: object
         properties:
           error:
             type: string
-            example: "Invalid license key"
-          message:
-            type: string
-            example: "License key signature verification failed"
+            example: "Asset not found."
 
       SuccessResponse:
         type: object
@@ -727,9 +1278,6 @@ components:
           success:
             type: boolean
             example: true
-          message:
-            type: string
-            example: "Operation completed successfully"
 
       UISideMenuResponse:
         type: object
@@ -744,8 +1292,8 @@ components:
         properties:
           title:
             type: string
-            example: "VirgoMotionStudio"
-            description: "App title shown on the RemoteApp title bar (Unity Application.productName)."
+            example: "LiveStudio"
+            description: "App title shown on a remote app's title bar (Unity Application.productName)."
 
       UIMenuItem:
         type: object
@@ -759,9 +1307,23 @@ components:
           label:
             type: string
             example: "Avatar"
-          objectCategory:
+            description: "Already translated into the current language."
+          pageType:
             type: string
-            example: "Avatar"
+            enum: [category, scene, navigate, ""]
+            example: "category"
+            description: >
+              `category` lists the objects of one category; `scene` shows the live object tree;
+              `navigate` is a page whose contents are chosen by a selector. Empty when the page
+              kind is not one of these.
+          selectorObjectId:
+            type: string
+            example: "ui.selector.avatar"
+            description: "Live object backing the page's selector, or empty when it has none."
+          factoryObjectId:
+            type: string
+            example: "ui.factory.avatar"
+            description: "Live object backing the page's \"+\" button, or empty when it has none."
           position:
             type: string
             enum: [main, bottom]
@@ -769,4 +1331,7 @@ components:
           order:
             type: integer
             example: 10
-
+          accessLevel:
+            type: integer
+            example: 0
+            description: "Visibility tier of the page. A client hides items above the level it runs at."
