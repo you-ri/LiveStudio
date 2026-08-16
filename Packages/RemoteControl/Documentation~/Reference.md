@@ -48,7 +48,7 @@ Applications override the port through their own `ServerConfig` asset — LiveSt
 | `PUT` | `/live/object/{id}/{path}` | Write a property value. |
 | `POST` | `/live/object/{id}/{path}` | Append an array element. |
 | `DELETE` | `/live/object/{id}/{path}` | Remove an array element. |
-| `POST` | `/live/object/{id}/{path}/reset` | Reset a property to its default. |
+| `POST` | `/live/object/{id}/{path}/@reset` | Reset a property to its default (pseudo-member, like `@parent`). |
 | `GET` | `/live/changes` | Current change revision (no ids). Used to sync up on connect. |
 | `GET` | `/live/changes?since={revision}` | Ids of objects changed after `{revision}`. |
 
@@ -80,8 +80,11 @@ full unbounded expansion. Property reads, PUT responses and persistence are alwa
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/live/types` | List all exposed type definitions. |
-| `GET` | `/live/types?type={typeName}` | Fetch a specific type definition. |
+| `GET` | `/live/types?type={typeName}` | Filter the list by type name (empty list when nothing matches). |
+| `GET` | `/live/type/{typeName}` | Fetch one type definition (404 when unknown). |
 | `GET` | `/live/enums` | List all exposed enum definitions. |
+| `GET` | `/live/enums?type={typeName}` | Filter the list by enum name. |
+| `GET` | `/live/enum/{typeName}` | Fetch one enum definition (404 when unknown). |
 
 ### Functions
 

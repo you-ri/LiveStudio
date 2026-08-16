@@ -111,12 +111,37 @@ namespace Lilium.RemoteControl.RestApi
             }
         }
 
+        /// <summary>
+        /// リクエスト行のパスを**エスケープされたまま**返す (クエリは落とす)。
+        ///
+        /// <c>Url.AbsolutePath</c> は .NET の Uri 正規化を通った後の値で、URL に載せた文字列と
+        /// 一致しない: <c>%23</c> は <c>#</c> に戻された結果そこから後ろが fragment として切り捨てられ、
+        /// 連続した <c>/</c> は 1 つに潰れる (実測)。パスセグメントが識別子そのものであるルート
+        /// (アセットキー) では、この正規化が別のキーへの書き換えになる。
+        ///
+        /// 使うのはその必要があるハンドラだけでよい。id が GUID のルートは正規化の影響を受けない。
+        /// </summary>
+        protected static string GetRawPath(HttpListenerRequest request)
+        {
+            var raw = request.RawUrl;
+            if (string.IsNullOrEmpty(raw)) return request.Url.AbsolutePath;
+            int query = raw.IndexOf('?');
+            return query >= 0 ? raw.Substring(0, query) : raw;
+        }
+
+        /// <summary>
+        /// ルート一致に使うパス。既定は正規化済みの <c>Url.AbsolutePath</c>。
+        /// パスセグメントが識別子そのものになるハンドラは <see cref="GetRawPath"/> を返すよう
+        /// override する (理由は GetRawPath 参照)。
+        /// </summary>
+        protected virtual string GetMatchPath(HttpListenerRequest request) => request.Url.AbsolutePath;
+
         public virtual bool CanHandle(HttpListenerRequest request)
         {
             var routes = Routes;
             if (routes == null) return false;
 
-            var path = request.Url.AbsolutePath;
+            var path = GetMatchPath(request);
             for (int i = 0; i < routes.Count; i++)
             {
                 var r = routes[i];

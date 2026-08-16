@@ -165,7 +165,7 @@ namespace Lilium.LiveStudio
         /// file of its own next to the asset (a snapshot's <c>*.snapshot.png</c>). Null for everything else:
         /// most kinds carry their picture inside the asset (a VRM's embedded thumbnail, a bundle's packed
         /// one) and are served from <see cref="ThumbnailCache"/> instead. Read by
-        /// <see cref="AssetThumbnailProvider"/>, so <c>GET /live/asset/image</c> answers for every kind that
+        /// <see cref="AssetThumbnailProvider"/>, so <c>GET /live/asset/{key}/@image</c> answers for every kind that
         /// has a picture at all, whichever of the two shapes it takes. Such a file is served straight from
         /// disk and deliberately NOT copied into the cache — it is already an image on disk, and caching it
         /// would only duplicate it and add a staleness question.

@@ -11,7 +11,7 @@ using Lilium.RemoteControl;
 namespace Lilium.LiveStudio
 {
     /// <summary>
-    /// Supplies asset preview pictures to the generic image endpoint (<c>GET /live/asset/image</c>), which
+    /// Supplies asset preview pictures to the generic image endpoint (<c>GET /live/asset/{key}/@image</c>), which
     /// lives in RemoteControl and knows nothing about where a picture comes from. This is the LiveStudio
     /// half of that split, alongside the name/listing hooks <see cref="PackBundleLoader"/> registers:
     /// <list type="bullet">

@@ -61,17 +61,21 @@ namespace Lilium.RemoteControl.Server
             RegisterRoute(_performanceHandler);
             _languageHandler = new LanguageHandler(this);
             RegisterRoute(_languageHandler);
+            // The picture for an asset, at /live/asset/{key}/@image. The bytes come from the host app
+            // through AssetRegistry's thumbnail provider, so the route exists even where nothing supplies
+            // one (it then answers 404, which is what "no picture" looks like anyway).
+            //
+            // ⚠ Registered BEFORE the resolver below on purpose: an asset key runs to the end of the URL,
+            // so /live/asset/ is claimed as a whole prefix and the first handler that accepts a path wins.
+            // Reversing these two makes every picture request return the asset's name instead.
+            _assetImageHandler = new AssetImageHandler(this);
+            RegisterRoute(_assetImageHandler);
             _assetHandler = new AssetHandler(this);
             RegisterRoute(_assetHandler);
             // Plural: the discovery counterpart of the resolver above. Both read AssetRegistry, which
             // is this package's, so both live here — see AssetsHandler for the split with the host app.
             _assetsHandler = new AssetsHandler(this);
             RegisterRoute(_assetsHandler);
-            // The picture for an asset the two routes above name. The bytes come from the host app through
-            // AssetRegistry's thumbnail provider, so the route exists even where nothing supplies one (it
-            // then answers 404, which is what "no picture" looks like anyway).
-            _assetImageHandler = new AssetImageHandler(this);
-            RegisterRoute(_assetImageHandler);
             // Carries a remote app's answer to a RemoteConfirmSystem prompt. A default route because
             // the prompt can be raised by the framework itself (unsaved changes), not just by an app.
             _confirmHandler = new ConfirmApiHandler(this);

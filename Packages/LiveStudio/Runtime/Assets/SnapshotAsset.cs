@@ -14,7 +14,7 @@ namespace Lilium.LiveStudio
     /// live values instead of adding something to the scene. The entry exists so a snapshot is visible,
     /// restorable and deletable from the project listing along with the other files the project holds —
     /// and, through <see cref="thumbnailFilePath"/>, so its screenshot is served by the same
-    /// <c>GET /live/asset/image</c> every other asset's preview comes from.
+    /// <c>GET /live/asset/{key}/@image</c> every other asset's preview comes from.
     /// </summary>
     [System.Serializable]
     [LiveClass("SnapshotAsset", Category = "Asset", Icon = "photo_library")]

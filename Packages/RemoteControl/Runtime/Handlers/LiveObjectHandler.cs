@@ -46,6 +46,15 @@ namespace Lilium.RemoteControl
             public int toIndex;
         }
 
+        /// <summary>
+        /// プロパティを既定値に戻す疑似メンバー (<c>POST /live/object/{id}/{path}/@reset</c>)。
+        ///
+        /// <c>@</c> で始まるのは <c>@parent</c> と同じ理由で、実在のメンバー名と衝突させないため。
+        /// 素の <c>reset</c> だと、<c>reset</c> という名前のメンバーへの配列 append が
+        /// 「そのメンバーを reset しろ」と読めてしまい、区別できない。
+        /// </summary>
+        private const string kResetSuffix = "/@reset";
+
         private readonly EndpointRoute[] _getRoutes;
         private readonly EndpointRoute[] _putRoutes;
         private readonly EndpointRoute[] _postRoutes;
@@ -61,7 +70,9 @@ namespace Lilium.RemoteControl
                 new EndpointRoute("/live/object/*/*", RouteMatch.Wildcard, HandleGetProperty),
                 new EndpointRoute("/live/object/", RouteMatch.Prefix, HandleGetObject),
                 new EndpointRoute("/live/types", RouteMatch.Exact, HandleGetTypes),
+                new EndpointRoute("/live/type/", RouteMatch.Prefix, HandleGetType),
                 new EndpointRoute("/live/enums", RouteMatch.Exact, HandleGetEnums),
+                new EndpointRoute("/live/enum/", RouteMatch.Prefix, HandleGetEnum),
                 new EndpointRoute("/live/changes", RouteMatch.Exact, HandleGetChanges),
             };
             _putRoutes = new[]
@@ -72,7 +83,8 @@ namespace Lilium.RemoteControl
             _postRoutes = new[]
             {
                 new EndpointRoute("/live/batch", RouteMatch.Exact, HandleBatch),
-                new EndpointRoute("/live/object/*/*/reset", RouteMatch.Wildcard, HandleResetProperty),
+                // @reset は汎用の */* にも一致するので先に置く (順序依存は HandlerRoutingTests が固定)。
+                new EndpointRoute("/live/object/*/*/@reset", RouteMatch.Wildcard, HandleResetProperty),
                 new EndpointRoute("/live/object/*/*", RouteMatch.Wildcard, HandleAddArrayElement),
                 new EndpointRoute("/live/function/*", RouteMatch.Wildcard, HandleInvokeFunction),
             };
@@ -96,7 +108,9 @@ namespace Lilium.RemoteControl
             new RouteRule("/live/function/", RouteMatch.Prefix),
             new RouteRule("/live/objects", RouteMatch.Prefix),
             new RouteRule("/live/types", RouteMatch.Prefix),
+            new RouteRule("/live/type/", RouteMatch.Prefix),
             new RouteRule("/live/enums", RouteMatch.Prefix),
+            new RouteRule("/live/enum/", RouteMatch.Prefix),
             new RouteRule("/live/batch", RouteMatch.Exact),
             new RouteRule("/live/changes", RouteMatch.Exact),
         };
@@ -467,9 +481,9 @@ namespace Lilium.RemoteControl
             errMessage = null;
 
             var path = absolutePath;
-            if (stripResetSuffix && path.EndsWith("/reset"))
+            if (stripResetSuffix && path.EndsWith(kResetSuffix))
             {
-                path = path.Substring(0, path.Length - "/reset".Length);
+                path = path.Substring(0, path.Length - kResetSuffix.Length);
             }
 
             var id = PathParser.GetPathSegment(path, 2);
@@ -996,9 +1010,9 @@ namespace Lilium.RemoteControl
                 return InvokeFunctionCore(container, resolver, id, functionPath, body);
             }
 
-            // プロパティ系パイプライン。reset サフィックスは単発ルートと同じ優先順で先に判定する。
+            // プロパティ系パイプライン。@reset サフィックスは単発ルートと同じ優先順で先に判定する。
             var isReset = isPost
-                && MatchPattern(absolutePath, "/live/object/*/*/reset", RouteMatch.Wildcard);
+                && MatchPattern(absolutePath, "/live/object/*/*/@reset", RouteMatch.Wildcard);
             if (isReset || MatchPattern(absolutePath, "/live/object/*/*", RouteMatch.Wildcard))
             {
                 if (!TryBuildPropertyContext(container, absolutePath, isReset, body,
@@ -1074,6 +1088,39 @@ namespace Lilium.RemoteControl
             return;
         }
 
+        /// <summary>
+        /// GET /live/type/{name} — 型定義 1 件。複数形 /live/types に対する単数形で、
+        /// /live/objects と /live/object/{id} の関係と同じ。定義そのものを返し、
+        /// 未知の名前は 404 (一覧側は無一致でも空集合を 200 で返す)。
+        /// 返す定義は /live/types の配列要素と同じもの (配列に包まない)。
+        /// </summary>
+        private async Task HandleGetType(HttpListenerContext context)
+        {
+            var path = context.Request.Url.AbsolutePath;
+            var typeName = PathParser.GetPathSegment(path, 2);
+            if (string.IsNullOrEmpty(typeName))
+            {
+                await WriteError(context, 400, "Type name is required.");
+                return;
+            }
+
+            // HandleGetTypes と同じ理由でメインスレッド (ToJObject が ObjectSelector の
+            // シーン列挙などメインスレッド専用の Unity API を呼びうる)。
+            var json = await ExecuteOnMainThread(() =>
+            {
+                var liveType = LiveClass.Find(typeName);
+                return liveType != null ? LiveTypeInfoSerializer.ToJson(liveType) : null;
+            });
+
+            if (json == null)
+            {
+                await WriteError(context, 404, "Type not found.");
+                return;
+            }
+
+            await WriteResponse(200, context.Response, json);
+        }
+
         private async Task HandleGetEnums(HttpListenerContext context)
         {
             var path = context.Request.Url.AbsolutePath;
@@ -1086,6 +1133,31 @@ namespace Lilium.RemoteControl
 
             await WriteResponse(200, context.Response, json);
             return;
+        }
+
+        /// <summary>
+        /// GET /live/enum/{name} — enum 定義 1 件。<see cref="HandleGetType"/> の enum 版で、
+        /// 複数形 /live/enums に対する単数形。未知の名前は 404。
+        /// </summary>
+        private async Task HandleGetEnum(HttpListenerContext context)
+        {
+            var path = context.Request.Url.AbsolutePath;
+            var typeName = PathParser.GetPathSegment(path, 2);
+            if (string.IsNullOrEmpty(typeName))
+            {
+                await WriteError(context, 400, "Enum name is required.");
+                return;
+            }
+
+            // enum 定義は名前と値だけで Unity API を触らないため、types と違いメインスレッドは不要。
+            var liveEnum = LiveEnum.all.Values.FirstOrDefault(e => e.typeName == typeName);
+            if (liveEnum == null)
+            {
+                await WriteError(context, 404, "Enum not found.");
+                return;
+            }
+
+            await WriteResponse(200, context.Response, LiveTypeInfoSerializer.ToJson(liveEnum));
         }
 
         private async Task HandleInvokeFunction(HttpListenerContext context)

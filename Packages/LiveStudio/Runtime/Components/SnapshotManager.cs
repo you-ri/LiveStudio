@@ -25,7 +25,7 @@ namespace Lilium.LiveStudio
 
         /// <summary>
         /// Project-relative reference to the snapshot file, which is also this snapshot's key as a project
-        /// asset — so a client fetches its picture from the generic <c>GET /live/asset/image?id=</c> like
+        /// asset — so a client fetches its picture from the generic <c>GET /live/asset/{key}/@image</c> like
         /// any other asset, instead of a snapshot-specific route. Falls back to the absolute path when no
         /// relative path can be formed. See <see cref="ExternalAssetManager.FindAssetByReference"/>.
         /// </summary>
@@ -41,7 +41,7 @@ namespace Lilium.LiveStudio
     /// the captured state regardless of what changed since. Files are stored in the open
     /// project's "Snapshots" folder as "&lt;name&gt;.snapshot.json", with an optional camera
     /// screenshot "&lt;name&gt;.snapshot.png" taken from the live camera at capture time
-    /// (served to remote apps by the generic <c>GET /live/asset/image</c>, since a snapshot file is a
+    /// (served to remote apps by the generic <c>GET /live/asset/{key}/@image</c>, since a snapshot file is a
     /// project asset like any other — see <see cref="SnapshotAsset"/>).
     ///
     /// Restoring applies the file on top of the live scene without adopting it as the current

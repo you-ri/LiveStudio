@@ -11,7 +11,7 @@ namespace Lilium.RemoteControl
     /// Components that expose asset references through <see cref="AssetSelectorAttribute"/>
     /// register their candidate assets here (typically in OnEnable) with GUIDs baked at edit
     /// time, so asset references can be serialized as GUIDs and resolved back at runtime,
-    /// where AssetDatabase is unavailable. Also backs <c>GET /live/asset?guid=...</c>.
+    /// where AssetDatabase is unavailable. Also backs <c>GET /live/asset/{key}</c>.
     /// </summary>
     public static class AssetRegistry
     {
@@ -37,7 +37,7 @@ namespace Lilium.RemoteControl
         // Turns an asset key into its preview image. Same injected-hook shape and lifetime as the two
         // above: where the picture comes from (a VRM's embedded thumbnail, a bundle's packed one) and
         // where it is cached belong to the layer that owns the assets, so this core type only carries
-        // the wiring that GET /live/asset/image needs.
+        // the wiring that GET /live/asset/{key}/@image needs.
         static System.Func<string, Task<Thumbnail>> _thumbnailProvider;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -106,7 +106,7 @@ namespace Lilium.RemoteControl
 
         /// <summary>
         /// Registers the resolver that turns an asset key into a preview image, backing
-        /// <c>GET /live/asset/image</c>. The key is whatever the host app hands its clients (a registry key,
+        /// <c>GET /live/asset/{key}/@image</c>. The key is whatever the host app hands its clients (a registry key,
         /// or an app-specific asset reference such as LiveStudio's project-relative one) — this package
         /// passes it through untouched. Returning <see cref="Thumbnail.none"/> means "no picture", which is
         /// also the answer when no provider is registered.

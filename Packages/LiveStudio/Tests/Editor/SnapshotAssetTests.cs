@@ -41,7 +41,7 @@ namespace Lilium.LiveStudio.EditorTests
 
         /// <summary>
         /// A snapshot's preview is its sibling <c>*.snapshot.png</c>, reported through the generic
-        /// <see cref="AssetBase.thumbnailFilePath"/> so <c>GET /live/asset/image</c> serves it like every
+        /// <see cref="AssetBase.thumbnailFilePath"/> so <c>GET /live/asset/{key}/@image</c> serves it like every
         /// other asset's picture. Path-only, so no file has to exist for this to hold.
         /// </summary>
         [Test]

@@ -16,17 +16,17 @@ info:
 
     ## 名前空間
 
-    このパッケージが登録するルートはすべて `/live/` の下にあります。`/api/` には何も置きません。
+    このパッケージが登録するルートはすべて `/live/` の下にあります。
 
     RemoteControl はライブラリで、自分のハンドラとホストアプリのハンドラが同じサーバー・同じ
-    ルートテーブルを共有します。ここで `/api/status` のような一般名を取ると、その名前はアプリ側が
-    二度と使えなくなります。だから提供するものは `/live/` に寄せ、**`/api/` は組み込む側のアプリの
-    ために丸ごと空けてあります**。
+    ルートテーブルを共有します。ここでライブラリが `status` のような一般名をルートの根元で取ると、
+    その名前はアプリ側が二度と使えなくなります。だから提供するものは `/live/` に寄せ、**それ以外の
+    プレフィックスは組み込む側のアプリのために空けてあります**。
 
     同じ理由で `jp.lilium.livestudio` も `/live/` を使います。VirgoMotion の各アプリ
     (Studio / Fusion / Capture) は自分のルートも `/live/` に載せていますが、これは同じ開発元が
-    出荷するスタック全体を 1 つのプレフィックスに揃えているだけで、`/api/` が空いている事実は
-    変わりません。第三者がこのパッケージを組み込むときは `/api/` を使ってください。
+    出荷するスタック全体を 1 つのプレフィックスに揃えているためです。第三者がこのパッケージを
+    組み込むときは、自分のプレフィックスを決めてそこにルートを置いてください。
 
     `/live/` 直下はこのパッケージの予約領域です。どうしても `/live/` に足したいときは
     `/live/app/*` のように 1 段掘って、将来ライブラリが同じ名前を取っても当たらないように
@@ -310,6 +310,41 @@ paths:
               schema:
                 $ref: "#/components/schemas/TypesGettingResponse"
 
+  /live/type/{name}:
+    get:
+      tags: [型]
+      summary: 型定義を 1 件取得する
+      description: >
+        複数形 `/live/types` に対する単数形で、`/live/objects` と `/live/object/{id}` の関係と
+        同じです。返すのは `/live/types` の配列要素そのもので、配列には包みません。名前は識別子
+        (スラッシュを含まない) なのでパスに置けます — 資産キーがパスに置けずクエリなのとは対照的です。
+
+        すでに全型テーブルを持っているクライアントには不要です。`/live/changes` が擬似 id
+        `@types` を報告したあと、手元に無い 1 型だけを取り直すような用途を想定しています。
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+          example: "Camera"
+          description: "型名。`/live/types` の `type` フィールドと同じ綴り。"
+      responses:
+        '200':
+          description: 型定義。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TypeDefinition"
+        '404':
+          description: >
+            その名前の型は公開されていない。**一覧側との違いに注意**: `/live/types?type=` は
+            無一致でも 200 + 空集合を返します。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /live/enums:
     get:
       tags: [型]
@@ -332,6 +367,35 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EnumsGettingResponse"
+
+  /live/enum/{name}:
+    get:
+      tags: [型]
+      summary: enum 定義を 1 件取得する
+      description: >
+        `/live/type/{name}` の enum 版。複数形 `/live/enums` に対する単数形で、返すのは
+        その配列要素そのものです。
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+          example: "CameraProjection"
+          description: "enum 型名。`/live/enums` の `type` フィールドと同じ綴り。"
+      responses:
+        '200':
+          description: enum 定義。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnumDefinition"
+        '404':
+          description: その名前の enum は公開されていない (一覧側は無一致でも 200 + 空集合)。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   # ---------------------------------------------------------------- オブジェクト
   /live/objects:
@@ -535,13 +599,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/PropertyGettingResponse"
 
-  /live/object/{id}/{path}/reset:
+  /live/object/{id}/{path}/@reset:
     post:
       tags: [プロパティ]
       summary: プロパティを既定値へ戻す
       description: >
         既定値とは、そのオブジェクトが最初に登録されたときにプロパティが持っていた値です。
         プロパティ応答の `changed` が比較しているのも、この値です。
+
+
+        末尾の `@reset` は**疑似メンバー**で、オブジェクトの `@parent` と同じ綴り方です。素の
+        `reset` だと、`reset` という名前のメンバーへの配列追加 (`POST /live/object/{id}/reset`) と
+        区別が付きません。`@` で始まる名前は実在のメンバー名と衝突しないため、この 1 文字が
+        「実在するプロパティか、プロパティに対する操作か」を分けています。
       parameters:
         - $ref: "#/components/parameters/ObjectId"
         - $ref: "#/components/parameters/PropertyPath"
@@ -641,7 +711,7 @@ paths:
 
         - `GET /live/events` — クライアントごとの受信箱
         - `GET /live/changes` — 変更フィード
-        - `GET|PUT|POST|DELETE|PATCH /live/object/{id}/{path}` (`.../reset` を含む)
+        - `GET|PUT|POST|DELETE|PATCH /live/object/{id}/{path}` (`.../@reset` を含む)
         - `POST /live/function/{id}/{path}`
 
         リモートアプリが、変更フィードのポーリング・受信箱の回収・画面に出ているプロパティの更新を
@@ -661,26 +731,41 @@ paths:
                 $ref: "#/components/schemas/BatchResponse"
 
   # ---------------------------------------------------------------- アセット
-  /live/asset:
+  /live/asset/{key}:
     get:
       tags: [アセット]
       summary: アセットキーから表示用の情報を引く
       description: >
         アセット型のプロパティはキーだけで流れるので、ラベルを出すにはこれが要ります。キーは
-        ベイク済みの GUID でも、外部参照の `file:<path>#<name>` でも構いません。読み込み済みなら
-        本当の名前と型が、未読み込みの外部キーでもキーから導いた名前が (型は空で) 返ります。
+        ベイク済みの GUID でも、外部参照の `file:<path>#<name>` でも、エンジンのアセットパス
+        (`/Game/Props/Chair.Chair`) でも構いません。読み込み済みなら本当の名前と型が、未読み込みの
+        外部キーでもキーから導いた名前が (型は空で) 返ります。
 
 
         単数形であることに注意してください。こちらはキー 1 つの解決だけを行います。選択肢の**一覧**は
         [`GET /live/assets`](#get-live-assets) です。
+
+
+        **キーは URL の末尾を丸ごと占めます。** `/live/object/{id}/{path}` の `path` と同じ扱いで、
+        キーの中の `/` は区切りのまま送ってください (`/live/asset/file:C:/props/chair.lsb`)。`/` で
+        始まるキーはスラッシュが 2 つ並ぶ形になります (`/live/asset//Game/Props/Chair.Chair`)。
+        これで正しく、サーバーはそのまま受け取ります。
+
+
+        ⚠ **クライアント側でエスケープが要ります。** `#` と `?` は必ず percent-encode してください
+        (`#` を生で送るとそこから先が fragment として切られ、サーバーに届きません)。キーに含まれる
+        リテラルな `%` も `%25` にします。`/` はエスケープしません。
+
+
+        ⚠ キーの途中に `..` があると、URL の正規化で別のキーに書き換わります。
       parameters:
-        - in: query
-          name: guid
+        - in: path
+          name: key
           required: true
           schema:
             type: string
           example: "b1f2c3d4e5f60718293a4b5c6d7e8f90"
-          description: "解決したいアセットキー。"
+          description: "解決したいアセットキー。`/` を含んだまま複数セグメントに跨って構いません。"
       responses:
         '200':
           description: アセットの表示用情報。
@@ -689,7 +774,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AssetInfoResponse"
         '400':
-          description: "`guid` がない。"
+          description: キーが空。
           content:
             application/json:
               schema:
@@ -706,7 +791,7 @@ paths:
       tags: [アセット]
       summary: スロットに差せるアセットを一覧する
       description: >
-        単数形の `/live/asset` がクライアントの持っているキーを解決するのに対し、こちらは**どんなキーが
+        単数形の `/live/asset/{key}` がクライアントの持っているキーを解決するのに対し、こちらは**どんなキーが
         あるか**を知るための口です。絞り込みの軸は 2 つあり、組み合わせられます。応答の形はどちらでも
         同じなので、クライアントはどちらを使ったかを意識する必要がありません。
 
@@ -757,22 +842,27 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /live/asset/image:
+  /live/asset/{key}/@image:
     get:
       tags: [アセット]
       summary: アセットのサムネイルを取得する
       description: >
-        名前と型を返す `/live/asset` の**絵**版です。アセットの種別は問いません。絵そのものを
-        用意するのは組み込み側のアプリで、この口はその受け渡しだけを担います (供給する仕組みが
-        無い構成では常に 404 になります)。
+        名前と型を返す [`GET /live/asset/{key}`](#get-live-asset-key) の**絵**版です。アセットの種別は
+        問いません。絵そのものを用意するのは組み込み側のアプリで、この口はその受け渡しだけを担います
+        (供給する仕組みが無い構成では常に 404 になります)。
+
+
+        キーが URL の末尾を占めるので、絵は**末尾の疑似メンバー** `@image` で区別します。オブジェクトの
+        `@parent` と同じ綴り方です。`image` のような普通の語だと、キーの末尾がその語で終わったときに
+        区別が付きません。キーのエスケープ規則は名前を引くときと同じです。
 
 
         LiveStudio の場合、VRM/glb は初回リクエスト時に埋め込みサムネイルを抽出してキャッシュし、
         バンドルのサムネイルはバンドルを読み込んだときにキャッシュされるので、**一度は読み込まれた
         後**でないと出ません。キャッシュはディスク上にあるので、再起動しても残ります。
       parameters:
-        - in: query
-          name: id
+        - in: path
+          name: key
           required: true
           schema:
             type: string
@@ -793,7 +883,7 @@ paths:
                 type: string
                 format: binary
         '400':
-          description: "`id` がない。"
+          description: キーが空。
           content:
             application/json:
               schema:
@@ -1321,64 +1411,70 @@ components:
           types:
             type: array
             items:
+              $ref: "#/components/schemas/TypeDefinition"
+
+      TypeDefinition:
+        type: object
+        description: >
+          型 1 件の定義。`/live/types` の配列要素であり、`/live/type/{name}` が単体で返すものと
+          同一です。
+        properties:
+          type:
+            type: string
+            example: "Light"
+          category:
+            type: string
+            example: "Lighting"
+            description: >
+              この型が属するサイドメニューのページ。表示用に**翻訳済み**です。型がカテゴリを
+              宣言していなければ省略されます。`/live/objects?category=` の絞り込みには翻訳前の
+              キーが要るので、この値をそのまま渡さないでください。
+          properties:
+            type: array
+            items:
               type: object
               properties:
+                name:
+                  type: string
+                  example: "intensity"
                 type:
                   type: string
-                  example: "Light"
-                category:
+                  example: "Single"
+                isReadOnly:
+                  type: boolean
+                  example: false
+                isArray:
+                  type: boolean
+                  example: false
+                order:
+                  type: integer
+                  example: 0
+                  description: "プロパティと関数を混ぜて並べるための宣言順"
+                help:
                   type: string
-                  example: "Lighting"
-                  description: >
-                    この型が属するサイドメニューのページ。表示用に**翻訳済み**です。型がカテゴリを
-                    宣言していなければ省略されます。`/live/objects?category=` の絞り込みには翻訳前の
-                    キーが要るので、この値をそのまま渡さないでください。
-                properties:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      name:
-                        type: string
-                        example: "intensity"
-                      type:
-                        type: string
-                        example: "Single"
-                      isReadOnly:
-                        type: boolean
-                        example: false
-                      isArray:
-                        type: boolean
-                        example: false
-                      order:
-                        type: integer
-                        example: 0
-                        description: "プロパティと関数を混ぜて並べるための宣言順"
-                      help:
-                        type: string
-                        example: "Brightness of the light"
-                        description: "プロパティがヘルプキーを宣言している場合の、翻訳済みヘルプ文。"
-                      controller:
-                        $ref: "#/components/schemas/PropertyController"
-                functions:
-                  type: array
-                  description: "この型で呼び出せる関数"
-                  items:
-                    type: object
-                    properties:
-                      name:
-                        type: string
-                        example: "resetPhysics"
-                      returnType:
-                        type: string
-                        example: "Void"
-                      order:
-                        type: integer
-                        example: 5
-                        description: "プロパティと関数を混ぜて並べるための宣言順"
-                      help:
-                        type: string
-                        example: "Reset physics simulation"
+                  example: "Brightness of the light"
+                  description: "プロパティがヘルプキーを宣言している場合の、翻訳済みヘルプ文。"
+                controller:
+                  $ref: "#/components/schemas/PropertyController"
+          functions:
+            type: array
+            description: "この型で呼び出せる関数"
+            items:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: "resetPhysics"
+                returnType:
+                  type: string
+                  example: "Void"
+                order:
+                  type: integer
+                  example: 5
+                  description: "プロパティと関数を混ぜて並べるための宣言順"
+                help:
+                  type: string
+                  example: "Reset physics simulation"
 
       PropertyController:
         type: object
@@ -1405,30 +1501,36 @@ components:
           enums:
             type: array
             items:
+              $ref: "#/components/schemas/EnumDefinition"
+
+      EnumDefinition:
+        type: object
+        description: >
+          enum 1 件の定義。`/live/enums` の配列要素であり、`/live/enum/{name}` が単体で返すものと
+          同一です。
+        properties:
+          type:
+            type: string
+            example: "CameraProjection"
+          help:
+            type: string
+            example: "How the camera projects the scene"
+            description: "enum がヘルプキーを宣言している場合の、翻訳済みヘルプ文。"
+          values:
+            type: array
+            items:
               type: object
               properties:
-                type:
+                name:
                   type: string
-                  example: "CameraProjection"
-                help:
+                  example: "Perspective"
+                value:
+                  type: integer
+                  example: 0
+                displayName:
                   type: string
-                  example: "How the camera projects the scene"
-                  description: "enum がヘルプキーを宣言している場合の、翻訳済みヘルプ文。"
-                values:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      name:
-                        type: string
-                        example: "Perspective"
-                      value:
-                        type: integer
-                        example: 0
-                      displayName:
-                        type: string
-                        example: "Perspective"
-                        description: "表示するラベル。宣言がなければ `name` にフォールバックします。"
+                  example: "Perspective"
+                  description: "表示するラベル。宣言がなければ `name` にフォールバックします。"
 
       ErrorResponse:
         type: object

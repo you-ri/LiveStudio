@@ -591,7 +591,7 @@ namespace Lilium.RemoteControl
     /// 対象アセットは AssetRegistry に登録されている必要がある。
     /// sourcePropertyName には候補 GUID の string[] を返すプロパティ名を指定する
     /// (先頭の空文字は「未選択」を表す)。クライアントは各 GUID の表示名と型を
-    /// <c>GET /live/asset?guid=...</c> で解決して表示する。
+    /// <c>GET /live/asset/{key}</c> で解決して表示する。
     /// </summary>
     [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
     public class AssetSelectorAttribute : ControlAttribute

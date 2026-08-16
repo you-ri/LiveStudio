@@ -35,7 +35,7 @@ namespace Lilium.LiveStudio
             server.RegisterRoute(_vrmLoadHandler);
 
             // Asset preview pictures — a snapshot's screenshot included, since a snapshot is a project asset
-            // like any other — are served by RemoteControl's own /live/asset/image; this app only supplies
+            // like any other — are served by RemoteControl's own /live/asset/{key}/@image; this app only supplies
             // the bytes, through the hook AssetThumbnailProvider registers.
 
             // Serves both /live/input-actions and /live/input-actions/bind via its own Routes.

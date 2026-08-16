@@ -76,13 +76,18 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Post_ResetMustBeEvaluatedBeforeAdd()
         {
-            // /reset 付きは reset ルートに一致し、かつ add の object/*/* にも一致するため
+            // /@reset 付きは reset ルートに一致し、かつ add の object/*/* にも一致するため
             // テーブル順で reset を先に置く必要がある(本テストはその前提を固定)。
-            Assert.IsTrue(Probe.Wildcard("/live/object/1/prop/reset", "/live/object/*/*/reset"));
-            Assert.IsTrue(Probe.Wildcard("/live/object/1/prop/reset", "/live/object/*/*"));
-            // /reset 無しは reset ルートに不一致 → add へ。
-            Assert.IsFalse(Probe.Wildcard("/live/object/1/prop", "/live/object/*/*/reset"));
+            Assert.IsTrue(Probe.Wildcard("/live/object/1/prop/@reset", "/live/object/*/*/@reset"));
+            Assert.IsTrue(Probe.Wildcard("/live/object/1/prop/@reset", "/live/object/*/*"));
+            // /@reset 無しは reset ルートに不一致 → add へ。
+            Assert.IsFalse(Probe.Wildcard("/live/object/1/prop", "/live/object/*/*/@reset"));
             Assert.IsTrue(Probe.Wildcard("/live/object/1/prop", "/live/object/*/*"));
+
+            // 疑似メンバーが @ で始まる理由: "reset" という名前のメンバーが実在しても、
+            // そのメンバーへの append と reset 要求が別物として読める。
+            Assert.IsFalse(Probe.Wildcard("/live/object/1/prop/reset", "/live/object/*/*/@reset"));
+            Assert.IsTrue(Probe.Wildcard("/live/object/1/prop/reset", "/live/object/*/*"));
         }
 
         [Test]
@@ -92,6 +97,50 @@ namespace Lilium.RemoteControl.Tests
             // テーブル順で @parent を先に置く必要がある。
             Assert.IsTrue(Probe.Wildcard("/live/object/1/@parent", "/live/object/*/@parent"));
             Assert.IsTrue(Probe.Wildcard("/live/object/1/@parent", "/live/object/*/*"));
+        }
+
+        [Test]
+        public void Get_SingularTypeRoutes_DoNotCollideWithPluralOnes()
+        {
+            // 単数形は Prefix、複数形は Exact。綴りが 1 文字違いなので、
+            // どちらかがもう一方を吸わないことを固定する。
+            Assert.IsTrue(Probe.Prefix("/live/type/Camera", "/live/type/"));
+            Assert.IsFalse(Probe.Prefix("/live/types", "/live/type/"));
+            Assert.IsFalse(Probe.Exact("/live/type/Camera", "/live/types"));
+
+            Assert.IsTrue(Probe.Prefix("/live/enum/CameraProjection", "/live/enum/"));
+            Assert.IsFalse(Probe.Prefix("/live/enums", "/live/enum/"));
+            Assert.IsFalse(Probe.Exact("/live/enum/CameraProjection", "/live/enums"));
+
+            // 型名を持たない裸の /live/type は単数形ルートに載らない
+            // (/live/object と同じで、ハンドラ以前に 404)。
+            Assert.IsFalse(Probe.Prefix("/live/type", "/live/type/"));
+        }
+
+        [Test]
+        public void Get_AssetKey_TakesTheWholeTailAndImageIsToldApartBySuffix()
+        {
+            // キーは URL の末尾を丸ごと占める。中の "/" も先頭の "/" も (エンジンのアセットパス)
+            // プレフィックス一致で拾える。
+            Assert.IsTrue(Probe.Prefix("/live/asset/0123456789abcdef", "/live/asset/"));
+            Assert.IsTrue(Probe.Prefix("/live/asset/file:C:/a/chair.prop.lsb", "/live/asset/"));
+            Assert.IsTrue(Probe.Prefix("/live/asset//Game/Props/Chair.Chair", "/live/asset/"));
+
+            // 絵は末尾の疑似メンバーで区別する。キーが何セグメントでも一致すること。
+            Assert.IsTrue(Probe.Wildcard("/live/asset/0123456789abcdef/@image", "/live/asset/*/@image"));
+            Assert.IsTrue(Probe.Wildcard("/live/asset/file:C:/a/chair.prop.lsb/@image", "/live/asset/*/@image"));
+            Assert.IsTrue(Probe.Wildcard("/live/asset//Game/Props/Chair.Chair/@image", "/live/asset/*/@image"));
+
+            // 絵でないキーは @image ルートに一致しない。
+            Assert.IsFalse(Probe.Wildcard("/live/asset/file:C:/a/chair.prop.lsb", "/live/asset/*/@image"));
+
+            // ⚠ 絵のパスは単数形の Prefix にも一致する。だから登録順で @image を先に置く必要がある
+            // (reset を append より先に置くのと同じ理由)。この前提が崩れると絵が名前で返る。
+            Assert.IsTrue(Probe.Prefix("/live/asset/0123456789abcdef/@image", "/live/asset/"));
+
+            // 複数形は単数形の Prefix に吸われない ("/live/assets" は "/live/asset/" で始まらない)。
+            Assert.IsFalse(Probe.Prefix("/live/assets", "/live/asset/"));
+            Assert.IsTrue(Probe.Exact("/live/assets", "/live/assets"));
         }
 
         [Test]

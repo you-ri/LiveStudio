@@ -474,6 +474,59 @@ namespace Lilium.RemoteControl.Tests
             Assert.AreEqual(JTokenType.Null, responses[0]["id"].Type);
         }
 
+        // ---- プロパティ reset (/@reset) ----
+        // 素の "reset" だと、"reset" という名前のメンバーへの配列 append と同じ URL になり、
+        // ルート表の並び順だけが決め手になっていた。@ は実在のメンバー名の先頭に来られないので、
+        // この綴りで初めて「実在のメンバーか、メンバーに対する操作か」が分かれる。
+
+        [Test]
+        public void Batch_ResetPseudoMember_ReachesTheResetOperation()
+        {
+            // 値がどこへ戻るか (既定値の採取) はハンドル層の責務で、
+            // LiveObjectDirtyTrackingTests が押さえている。ここで固定するのは経路
+            // — @reset が末尾から剥がされ、対象メンバー "a" の reset として解かれること。
+            var target = CreateTarget(out var id);
+            target.a = 7;
+
+            var requests = new JObject
+            {
+                ["requests"] = new JArray
+                {
+                    new JObject { ["id"] = 1, ["method"] = "POST", ["path"] = $"/live/object/{id}/a/@reset" },
+                }
+            };
+
+            var responses = RunBatch(requests);
+
+            Assert.AreEqual(1, responses.Count);
+            Assert.AreEqual(200, (int)responses[0]["status"]);
+            // 応答は "a" のプロパティ応答。"a/@reset" のままなら疑似メンバーを剥がせていない。
+            Assert.AreEqual("a", (string)responses[0]["body"]["path"]);
+        }
+
+        [Test]
+        public void Batch_BareReset_IsNotThePseudoMember()
+        {
+            // 実メンバー "a/reset" への append として読まれ、そんなメンバーは無いので失敗する。
+            // ここが 200 に戻ったら、"reset" という名前のメンバーが二度と編集できなくなる合図。
+            var target = CreateTarget(out var id);
+            target.a = 7;
+
+            var requests = new JObject
+            {
+                ["requests"] = new JArray
+                {
+                    new JObject { ["id"] = 1, ["method"] = "POST", ["path"] = $"/live/object/{id}/a/reset" },
+                }
+            };
+
+            var responses = RunBatch(requests);
+
+            Assert.AreEqual(1, responses.Count);
+            Assert.AreNotEqual(200, (int)responses[0]["status"], "bare reset must not reach the reset operation");
+            Assert.AreEqual(7, target.a, "bare reset leaves the value alone");
+        }
+
         [Test]
         public void Batch_RequestsNotArrayOrAbsentOrNonObjectRoot_Empty()
         {
