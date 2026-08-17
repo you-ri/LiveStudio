@@ -68,7 +68,6 @@ namespace Lilium.RemoteControl.RestApi
         protected override async Task HandlePostRequest(HttpListenerContext context)
         {
             Debug.Log($"[RemoteControl] Quit request received from {GetClientId(context.Request)}");
-            Debug.Log($"[Debug][RemoteControl] Quit handler entered: mainThreadContext={(_mainThreadContext != null ? "ok" : "NULL")}");
 
             var response = new CommandResponse
             {
@@ -78,45 +77,30 @@ namespace Lilium.RemoteControl.RestApi
             };
 
             await WriteJson(context, response);
-            Debug.Log("[Debug][RemoteControl] Quit response written, scheduling Task.Run");
 
             // レスポンス送信後に終了処理を実行
             _ = Task.Run(async () =>
             {
-                Debug.Log("[Debug][RemoteControl] Quit Task.Run started");
-
                 // 少し待ってからQuitを実行（レスポンスが確実に送信されるように）
                 await Task.Delay(100);
-                Debug.Log("[Debug][RemoteControl] Quit Task.Delay finished, posting to main thread");
 
                 await ExecuteOnMainThread(() =>
                 {
-                    Debug.Log("[Debug][RemoteControl] Quit main-thread callback entered");
-
                     // 未保存確認などで保留された場合はここで打ち切る。確認に answer があれば
                     // 購読側が改めて終了を実行する。
-                    if (!_IsQuitAllowed())
-                    {
-                        Debug.Log("[Debug][RemoteControl] Quit held by a quit gate");
-                        return;
-                    }
+                    if (!_IsQuitAllowed()) return;
 
                     // 終了前イベントを発火
                     onQuitRequested?.Invoke();
-                    Debug.Log("[Debug][RemoteControl] onQuitRequested invoked");
 
                     // アプリケーション終了
-                    Debug.Log("[Debug][RemoteControl] Calling Application.Quit()");
                     Application.Quit();
 
 #if UNITY_EDITOR
                     // エディタの場合はPlayModeを停止
                     UnityEditor.EditorApplication.isPlaying = false;
 #endif
-                    Debug.Log("[Debug][RemoteControl] Application.Quit() returned (quit not yet final)");
                 });
-
-                Debug.Log("[Debug][RemoteControl] Quit ExecuteOnMainThread awaited");
             });
         }
     }

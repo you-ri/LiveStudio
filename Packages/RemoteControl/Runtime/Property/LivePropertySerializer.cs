@@ -1665,7 +1665,11 @@ namespace Lilium.RemoteControl
                 ["value"] = valueToken,
                 ["id"] = property.owner.id,
                 ["path"] = property.path.ToSlash(),
-                ["changed"] = new JValue(property.isDirty)
+                // エディタ (非再生) はエディタ自身の規則で答える。再生中とビルドは
+                // セッション基準 (登録時からの差分)。詳しくは LiveEditorProperty を参照。
+                ["changed"] = new JValue(LiveEditorProperty.isEditorRuleActive
+                    ? LiveEditorProperty.IsChanged(property)
+                    : property.isDirty)
             };
         }
 
@@ -2151,7 +2155,10 @@ namespace Lilium.RemoteControl
             var jsonType = jObject["@type"]?.Value<string>();
             var jsonId = jObject["@id"]?.Value<string>();
 
-            if (!string.IsNullOrEmpty(jsonType) && jsonType != liveObject.targetTypeName)
+            // A file written before a type rename carries the old @type. [FormerlyNamedAs] aliases
+            // resolve to the same LiveClass, so they are not a mismatch. A null targetType has no
+            // name to compare against and still reports, as before.
+            if (!string.IsNullOrEmpty(jsonType) && liveObject.targetType?.IsCurrentOrFormerName(jsonType) != true)
             {
                 Debug.LogWarning($"[RemoteControl] Type mismatch: expected '{liveObject.targetTypeName}', got '{jsonType}'");
             }

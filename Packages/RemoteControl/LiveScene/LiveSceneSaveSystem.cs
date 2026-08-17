@@ -559,7 +559,6 @@ namespace Lilium.RemoteControl.LiveScene
 
             if (string.IsNullOrEmpty(savePath))
             {
-                Debug.Log("[Debug][RemoteControl] Save As dialog cancelled");
                 return false;
             }
 
@@ -587,7 +586,6 @@ namespace Lilium.RemoteControl.LiveScene
                 kLiveSceneFileExtension.TrimStart('.'));
             if (string.IsNullOrEmpty(savePath))
             {
-                Debug.Log("[Debug][RemoteControl] Save As dialog cancelled (Editor)");
                 return false;
             }
             // EditorUtility.SaveFilePanel only auto-completes a single extension, so we add the

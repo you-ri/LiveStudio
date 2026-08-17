@@ -49,14 +49,6 @@ namespace Lilium.LiveStudio
     {
         public async Task<LoadedSetBundle> LoadAsync(string filePath)
         {
-            // [Debug] Temporary crash instrumentation. An intermittent native crash occurs on the
-            // PreloadManager worker thread while it deserializes this set scene's [SerializeReference]
-            // data (RemoteControlBehaviour._objects) concurrently with main-thread managed work such as
-            // a VRM load (scripting_object_get_class from a background thread). These lines record which
-            // set file was loading, whether a VRM load overlapped, and how far the load got, so the next
-            // crash's Editor.log pins the culprit. Remove once the crash is diagnosed / fixed.
-            Debug.Log($"[Debug][SetBundle] LoadAsync begin: {filePath}");
-
             if (!File.Exists(filePath))
             {
                 Debug.LogError($"[LiveStudio] .set.lsb file not found: {filePath}");
@@ -97,13 +89,8 @@ namespace Lilium.LiveStudio
             SceneManager.sceneLoaded += OnSceneLoaded;
             try
             {
-                // [Debug] Last breadcrumb before the crash-prone worker-thread deserialize. If the next
-                // crash log ends after this line with no matching "LoadSceneAsync done", the crash was in
-                // this async scene load; vrmLoading/vrmFile show whether a VRM load overlapped it.
-                Debug.Log($"[Debug][SetBundle] LoadSceneAsync begin: scene={scenePath}, vrmLoading={VRMLoader.IsLoading}, vrmFile={VRMLoader.CurrentLoadingFilePath}");
                 await AwaitOperation(
                     SceneManager.LoadSceneAsync(scenePath, new LoadSceneParameters(LoadSceneMode.Additive)));
-                Debug.Log($"[Debug][SetBundle] LoadSceneAsync done: scene={captured.name}, valid={captured.IsValid()}");
             }
             finally
             {

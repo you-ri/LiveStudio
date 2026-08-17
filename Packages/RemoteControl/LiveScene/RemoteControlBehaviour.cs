@@ -472,25 +472,14 @@ namespace Lilium.RemoteControl.LiveScene
             if (_isDuplicate || _sceneSave == null) return true;
 
             bool hasUnsaved = _sceneSave.HasUnsavedChanges();
-            Debug.Log($"[Debug][RemoteControl] quit gate: allowQuit={_sceneSave.allowQuit} " +
-                      $"hasUnsaved={hasUnsaved} autoSave={_sceneSave.autoSaveOnQuit} dialogPending={_dialogPending}");
 
-            if (_sceneSave.allowQuit)
-            {
-                Debug.Log("[Debug][RemoteControl] quit gate -> true (allowQuit)");
-                return true;
-            }
-            if (!hasUnsaved)
-            {
-                Debug.Log("[Debug][RemoteControl] quit gate -> true (no unsaved changes)");
-                return true;
-            }
+            if (_sceneSave.allowQuit) return true;
+            if (!hasUnsaved) return true;
 
             if (_sceneSave.autoSaveOnQuit)
             {
                 _sceneSave.SaveCurrentData();
                 _sceneSave.allowQuit = true;
-                Debug.Log("[Debug][RemoteControl] quit gate -> true (autoSave)");
                 return true;
             }
 
@@ -502,15 +491,12 @@ namespace Lilium.RemoteControl.LiveScene
                 _dialogPending = true;
                 RemoteConfirmSystem.Ask(RemoteConfirmSystem.Request.UnsavedChanges(), _OnQuitConfirmAnswered);
             }
-            Debug.Log("[Debug][RemoteControl] quit gate -> false (dialog pending)");
             return false;
         }
 
         // Runs on the main thread once any surface answers the unsaved-changes prompt.
         private void _OnQuitConfirmAnswered(RemoteConfirmSystem.Choice choice)
         {
-            Debug.Log($"[Debug][RemoteControl] dialog answered: result={choice}");
-
             switch (choice)
             {
                 case RemoteConfirmSystem.Choice.Yes:

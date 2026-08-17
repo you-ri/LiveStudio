@@ -665,6 +665,23 @@ namespace Lilium.RemoteControl
         /// </summary>
         public readonly string[] formerTypeNames;
 
+        /// <summary>
+        /// True when <paramref name="name"/> is this class's current <see cref="typeName"/> or one of
+        /// its <see cref="formerTypeNames"/>. Files written before a type rename carry the old name,
+        /// so any @type validation must accept the aliases that <c>LiveClass.Find</c> already resolves.
+        /// </summary>
+        public bool IsCurrentOrFormerName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            if (name == typeName) return true;
+            if (formerTypeNames == null) return false;
+            for (int i = 0; i < formerTypeNames.Length; i++)
+            {
+                if (name == formerTypeNames[i]) return true;
+            }
+            return false;
+        }
+
         // baseTypeNames の遅延キャッシュ (型ごとに一度だけ算出)。
         private string[] _baseTypeNames;
 

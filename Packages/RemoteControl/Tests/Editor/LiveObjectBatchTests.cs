@@ -499,9 +499,12 @@ namespace Lilium.RemoteControl.Tests
             var responses = RunBatch(requests);
 
             Assert.AreEqual(1, responses.Count);
-            Assert.AreEqual(200, (int)responses[0]["status"]);
-            // 応答は "a" のプロパティ応答。"a/@reset" のままなら疑似メンバーを剥がせていない。
-            Assert.AreEqual("a", (string)responses[0]["body"]["path"]);
+            // 対象はシーンに直接置いたオブジェクトなので、エディタには戻す先が無い (LiveEditorProperty)。
+            // 経路が解けていることは reset 固有の文面で分かる — "a/@reset" のまま配列 append として
+            // 読まれていれば "Failed to add array element" になる。
+            Assert.AreEqual(400, (int)responses[0]["status"]);
+            Assert.AreEqual("Property cannot be reverted", (string)responses[0]["body"]["error"]);
+            Assert.AreEqual(7, target.a, "戻せないときは値を触らない");
         }
 
         [Test]

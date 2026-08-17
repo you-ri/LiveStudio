@@ -555,7 +555,16 @@ namespace Lilium.RemoteControl
             }
 
             var prop = property.Value;
-            var result = LivePropertySerializer.FromJson(ctx.body, in prop);
+
+            // ⚠ 書く前に作り、応答を組む前に閉じること。作る側は undo が控える値の都合
+            // (呼んだ時点の値を控える)、閉じる側は "changed" の都合 — エディタへ変更を
+            // 知らせ終える前に読むと、書いた直後だけ「変更なし」と答えてしまう。
+            bool result;
+            using (new LiveEditorWriteScope(ctx.liveObject.target, prop.obj))
+            {
+                result = LivePropertySerializer.FromJson(ctx.body, in prop);
+            }
+
             if (!result)
             {
                 return PropertyResult.Error(400, "Failed to set property");
@@ -579,6 +588,8 @@ namespace Lilium.RemoteControl
             }
 
             var prop = property.Value;
+            using var editorWrite = new LiveEditorWriteScope(ctx.liveObject.target, prop.obj);
+
             return LivePropertySerializer.AddArrayElement(ctx.body, in prop)
                 ? PropertyResult.Success("{}")
                 : PropertyResult.Error(400, "Failed to add array element");
@@ -593,6 +604,8 @@ namespace Lilium.RemoteControl
             }
 
             var prop = property.Value;
+            using var editorWrite = new LiveEditorWriteScope(ctx.liveObject.target, prop.obj);
+
             return LivePropertySerializer.RemoveArrayElement(ctx.body, in prop)
                 ? PropertyResult.Success("{}")
                 : PropertyResult.Error(400, "Failed to remove array element");
@@ -607,6 +620,8 @@ namespace Lilium.RemoteControl
             }
 
             var prop = property.Value;
+            using var editorWrite = new LiveEditorWriteScope(ctx.liveObject.target, prop.obj);
+
             return LivePropertySerializer.ReorderArrayElement(ctx.body, in prop)
                 ? PropertyResult.Success("{}")
                 : PropertyResult.Error(400, "Failed to reorder array element");
@@ -621,7 +636,20 @@ namespace Lilium.RemoteControl
             }
 
             var prop = property.Value;
-            LivePropertyUtility.ResetValue(ctx.liveObject, in prop);
+            if (LiveEditorProperty.isEditorRuleActive)
+            {
+                // エディタで戻せるのはプレハブの上書きだけ。戻せないものをセッション基準へ
+                // 落とすと、エディタには無い規則を足すことになるので失敗として返す
+                // (changed が立つのも戻せるものだけなので、通常ここには来ない)。
+                if (!LiveEditorProperty.TryRevert(prop))
+                {
+                    return PropertyResult.Error(400, "Property cannot be reverted");
+                }
+            }
+            else
+            {
+                LivePropertyUtility.ResetValue(ctx.liveObject, in prop);
+            }
 
             var newProperty = ctx.liveObject.FindProperty(ctx.propertyPath);
             var json = LivePropertySerializer.ToJson(newProperty.Value, resolver);
@@ -1222,6 +1250,10 @@ namespace Lilium.RemoteControl
             }
 
             var args = _BuildInvokeArguments(function, body);
+
+            // 関数は何を書き換えるか分からないので、対象ごと控える。
+            using var editorWrite = new LiveEditorWriteScope(liveObject.Value.target, functionTarget);
+
             var invokeResult = function.Invoke(functionTarget, args);
 
             // 結果をJSON形式で返す
