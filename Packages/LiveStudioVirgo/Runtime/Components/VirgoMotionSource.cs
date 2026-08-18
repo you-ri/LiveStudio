@@ -30,7 +30,7 @@ namespace Lilium.LiveStudio.Virgo
     [DefaultExecutionOrder(-100)]
     [LiveClass("VirgoMotionSource", Icon = "accessibility", Category = "Motion")]
     [MovedFrom(false, "Lilium.Virgo.Studio", "Lilium.Virgo.Studio2", null)]
-    public class VirgoMotionSource : MotionSourceBase, IAvatarBuildObserver
+    public class VirgoMotionSource : MotionSourceBase
     {
         const int kResetCameraDelayCount = 2; // 受信してから何フレーム目でカメラリセットするか。受信した情報が安定していない可能性があるため、数フレーム遅らせる。
 
@@ -119,13 +119,13 @@ namespace Lilium.LiveStudio.Virgo
 
         void OnEnable()
         {
-            Lilium.RemoteControl.Service<IAvatarBuildObserver>.Register(this);
+            AvatarBuildNotifier.onAvatarBuilt += _OnAvatarBuilt;
             Open();
         }
 
         void OnDisable()
         {
-            Lilium.RemoteControl.Service<IAvatarBuildObserver>.Unregister(this);
+            AvatarBuildNotifier.onAvatarBuilt -= _OnAvatarBuilt;
             Close();
         }
 
@@ -136,7 +136,7 @@ namespace Lilium.LiveStudio.Virgo
         // Fusion, or the avatar is built during scene restore). Keep retrying the buildavatar POST
         // until it lands so a late-starting Fusion still receives the skeleton, and supersede any
         // in-flight retry on rebuild so only the latest avatar is sent.
-        void IAvatarBuildObserver.OnAvatarBuilt(in AvatarBuildData data)
+        void _OnAvatarBuilt(in AvatarBuildData data)
         {
             if (_buildAvatarRetry != null)
             {

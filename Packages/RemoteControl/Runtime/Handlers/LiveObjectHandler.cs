@@ -55,6 +55,165 @@ namespace Lilium.RemoteControl
         /// </summary>
         private const string kResetSuffix = "/@reset";
 
+        /// <summary>
+        /// どちらの経路からこの受け口を引けるか。
+        /// <para>
+        /// 経路は 2 つある — 単発の HTTP リクエストと、<c>POST /live/batch</c> のサブリクエストで、
+        /// ほとんどの受け口は両方から引ける。両者は同じ 1 枚の表 (<see cref="_kLiveRoutes"/>) から
+        /// 引かれるので、「まとめ送りから何が呼べるか」はここに書いた宣言そのものになる。
+        /// </para>
+        /// <para>
+        /// ⚠ <c>/live/batch</c> 自身が <see cref="Single"/> なのは事故防止。まとめ送りの中から
+        /// まとめ送りを呼べると再帰でメインスレッドを占有できてしまう。逆に受信箱は
+        /// <see cref="Batch"/> — 単発の <c>GET /live/events</c> は専用ハンドラ
+        /// (<c>EventsHandler</c>) が受け持つので、ここから重ねてバインドしてはならない。
+        /// </para>
+        /// </summary>
+        [Flags]
+        private enum LiveRouteScope
+        {
+            Single = 1 << 0,
+            Batch = 1 << 1,
+            Both = Single | Batch,
+        }
+
+        /// <summary>
+        /// 受け口 1 件分の HTTP 非依存な処理本体。まとめ送りが直接呼ぶ。
+        /// <paramref name="absolutePath"/> はクエリを含みうる (サブリクエストはパスとクエリを
+        /// 1 本の文字列で運ぶ) ので、クエリを読む受け口はここから読む。
+        /// </summary>
+        private delegate PropertyResult LiveOperation(
+            LiveObjectContainer container, ILiveObjectResolver resolver, string absolutePath, string body);
+
+        /// <summary>
+        /// 受け口 1 件の宣言。単発側の本体は <see cref="LiveObjectHandler"/> のインスタンスメソッド
+        /// なので、表を静的に持てるようハンドラを第 1 引数で受け取る形にしている。
+        /// </summary>
+        private readonly struct LiveRoute
+        {
+            public readonly string verb;
+            public readonly string pattern;
+            public readonly RouteMatch match;
+            public readonly LiveRouteScope scope;
+            public readonly Func<LiveObjectHandler, HttpListenerContext, Task> single;
+            public readonly LiveOperation operation;
+
+            public LiveRoute(string verb, string pattern, RouteMatch match, LiveRouteScope scope,
+                Func<LiveObjectHandler, HttpListenerContext, Task> single, LiveOperation operation)
+            {
+                this.verb = verb;
+                this.pattern = pattern;
+                this.match = match;
+                this.scope = scope;
+                this.single = single;
+                this.operation = operation;
+            }
+        }
+
+        /// <summary>
+        /// 受け口の一枚表。単発 (HTTP) とまとめ送り (<c>POST /live/batch</c>) はどちらもここから引く。
+        ///
+        /// ⚠ 宣言順がそのまま評価順 (先頭から最初に一致したものを使う)。<c>@reset</c> や
+        /// <c>@parent</c> は汎用の <c>*/*</c> にも一致するので、必ずその前に置くこと
+        /// (順序依存は HandlerRoutingTests が固定している)。
+        /// </summary>
+        private static readonly LiveRoute[] _kLiveRoutes =
+        {
+            Route("GET", "/live/objects", RouteMatch.Exact, (h, c) => h.HandleGetObjects(c)),
+            Route("GET", "/live/object/*/*", RouteMatch.Wildcard, (h, c) => h.HandleGetProperty(c),
+                PropertyOperation(stripResetSuffix: false, ApplyGetProperty)),
+            Route("GET", "/live/object/", RouteMatch.Prefix, (h, c) => h.HandleGetObject(c)),
+            Route("GET", "/live/types", RouteMatch.Exact, (h, c) => h.HandleGetTypes(c)),
+            Route("GET", "/live/type/", RouteMatch.Prefix, (h, c) => h.HandleGetType(c)),
+            Route("GET", "/live/enums", RouteMatch.Exact, (h, c) => h.HandleGetEnums(c)),
+            Route("GET", "/live/enum/", RouteMatch.Prefix, (h, c) => h.HandleGetEnum(c)),
+            Route("GET", kChangesPath, RouteMatch.ExactOrQuery, (h, c) => h.HandleGetChanges(c),
+                ChangesOperation),
+            // 受信箱はまとめ送り専用 (上の LiveRouteScope の注記を参照)。
+            BatchOnly("GET", EventInbox.kPath, RouteMatch.ExactOrQuery, InboxOperation),
+
+            Route("PUT", "/live/object/*/@parent", RouteMatch.Wildcard, (h, c) => h.HandleSetParent(c)),
+            Route("PUT", "/live/object/*/*", RouteMatch.Wildcard, (h, c) => h.HandleSetProperty(c),
+                PropertyOperation(stripResetSuffix: false, ApplySetProperty)),
+
+            // まとめ送りの入れ子は禁止 (単発のみ)。
+            Route("POST", "/live/batch", RouteMatch.Exact, (h, c) => h.HandleBatch(c)),
+            Route("POST", "/live/object/*/*/@reset", RouteMatch.Wildcard, (h, c) => h.HandleResetProperty(c),
+                PropertyOperation(stripResetSuffix: true, ApplyResetProperty)),
+            Route("POST", "/live/object/*/*", RouteMatch.Wildcard, (h, c) => h.HandleAddArrayElement(c),
+                PropertyOperation(stripResetSuffix: false, ApplyAddArrayElement)),
+            Route("POST", "/live/function/*", RouteMatch.Wildcard, (h, c) => h.HandleInvokeFunction(c),
+                InvokeFunctionOperation),
+
+            Route("DELETE", "/live/object/*/*", RouteMatch.Wildcard, (h, c) => h.HandleRemoveArrayElement(c),
+                PropertyOperation(stripResetSuffix: false, ApplyRemoveArrayElement)),
+
+            Route("PATCH", "/live/object/*/*", RouteMatch.Wildcard, (h, c) => h.HandleReorderArrayElement(c),
+                PropertyOperation(stripResetSuffix: false, ApplyReorderArrayElement)),
+        };
+
+        // 表を読みやすく保つための組み立て補助。operation を書かなければ単発のみ、
+        // BatchOnly ならまとめ送りのみ。
+        private static LiveRoute Route(string verb, string pattern, RouteMatch match,
+            Func<LiveObjectHandler, HttpListenerContext, Task> single, LiveOperation operation = null)
+            => new LiveRoute(verb, pattern, match,
+                operation != null ? LiveRouteScope.Both : LiveRouteScope.Single, single, operation);
+
+        private static LiveRoute BatchOnly(string verb, string pattern, RouteMatch match, LiveOperation operation)
+            => new LiveRoute(verb, pattern, match, LiveRouteScope.Batch, null, operation);
+
+        // ---- 表に載せるオペレーション (HTTP 非依存)。単発側は RunPropertyPipeline 経由で同じ
+        //      Apply* を呼ぶので、両経路の応答は同一になる。 ----
+
+        /// <summary>
+        /// <c>/live/object/{id}/{path}</c> 系の共通前半 (文脈の組み立て) に、動詞ごとの
+        /// 適用部を差し込む。単発側の <see cref="RunPropertyPipeline"/> と同じ組み立てを使う。
+        /// </summary>
+        private static LiveOperation PropertyOperation(
+            bool stripResetSuffix, Func<PropertyPipelineContext, ILiveObjectResolver, PropertyResult> apply)
+        {
+            return (container, resolver, absolutePath, body) =>
+            {
+                if (!TryBuildPropertyContext(container, absolutePath, stripResetSuffix, body,
+                        out var ctx, out var errStatus, out var errMessage))
+                {
+                    return PropertyResult.Error(errStatus, errMessage);
+                }
+                return apply(ctx, resolver);
+            };
+        }
+
+        private static PropertyResult InvokeFunctionOperation(
+            LiveObjectContainer container, ILiveObjectResolver resolver, string absolutePath, string body)
+        {
+            var id = PathParser.GetPathSegment(absolutePath, 2);
+            var functionPath = PathParser.GetPathSegmentFrom(absolutePath, 3);
+            if (id == null || functionPath == null)
+            {
+                return PropertyResult.Error(400, "Invalid request format");
+            }
+            return InvokeFunctionCore(container, resolver, id, functionPath, body);
+        }
+
+        /// <summary>
+        /// 変更フィード。表示中プロパティの GET と同じ 1 往復に相乗りさせるため、単発ルートだけでなく
+        /// まとめ送りからも引ける (クライアントは毎サイクル必ずこれを 1 件載せる)。
+        /// </summary>
+        private static PropertyResult ChangesOperation(
+            LiveObjectContainer container, ILiveObjectResolver resolver, string absolutePath, string body)
+        {
+            var hasSince = EventInbox.TryParseSince(absolutePath, out var since);
+            return PropertyResult.Success(_BuildChangesJson(hasSince, since));
+        }
+
+        /// <summary>
+        /// 受信箱。誰宛かはコンテナからは解けないため <see cref="HandleBatch"/> が先に解決しており、
+        /// ここへ来るのはサーバーを介さない直接実行 (テスト) のときだけ。
+        /// </summary>
+        private static PropertyResult InboxOperation(
+            LiveObjectContainer container, ILiveObjectResolver resolver, string absolutePath, string body)
+            => PropertyResult.Error(400, "Event inbox requires a client");
+
         private readonly EndpointRoute[] _getRoutes;
         private readonly EndpointRoute[] _putRoutes;
         private readonly EndpointRoute[] _postRoutes;
@@ -63,45 +222,41 @@ namespace Lilium.RemoteControl
 
         public LiveObjectHandler(RemoteControlServerCore server) : base(server)
         {
-            // 内側ディスパッチ表。順序は元の if/else 連鎖と同一に保つこと。
-            _getRoutes = new[]
+            // 単発側の内側ディスパッチ表は一枚表から取り出す (宣言順を保つ)。リクエストごとに
+            // 絞り込むと毎回走査と確保が要るので、構築時に 1 度だけメソッド別へ分けておく。
+            _getRoutes = _BuildSingleRoutes("GET");
+            _putRoutes = _BuildSingleRoutes("PUT");
+            _postRoutes = _BuildSingleRoutes("POST");
+            _deleteRoutes = _BuildSingleRoutes("DELETE");
+            _patchRoutes = _BuildSingleRoutes("PATCH");
+        }
+
+        private EndpointRoute[] _BuildSingleRoutes(string verb)
+        {
+            var routes = new List<EndpointRoute>();
+            for (int i = 0; i < _kLiveRoutes.Length; i++)
             {
-                new EndpointRoute("/live/objects", RouteMatch.Exact, HandleGetObjects),
-                new EndpointRoute("/live/object/*/*", RouteMatch.Wildcard, HandleGetProperty),
-                new EndpointRoute("/live/object/", RouteMatch.Prefix, HandleGetObject),
-                new EndpointRoute("/live/types", RouteMatch.Exact, HandleGetTypes),
-                new EndpointRoute("/live/type/", RouteMatch.Prefix, HandleGetType),
-                new EndpointRoute("/live/enums", RouteMatch.Exact, HandleGetEnums),
-                new EndpointRoute("/live/enum/", RouteMatch.Prefix, HandleGetEnum),
-                new EndpointRoute("/live/changes", RouteMatch.Exact, HandleGetChanges),
-            };
-            _putRoutes = new[]
-            {
-                new EndpointRoute("/live/object/*/@parent", RouteMatch.Wildcard, HandleSetParent),
-                new EndpointRoute("/live/object/*/*", RouteMatch.Wildcard, HandleSetProperty),
-            };
-            _postRoutes = new[]
-            {
-                new EndpointRoute("/live/batch", RouteMatch.Exact, HandleBatch),
-                // @reset は汎用の */* にも一致するので先に置く (順序依存は HandlerRoutingTests が固定)。
-                new EndpointRoute("/live/object/*/*/@reset", RouteMatch.Wildcard, HandleResetProperty),
-                new EndpointRoute("/live/object/*/*", RouteMatch.Wildcard, HandleAddArrayElement),
-                new EndpointRoute("/live/function/*", RouteMatch.Wildcard, HandleInvokeFunction),
-            };
-            _deleteRoutes = new[]
-            {
-                new EndpointRoute("/live/object/*/*", RouteMatch.Wildcard, HandleRemoveArrayElement),
-            };
-            _patchRoutes = new[]
-            {
-                new EndpointRoute("/live/object/*/*", RouteMatch.Wildcard, HandleReorderArrayElement),
-            };
+                var r = _kLiveRoutes[i];
+                if ((r.scope & LiveRouteScope.Single) == 0) continue;
+                if (!string.Equals(r.verb, verb, StringComparison.Ordinal)) continue;
+                var single = r.single;
+                routes.Add(new EndpointRoute(r.pattern, r.match, c => single(this, c)));
+            }
+            return routes.ToArray();
         }
 
         public override void Cleanup()
         {
         }
 
+        /// <summary>
+        /// このハンドラが HTTP サーバーから受け取るパス (外側のゲート)。どのパスを受け持つかを
+        /// 宣言するだけで、その先の振り分けは <see cref="_kLiveRoutes"/> が行う。
+        ///
+        /// ⚠ まとめ送り専用の受け口 (受信箱 <c>/live/events</c>) をここに足してはならない。
+        /// 単発の HTTP は専用ハンドラが受け持っており、ここに書くと同じパスを 2 つのハンドラが
+        /// 名乗ることになる。
+        /// </summary>
         private static readonly RouteRule[] _kRoutes =
         {
             new RouteRule("/live/object/", RouteMatch.Prefix),
@@ -212,24 +367,6 @@ namespace Lilium.RemoteControl
             sb.Append("]}");
             return sb.ToString();
         }
-
-        /// <summary>
-        /// True when a batch sub-request path targets the change feed (with or without a query).
-        /// </summary>
-        private static bool _IsChangesPath(string absolutePath)
-        {
-            if (absolutePath == null) return false;
-            if (!absolutePath.StartsWith(kChangesPath, StringComparison.Ordinal)) return false;
-            return absolutePath.Length == kChangesPath.Length
-                || absolutePath[kChangesPath.Length] == '?';
-        }
-
-        /// <summary>
-        /// Reads <c>?since=N</c> off a batch sub-request path. Shares the alloc-free scanner with
-        /// the event inbox, which reads the same cursor parameter off its own sub-request.
-        /// </summary>
-        private static bool _TryParseChangesSince(string absolutePath, out long since)
-            => EventInbox.TryParseSince(absolutePath, out since);
 
         /// <summary>
         /// Resolves the nested-expansion depth for a GET request from the <c>nested</c> query flag.
@@ -533,6 +670,16 @@ namespace Lilium.RemoteControl
 
         // ---- オペレーション計算部 (HTTP 非依存)。単発エンドポイントと batch で共用する。 ----
         // 出力は従来の onProperty ラムダと厳密に一致させること (REST invariance)。
+        //
+        // ⚠ 書き込みの決まり: LiveEditorWriteScope は「書き込みだけ」を囲う。
+        //   開く側は undo の都合 — 控えるのは開いた時点の値なので、書いた後に開くと新しい値を控える。
+        //   閉じる側は "changed" の都合 — エディタへ変更を知らせ終える前に応答を組むと、書いた直後
+        //   だけ「変更なし」と答えてしまう。だから応答を組むのは必ずスコープを閉じた後。
+        //   ここを各オペレーションの書き方に委ねると、応答が定数のものだけたまたま正しい、という
+        //   気付けない差になるので、書き込む 4 つ (set / add / remove / reorder) は同じ形で書く。
+        //   reset だけはスコープを持たない — エディタでの reset は PrefabUtility の
+        //   RevertPropertyOverride(InteractionMode.UserAction) そのもので、undo も dirty も
+        //   エディタ側が済ませる。重ねて記録すると undo が 2 段になる。
 
         private static PropertyResult ApplyGetProperty(PropertyPipelineContext ctx, ILiveObjectResolver resolver)
         {
@@ -556,9 +703,6 @@ namespace Lilium.RemoteControl
 
             var prop = property.Value;
 
-            // ⚠ 書く前に作り、応答を組む前に閉じること。作る側は undo が控える値の都合
-            // (呼んだ時点の値を控える)、閉じる側は "changed" の都合 — エディタへ変更を
-            // 知らせ終える前に読むと、書いた直後だけ「変更なし」と答えてしまう。
             bool result;
             using (new LiveEditorWriteScope(ctx.liveObject.target, prop.obj))
             {
@@ -588,9 +732,13 @@ namespace Lilium.RemoteControl
             }
 
             var prop = property.Value;
-            using var editorWrite = new LiveEditorWriteScope(ctx.liveObject.target, prop.obj);
+            bool result;
+            using (new LiveEditorWriteScope(ctx.liveObject.target, prop.obj))
+            {
+                result = LivePropertySerializer.AddArrayElement(ctx.body, in prop);
+            }
 
-            return LivePropertySerializer.AddArrayElement(ctx.body, in prop)
+            return result
                 ? PropertyResult.Success("{}")
                 : PropertyResult.Error(400, "Failed to add array element");
         }
@@ -604,9 +752,13 @@ namespace Lilium.RemoteControl
             }
 
             var prop = property.Value;
-            using var editorWrite = new LiveEditorWriteScope(ctx.liveObject.target, prop.obj);
+            bool result;
+            using (new LiveEditorWriteScope(ctx.liveObject.target, prop.obj))
+            {
+                result = LivePropertySerializer.RemoveArrayElement(ctx.body, in prop);
+            }
 
-            return LivePropertySerializer.RemoveArrayElement(ctx.body, in prop)
+            return result
                 ? PropertyResult.Success("{}")
                 : PropertyResult.Error(400, "Failed to remove array element");
         }
@@ -620,9 +772,13 @@ namespace Lilium.RemoteControl
             }
 
             var prop = property.Value;
-            using var editorWrite = new LiveEditorWriteScope(ctx.liveObject.target, prop.obj);
+            bool result;
+            using (new LiveEditorWriteScope(ctx.liveObject.target, prop.obj))
+            {
+                result = LivePropertySerializer.ReorderArrayElement(ctx.body, in prop);
+            }
 
-            return LivePropertySerializer.ReorderArrayElement(ctx.body, in prop)
+            return result
                 ? PropertyResult.Success("{}")
                 : PropertyResult.Error(400, "Failed to reorder array element");
         }
@@ -990,10 +1146,12 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// (method, path) を単発エンドポイントと同じパターンで内側ディスパッチし、対応する
-        /// Apply* / InvokeFunctionCore を呼ぶ。対応するのは /live/object/{id}/{path} 系
-        /// (GET/PUT/POST/DELETE/PATCH) と POST /live/function/{id}/{path}。
-        /// それ以外のパスは 404、未対応メソッドは 405。
+        /// サブリクエストの (method, path) を <see cref="_kLiveRoutes"/> で内側ディスパッチする。
+        /// 単発の HTTP 経路と同じ表・同じ宣言順を引くので、「まとめ送りから何が呼べるか」は
+        /// 表の <see cref="LiveRouteScope"/> がそのまま答えになる。
+        ///
+        /// パスに一致する受け口が無ければ 404、パスは一致するがそのメソッドの宣言が無ければ 405。
+        /// (単発側も動詞を先に見て 405 を返すので、両経路で同じ答えになる。)
         /// </summary>
         private static PropertyResult ExecuteOperation(
             LiveObjectContainer container, ILiveObjectResolver resolver,
@@ -1003,62 +1161,22 @@ namespace Lilium.RemoteControl
             // (バッチ経路で 1 オペレーションあたり 1 本の文字列確保を排除する)。
             var m = method ?? string.Empty;
 
-            bool isPost = string.Equals(m, "POST", StringComparison.OrdinalIgnoreCase);
-
-            // 受信箱。誰宛かはコンテナからは解けないため <see cref="HandleBatch"/> が先に解決する。
-            // ここに来るのは GET 以外か、サーバーを介さない直接実行 (テスト) のときだけ。
-            if (EventInbox.IsInboxPath(absolutePath))
+            bool pathMatched = false;
+            for (int i = 0; i < _kLiveRoutes.Length; i++)
             {
-                return string.Equals(m, "GET", StringComparison.OrdinalIgnoreCase)
-                    ? PropertyResult.Error(400, "Event inbox requires a client")
-                    : PropertyResult.Error(405, "Method not allowed");
+                var route = _kLiveRoutes[i];
+                if ((route.scope & LiveRouteScope.Batch) == 0) continue;
+                if (!MatchPattern(absolutePath, route.pattern, route.match)) continue;
+
+                pathMatched = true;
+                if (!string.Equals(m, route.verb, StringComparison.OrdinalIgnoreCase)) continue;
+
+                return route.operation(container, resolver, absolutePath, body);
             }
 
-            // 変更フィード。表示中プロパティの GET と同じ 1 往復に相乗りさせるため、単発ルートだけでなく
-            // バッチからも引けるようにする（クライアントは毎サイクル必ずこれを 1 件載せる）。
-            if (_IsChangesPath(absolutePath))
-            {
-                if (!string.Equals(m, "GET", StringComparison.OrdinalIgnoreCase))
-                {
-                    return PropertyResult.Error(405, "Method not allowed");
-                }
-                var hasSince = _TryParseChangesSince(absolutePath, out var since);
-                return PropertyResult.Success(_BuildChangesJson(hasSince, since));
-            }
-
-            // 関数呼び出し
-            if (isPost && MatchPattern(absolutePath, "/live/function/*", RouteMatch.Wildcard))
-            {
-                var id = PathParser.GetPathSegment(absolutePath, 2);
-                var functionPath = PathParser.GetPathSegmentFrom(absolutePath, 3);
-                if (id == null || functionPath == null)
-                {
-                    return PropertyResult.Error(400, "Invalid request format");
-                }
-                return InvokeFunctionCore(container, resolver, id, functionPath, body);
-            }
-
-            // プロパティ系パイプライン。@reset サフィックスは単発ルートと同じ優先順で先に判定する。
-            var isReset = isPost
-                && MatchPattern(absolutePath, "/live/object/*/*/@reset", RouteMatch.Wildcard);
-            if (isReset || MatchPattern(absolutePath, "/live/object/*/*", RouteMatch.Wildcard))
-            {
-                if (!TryBuildPropertyContext(container, absolutePath, isReset, body,
-                        out var ctx, out var errStatus, out var errMessage))
-                {
-                    return PropertyResult.Error(errStatus, errMessage);
-                }
-
-                // 元の switch(uppercased) と同じ評価順・同じ判定を大小無視比較で再現する。
-                if (string.Equals(m, "GET", StringComparison.OrdinalIgnoreCase)) return ApplyGetProperty(ctx, resolver);
-                if (string.Equals(m, "PUT", StringComparison.OrdinalIgnoreCase)) return ApplySetProperty(ctx, resolver);
-                if (isPost) return isReset ? ApplyResetProperty(ctx, resolver) : ApplyAddArrayElement(ctx, resolver);
-                if (string.Equals(m, "DELETE", StringComparison.OrdinalIgnoreCase)) return ApplyRemoveArrayElement(ctx, resolver);
-                if (string.Equals(m, "PATCH", StringComparison.OrdinalIgnoreCase)) return ApplyReorderArrayElement(ctx, resolver);
-                return PropertyResult.Error(405, "Method not allowed");
-            }
-
-            return PropertyResult.Error(404, "Not found");
+            return pathMatched
+                ? PropertyResult.Error(405, "Method not allowed")
+                : PropertyResult.Error(404, "Not found");
         }
 
         /// <summary>

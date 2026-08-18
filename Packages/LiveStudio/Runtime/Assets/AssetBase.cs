@@ -188,6 +188,22 @@ namespace Lilium.LiveStudio
         /// </summary>
         public virtual string thumbnailFilePath => null;
 
+        /// <summary>
+        /// Key this asset's picture is stored under in <see cref="ThumbnailCache"/>, or null when it has no
+        /// cached picture at all. Defaults to the asset's file path; a built-in entry has no project file, so
+        /// it answers with the synthetic catalog key its startup pre-warm stored the picture under.
+        /// <para>
+        /// "Where does my picture come from" is the asset kind's own business, so
+        /// <see cref="AssetThumbnailProvider"/> does not enumerate kinds. It still decides how to READ a
+        /// picture out of a given file (a VRM's embedded thumbnail, a PNG on disk) — that is file-format
+        /// knowledge, not kind knowledge, and it runs off the main thread where the asset must not be touched.
+        /// </para>
+        /// </summary>
+        public virtual string thumbnailCacheKey
+            => !string.IsNullOrEmpty(filePath)
+                ? filePath
+                : (isBuiltin ? BuiltinAssetRegistry.ThumbnailCacheKey(persistentId ?? id) : null);
+
         /// <summary>Loads this asset. Implementations set <see cref="isLoaded"/> on success.</summary>
         public abstract Task LoadAsync(AssetLoadContext context);
 

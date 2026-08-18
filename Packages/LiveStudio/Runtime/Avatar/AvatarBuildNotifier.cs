@@ -1,19 +1,19 @@
 // Copyright (c) You-Ri, 2026
 
 using UnityEngine;
-using Lilium.RemoteControl;
 
 namespace Lilium.LiveStudio
 {
     public static class AvatarBuildNotifier
     {
+        public delegate void AvatarBuiltHandler(in AvatarBuildData data);
+
+        /// <summary>Raised whenever a humanoid avatar finishes building.</summary>
+        public static event AvatarBuiltHandler onAvatarBuilt;
+
         public static void NotifyAvatarBuilt(in AvatarBuildData data)
         {
-            var subjects = Service<IAvatarBuildObserver>.subjects;
-            for (int i = 0; i < subjects.Count; i++)
-            {
-                subjects[i].OnAvatarBuilt(in data);
-            }
+            onAvatarBuilt?.Invoke(in data);
         }
 
         /// <summary>

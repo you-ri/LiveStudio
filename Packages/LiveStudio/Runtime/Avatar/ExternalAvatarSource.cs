@@ -22,7 +22,7 @@ namespace Lilium.LiveStudio
     [DefaultExecutionOrder(250)]
     [LiveClass("ExternalAvatarSource", Category = "Avatar", Icon = "deployed_code")]
     [FormerlyNamedAs("VRMAvatarSource")]
-    public class ExternalAvatarSource : MonoBehaviour, IAvatarSource, IVRMLoadObserver
+    public class ExternalAvatarSource : MonoBehaviour, IAvatarSource
     {
         public event Action<GameObject> onAvatarReady;
 
@@ -63,12 +63,14 @@ namespace Lilium.LiveStudio
 
         void OnEnable()
         {
-            Service<IVRMLoadObserver>.Register(this);
+            VRMLoader.onLoaded += _OnVRMLoaded;
+            VRMLoader.onLoadError += _OnVRMLoadError;
         }
 
         void OnDisable()
         {
-            Service<IVRMLoadObserver>.Unregister(this);
+            VRMLoader.onLoaded -= _OnVRMLoaded;
+            VRMLoader.onLoadError -= _OnVRMLoadError;
         }
 
         void _LoadIfFileExists()
@@ -89,7 +91,7 @@ namespace Lilium.LiveStudio
             // 複合サフィックスで判別する。
             if (_modelFilePath.EndsWith(".vrm", StringComparison.OrdinalIgnoreCase))
             {
-                // VRM の完了通知は IVRMLoadObserver ブロードキャスト経由で OnVRMLoaded に届く。
+                // VRM の完了通知は VRMLoader.onLoaded イベント経由で _OnVRMLoaded に届く。
                 _ = new VrmExternalAvatarLoader().LoadAsync(_modelFilePath, this.transform);
             }
             else if (LiveStudioBundle.IsAvatarBundle(_modelFilePath))
@@ -113,23 +115,15 @@ namespace Lilium.LiveStudio
             }
         }
 
-        void IVRMLoadObserver.OnVRMLoadStarted(string filePath)
-        {
-        }
-
-        void IVRMLoadObserver.OnVRMLoaded(GameObject newTarget)
+        void _OnVRMLoaded(GameObject newTarget)
         {
             Debug.Assert(newTarget != null);
             onAvatarReady?.Invoke(newTarget);
         }
 
-        void IVRMLoadObserver.OnVRMLoadError(string error)
+        void _OnVRMLoadError(string error)
         {
             Debug.LogError($"[LiveStudio] VRM Load Error: {error}");
-        }
-
-        void IVRMLoadObserver.OnVRMLoadProgress(float progress)
-        {
         }
     }
 }

@@ -20,7 +20,7 @@ namespace Lilium.LiveStudio
 
         public static void SwitchCamera(string displayName)
         {
-            Service<ILiveCamera>.subjects.ForEach(x =>
+            Service<ILiveCamera>.ForEach(x =>
             {
                 if (x.displayName == displayName)
                 {
@@ -35,7 +35,7 @@ namespace Lilium.LiveStudio
 
         public static void SwitchCamera(System.Guid id)
         {
-            Service<ILiveCamera>.subjects.ForEach(x =>
+            Service<ILiveCamera>.ForEach(x =>
             {
                 if (x.guid == id)
                 {

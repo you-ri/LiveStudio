@@ -165,6 +165,66 @@ namespace Lilium.RemoteControl.Tests
             LiveChangeLog.Clear();
         }
 
+        // --- 受け口の宣言 (LiveRouteScope) が守られていること ---
+
+        [Test]
+        public void Batch_CannotNestAnotherBatch()
+        {
+            // まとめ送りの中からまとめ送りは呼べない (再帰でメインスレッドを占有できてしまう)。
+            // /live/batch は単発専用として宣言されているので、まとめ送りからは «無い» パス。
+            var requests = new JObject
+            {
+                ["requests"] = new JArray
+                {
+                    new JObject
+                    {
+                        ["id"] = 1,
+                        ["method"] = "POST",
+                        ["path"] = "/live/batch",
+                        ["body"] = new JObject { ["requests"] = new JArray() },
+                    },
+                }
+            };
+
+            var responses = RunBatch(requests);
+
+            Assert.AreEqual(404, (int)responses[0]["status"]);
+        }
+
+        [Test]
+        public void Batch_Inbox_NeedsAClientAndRejectsOtherMethods()
+        {
+            // 受信箱はまとめ送り専用の受け口。誰宛かはコンテナからは解けないので、サーバーを
+            // 介さない直接実行ではここまで来て 400 になる (本番は HandleBatch が先に解決する)。
+            var requests = new JObject
+            {
+                ["requests"] = new JArray
+                {
+                    new JObject { ["id"] = 1, ["method"] = "GET", ["path"] = "/live/events?since=3" },
+                    new JObject { ["id"] = 2, ["method"] = "POST", ["path"] = "/live/events" },
+                }
+            };
+
+            var responses = RunBatch(requests);
+
+            Assert.AreEqual(400, (int)responses[0]["status"]);
+            Assert.AreEqual(405, (int)responses[1]["status"], "宣言が GET のみなので他の動詞は 405");
+        }
+
+        [Test]
+        public void Batch_UnknownPath_Returns404()
+        {
+            var requests = new JObject
+            {
+                ["requests"] = new JArray
+                {
+                    new JObject { ["id"] = 1, ["method"] = "GET", ["path"] = "/live/nope" },
+                }
+            };
+
+            Assert.AreEqual(404, (int)RunBatch(requests)[0]["status"]);
+        }
+
         [Test]
         public void Batch_Changes_WithNonGetMethod_Returns405()
         {

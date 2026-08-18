@@ -15,7 +15,7 @@ namespace Lilium.LiveStudio
     {
         /// <summary>
         /// ファイルを読み込み、生成したアバター root を返す。失敗時は null（実装側で根本原因をログ出力）。
-        /// VRM 実装は完了通知を <see cref="IVRMLoadObserver"/> ブロードキャスト経由で行うため null を返す。
+        /// VRM 実装は完了通知を <see cref="VRMLoader.onLoaded"/> イベント経由で行うため null を返す。
         /// </summary>
         Task<GameObject> LoadAsync(string filePath, Transform parent);
 

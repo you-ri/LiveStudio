@@ -16,7 +16,7 @@ namespace Lilium.LiveStudio
     /// <summary>
     /// VRM読み込み専用REST APIハンドラー
     /// </summary>
-    public class VrmLoadApiHandler : BaseRemoteControlApiHandler, IVRMLoadObserver
+    public class VrmLoadApiHandler : BaseRemoteControlApiHandler
     {
         // VRM読み込み状態追跡用
         private string _currentClientId;
@@ -27,8 +27,11 @@ namespace Lilium.LiveStudio
                 new RouteRule("/live/vrm/load", RouteMatch.Exact),
                 new RouteRule("/live/vrm/reset", RouteMatch.Exact))
         {
-            // IVRMLoadObserverとしてサービスに登録
-            Service<IVRMLoadObserver>.Register(this);
+            // VRMLoader のロードイベントを購読する
+            VRMLoader.onLoadStarted += OnVRMLoadStarted;
+            VRMLoader.onLoaded += OnVRMLoaded;
+            VRMLoader.onLoadError += OnVRMLoadError;
+            VRMLoader.onLoadProgress += OnVRMLoadProgress;
 
             // クライアントが初めて名乗ったときに VRM 読み込み中であれば開始イベントを積む
             _server.onClientConnected += OnClientConnected;
@@ -36,7 +39,10 @@ namespace Lilium.LiveStudio
 
         public override void Cleanup()
         {
-            Service<IVRMLoadObserver>.Unregister(this);
+            VRMLoader.onLoadStarted -= OnVRMLoadStarted;
+            VRMLoader.onLoaded -= OnVRMLoaded;
+            VRMLoader.onLoadError -= OnVRMLoadError;
+            VRMLoader.onLoadProgress -= OnVRMLoadProgress;
             _server.onClientConnected -= OnClientConnected;
         }
 
@@ -197,7 +203,7 @@ namespace Lilium.LiveStudio
         
         /// <summary>
         /// VRM読み込みを非同期で開始（Fire-and-forget方式）
-        /// 結果はIVRMLoadObserverコールバック経由で受信箱に積まれる
+        /// 結果はVRMLoaderのロードイベント経由で受信箱に積まれる
         /// </summary>
         private async Task ProcessVrmLoadAsync(string clientId, string filePath)
         {
@@ -208,8 +214,8 @@ namespace Lilium.LiveStudio
             _currentFilePath = filePath;
 
             // AvatarServiceを通じてVRM読み込みを実行
-            // 開始通知はVRMLoader→OnVRMLoadStartedコールバック経由で受信箱に積まれる
-            // 結果はIVRMLoadObserverのコールバック経由で通知される
+            // 開始通知はVRMLoader.onLoadStartedイベント経由で受信箱に積まれる
+            // 結果はVRMLoaderのロードイベント経由で通知される
             AvatarService.Load("current", filePath);
 
             // 注意: この時点でメソッドは終了するが、読み込みは継続中
@@ -219,9 +225,9 @@ namespace Lilium.LiveStudio
         
 
         
-        #region IVRMLoadObserver Implementation
+        #region VRMLoader event handlers
 
-        public void OnVRMLoadStarted(string filePath)
+        private void OnVRMLoadStarted(string filePath)
         {
             // Studio側から直接読み込まれた場合もファイルパスを保持
             _currentFilePath = filePath;
@@ -241,7 +247,7 @@ namespace Lilium.LiveStudio
             _ = _server?.BroadcastMessage(startData, "vrm_load_start");
         }
 
-        public void OnVRMLoaded(GameObject vrm)
+        private void OnVRMLoaded(GameObject vrm)
         {
             Debug.Log($"[Studio] VRM loaded successfully: {vrm?.name}");
 
@@ -265,7 +271,7 @@ namespace Lilium.LiveStudio
             _currentFilePath = null;
         }
 
-        public void OnVRMLoadError(string error)
+        private void OnVRMLoadError(string error)
         {
             Debug.LogError($"[Studio] VRM load failed: {error}");
 
@@ -288,7 +294,7 @@ namespace Lilium.LiveStudio
             _currentFilePath = null;
         }
 
-        public void OnVRMLoadProgress(float progress)
+        private void OnVRMLoadProgress(float progress)
         {
             // 進捗情報を他のクライアントにブロードキャスト
             if (_currentClientId != null && _currentFilePath != null)

@@ -72,7 +72,17 @@ namespace Lilium.RemoteControl.RestApi
         // 既存ハンドラは CanHandle を override しているため挙動は不変。
         // Routes を返すよう移行したハンドラは CanHandle を消してこの既定実装を使う。
 
-        protected enum RouteMatch { Exact, Prefix, Wildcard }
+        /// <summary>
+        /// パスの照合方法。
+        /// <para>
+        /// <see cref="ExactOrQuery"/> は「完全一致、ただし直後に <c>?</c> が続いてもよい」。
+        /// batch のサブリクエストはパスをクエリ込みの 1 本の文字列で運ぶ
+        /// (<c>/live/events?since=5</c>) ため、単発 (HTTP) と同じ 1 つの宣言で両方から
+        /// 引けるようにするために要る。HTTP 経路の <c>Url.AbsolutePath</c> にクエリは
+        /// 含まれないので、そちらでは <see cref="Exact"/> と同じ挙動になる。
+        /// </para>
+        /// </summary>
+        protected enum RouteMatch { Exact, Prefix, Wildcard, ExactOrQuery }
 
         protected readonly struct RouteRule
         {
@@ -106,6 +116,12 @@ namespace Lilium.RemoteControl.RestApi
                     return path.StartsWith(pattern, StringComparison.OrdinalIgnoreCase);
                 case RouteMatch.Wildcard:
                     return PathParser.IsMatchIgnoreCase(path, pattern);
+                case RouteMatch.ExactOrQuery:
+                    // 部分文字列を作らずに判定する: このルートはポーリングのたびに引かれる。
+                    return path.Length >= pattern.Length
+                        && (path.Length == pattern.Length || path[pattern.Length] == '?')
+                        && string.Compare(path, 0, pattern, 0, pattern.Length,
+                            StringComparison.OrdinalIgnoreCase) == 0;
                 default:
                     return false;
             }

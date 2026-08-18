@@ -358,6 +358,14 @@ namespace Lilium.LiveStudio
 
             SingletonService<IAvatarService>.Unregister(this);
 
+            // Unregister only clears the singleton, so a controller that outlives us (a set scene loaded
+            // additively can bring a second one, and it wins the singleton on enable) would leave the
+            // singleton empty even though it is still registered as "current". Everything that resolves
+            // the avatar through the singleton — StageManager.WarpTo, AvatarChair, PropAttachment,
+            // AvatarAssetSupport — then silently stops working. Hand the singleton over to whoever is left.
+            var remaining = SelectableService<IAvatarService>.Select("current");
+            if (remaining != null) SingletonService<IAvatarService>.Register(remaining);
+
             // Notify dependents that this controller's hierarchy is no longer valid so they can
             // detach / clear their cached resolutions before the GameObject is torn down.
             TransformStructureService.NotifyStructureChanged(this.gameObject);

@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 
+using UnityEngine;
 using UnityEngine.SceneManagement;
 
 namespace Lilium.LiveStudio
@@ -16,28 +17,32 @@ namespace Lilium.LiveStudio
     /// <see cref="SceneUtility.GetScenePathByBuildIndex"/>), so no bake step or catalog is needed: any
     /// scene added to the build is a built-in set.
     ///
-    /// Build index 0 is skipped: it is the bootstrap (base) scene the app starts in, already surfaced as
-    /// <see cref="StageManager"/>'s persistent set entry. Every other build scene becomes a loadable
-    /// <see cref="BuiltinSetAsset"/>, so all build scenes are represented as sets. (Excluding specific
-    /// scenes that should not be sets is a future opt-out, deliberately not modeled here.)
+    /// The bootstrap (base) scene is skipped: it is already surfaced as <see cref="StageManager"/>'s
+    /// persistent set entry, and offering it a second time would let it be loaded additively on top of
+    /// itself — a duplicate of the whole studio scene, including a second AvatarController. Every other
+    /// build scene becomes a loadable <see cref="BuiltinSetAsset"/>. (Excluding further scenes that should
+    /// not be sets is a future opt-out, deliberately not modeled here.)
     /// </summary>
     public static class BuiltinSetSource
     {
         /// <summary>
-        /// Builds a <see cref="BuiltinSetAsset"/> for each build scene except the bootstrap (index 0),
+        /// Builds a <see cref="BuiltinSetAsset"/> for each build scene except the bootstrap one,
         /// with its id / name / scene path populated so <see cref="ExternalAssetManager"/> can list and
-        /// load it. Empty when the build has only the bootstrap scene.
+        /// load it. Empty when the build holds nothing but the bootstrap scene.
         /// </summary>
         public static IReadOnlyList<AssetBase> GetSets()
         {
             int count = SceneManager.sceneCountInBuildSettings;
             if (count <= 1) return Array.Empty<AssetBase>();
 
+            var basePath = _ResolveBaseScenePath();
+
             var result = new List<AssetBase>(count - 1);
-            for (int i = 1; i < count; i++)
+            for (int i = 0; i < count; i++)
             {
                 var path = SceneUtility.GetScenePathByBuildIndex(i);
                 if (string.IsNullOrEmpty(path)) continue;
+                if (path == basePath) continue;
 
                 result.Add(new BuiltinSetAsset
                 {
@@ -51,6 +56,23 @@ namespace Lilium.LiveStudio
                 });
             }
             return result;
+        }
+
+        // The bootstrap scene is build index 0 only in a player launched normally: in the Editor any
+        // scene can be played, and a base-scene switch re-points it at runtime. StageManager captures
+        // the scene it started in, so ask it first and fall back to index 0 only before it exists.
+        private static string _ResolveBaseScenePath()
+        {
+            var stage = StageManager.current;
+            if (stage != null && !string.IsNullOrEmpty(stage.persistentScenePath)) return stage.persistentScenePath;
+
+            if (Application.isPlaying)
+            {
+                var active = SceneManager.GetActiveScene();
+                if (active.IsValid() && !string.IsNullOrEmpty(active.path)) return active.path;
+            }
+
+            return SceneUtility.GetScenePathByBuildIndex(0);
         }
     }
 }

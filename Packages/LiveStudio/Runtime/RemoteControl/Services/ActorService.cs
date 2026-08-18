@@ -35,12 +35,12 @@ namespace Lilium.LiveStudio
 
         public static void StartCalibration()
         {
-            Service<IActor>.subjects.ForEach(listener => listener.StartCalibration());
+            Service<IActor>.ForEach(listener => listener.StartCalibration());
         }
 
         public static void StopCalibration()
         {
-            Service<IActor>.subjects.ForEach(listener => listener.StopCalibration());
+            Service<IActor>.ForEach(listener => listener.StopCalibration());
         }
     }
 

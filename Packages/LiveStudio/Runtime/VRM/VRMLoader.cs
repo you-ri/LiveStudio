@@ -2,46 +2,9 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
-using Lilium.RemoteControl;
 
 namespace Lilium.LiveStudio
 {
-    public interface IVRMLoadObserver
-    {
-        void OnVRMLoadStarted(string filePath);
-
-        void OnVRMLoaded(GameObject vrm);
-
-        void OnVRMLoadError(string error);
-
-        void OnVRMLoadProgress(float progress);
-    }
-
-
-    public static partial class VRMLoadObserver
-    {
-        public static void NoticeOnVRMLoadStarted(string filePath)
-        {
-            Service<IVRMLoadObserver>.subjects.ForEach(s => s.OnVRMLoadStarted(filePath));
-        }
-
-        public static void NoticeOnVRMLoaded(GameObject vrm)
-        {
-            Service<IVRMLoadObserver>.subjects.ForEach(s => s.OnVRMLoaded(vrm));
-        }
-
-        public static void NoticeOnVRMLoadError(string error)
-        {
-            Service<IVRMLoadObserver>.subjects.ForEach(s => s.OnVRMLoadError(error));
-        }
-
-        public static void NoticeOnVRMLoadProgress(float progress)
-        {
-            Service<IVRMLoadObserver>.subjects.ForEach(s => s.OnVRMLoadProgress(progress));
-        }
-    }
-
-
     /// <summary>
     /// VRMファイルを非同期でロードするクラス
     /// VRMLoadProviderを使用してVRMファイルを読み込み、シグナルで結果を通知します。
@@ -49,6 +12,18 @@ namespace Lilium.LiveStudio
     /// TODO: テストを追加する
     public static class VRMLoader
     {
+        /// <summary>Raised when a VRM load starts. Argument is the file path.</summary>
+        public static event Action<string> onLoadStarted;
+
+        /// <summary>Raised when a VRM load completes successfully. Argument is the loaded root GameObject.</summary>
+        public static event Action<GameObject> onLoaded;
+
+        /// <summary>Raised when a VRM load fails or is cancelled. Argument is the error message.</summary>
+        public static event Action<string> onLoadError;
+
+        /// <summary>Raised as the load progresses. Argument is the normalized progress [0, 1].</summary>
+        public static event Action<float> onLoadProgress;
+
         /// <summary>
         /// VRMの読み込み中かどうか
         /// </summary>
@@ -76,14 +51,14 @@ namespace Lilium.LiveStudio
             CurrentLoadingFilePath = filePath;
 
             // 読み込み開始を通知
-            VRMLoadObserver.NoticeOnVRMLoadStarted(filePath);
+            onLoadStarted?.Invoke(filePath);
 
             if (string.IsNullOrEmpty(filePath))
             {
                 Debug.LogError("[LiveStudio] VRM file path is null or empty");
                 IsLoading = false;
                 CurrentLoadingFilePath = null;
-                VRMLoadObserver.NoticeOnVRMLoadError("VRM file path is null or empty");
+                onLoadError?.Invoke("VRM file path is null or empty");
                 return;
             }
 
@@ -91,7 +66,7 @@ namespace Lilium.LiveStudio
             {
                 IsLoading = false;
                 CurrentLoadingFilePath = null;
-                VRMLoadObserver.NoticeOnVRMLoadError($"VRM file not found: {filePath}");
+                onLoadError?.Invoke($"VRM file not found: {filePath}");
                 return;
             }
 
@@ -103,18 +78,18 @@ namespace Lilium.LiveStudio
             try
             {
                 // プログレス通知: 開始
-                VRMLoadObserver.NoticeOnVRMLoadProgress(0.0f);
+                onLoadProgress?.Invoke(0.0f);
 
                 // キャンセル状態をチェック
                 cancellationToken.ThrowIfCancellationRequested();
 
                 // プログレス通知: ファイル読み込み開始
-                VRMLoadObserver.NoticeOnVRMLoadProgress(0.1f);
+                onLoadProgress?.Invoke(0.1f);
 
                 // UniVRM 1.0のローダーを使用
                 var vrm10Instance = await UniVRM10.Vrm10.LoadPathAsync(filePath, controlRigGenerationOption: UniVRM10.ControlRigGenerationOption.Generate, ct: cancellationToken);
 
-                VRMLoadObserver.NoticeOnVRMLoadProgress(0.7f);
+                onLoadProgress?.Invoke(0.7f);
 
                 // ロード後もキャンセル状態をチェック
                 cancellationToken.ThrowIfCancellationRequested();
@@ -122,7 +97,7 @@ namespace Lilium.LiveStudio
                 if (vrm10Instance != null)
                 {
                     // プログレス通知: 初期化開始
-                    VRMLoadObserver.NoticeOnVRMLoadProgress(0.8f);
+                    onLoadProgress?.Invoke(0.8f);
 
                     var gameObject = vrm10Instance.gameObject;
                     gameObject.name = vrm10Instance.Vrm.Meta.Name;
@@ -136,20 +111,20 @@ namespace Lilium.LiveStudio
                     cancellationToken.ThrowIfCancellationRequested();
 
                     // プログレス通知: 完了
-                    VRMLoadObserver.NoticeOnVRMLoadProgress(1.0f);
+                    onLoadProgress?.Invoke(1.0f);
 
                     Debug.Log($"[LiveStudio] VRM loaded successfully: {filePath}");
 
                     IsLoading = false;
                     CurrentLoadingFilePath = null;
-                    VRMLoadObserver.NoticeOnVRMLoaded(gameObject);
+                    onLoaded?.Invoke(gameObject);
                 }
                 else
                 {
                     Debug.LogError($"[LiveStudio] Failed to load VRM from path: {filePath}");
                     IsLoading = false;
                     CurrentLoadingFilePath = null;
-                    VRMLoadObserver.NoticeOnVRMLoadError($"Failed to load VRM from path: {filePath}");
+                    onLoadError?.Invoke($"Failed to load VRM from path: {filePath}");
                 }
 
             }
@@ -158,16 +133,16 @@ namespace Lilium.LiveStudio
                 Debug.Log("[LiveStudio] VRM loading was cancelled.");
                 IsLoading = false;
                 CurrentLoadingFilePath = null;
-                VRMLoadObserver.NoticeOnVRMLoadError("VRM loading was cancelled.");
+                onLoadError?.Invoke("VRM loading was cancelled.");
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[LiveStudio] Exception during VRM loading: {ex.Message}");
                 IsLoading = false;
                 CurrentLoadingFilePath = null;
-                VRMLoadObserver.NoticeOnVRMLoadError($"Exception during VRM loading: {ex.Message}");
+                onLoadError?.Invoke($"Exception during VRM loading: {ex.Message}");
             }
-#endif            
+#endif
         }
 
 
@@ -196,4 +171,3 @@ namespace Lilium.LiveStudio
 
     }
 }
-

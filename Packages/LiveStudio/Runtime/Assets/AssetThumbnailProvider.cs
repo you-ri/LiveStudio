@@ -77,13 +77,11 @@ namespace Lilium.LiveStudio
             return thumbnail;
         }
 
-        // Main thread only. For a file-backed asset (avatar / prop / set) the ThumbnailCache key is its file
-        // path — the extension then decides how the picture is obtained. A built-in asset has no file, so it
-        // resolves to the synthetic key its startup pre-warm stored the picture under. A kind whose picture
-        // is a file of its own (a snapshot's screenshot) reports it through AssetBase.thumbnailFilePath. Any
-        // asset kind is accepted; resolution is by reference, so both a runtime absolute id (the remote
-        // app's session handle) and a persisted project-relative reference (a deck tile's
-        // backgroundAssetId, a snapshot's reference) find it.
+        // Main thread only. Both halves are the asset's own answer — a cached picture inside the asset
+        // (AssetBase.thumbnailCacheKey) and/or an image file of its own beside it
+        // (AssetBase.thumbnailFilePath) — so no kind is named here. Any asset kind is accepted; resolution
+        // is by reference, so both a runtime absolute id (the remote app's session handle) and a persisted
+        // project-relative reference (a deck tile's backgroundAssetId, a snapshot's reference) find it.
         static Source _ResolveSource(string assetId)
         {
             if (string.IsNullOrEmpty(assetId)) return default;
@@ -92,10 +90,7 @@ namespace Lilium.LiveStudio
             var asset = manager.FindAssetByReference(assetId);
             if (asset == null) return default;
 
-            var cacheKey = !string.IsNullOrEmpty(asset.filePath)
-                ? asset.filePath
-                : (asset.isBuiltin ? BuiltinAssetRegistry.ThumbnailCacheKey(asset.persistentId ?? asset.id) : null);
-            return new Source(cacheKey, asset.thumbnailFilePath);
+            return new Source(asset.thumbnailCacheKey, asset.thumbnailFilePath);
         }
 
         // Off the main thread (ThumbnailCache is thread-safe): the kind's own image file, or the cached

@@ -10,16 +10,27 @@ namespace Lilium.LiveStudio
     [LiveClass(Icon = "settings")]
     public static class LiveSceneManager
     {
+        /// <summary>
+        /// The live-scene hosts in the loaded scenes. Every entry point here works through the same
+        /// set, so the lookup (and the Unity-version difference in its API) lives in one place.
+        /// </summary>
+        private static Lilium.RemoteControl.LiveScene.RemoteControlBehaviour[] _Providers()
+        {
+#if UNITY_2022_3_OR_NEWER
+            return Object.FindObjectsByType<Lilium.RemoteControl.LiveScene.RemoteControlBehaviour>(
+                FindObjectsSortMode.None);
+#else
+            return Object.FindObjectsOfType<Lilium.RemoteControl.LiveScene.RemoteControlBehaviour>();
+#endif
+        }
+
         [LiveProperty, Hide]
         public static string scenePath
         {
             get
             {
-#if UNITY_2022_3_OR_NEWER
-                var provider = Object.FindFirstObjectByType<Lilium.RemoteControl.LiveScene.RemoteControlBehaviour>();
-#else
-                var provider = Object.FindObjectOfType<Lilium.RemoteControl.LiveScene.RemoteControlBehaviour>();
-#endif
+                var providers = _Providers();
+                var provider = providers.Length > 0 ? providers[0] : null;
                 if (provider == null) return "";
                 // currentFilePath が空の場合はシーンが未保存状態なので空文字を返す
                 return string.IsNullOrEmpty(provider.currentFilePath) ? "" : provider.currentFullPath;
@@ -79,7 +90,7 @@ namespace Lilium.LiveStudio
         [LiveFunction(label = "LIVESCENE_SAVE_SCENE"), Hide]
         public static void SaveScene(string filePath = null)
         {
-            var providers = Object.FindObjectsOfType<Lilium.RemoteControl.LiveScene.RemoteControlBehaviour>();
+            var providers = _Providers();
             foreach (var provider in providers)
             {
                 if (string.IsNullOrEmpty(filePath))
@@ -101,7 +112,7 @@ namespace Lilium.LiveStudio
             // 起動時 (RemoteControlBehaviour.Start → LoadCurrentData) と同じパスを通すため、
             // ここでは provider に filePath だけ伝え、シーン切替/デシリアライズの判断は
             // provider 内部 (LoadCurrentData → _TrySwitchBaseScene → _LoadFrom) に委ねる。
-            var providers = Object.FindObjectsOfType<Lilium.RemoteControl.LiveScene.RemoteControlBehaviour>();
+            var providers = _Providers();
             foreach (var provider in providers)
             {
                 provider.LoadCurrentDataFrom(filePath);
@@ -111,7 +122,7 @@ namespace Lilium.LiveStudio
         /// <summary>True when any host reports edits made since the last load or save.</summary>
         internal static bool HasUnsavedChanges()
         {
-            var providers = Object.FindObjectsOfType<Lilium.RemoteControl.LiveScene.RemoteControlBehaviour>();
+            var providers = _Providers();
             foreach (var provider in providers)
             {
                 if (provider.HasUnsavedChanges()) return true;
@@ -125,7 +136,7 @@ namespace Lilium.LiveStudio
         /// </summary>
         internal static bool TrySaveOrPrompt()
         {
-            var providers = Object.FindObjectsOfType<Lilium.RemoteControl.LiveScene.RemoteControlBehaviour>();
+            var providers = _Providers();
             foreach (var provider in providers)
             {
                 if (!provider.TrySaveOrPrompt()) return false;
@@ -148,7 +159,7 @@ namespace Lilium.LiveStudio
         {
             bool isNewScene = string.IsNullOrEmpty(filePath);
 
-            var providers = Object.FindObjectsOfType<Lilium.RemoteControl.LiveScene.RemoteControlBehaviour>();
+            var providers = _Providers();
             foreach (var provider in providers)
             {
                 provider.ResetAllToDefault();
@@ -179,7 +190,7 @@ namespace Lilium.LiveStudio
         [LiveFunction(label = "LIVESCENE_NEW_SCENE"), Hide]
         public static void NewScene(string sceneName = null)
         {
-            var providers = Object.FindObjectsOfType<Lilium.RemoteControl.LiveScene.RemoteControlBehaviour>();
+            var providers = _Providers();
             foreach (var provider in providers)
             {
                 provider.currentFilePath = "";

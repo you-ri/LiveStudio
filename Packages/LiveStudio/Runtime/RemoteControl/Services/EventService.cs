@@ -23,7 +23,7 @@ namespace Lilium.LiveStudio
 
         public static void RaiseEvent(string name)
         {
-            Service<IEventController>.subjects.ForEach(l => l.RaiseEvent(name));
+            Service<IEventController>.ForEach(l => l.RaiseEvent(name));
         }
     }
 }

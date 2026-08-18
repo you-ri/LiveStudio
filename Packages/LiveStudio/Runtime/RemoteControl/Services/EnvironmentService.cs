@@ -87,22 +87,22 @@ namespace Lilium.LiveStudio
 
         public static void SetEnvironmentType(EnvironmentType environmentType)
         {
-            Service<IEnvironmentProvider>.subjects.ForEach(s => s.SetEnvironmentType(environmentType));
+            Service<IEnvironmentProvider>.ForEach(s => s.SetEnvironmentType(environmentType));
         }
 
         public static void SetEnvironmentBackground(int index)
         {
-            Service<IEnvironmentProvider>.subjects.ForEach(s => s.SetEnvironmentBackground(index));
+            Service<IEnvironmentProvider>.ForEach(s => s.SetEnvironmentBackground(index));
         }
 
         public static void SetEnvironmentBackgroundColor(Color color)
         {
-            Service<IEnvironmentProvider>.subjects.ForEach(s => s.SetEnvironmenteBackgroundColor(color));
+            Service<IEnvironmentProvider>.ForEach(s => s.SetEnvironmenteBackgroundColor(color));
         }
 
         public static void SetEnvironmentBackgroundHSV(HSVColor hsvColor)
         {
-            Service<IEnvironmentProvider>.subjects.ForEach(s => s.SetEnvironmentBackgroundHSV(hsvColor));
+            Service<IEnvironmentProvider>.ForEach(s => s.SetEnvironmentBackgroundHSV(hsvColor));
         }
     }
 }

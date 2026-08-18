@@ -26,6 +26,23 @@ namespace Lilium.RemoteControl.Tests
                 => MatchPattern(path, pattern, RouteMatch.Prefix);
             public static bool Wildcard(string path, string pattern)
                 => MatchPattern(path, pattern, RouteMatch.Wildcard);
+            public static bool ExactOrQuery(string path, string pattern)
+                => MatchPattern(path, pattern, RouteMatch.ExactOrQuery);
+        }
+
+        [Test]
+        public void ExactOrQuery_AcceptsATrailingQueryAndNothingElse()
+        {
+            // まとめ送りのサブリクエストはパスとクエリを 1 本の文字列で運ぶ。単発 (HTTP) と
+            // 同じ 1 つの宣言で両方から引けるようにするための一致方法。
+            Assert.IsTrue(Probe.ExactOrQuery("/live/changes", "/live/changes"));
+            Assert.IsTrue(Probe.ExactOrQuery("/live/changes?since=5", "/live/changes"));
+            Assert.IsTrue(Probe.ExactOrQuery("/LIVE/Changes?since=5", "/live/changes"));
+
+            // 「クエリが続いてもよい」だけで、Prefix ではない。
+            Assert.IsFalse(Probe.ExactOrQuery("/live/changes/1", "/live/changes"));
+            Assert.IsFalse(Probe.ExactOrQuery("/live/changesx", "/live/changes"));
+            Assert.IsFalse(Probe.ExactOrQuery("/live/change", "/live/changes"));
         }
 
         [Test]

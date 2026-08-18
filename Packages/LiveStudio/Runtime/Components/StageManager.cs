@@ -159,6 +159,13 @@ namespace Lilium.LiveStudio
         [NonSerialized]
         private Scene _persistentScene;
 
+        /// <summary>
+        /// Path of the bootstrap (persistent) scene, or empty before it is captured. Lets
+        /// <see cref="BuiltinSetSource"/> keep the base scene out of the loadable set list — it is
+        /// already surfaced as the persistent entry here, and is not necessarily build index 0.
+        /// </summary>
+        internal string persistentScenePath => _persistentScene.IsValid() ? _persistentScene.path : string.Empty;
+
         [NonSerialized]
         private bool _initialized;
 
@@ -228,7 +235,21 @@ namespace Lilium.LiveStudio
 #if UNITY_EDITOR
             if (_isExitingPlayMode) return;
 #endif
+            _EnsurePersistentScene();
             _EnsureSubscribed();
+        }
+
+        // OnEnable captures the bootstrap scene, but this object also lives in the Editor outside play
+        // mode (RemoteControl runs there), where there is no play-mode scene to capture and OnEnable is
+        // not replayed when play starts — leaving the persistent entry missing and the base scene
+        // unidentifiable (see persistentScenePath). Capture on the first playing frame instead: no set
+        // can be loaded yet, so the active scene is still the bootstrap one.
+        private void _EnsurePersistentScene()
+        {
+            if (_persistentScene.IsValid() && _persistentScene.isLoaded) return;
+            _persistentScene = SceneManager.GetActiveScene();
+            if (!_persistentScene.IsValid()) return;
+            _RebuildSetsView();
         }
 
         public void Reset()
