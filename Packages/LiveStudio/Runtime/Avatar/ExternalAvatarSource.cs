@@ -39,7 +39,7 @@ namespace Lilium.LiveStudio
         [LiveProperty, Hide]
         public string[] avatarOptions =>
             ExternalAssetManager.current != null
-                ? ExternalAssetManager.current.GetAvatarNames()
+                ? AvatarSelection.GetNames(ExternalAssetManager.current)
                 : Array.Empty<string>();
 
         // ライブシーンページ等のインスペクタから、ExternalAssetManager に登録済みのアバターを
@@ -50,9 +50,9 @@ namespace Lilium.LiveStudio
         {
             get =>
                 ExternalAssetManager.current != null
-                    ? ExternalAssetManager.current.GetSelectedAvatarName()
+                    ? AvatarSelection.GetSelectedName(ExternalAssetManager.current)
                     : string.Empty;
-            set => ExternalAssetManager.current?.SelectAvatarByName(value);
+            set => AvatarSelection.SelectByName(ExternalAssetManager.current, value);
         }
 
         public void RequestLoad(string filepath)

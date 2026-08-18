@@ -45,7 +45,6 @@ namespace Lilium.LiveStudio
         [LiveField]
         public bool isActive;
 
-        public override bool isExclusive => false;
         public override bool reloadsOnAvatarChange => false;
         public override bool isBuiltin => true;
 

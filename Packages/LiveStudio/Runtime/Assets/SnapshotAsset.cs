@@ -20,9 +20,10 @@ namespace Lilium.LiveStudio
     [LiveClass("SnapshotAsset", Category = "Asset", Icon = "photo_library")]
     public class SnapshotAsset : AssetBase
     {
-        // Additive group, but never enabled: restoring is a one-shot action, not a sticky load state.
-        public override bool isExclusive => false;
+        /// <summary>A snapshot is taken by the app, so the app may delete it.</summary>
+        public override bool isAppOwnedFile => true;
 
+        // Additive group, but never enabled: restoring is a one-shot action, not a sticky load state.
         // No load/unload lifecycle; the entry exists for listing and is applied via Restore().
         public override Task LoadAsync(AssetLoadContext context) => Task.CompletedTask;
 

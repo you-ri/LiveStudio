@@ -20,9 +20,10 @@ namespace Lilium.LiveStudio
     [LiveClass("DeckAsset", Category = "Asset", Icon = "grid_view")]
     public class DeckAsset : AssetBase
     {
-        // Additive group, but never enabled: the operations page shows every deck file whatever this says.
-        public override bool isExclusive => false;
+        /// <summary>A deck file is written by the app, so the app may delete it.</summary>
+        public override bool isAppOwnedFile => true;
 
+        // Additive group, but never enabled: the operations page shows every deck file whatever this says.
         // No load/unload lifecycle. OperationManager owns the file's contents.
         public override Task LoadAsync(AssetLoadContext context) => Task.CompletedTask;
 

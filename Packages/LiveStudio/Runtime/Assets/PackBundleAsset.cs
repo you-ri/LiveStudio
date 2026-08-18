@@ -29,8 +29,6 @@ namespace Lilium.LiveStudio
     public class PackBundleAsset : AssetBase
     {
         // Additive-style (not a single-selection group), though it never actually loads via the toggle.
-        public override bool isExclusive => false;
-
         /// <summary>
         /// The project-relative pack path used to build member keys (<see cref="ExternalAssetKey"/>).
         /// Uses the persisted <see cref="AssetBase.path"/> when set, otherwise derives it from the

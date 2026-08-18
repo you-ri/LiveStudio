@@ -26,8 +26,6 @@ namespace Lilium.LiveStudio
     public abstract class BuiltinAssetBase : AssetBase
     {
         // Additive-style (not a single-selection group), though it never actually loads via the toggle.
-        public override bool isExclusive => false;
-
         public override bool isBuiltin => true;
 
         // Reference-only: no scene instance, no per-scene state — never written to the live scene.

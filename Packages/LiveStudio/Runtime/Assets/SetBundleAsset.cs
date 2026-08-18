@@ -24,7 +24,6 @@ namespace Lilium.LiveStudio
     [LiveClass("SetBundleAsset", Category = "Asset", Icon = "public")]
     public class SetBundleAsset : AssetBase, ISetAsset
     {
-        public override bool isExclusive => false;
         public override bool reloadsOnAvatarChange => false;
 
         /// <summary>

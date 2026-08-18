@@ -119,10 +119,26 @@ namespace Lilium.LiveStudio
         public bool busy;
 
         /// <summary>
-        /// Exclusive assets form a single-selection (radio) group: enabling one disables the others.
-        /// Avatars are exclusive because only one avatar exists at a time; props are additive.
+        /// Name of the single-selection (radio) group this asset belongs to, or null when it stacks
+        /// with everything else. Enabling one member of a group turns the others off. Avatars name a
+        /// group because only one avatar exists at a time; props are additive and name none.
+        /// <para>
+        /// The group is the asset kind's own answer, so the manager reconciles without knowing which
+        /// groups exist — adding a group needs no change on the manager side.
+        /// </para>
         /// </summary>
-        public abstract bool isExclusive { get; }
+        public virtual string exclusiveGroup => null;
+
+        /// <summary>True when this asset belongs to a single-selection group.</summary>
+        public bool isExclusive => !string.IsNullOrEmpty(exclusiveGroup);
+
+        /// <summary>
+        /// True for a file the app itself authored, which is therefore the app's to delete. Files the
+        /// user brought in (avatars, props, bundles) return false: removing what someone dragged in is
+        /// the file manager's job, and there is no undo here. Which side a kind falls on is the kind's
+        /// own business, so the manager does not enumerate deletable kinds.
+        /// </summary>
+        public virtual bool isAppOwnedFile => false;
 
         /// <summary>
         /// True for an app-embedded (built-in) entry that is not backed by a project-folder file — e.g. a

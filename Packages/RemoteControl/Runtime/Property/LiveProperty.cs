@@ -57,6 +57,50 @@ namespace Lilium.RemoteControl
         /// </summary>
         public bool PathContains(string memberName) => path.Value.Contains(memberName);
 
+        /// <summary>
+        /// True when the path's first segment is exactly <paramref name="memberName"/> — i.e. the write
+        /// went into that top-level member (or something nested under it).
+        /// <para>
+        /// ⚠ Prefer this over <see cref="PathContains"/> when reacting to "was this member written".
+        /// A substring test matches any member whose name merely contains the word, so adding a
+        /// <c>heldFrames</c> next to a <c>held</c> silently changes what the existing check answers.
+        /// </para>
+        /// </summary>
+        public bool PathRootIs(string memberName) => _SegmentEquals(0, memberName);
+
+        /// <summary>
+        /// True when the path's last segment is exactly <paramref name="memberName"/> — i.e. that member
+        /// itself was written, however deeply nested. Same reason to prefer it over
+        /// <see cref="PathContains"/>.
+        /// </summary>
+        public bool PathLeafIs(string memberName)
+        {
+            var text = path.Value;
+            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(memberName)) return false;
+            int start = text.LastIndexOf('/') + 1;
+            return string.CompareOrdinal(text, start, memberName, 0, memberName.Length) == 0
+                && text.Length - start == memberName.Length;
+        }
+
+        // Compares one '/'-separated segment without allocating a split.
+        private bool _SegmentEquals(int index, string memberName)
+        {
+            var text = path.Value;
+            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(memberName)) return false;
+
+            int start = 0;
+            for (int i = 0; i < index; i++)
+            {
+                start = text.IndexOf('/', start);
+                if (start < 0) return false;
+                start++;
+            }
+            int end = text.IndexOf('/', start);
+            if (end < 0) end = text.Length;
+            return end - start == memberName.Length
+                && string.CompareOrdinal(text, start, memberName, 0, memberName.Length) == 0;
+        }
+
         // owner は struct。default(LiveObjectHandle) は targetType==null なので、これで「owner が存在する」を表す
         // (旧 class 実装の owner != null と等価。target 破棄の有無は問わない)
         public bool isValid => type != null && owner.targetType != null;

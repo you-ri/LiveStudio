@@ -566,11 +566,10 @@ namespace Lilium.LiveStudio
                 Debug.LogError($"[LiveStudio] DeleteAssetFile: asset '{assetId}' not found.");
                 return;
             }
-            if (!PropPreset.IsPresetFile(asset.filePath) &&
-                !DeckFile.IsDeckFile(asset.filePath) &&
-                !SnapshotManager.IsSnapshotFile(asset.filePath))
+            // Which side a kind falls on is the kind's own answer; the manager does not list them.
+            if (!asset.isAppOwnedFile)
             {
-                Debug.LogError($"[LiveStudio] DeleteAssetFile: only preset, deck and snapshot files can be deleted (got '{asset.filePath}').");
+                Debug.LogError($"[LiveStudio] DeleteAssetFile: only app-created files can be deleted (got '{asset.filePath}').");
                 return;
             }
 
@@ -609,61 +608,6 @@ namespace Lilium.LiveStudio
             else if (asset != null)
             {
                 Debug.LogError($"[LiveStudio] Asset is not a live scene: {assetId}");
-            }
-        }
-
-        /// <summary>
-        /// Display names of the registered avatar (exclusive) assets, with an empty entry first that
-        /// represents "none / default avatar". Used as the option source for an avatar selector UI.
-        /// </summary>
-        public string[] GetAvatarNames()
-        {
-            var names = new List<string> { string.Empty };
-            for (int i = 0; i < assets.Length; i++)
-            {
-                var asset = assets[i];
-                if (asset != null && asset.isExclusive) names.Add(asset.name ?? string.Empty);
-            }
-            return names.ToArray();
-        }
-
-        /// <summary>Name of the currently selected (enabled) avatar, or empty when on the default avatar.</summary>
-        public string GetSelectedAvatarName()
-        {
-            for (int i = 0; i < assets.Length; i++)
-            {
-                var asset = assets[i];
-                if (asset != null && asset.isExclusive && asset.enabled) return asset.name ?? string.Empty;
-            }
-            return string.Empty;
-        }
-
-        /// <summary>
-        /// Selects the avatar with the given display name (empty resets to the default avatar), driving the
-        /// same exclusive reconcile as toggling the asset's <see cref="AssetBase.enabled"/> flag directly.
-        /// </summary>
-        public void SelectAvatarByName(string avatarName)
-        {
-            if (string.IsNullOrEmpty(avatarName))
-            {
-                // Disable the currently-enabled avatar; the reconcile then resets to the default avatar.
-                bool changed = false;
-                for (int i = 0; i < assets.Length; i++)
-                {
-                    var asset = assets[i];
-                    if (asset != null && asset.isExclusive && asset.enabled) { asset.enabled = false; changed = true; }
-                }
-                if (changed) { _dirty = true; _Broadcast(); }
-                return;
-            }
-
-            for (int i = 0; i < assets.Length; i++)
-            {
-                var asset = assets[i];
-                if (asset == null || !asset.isExclusive || asset.name != avatarName) continue;
-                if (!asset.enabled) { asset.enabled = true; _dirty = true; }
-                _Broadcast();
-                return;
             }
         }
 

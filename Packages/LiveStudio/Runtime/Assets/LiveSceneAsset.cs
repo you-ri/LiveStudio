@@ -24,8 +24,6 @@ namespace Lilium.LiveStudio
     public class LiveSceneAsset : AssetBase
     {
         // Additive group, but never enabled: opening is a one-shot action, not a sticky load state.
-        public override bool isExclusive => false;
-
         // No load/unload lifecycle; the entry exists for listing and is opened via Open().
         public override Task LoadAsync(AssetLoadContext context) => Task.CompletedTask;
 

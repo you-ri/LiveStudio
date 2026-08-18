@@ -27,7 +27,11 @@ namespace Lilium.LiveStudio
     [LiveClass("PropAsset", Category = "Asset", Icon = "deployed_code")]
     public class PropAsset : AssetBase, IInstantiableProp
     {
-        public override bool isExclusive => false;
+        /// <summary>
+        /// A preset is a note the app wrote and may delete; the bundle a preset points at is not ours
+        /// (both arrive as this kind, but they come from different places).
+        /// </summary>
+        public override bool isAppOwnedFile => _isPreset;
 
         // Only avatar props (*.prop.lsb) live under the avatar and must be reloaded on an avatar swap.
         public override bool reloadsOnAvatarChange => _isAvatarAttached;

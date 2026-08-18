@@ -36,8 +36,6 @@ namespace Lilium.LiveStudio
         [LiveField, Hide]
         public string guid;
 
-        public override bool isExclusive => false;
-
         // Built-in props carry an IProp root, so they live under the avatar and must be reloaded onto the
         // new avatar when it is swapped (same as an external *.prop.lsb avatar prop).
         public override bool reloadsOnAvatarChange => true;

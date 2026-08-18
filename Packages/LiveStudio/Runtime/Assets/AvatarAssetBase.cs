@@ -22,6 +22,12 @@ namespace Lilium.LiveStudio
     {
         // Avatars are exclusive: enabling one replaces the current avatar and the manager disables the
         // others (radio selection). Common to every avatar source, so it lives here.
-        public override bool isExclusive => true;
+        /// <summary>
+        /// Group name shared by every avatar source. Membership is what makes a list an avatar list, so
+        /// the spelling lives here and callers compare against it rather than testing the C# type.
+        /// </summary>
+        public const string AvatarGroup = "Avatar";
+
+        public override string exclusiveGroup => AvatarGroup;
     }
 }

@@ -23,12 +23,12 @@ namespace Lilium.LiveStudio
         /// <summary>Registered avatar names (empty entry = default avatar) — the dropdown source.</summary>
         [LiveProperty, Hide]
         public string[] avatarNames
-            => ExternalAssetManager.current?.GetAvatarNames() ?? Array.Empty<string>();
+            => AvatarSelection.GetNames(ExternalAssetManager.current);
 
         public override void Apply(in OperationContext context)
         {
             if (!context.triggered) return;
-            ExternalAssetManager.current?.SelectAvatarByName(avatar);
+            AvatarSelection.SelectByName(ExternalAssetManager.current, avatar);
         }
     }
 }
