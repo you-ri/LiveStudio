@@ -13,6 +13,80 @@ using Lilium.RemoteControl;
 namespace Lilium.LiveStudio
 {
     /// <summary>
+    /// One action of an <see cref="AvatarInput"/> map, exposed as a bindable slot.
+    ///
+    /// The element count is dynamic (per input map) while the element schema stays static, so the
+    /// generic object surface can list every action and offer a rebind button per row without a
+    /// dedicated route. Rebinding needs no argument beyond the row itself, which is the whole point:
+    /// the client picks a row and presses a key.
+    /// </summary>
+    [LiveClass("InputActionBinding")]
+    public class InputActionEntry
+    {
+        // The map this action lives in. Null on the default-constructed entry that the serializer
+        // builds as an array-diff template, so every member has to tolerate it.
+        private readonly InputActionMap _map;
+        private readonly string _name = string.Empty;
+
+        public InputActionEntry() { }
+
+        internal InputActionEntry(InputActionMap map, string name)
+        {
+            _map = map;
+            _name = name ?? string.Empty;
+        }
+
+        [LiveProperty, LiveKey]
+        public string name => _name;
+
+        /// <summary>The bound key as a person would read it ("A", "Left Button"), empty when unbound.</summary>
+        [LiveProperty(label = "INPUT_ACTION_BINDING")]
+        public string binding
+        {
+            get
+            {
+                var action = _Action();
+                if (action == null || action.bindings.Count == 0) return string.Empty;
+                return InputControlPath.ToHumanReadableString(
+                    action.bindings[0].effectivePath,
+                    InputControlPath.HumanReadableStringOptions.UseShortNames);
+            }
+        }
+
+        [LiveProperty(label = "INPUT_ACTION_ENABLED")]
+        public bool enabled => _Action()?.enabled ?? false;
+
+        /// <summary>
+        /// Listens for the next key or button on the Studio machine and binds it to this action.
+        /// Same path as expression and operation rebinding (<see cref="RuntimeKeyBindingSystem"/>),
+        /// which detects the key through the global InputSystem event stream, so the map does not
+        /// need to be enabled.
+        ///
+        /// Returns as soon as listening starts — invocation results are not awaited, so there is
+        /// nothing to report back. A client sees the outcome in <see cref="binding"/>, which its
+        /// property polling picks up once the key lands.
+        /// </summary>
+        [LiveFunction(label = "INPUT_ACTION_REBIND", icon = "keyboard")]
+        [Help("INPUT_ACTION_REBIND_HELP")]
+        public void Rebind() => _RebindAsync();
+
+        private async void _RebindAsync()
+        {
+            var action = _Action();
+            if (action == null) return;
+
+            await RuntimeKeyBindingSystem.StartBindingAsync(
+                new RuntimeKeyBindingData(), _map, _name, 0);
+        }
+
+        private InputAction _Action()
+        {
+            if (_map == null || string.IsNullOrEmpty(_name)) return null;
+            return _map.FindAction(_name);
+        }
+    }
+
+    /// <summary>
     /// 入力デバイスの情報を保持するためのコンポーネント
     /// </summary>
     [LiveClass("InputActions", Category = "Input", Icon = "keyboard", HideInScene = true)]
@@ -101,6 +175,24 @@ namespace Lilium.LiveStudio
             {
                 if (_inputActionMap == null) return Enumerable.Empty<string>();
                 return _inputActionMap.actions.Select(a => a.name);
+            }
+        }
+
+        /// <summary>
+        /// Every action of the map as a bindable slot, rebuilt on each read so it follows the live
+        /// map. Read-only and not persisted (the bindings themselves ride in <see cref="settings"/>);
+        /// this exists so a client can list the actions and rebind one through the ordinary object
+        /// surface, which is why there is no route for it.
+        /// </summary>
+        [LiveProperty, Collapsed]
+        public InputActionEntry[] actions
+        {
+            get
+            {
+                if (_inputActionMap == null) return Array.Empty<InputActionEntry>();
+                return _inputActionMap.actions
+                    .Select(a => new InputActionEntry(_inputActionMap, a.name))
+                    .ToArray();
             }
         }
 

@@ -50,5 +50,9 @@
     "SNAPSHOT_RESTORE": "恢复快照",
     "SNAPSHOT_DELETE": "删除快照",
     "NOTIFY_SNAPSHOT_SAVED": "已保存快照",
-    "NOTIFY_SNAPSHOT_RESTORED": "已恢复快照"
+    "NOTIFY_SNAPSHOT_RESTORED": "已恢复快照",
+    "INPUT_ACTION_BINDING": "按键",
+    "INPUT_ACTION_ENABLED": "启用",
+    "INPUT_ACTION_REBIND": "重新分配",
+    "INPUT_ACTION_REBIND_HELP": "按下按钮后，再按下想要分配的按键或按钮。分配完成后新的按键会显示在这里。"
 }

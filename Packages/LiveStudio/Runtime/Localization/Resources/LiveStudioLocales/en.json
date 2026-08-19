@@ -50,5 +50,9 @@
     "SNAPSHOT_RESTORE": "Restore Snapshot",
     "SNAPSHOT_DELETE": "Delete Snapshot",
     "NOTIFY_SNAPSHOT_SAVED": "Snapshot saved",
-    "NOTIFY_SNAPSHOT_RESTORED": "Snapshot restored"
+    "NOTIFY_SNAPSHOT_RESTORED": "Snapshot restored",
+    "INPUT_ACTION_BINDING": "Key",
+    "INPUT_ACTION_ENABLED": "Enabled",
+    "INPUT_ACTION_REBIND": "Rebind",
+    "INPUT_ACTION_REBIND_HELP": "Press the button, then press the key or button you want to assign. The new key appears here once it lands."
 }

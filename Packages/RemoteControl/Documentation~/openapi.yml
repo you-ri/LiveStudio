@@ -495,18 +495,30 @@ paths:
         常に完全展開 (深さ無制限) で返ります。パスの時点で応答が 1 本の枝に限定されているので、
         `nested` フラグはここでは効きません。`/live/objects` が省略した子を、必要になった時点で
         取りに行くのがこのエンドポイントです。
+
+
+        **絵のメンバー**: 宣言が ImagePreview のメンバー (カメラの `preview` など) は、
+        JSON ではなく画像そのもの (`image/png` 等のバイナリ) で応答します。オブジェクト全体や
+        `/live/batch` の JSON 読みには、そのメンバー自身のこのアドレスが値として載るので、
+        クライアントは値の URL をポーリングするだけでプレビューを描けます。絵が無いときは
+        404 (プレースホルダへのフォールバック合図)。
       parameters:
         - $ref: "#/components/parameters/ObjectId"
         - $ref: "#/components/parameters/PropertyPath"
       responses:
         '200':
-          description: プロパティの値と、それがどこにあるか。
+          description: >
+            プロパティの値と、それがどこにあるか。絵のメンバーは画像バイナリ。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/PropertyGettingResponse"
+            image/png:
+              schema:
+                type: string
+                format: binary
         '404':
-          description: そのオブジェクトまたはプロパティがない。
+          description: そのオブジェクトまたはプロパティがない。絵のメンバーはまだ絵が無い場合も。
           content:
             application/json:
               schema:

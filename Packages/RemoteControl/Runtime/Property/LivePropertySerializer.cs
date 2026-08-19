@@ -66,6 +66,22 @@ namespace Lilium.RemoteControl
         /// バッファ確保・成長アロケーションを排除する (バッチ経路のように多数のオペレーションを
         /// 連続でシリアライズする用途で GC を削減する)。最終的な文字列 1 本のみ確保する。
         /// </summary>
+        /// <summary>
+        /// True for a member whose value IS a picture: [ImagePreview] on a <see cref="LiveImageData"/>
+        /// member. Such members are folded to their own address on every JSON read (the getter renders
+        /// a frame, so JSON paths must never invoke it); the bytes are served by the property GET route.
+        /// [ImagePreview] on a string member is the older style — the getter returns an address and is
+        /// safe to call — and keeps its plain serialization.
+        /// </summary>
+        internal static bool IsImageProperty(LivePropertyType propType)
+            => propType != null
+                && propType.controlAttribute is ImagePreviewAttribute
+                && propType.valueType == typeof(LiveImageData);
+
+        /// <summary>The address a folded image member points at: its own property GET route.</summary>
+        internal static string ImageAddress(string id, string slashPath)
+            => "/live/object/" + id + "/" + slashPath;
+
         internal static string SerializeToJson(JToken token)
         {
             var sb = _jsonBuffer ??= new StringBuilder(4096);
@@ -225,6 +241,11 @@ namespace Lilium.RemoteControl
                 return JValue.CreateNull();
 
             if (value == null) return JValue.CreateNull();
+
+            // LiveImageData reaching the generic path means an image member sits somewhere the fold
+            // does not cover (a nested composite, where no address exists). Degrade to null instead of
+            // letting Newtonsoft base64 the bytes into JSON.
+            if (value is LiveImageData) return JValue.CreateNull();
 
             // LiveObjectインスタンスが直接渡された場合は参照としてシリアライズ
             // （静的クラスのLiveObjectはtargetがnullのため、FindByTargetで解決できない）
@@ -1154,6 +1175,18 @@ namespace Lilium.RemoteControl
                     continue;
                 }
 
+                // Image member: fold to its own address WITHOUT invoking the getter — the getter
+                // renders a frame, and listing an object must not render its pictures. The bytes are
+                // served when that address is GET directly. Derived state, so never persisted.
+                if (IsImageProperty(propertyType))
+                {
+                    if (options.forPersistence) continue;
+                    jObject[propertyType.name] = liveObject.hasId
+                        ? (JToken)ImageAddress(liveObject.id, propertyType.name)
+                        : JValue.CreateNull();
+                    continue;
+                }
+
                 // Shadow Field がある場合は backing field から直接読む (Property getter をバイパス)。
                 // Property getter が外部状態 (Screen.width 等) を返す Shadow パターンでも、保存対象は
                 // ユーザーが設定した「内部の値」なので shadow field を信頼する。
@@ -1646,6 +1679,21 @@ namespace Lilium.RemoteControl
         /// </summary>
         public static JObject ToJObject(LiveProperty property, ILiveObjectResolver resolver)
         {
+            // Image member: the JSON value is its own address, the getter is never invoked, and
+            // "changed" is a constant — a picture is derived state with no baseline, and comparing
+            // one would render a frame per poll.
+            if (IsImageProperty(property.type))
+            {
+                var slashPath = property.path.ToSlash();
+                return new JObject
+                {
+                    ["value"] = ImageAddress(property.owner.id, slashPath),
+                    ["id"] = property.owner.id,
+                    ["path"] = slashPath,
+                    ["changed"] = false
+                };
+            }
+
             JToken valueToken;
             if (property.type.controlAttribute is ObjectSelectorAttribute)
             {

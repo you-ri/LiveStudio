@@ -50,5 +50,9 @@
     "SNAPSHOT_RESTORE": "スナップショットを復元",
     "SNAPSHOT_DELETE": "スナップショットを削除",
     "NOTIFY_SNAPSHOT_SAVED": "スナップショットを保存しました",
-    "NOTIFY_SNAPSHOT_RESTORED": "スナップショットを復元しました"
+    "NOTIFY_SNAPSHOT_RESTORED": "スナップショットを復元しました",
+    "INPUT_ACTION_BINDING": "キー",
+    "INPUT_ACTION_ENABLED": "有効",
+    "INPUT_ACTION_REBIND": "割り当て直す",
+    "INPUT_ACTION_REBIND_HELP": "ボタンを押したあと、割り当てたいキーまたはボタンを押してください。決まると新しいキーがここに表示されます。"
 }

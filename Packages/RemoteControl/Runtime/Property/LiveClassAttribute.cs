@@ -481,10 +481,15 @@ namespace Lilium.RemoteControl
     }
 
     /// <summary>
-    /// Control attribute that renders a live image preview.
-    /// The property value is a server-relative image URL path (e.g. "/live/camera/image").
-    /// The client polls the URL while the control is visible and renders the response image.
-    /// The property is read-only on the client.
+    /// Control attribute that renders a live image preview. The client polls an image URL while
+    /// the control is visible and renders the response; the property is read-only on the client.
+    ///
+    /// Two supply styles:
+    /// - On a <see cref="LiveImageData"/> getter, the member serves its own picture: a direct
+    ///   <c>GET /live/object/{id}/{path}</c> answers the bytes, and JSON reads carry that address
+    ///   as the value without invoking the getter (see <see cref="LiveImageData"/>). Preferred.
+    /// - On a string member, the value itself is a server-relative image URL path and the getter
+    ///   is called normally. The older style, for pictures served by a bespoke route.
     /// </summary>
     [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
     public class ImagePreviewAttribute : ControlAttribute
@@ -900,7 +905,7 @@ namespace Lilium.RemoteControl
     /// [Section("videocam", "Camera")]
     /// [LiveProperty, ImagePreview]
     /// [Layout("row/right")]
-    /// public static string cameraPreview => "/live/camera/image";
+    /// public static LiveImageData cameraPreview => RenderPreview();
     ///
     /// [LiveProperty]
     /// [Layout("row/left")]

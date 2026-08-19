@@ -649,8 +649,62 @@ namespace Lilium.RemoteControl
             return true;
         }
 
-        private Task HandleGetProperty(HttpListenerContext context)
-            => RunPropertyPipeline(context, readBody: false, stripResetSuffix: false, ApplyGetProperty);
+        private async Task HandleGetProperty(HttpListenerContext context)
+        {
+            // Image members ([ImagePreview] on a LiveImageData getter) answer a direct GET with the
+            // picture itself; every JSON-shaped read (whole-object, /live/batch) folds them to this
+            // address instead. Resolved in the same single main-thread hop as an ordinary read, and
+            // non-image members go through ApplyGetProperty untouched, so their responses stay
+            // byte-identical.
+            var path = context.Request.Url.AbsolutePath;
+            var image = default(LiveImageData);
+            var isImage = false;
+
+            var result = await ExecuteOnMainThread(() =>
+            {
+                if (!TryBuildPropertyContext(GetObjectContainer(), path, stripResetSuffix: false,
+                        body: null, out var ctx, out var errStatus, out var errMessage))
+                {
+                    return PropertyResult.Error(errStatus, errMessage);
+                }
+
+                var property = ctx.liveObject.FindProperty(ctx.propertyPath);
+                if (property.HasValue && LivePropertySerializer.IsImageProperty(property.Value.type))
+                {
+                    // The getter renders and encodes a frame; this is the one place it runs.
+                    isImage = true;
+                    image = property.Value.GetValue() is LiveImageData data ? data : LiveImageData.none;
+                    return PropertyResult.Success(null);
+                }
+
+                return ApplyGetProperty(ctx, GetResolver());
+            });
+
+            if (!result.ok)
+            {
+                await WriteError(context, result.errorStatus, result.errorMessage);
+                return;
+            }
+
+            if (isImage)
+            {
+                if (!image.isValid)
+                {
+                    // Same contract as the asset thumbnail route: clients fall back to a placeholder.
+                    await WriteError(context, 404, "Image not available");
+                    return;
+                }
+
+                context.Response.ContentType = string.IsNullOrEmpty(image.mimeType) ? "image/png" : image.mimeType;
+                context.Response.StatusCode = 200;
+                context.Response.ContentLength64 = image.bytes.Length;
+                await context.Response.OutputStream.WriteAsync(image.bytes, 0, image.bytes.Length);
+                context.Response.Close();
+                return;
+            }
+
+            await WriteResponse(200, context.Response, result.body);
+        }
 
         private Task HandleSetProperty(HttpListenerContext context)
             => RunPropertyPipeline(context, readBody: true, stripResetSuffix: false, ApplySetProperty);

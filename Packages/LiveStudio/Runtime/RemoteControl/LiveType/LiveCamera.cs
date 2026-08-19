@@ -36,8 +36,14 @@ namespace Lilium.LiveStudio
 
         public string displayName => _reference != null ? _reference.name : default(string);
 
+        // Getter-only, so read-only on the wire and never persisted: both are derived from the
+        // CinemachineCamera every time they are read. RemoteApp draws the LIVE badge and sizes the
+        // preview from these, so they have to be on the generic object surface (the UE proxy
+        // exposes the same two).
+        [LiveProperty]
         public bool isLive => _reference != null ? _reference.IsLive : false;
 
+        [LiveProperty, Hide]
         public float aspect
         {
             get => _reference != null ? _reference.Lens.Aspect : default(float);
@@ -96,6 +102,25 @@ namespace Lilium.LiveStudio
         }
 
         public Texture2D image => _texture2D;
+
+        /// <summary>
+        /// The camera's preview picture, served straight off the generic object surface: a direct
+        /// GET of this member answers PNG bytes, and JSON reads carry the member's own address
+        /// instead (see <see cref="LiveImageData"/>), so listing cameras never renders one.
+        /// Renders into the cached thumbnail-sized texture and encodes per request — the client's
+        /// poll is the refresh loop, exactly like the dedicated /live/camera/image route this
+        /// replaces.
+        /// </summary>
+        [LiveProperty, ImagePreview]
+        public LiveImageData preview
+        {
+            get
+            {
+                RequestCameraImage();
+                if (_texture2D == null) return LiveImageData.none;
+                return new LiveImageData(_texture2D.EncodeToPNG());
+            }
+        }
 
         public LiveCamera() : base(null) { }
 
