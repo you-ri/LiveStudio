@@ -1,8 +1,7 @@
 // Copyright (c) You-Ri, 2026
 using UnityEngine;
-using Lilium.RemoteControl;
 
-namespace Lilium.LiveStudio
+namespace Lilium.RemoteControl
 {
     /// <summary>
     /// Implemented by an exposed object whose manipulated <see cref="TransformValue"/> property is expressed

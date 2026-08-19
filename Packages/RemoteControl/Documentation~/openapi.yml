@@ -105,6 +105,14 @@ tags:
       リモート UI の構成をアプリ側が宣言したもの。どのページがあり、何という名前で、アプリ自身が
       何と呼ばれているか。リモートアプリはナビゲーションをハードコードせず、これを見て描画します。
 
+  - name: マニピュレーター
+    x-slug: manipulator
+    description: >
+      リモートアプリの Transform ギズモを支えるオフスクリーンカメラ。1 つのプロパティに対して
+      セッションを開き、ドラッグ中はフレームをポーリングし、終わったら閉じます。触るのは
+      公開オブジェクトと TransformValue だけなので、どのホストアプリでも使えます。
+      このリファレンスで唯一の「状態を持つ + バイナリ」なルートです。
+
 x-tagGroups:
   - name: アプリケーション
     tags: [セッション, ランタイム]
@@ -116,6 +124,8 @@ x-tagGroups:
     tags: [ライブシーン]
   - name: Web UI
     tags: [Web UI]
+  - name: オーサリング
+    tags: [マニピュレーター]
 
 paths:
   # ---------------------------------------------------------------- セッション
@@ -1050,6 +1060,149 @@ paths:
               schema:
                 $ref: "#/components/schemas/UIInfoResponse"
 
+  # ---------------------------------------------------------------- マニピュレーター
+  /live/manipulator/open:
+    post:
+      tags: [マニピュレーター]
+      summary: マニピュレーターのセッションを開く
+      description: >
+        オフスクリーンカメラを、Transform 値を持つプロパティ 1 つに結び付けます。返ってくる
+        `sessionId` が、以降のマニピュレーター呼び出しすべてのハンドルです。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [objectId]
+              properties:
+                objectId:
+                  type: string
+                  example: "3470a41c-f079-4d30-a002-3468fda088f7"
+                propertyPath:
+                  type: string
+                  example: "transform"
+                  description: "編集対象のプロパティ。オブジェクト自身の transform なら省略。"
+      responses:
+        '200':
+          description: セッションと、これから返るフレームの大きさ。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManipulatorOpenResponse"
+        '400':
+          description: 本文が空、または `objectId` がない。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        '404':
+          description: そのオブジェクトが無い、またはこの方式で編集できないプロパティ。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags: [マニピュレーター]
+      summary: マニピュレーターのセッションを閉じる
+      description: "冪等です。すでに閉じた (または不明な) セッションでも 204 を返します。"
+      parameters:
+        - $ref: "#/components/parameters/ManipulatorSession"
+      responses:
+        '204':
+          description: 閉じた。
+
+  /live/manipulator/image:
+    get:
+      tags: [マニピュレーター]
+      summary: マニピュレーターのフレームを、そのカメラ状態と一緒に取得する
+      description: >
+        PNG だけではギズモを重ねて描けません。そのフレームがどの行列で描かれたかが要ります。
+        別リクエストにせず `X-Manipulator-State` レスポンスヘッダーに同乗させているので、画像と
+        状態が食い違うことは原理的に起きません。
+
+        ヘッダーの中身は UTF-8 JSON を base64 にしたものです。
+
+        ```json
+        {
+          "view":       [16 個の float, 列優先],
+          "projection": [16 個の float, 列優先],
+          "parent":     { "position": {x,y,z}, "rotation": {x,y,z,w}, "scale": {x,y,z} },
+          "target":     { "position": {x,y,z}, "rotation": {x,y,z,w}, "scale": {x,y,z} },
+          "viewport":   { "width": 512, "height": 512 }
+        }
+        ```
+
+        `parent` は編集対象の親のワールド変換、`target` は対象自身のローカル変換です。
+        `Access-Control-Expose-Headers` を付けてあるので、ブラウザからでもクロスオリジンで
+        ヘッダーを読めます。
+      parameters:
+        - $ref: "#/components/parameters/ManipulatorSession"
+      responses:
+        '200':
+          description: フレーム。カメラ状態は `X-Manipulator-State` に入っています。
+          headers:
+            X-Manipulator-State:
+              description: "このフレームちょうどのカメラ状態。base64(UTF-8(JSON))。"
+              schema:
+                type: string
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: セッションが不明、または閉じている。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        '500':
+          description: キャプチャに失敗した。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /live/manipulator/camera:
+    put:
+      tags: [マニピュレーター]
+      summary: マニピュレーターのカメラを動かす
+      description: >
+        すべてのフィールドが任意で、同時に指定すれば合成されます。今の操作で変わった分だけを
+        送ってください。結果を見るには、その後フレームを取り直します。
+      parameters:
+        - $ref: "#/components/parameters/ManipulatorSession"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ManipulatorCameraPoseRequest"
+      responses:
+        '204':
+          description: 適用した。
+        '400':
+          description: 本文が空、または不正。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        '404':
+          description: セッションが不明、または閉じている。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ---------------------------------------------------------------- 入力
+  # 入力アクションに専用の口はありません。入力マップはライブオブジェクト (`AvatarInput` =
+  # ライブ型名 `InputActions`) で、アクション 1 つはその `actions` 配列の要素です。要素は
+  # 名前がキー (`[LiveKey]`) なので `GET /live/object/{id}/actions[<action>]/binding` のように
+  # 名前で辿れ、割り当て直しは同じ要素のライブ関数
+  # `POST /live/function/{id}/actions[<action>]/rebind` です。
+  # 呼ぶと次に押されたキーを待ち受け、結果は `binding` の値に現れます (呼び出しは待ちません)。
+
 components:
   parameters:
     ClientId:
@@ -1099,6 +1252,15 @@ components:
         `?nested` (または `?nested=true`) を渡すと完全展開に戻ります。
         (今のところ深さは 1 か無制限かの 2 択です。将来 `?nested=<N>` の数値形式で露出するかも
         しれません)
+
+    ManipulatorSession:
+      in: query
+      name: session
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: "`POST /live/manipulator/open` が返したセッション id。"
 
   schemas:
       StatusResponse:
@@ -1613,3 +1775,48 @@ components:
             type: integer
             example: 0
             description: "そのページの公開段階。クライアントは自分の動作段階を超える項目を隠します。"
+
+      ManipulatorOpenResponse:
+        type: object
+        properties:
+          success:
+            type: boolean
+            example: true
+          sessionId:
+            type: string
+            format: uuid
+          width:
+            type: integer
+            example: 512
+          height:
+            type: integer
+            example: 512
+          aspect:
+            type: number
+            example: 1
+          message:
+            type: string
+
+      ManipulatorCameraPoseRequest:
+        type: object
+        properties:
+          yaw:
+            type: number
+            description: "周回のヨー角 (度)。絶対値。"
+          pitch:
+            type: number
+            description: "周回のピッチ角 (度)。絶対値。"
+          distance:
+            type: number
+            description: "注視点からの距離。絶対値。"
+          focus:
+            type: boolean
+            description: "注視点を編集対象へ取り直す。ほかのフィールドと併用できます。"
+          panDx:
+            type: number
+            description: >
+              注視点を画面ピクセル単位で平行移動する量。右方向が正。現在の距離と画角からワールド
+              単位へ換算します — シーンビューの中ボタンドラッグ相当です。
+          panDy:
+            type: number
+            description: "注視点を画面ピクセル単位で平行移動する量。下方向が正。"

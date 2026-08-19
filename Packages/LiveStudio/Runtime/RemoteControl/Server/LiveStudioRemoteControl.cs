@@ -10,13 +10,14 @@ namespace Lilium.LiveStudio
     /// <summary>
     /// LiveStudio アプリ用に Remote Control ランタイム一式を保持する単一 MonoBehaviour。
     /// サーバ・LiveObjectHandle コンテナ・シーン保存/読込・UI サイドバー
-    /// (<see cref="UIRemoteControlBehaviour"/> 経由) を束ね、LiveStudio 固有の
-    /// API ハンドラ (Manipulator / Reset / Quit) を上乗せ登録し、
+    /// (<see cref="UIRemoteControlBehaviour"/> 経由) を束ね、共通の
+    /// API ハンドラ (Reset / Quit) を上乗せ登録し、
     /// アバター読み込みの進捗通知 (<see cref="VrmLoadNotifier"/>) を立てる。
+    /// LiveStudio 固有の REST ルートは 1 本も無い: カメラもマニピュレーターも
+    /// 汎用面 (RemoteControl) が担う。
     /// </summary>
     public class LiveStudioRemoteControl : UIRemoteControlBehaviour
     {
-        private ManipulatorApiHandler _manipulatorHandler;
         private ResetApiHandler _resetHandler;
         private QuitApiHandler _quitHandler;
         private VrmLoadNotifier _vrmLoadNotifier;
@@ -25,9 +26,9 @@ namespace Lilium.LiveStudio
         {
             // Cameras have no route at all: a camera is a live object (LiveCamera), going live is
             // its `Switch` live function, and the preview picture is its `preview` image member,
-            // served by the generic property GET.
-            _manipulatorHandler = new ManipulatorApiHandler(server);
-            server.RegisterRoute(_manipulatorHandler);
+            // served by the generic property GET. The manipulator's routes moved into RemoteControl
+            // itself (they only ever touched live objects and TransformValue), so this app
+            // registers nothing for it either.
 
             // Avatar loading has no route of its own: a file is registered with the asset manager
             // and enabled, or a model path property is written, both on the generic /live/object
@@ -56,13 +57,11 @@ namespace Lilium.LiveStudio
         protected override void OnUnregisterHandlers(RemoteControlServerCore server)
         {
             // UnregisterRoute calls handler.Cleanup() internally.
-            server.UnregisterRoute(_manipulatorHandler);
             server.UnregisterRoute(_resetHandler);
             server.UnregisterRoute(_quitHandler);
 
             _vrmLoadNotifier?.Dispose();
 
-            _manipulatorHandler = null;
             _vrmLoadNotifier = null;
             _resetHandler = null;
             _quitHandler = null;

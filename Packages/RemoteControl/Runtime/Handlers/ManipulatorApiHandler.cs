@@ -5,11 +5,10 @@ using System.Net;
 using System.Threading.Tasks;
 using UnityEngine;
 using Newtonsoft.Json;
-using Lilium.RemoteControl;
 using Lilium.RemoteControl.RestApi;
 using Lilium.RemoteControl.Server;
 
-namespace Lilium.LiveStudio
+namespace Lilium.RemoteControl
 {
     [System.Serializable]
     public class ManipulatorOpenRequest

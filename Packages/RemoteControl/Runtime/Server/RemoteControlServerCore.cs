@@ -24,6 +24,7 @@ namespace Lilium.RemoteControl.Server
         private AssetsHandler _assetsHandler;
         private AssetImageHandler _assetImageHandler;
         private ConfirmApiHandler _confirmHandler;
+        private ManipulatorApiHandler _manipulatorHandler;
 
         public event Action<RestApiClient> onClientConnected;
         public event Action<RestApiClient> onClientDisconnected;
@@ -80,6 +81,12 @@ namespace Lilium.RemoteControl.Server
             // the prompt can be raised by the framework itself (unsaved changes), not just by an app.
             _confirmHandler = new ConfirmApiHandler(this);
             RegisterRoute(_confirmHandler);
+            // Transform-gizmo editing camera. Sessions, poses and frames are all this package's
+            // business (live objects + TransformValue), so the routes live here and any host app
+            // gets gizmo editing for free. Objects with a socket-relative frame implement
+            // IManipulatorTarget to describe their own parent transform.
+            _manipulatorHandler = new ManipulatorApiHandler(this);
+            RegisterRoute(_manipulatorHandler);
         }
 
         public void UnregisterDefaultRoutes()
@@ -103,6 +110,8 @@ namespace Lilium.RemoteControl.Server
             _assetImageHandler = null;
             UnregisterRoute(_confirmHandler);
             _confirmHandler = null;
+            UnregisterRoute(_manipulatorHandler);
+            _manipulatorHandler = null;
         }
         
         // Start/stop deliberately add nothing over the base implementation. No "started"

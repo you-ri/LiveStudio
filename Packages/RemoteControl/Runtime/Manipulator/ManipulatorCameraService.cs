@@ -2,9 +2,8 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using Lilium.RemoteControl;
 
-namespace Lilium.LiveStudio
+namespace Lilium.RemoteControl
 {
     /// <summary>
     /// Transform マニピュレーター編集時に使用する専用カメラのセッション情報。
@@ -122,7 +121,7 @@ namespace Lilium.LiveStudio
         {
             if (string.IsNullOrEmpty(objectId))
             {
-                Debug.LogError("[Studio] ManipulatorCameraService.Open: objectId is null/empty.");
+                Debug.LogError("[RemoteControl] ManipulatorCameraService.Open: objectId is null/empty.");
                 return null;
             }
 
