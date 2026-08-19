@@ -76,11 +76,23 @@ namespace Lilium.LiveStudio
             get => _reference != null ? _reference.Priority : _priority;
             set
             {
+                // Switching happens through direct C# writes (Switch() -> CameraService.SwitchCamera),
+                // which the REST write path never sees — so without this, nothing lands in the change
+                // feed and a remote client's LIVE badge freezes (the removed bespoke route used to push
+                // a camera_update event instead). Record only real transitions: SwitchCamera writes
+                // every camera on each switch, and the ones already at 0 must not spam the feed.
+                var changed = priority != value;
+
                 _priority = value;
                 if (_reference != null)
                 {
                     _reference.Priority = value;
                     PropertyUtility.Apply(_reference);
+                }
+
+                if (changed && !string.IsNullOrEmpty(id))
+                {
+                    LiveChangeLog.Record(id);
                 }
             }
         }
