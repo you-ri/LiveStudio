@@ -17,7 +17,7 @@ namespace Lilium.RemoteControl.Editor
     /// </summary>
     static class RemoteControlProjectSettingsProvider
     {
-        const string kSettingsPath = "Project/Remote Control";
+        const string kSettingsPath = "Project/Lilium Remote Control";
 
         // Editable proxy used while the active source is the package default. Edits go to this
         // proxy first; on apply we persist its values as a per-project override and discard it.
@@ -28,9 +28,9 @@ namespace Lilium.RemoteControl.Editor
         {
             return new SettingsProvider(kSettingsPath, SettingsScope.Project)
             {
-                label = "Remote Control",
+                label = "Lilium Remote Control",
                 guiHandler = _ => _DrawGUI(),
-                keywords = new HashSet<string>(new[] { "Remote Control", "Live Class", "Binding" })
+                keywords = new HashSet<string>(new[] { "Lilium", "Remote Control", "Live Class", "Binding" })
             };
         }
 

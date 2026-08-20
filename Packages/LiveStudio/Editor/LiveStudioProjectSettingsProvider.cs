@@ -11,7 +11,7 @@ namespace Lilium.LiveStudio.Editor
 {
     static class LiveStudioProjectSettingsProvider
     {
-        const string kSettingsPath = "Project/Live Studio";
+        const string kSettingsPath = "Project/Lilium Live Studio";
 
         // Editable proxy used while the active source is the package default. Edits go to this
         // proxy first; on apply we persist its values as a per-project override and discard it.
@@ -22,9 +22,9 @@ namespace Lilium.LiveStudio.Editor
         {
             var provider = new SettingsProvider(kSettingsPath, SettingsScope.Project)
             {
-                label = "Live Studio",
+                label = "Lilium Live Studio",
                 guiHandler = _ => _DrawGUI(),
-                keywords = new HashSet<string>(new[] { "Live Studio", "Avatar", "VRM" })
+                keywords = new HashSet<string>(new[] { "Lilium", "Live Studio", "Avatar", "VRM" })
             };
             return provider;
         }
