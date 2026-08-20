@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.26.0] - 2026-08-20
+<!-- changelog-sha: c639c1ec8e82903d9b2fce176fb5ad194df87332 -->
+
+### Fixed
+
+- The welcome Readme now opens once per project instead of once per editor session. The "already shown" flag lived in `SessionState`, so every editor launch re-selected the Readme and stole the inspector from whatever you were working on; it is now an `EditorPrefs` entry keyed by a hash of the project path, so a different project still gets its own welcome. The flag is only set once the asset was actually found and selected, so a project where the lookup runs before the asset is imported still gets its welcome later.
+- Readme lookup no longer fails when another package ships its own `Readme` type. The search required `t:Readme` to match exactly one asset and gave up with a console log otherwise, which is what happened alongside Unity's own project templates. It now loads each candidate and keeps the first one that really is this package's Readme.
+
 ## [0.25.3] - 2026-07-22
 <!-- changelog-sha: ead5a500c2674f81ae92f66e88e1b3eacac8bd4f -->
 

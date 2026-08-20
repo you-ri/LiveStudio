@@ -22,6 +22,18 @@ namespace Lilium.RemoteControl
 
         /// <summary>Identifies this run of the server. See <see cref="RemoteControlContext.instanceId"/>.</summary>
         public string instanceId;
+
+        /// <summary>
+        /// <c>"editor"</c> while the editor is not playing, <c>"play"</c> otherwise.
+        /// </summary>
+        /// <remarks>
+        /// Remote apps use it to decide what to show and what to offer: an editor session has no
+        /// live scene to save, open, or snapshot (see <see cref="LiveEditorSession"/>).
+        /// <para/>
+        /// ⚠ Read on every poll, not once per connection. The same server moves between the two as
+        /// play mode starts and stops, and the connection stays up across it.
+        /// </remarks>
+        public string environment;
     }
 
 
@@ -63,6 +75,7 @@ namespace Lilium.RemoteControl
                 version = _applicationVersion,
                 fps = 60,//TimeService.fps,
                 instanceId = _context?.instanceId,
+                environment = LiveEditorSession.isEditorSession ? "editor" : "play",
             };
 
             return WriteJson(context, status);

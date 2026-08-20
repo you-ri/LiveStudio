@@ -71,7 +71,7 @@ namespace Lilium.RemoteControl
             }
 
             // 2) Default: edit the object's own GameObject transform (local TRS relative to its hierarchy parent).
-            //    Used by LiveLight / LiveUnityObject whose `transform` property is the GameObject's transform.
+            //    Used by LiveUnityObject / LiveGameObjectWithTransform whose `transform` property is the GameObject's transform.
             var go = _ResolveGameObject(exposed);
             if (go == null) return false;
             var t = go.transform;

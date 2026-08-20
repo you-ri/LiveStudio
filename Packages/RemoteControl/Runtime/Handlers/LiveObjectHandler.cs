@@ -757,6 +757,11 @@ namespace Lilium.RemoteControl
 
             var prop = property.Value;
 
+            if (LiveEditorSession.IsWriteRejected(ctx.liveObject.target, in prop))
+            {
+                return PropertyResult.Error(403, LiveEditorSession.kWriteRejected);
+            }
+
             bool result;
             using (new LiveEditorWriteScope(ctx.liveObject.target, prop.obj))
             {
@@ -786,6 +791,12 @@ namespace Lilium.RemoteControl
             }
 
             var prop = property.Value;
+
+            if (LiveEditorSession.IsWriteRejected(ctx.liveObject.target, in prop))
+            {
+                return PropertyResult.Error(403, LiveEditorSession.kWriteRejected);
+            }
+
             bool result;
             using (new LiveEditorWriteScope(ctx.liveObject.target, prop.obj))
             {
@@ -806,6 +817,12 @@ namespace Lilium.RemoteControl
             }
 
             var prop = property.Value;
+
+            if (LiveEditorSession.IsWriteRejected(ctx.liveObject.target, in prop))
+            {
+                return PropertyResult.Error(403, LiveEditorSession.kWriteRejected);
+            }
+
             bool result;
             using (new LiveEditorWriteScope(ctx.liveObject.target, prop.obj))
             {
@@ -826,6 +843,12 @@ namespace Lilium.RemoteControl
             }
 
             var prop = property.Value;
+
+            if (LiveEditorSession.IsWriteRejected(ctx.liveObject.target, in prop))
+            {
+                return PropertyResult.Error(403, LiveEditorSession.kWriteRejected);
+            }
+
             bool result;
             using (new LiveEditorWriteScope(ctx.liveObject.target, prop.obj))
             {
@@ -846,6 +869,12 @@ namespace Lilium.RemoteControl
             }
 
             var prop = property.Value;
+
+            if (LiveEditorSession.IsWriteRejected(ctx.liveObject.target, in prop))
+            {
+                return PropertyResult.Error(403, LiveEditorSession.kWriteRejected);
+            }
+
             if (LiveEditorProperty.isEditorRuleActive)
             {
                 // エディタで戻せるのはプレハブの上書きだけ。戻せないものをセッション基準へ

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Live class assets can be named in Project Settings, so a declaration applies to the whole project instead of one scene.** Attribute-less exposure had exactly one entry point: a `RemoteControlContainer` applied the assets it carried while it was enabled. That is right for declarations that travel with a set bundle — they have to leave when the bundle does — but wrong for declarations that describe the app itself, which then had to be wired into every scene, and which silently stopped being *saved* in any scene that forgot the reference (the serializer skips a type that is not registered). The new `RemoteControlProjectSettings` holds a list of assets applied once at load — before the first scene's objects wake up in a player, and at editor load too, since remote control also serves a stopped editor. It resolves the way LiveStudio's settings do: a per-project override registered as a config object, else the same override found in the AssetDatabase, else the default asset shipped in this package's Resources. The Project Settings page (`Project/Remote Control`) shows the package default read-through and promotes a per-project override to `Assets/Settings/RemoteControlProjectSettings.asset` on the first edit, registering it as the config object and adding it to the preloaded assets so a player build carries it — and, through it, the live class assets it names. Editing the list re-applies immediately rather than waiting for the next domain reload. The container list is untouched and still the right place for bundle-carried declarations.
+
+## [0.26.0] - 2026-08-20
+<!-- changelog-sha: c639c1ec8e82903d9b2fce176fb5ad194df87332 -->
+
 ### Changed
 
 - **`Service<T>.subjects` is now a read-only view (`IReadOnlyList<T>`), and broadcasting goes through the new `Service<T>.ForEach(action)`.** The raw `List<T>` was public and mutable, so any caller could bypass `Register`/`Unregister`, and `subjects.ForEach(...)` broke with a collection-modified exception the moment a subject unregistered itself from inside the callback. `ForEach` iterates a pooled snapshot, so subjects may safely register and unregister (including themselves) mid-broadcast; read-only LINQ over `subjects` is unchanged. Breaking only for code that mutated the list directly or called `List.ForEach` on it — replace the latter with `Service<T>.ForEach`.

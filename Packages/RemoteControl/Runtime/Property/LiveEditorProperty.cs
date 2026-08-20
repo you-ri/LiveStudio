@@ -33,17 +33,7 @@ namespace Lilium.RemoteControl
         /// Whether the editor's rule is the one in force. False while playing and in a build, where the
         /// session baseline answers instead.
         /// </summary>
-        public static bool isEditorRuleActive
-        {
-            get
-            {
-#if UNITY_EDITOR
-                return !Application.isPlaying;
-#else
-                return false;
-#endif
-            }
-        }
+        public static bool isEditorRuleActive => LiveEditorSession.isEditorSession;
 
         /// <summary>
         /// Whether the live member reaches a serialized property at all — that is, whether the editor

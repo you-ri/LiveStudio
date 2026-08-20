@@ -38,7 +38,7 @@ namespace Lilium.LiveStudio
         // サイズは ApplyScale で毎フレーム適用する。アバターのスケールは親 (avatarRoot) を通じて lossyScale に
         // 伝播するため、ここでは socket スケールで補正しない。
         //
-        // LiveLight.transform と同じ「隠し LiveField + 公開 LiveProperty」パターン。値は Unity
+        // LiveGameObjectWithTransform.transform と同じ「隠し LiveField + 公開 LiveProperty」パターン。値は Unity
         // シリアライズ用の _offset に保持し、RemoteApp には offset プロパティを TransformValue として見せる。
         [SerializeField, Hide, LiveField]
         [FormerlyNamedAs("offset")]

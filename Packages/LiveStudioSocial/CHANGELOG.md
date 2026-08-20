@@ -1,6 +1,7 @@
 # Changelog
 
-## [Unreleased]
+## [0.26.0] - 2026-08-20
+<!-- changelog-sha: c639c1ec8e82903d9b2fce176fb5ad194df87332 -->
 
 - Added the package: normalized `SocialEvent` schema and the thread-safe `SocialEventHub` intake with frame-stable delivery and a bounded, counted drop policy.
 - Added `SocialEventHandler`, the HTTP intake for external feeders: `POST /social/event`, `POST /social/events` and `GET /social/status`, with an optional `X-Social-Token` shared secret (compared in fixed time) and a 64 KB body limit.

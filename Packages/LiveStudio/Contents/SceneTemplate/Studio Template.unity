@@ -509,10 +509,10 @@ MonoBehaviour:
     version: 2
     RefIds:
     - rid: 4217817217901789366
-      type: {class: ExposedLight, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      type: {class: LiveGameObjectWithTransform, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl}
       data:
         _id: 2c3043aa-ce67-4e7b-bd99-6c51f51ae8c2
-        _reference: {fileID: 180512847}
+        _reference: {fileID: 180512846}
         _parent:
           _ownerName: 
           _transformPath: 

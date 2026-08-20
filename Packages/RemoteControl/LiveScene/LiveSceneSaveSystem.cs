@@ -212,6 +212,8 @@ namespace Lilium.RemoteControl.LiveScene
         /// </summary>
         public bool LoadCurrentData(bool forceBaseSceneReload = false)
         {
+            if (_RejectInEditorSession("Opening a live scene")) return false;
+
             // A pending external apply (a snapshot restore that had to switch base scenes) takes
             // this re-entry over: the switch was triggered by ApplyExternalData, so what must run
             // now is the deferred apply, not a reload of the current scene file.
@@ -335,6 +337,7 @@ namespace Lilium.RemoteControl.LiveScene
         /// </summary>
         public bool ApplyExternalData(string fullPath)
         {
+            if (_RejectInEditorSession("Applying a live scene file")) return false;
             if (_objectContainer == null) return false;
             if (string.IsNullOrEmpty(fullPath) || !System.IO.File.Exists(fullPath))
             {
@@ -381,6 +384,7 @@ namespace Lilium.RemoteControl.LiveScene
 
         public void SaveCurrentDataTo(string filePath)
         {
+            if (_RejectInEditorSession("Saving a live scene")) return;
             if (_objectContainer == null) return;
             if (string.IsNullOrEmpty(filePath))
             {
@@ -439,8 +443,27 @@ namespace Lilium.RemoteControl.LiveScene
         /// blocked quit. Dirty state is re-baselined on load and on save (<see cref="_MarkAllClean"/>),
         /// which makes the question exactly "edited since then".
         /// </summary>
+        /// <summary>
+        /// Logs and reports that a live scene operation cannot run in an editor session.
+        /// </summary>
+        /// <remarks>
+        /// Every file entry point goes through this so the boundary is stated once. See
+        /// <see cref="LiveEditorSession"/> for why the editor keeps away from live scenes.
+        /// </remarks>
+        private static bool _RejectInEditorSession(string operation)
+        {
+            if (!LiveEditorSession.isEditorSession) return false;
+            Debug.LogWarning($"[RemoteControl] {operation} is unavailable in the editor while not playing. "
+                + LiveEditorSession.kSceneIoRejected);
+            return true;
+        }
+
         public bool HasUnsavedChanges()
         {
+            // An editor session has no live scene to save, so it has nothing unsaved. Edits made
+            // here belong to the .unity scene, and counting them again would put a second unsaved
+            // prompt in front of the editor's own.
+            if (LiveEditorSession.isEditorSession) return false;
             if (_objectContainer == null) return false;
 
             var objects = LiveObjectGraph.ResolveLiveObjects(

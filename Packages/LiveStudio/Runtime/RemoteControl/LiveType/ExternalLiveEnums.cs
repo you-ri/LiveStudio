@@ -8,3 +8,7 @@ using UnityEngine;
 // remote app. LastBone is the enum's count sentinel, not a real bone — exclude it.
 [assembly: LiveExternalEnum(typeof(HumanBodyBones),
     excludeNames = new[] { nameof(HumanBodyBones.LastBone) })]
+
+// LightShadows is a UnityEngine built-in enum as well. Light is exposed through the live class
+// asset shipped with this package, so its shadows member needs the dropdown registered here.
+[assembly: LiveExternalEnum(typeof(LightShadows))]

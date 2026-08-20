@@ -87,9 +87,26 @@ namespace Lilium.LiveStudio
             }
         }
 
+        /// <summary>
+        /// Logs and reports that a live scene operation cannot run in an editor session.
+        /// </summary>
+        /// <remarks>
+        /// The file layer refuses these too, but a caller that never reaches a file — starting a new
+        /// scene reloads the base scene and reverts every value — would otherwise go through and
+        /// wipe the editor's own scene. See <see cref="LiveEditorSession"/>.
+        /// </remarks>
+        private static bool _RejectInEditorSession(string operation)
+        {
+            if (!LiveEditorSession.isEditorSession) return false;
+            Debug.LogWarning($"[Studio] {operation} is unavailable in the editor while not playing; "
+                + "editor changes belong to the scene.");
+            return true;
+        }
+
         [LiveFunction(label = "LIVESCENE_SAVE_SCENE"), Hide]
         public static void SaveScene(string filePath = null)
         {
+            if (_RejectInEditorSession("Saving a live scene")) return;
             var providers = _Providers();
             foreach (var provider in providers)
             {
@@ -107,6 +124,7 @@ namespace Lilium.LiveStudio
         [LiveFunction(label = "LIVESCENE_LOAD_SCENE"), Hide]
         public static void LoadScene(string filePath)
         {
+            if (_RejectInEditorSession("Opening a live scene")) return;
             if (string.IsNullOrEmpty(filePath)) return;
 
             // 起動時 (RemoteControlBehaviour.Start → LoadCurrentData) と同じパスを通すため、
@@ -190,6 +208,8 @@ namespace Lilium.LiveStudio
         [LiveFunction(label = "LIVESCENE_NEW_SCENE"), Hide]
         public static void NewScene(string sceneName = null)
         {
+            if (_RejectInEditorSession("Starting a new live scene")) return;
+
             var providers = _Providers();
             foreach (var provider in providers)
             {

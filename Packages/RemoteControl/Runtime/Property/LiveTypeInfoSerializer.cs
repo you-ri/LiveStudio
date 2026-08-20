@@ -222,6 +222,15 @@ namespace Lilium.RemoteControl
                 ["order"] = propertyType.order
             };
 
+            // Say so when the value is written to the project settings rather than to the live
+            // scene. An editor session runs neither write, so the client treats it as out of reach.
+            // ⚠ Scene is left unsaid: it is the default destination, and spelling it out on every
+            // member would only make the table bigger.
+            if (propertyType.isPersistable && propertyType.persistScope == PersistScope.Project)
+            {
+                jObject["persistScope"] = "project";
+            }
+
             // 多態配列: 要素型に代入可能な具象 [LiveClass] 型名を列挙し、クライアントの
             // 「型を選んで要素追加」UI に渡す。プリミティブ等 (候補 0 件) では付与しない。
             if (isArray && valueType != null)

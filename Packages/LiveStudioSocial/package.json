@@ -1,7 +1,7 @@
 {
   "name": "jp.lilium.livestudio.social",
   "displayName": "Lilium Live Studio Social",
-  "version": "0.25.3-exp.1",
+  "version": "0.26.0-exp.1",
   "description": "Streaming-platform viewer events (chat, superchat, follow, subscribe, raid) for jp.lilium.livestudio. Receive-side only: a normalized event schema and an intake hub that external feeders (OneComme, Streamer.bot, custom tools) post into, with no platform SDK dependencies.",
   "author": {
     "name": "Syrize",
@@ -26,12 +26,12 @@
     "twitch"
   ],
   "dependencies": {
-    "jp.lilium.livestudio": "0.25.3-exp.1",
-    "jp.lilium.remotecontrol": "0.25.3-exp.1"
+    "jp.lilium.livestudio": "0.26.0-exp.1",
+    "jp.lilium.remotecontrol": "0.26.0-exp.1"
   },
   "vpmDependencies": {
-    "jp.lilium.livestudio": "0.25.3-exp.1",
-    "jp.lilium.remotecontrol": "0.25.3-exp.1"
+    "jp.lilium.livestudio": "0.26.0-exp.1",
+    "jp.lilium.remotecontrol": "0.26.0-exp.1"
   },
   "samples": []
 }
