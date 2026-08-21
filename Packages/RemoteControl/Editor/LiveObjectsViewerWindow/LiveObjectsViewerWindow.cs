@@ -27,6 +27,17 @@ namespace Lilium.RemoteControl.Editor
         // Objects用
         private int _lastInstanceCount;
 
+        // Whether to append the dirty mark (*) to object list entries. Off by default: each mark
+        // costs a full persistence-shape serialization plus a JSON diff of that object
+        // (LiveObjectDefaultRegistry.IsDirty), so computing it for every entry makes rebuilding the
+        // list quadratic. Turn it on only when the marks are actually wanted.
+        private bool _showDirtyMarks;
+
+        // Throttle for the selected object's live property refresh. Refreshing every editor tick
+        // re-serializes every property of that object each frame and slows the whole editor down.
+        private const double kPropertyRefreshInterval = 0.25;
+        private double _nextPropertyRefreshTime;
+
         [MenuItem("Window/Lilium Remote Control/LiveObjects Viewer")]
         public static void ShowWindow()
         {
@@ -57,11 +68,16 @@ namespace Lilium.RemoteControl.Editor
                     _RebuildSidePanel();
                 }
 
-                // 選択中オブジェクトのプロパティ値をリアルタイム更新
+                // 選択中オブジェクトのプロパティ値をリアルタイム更新 (kPropertyRefreshInterval で間引く)
                 var selectedObject = _selectedItem as LiveObjectHandle?;
                 if (selectedObject != null && _contentScrollView != null)
                 {
-                    _UpdateObjectPropertyValues(selectedObject.Value);
+                    var now = EditorApplication.timeSinceStartup;
+                    if (now >= _nextPropertyRefreshTime)
+                    {
+                        _nextPropertyRefreshTime = now + kPropertyRefreshInterval;
+                        _UpdateObjectPropertyValues(selectedObject.Value);
+                    }
                 }
             }
         }
@@ -128,6 +144,22 @@ namespace Lilium.RemoteControl.Editor
                 _RebuildSidePanel();
             });
             sidePanel.Add(_filterField);
+
+            // Dirty mark toggle. See _showDirtyMarks for why this is opt-in.
+            var dirtyToggle = new Toggle("Show dirty (*)");
+            dirtyToggle.name = "dirty-toggle";
+            dirtyToggle.value = _showDirtyMarks;
+            dirtyToggle.style.marginLeft = 4;
+            dirtyToggle.style.marginRight = 4;
+            dirtyToggle.style.marginBottom = 4;
+            dirtyToggle.style.fontSize = 11;
+            dirtyToggle.RegisterValueChangedCallback(evt =>
+            {
+                _showDirtyMarks = evt.newValue;
+                if (_viewMode == ViewMode.Objects)
+                    _RebuildSidePanel();
+            });
+            sidePanel.Add(dirtyToggle);
 
             // カウントラベル
             var countLabel = new Label();
@@ -206,6 +238,12 @@ namespace Lilium.RemoteControl.Editor
             classTab.style.backgroundColor = _viewMode == ViewMode.Types ? activeColor : StyleKeyword.Null;
             enumTab.style.backgroundColor = _viewMode == ViewMode.Enums ? activeColor : StyleKeyword.Null;
             objectTab.style.backgroundColor = _viewMode == ViewMode.Objects ? activeColor : StyleKeyword.Null;
+
+            var dirtyToggle = root.Q<Toggle>("dirty-toggle");
+            if (dirtyToggle != null)
+            {
+                dirtyToggle.style.display = _viewMode == ViewMode.Objects ? DisplayStyle.Flex : DisplayStyle.None;
+            }
         }
 
         private void _RebuildSidePanel()
@@ -354,7 +392,7 @@ namespace Lilium.RemoteControl.Editor
                 });
 
                 var displayName = obj.name ?? obj.id;
-                if (obj.isDirty) displayName += " *";
+                if (_showDirtyMarks && obj.isDirty) displayName += " *";
                 button.text = displayName;
 
                 button.style.height = 24;

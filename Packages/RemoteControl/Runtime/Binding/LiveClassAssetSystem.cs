@@ -24,8 +24,8 @@ namespace Lilium.RemoteControl
         private static readonly Dictionary<Type, string> _signatureByType
             = new Dictionary<Type, string>();
 
-        // Which asset most recently registered each type — used to warn when two assets
-        // define the same type with different member sets (last one wins).
+        // Which asset most recently registered each type — the owner, so unregistering an asset
+        // only drops types it actually won (see _UnregisterType).
         private static readonly Dictionary<Type, LiveClassAsset> _ownerByType
             = new Dictionary<Type, LiveClassAsset>();
 
@@ -63,7 +63,7 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// Undoes <see cref="RegisterTypes"/> for every type definition in the asset, so an asset
+        /// Undoes <see cref="RegisterTypes"/> for every type this asset registered, so an asset
         /// carried in by an asset bundle can be dropped again when the bundle unloads.
         /// Conservative by design: a type is only really unregistered when this asset is the one
         /// that defined it and no binding instance of it is left (see <see cref="_UnregisterType"/>).
@@ -71,14 +71,23 @@ namespace Lilium.RemoteControl
         public static void UnregisterTypes(LiveClassAsset asset)
         {
             if (asset == null) return;
-            foreach (var definition in asset.typeDefinitions)
+
+            // What the asset actually registered, not what it currently declares: a definition
+            // dropped from the asset before the unapply runs (the editor window removes it from
+            // the list first, and a hand-edited asset never had it) would otherwise stay
+            // registered for the rest of the session. _ownerByType is that record.
+            // Collected first because _UnregisterType writes to the dictionary.
+            List<Type> owned = null;
+            foreach (var pair in _ownerByType)
             {
-                if (definition == null) continue;
-                var type = definition.ResolveType();
-                // An unresolvable type was never registered, so there is nothing to undo. Warning
-                // about it here would only repeat what RegisterTypes already said.
-                if (type == null) continue;
-                _UnregisterType(asset, type);
+                if (pair.Value != asset) continue;
+                (owned ??= new List<Type>()).Add(pair.Key);
+            }
+            if (owned == null) return;
+
+            for (int i = 0; i < owned.Count; i++)
+            {
+                _UnregisterType(asset, owned[i]);
             }
         }
 
@@ -169,10 +178,9 @@ namespace Lilium.RemoteControl
                 member.AppendSignature(sb);
             }
 
-            if (_ownerByType.TryGetValue(type, out var owner) && owner != null && owner != asset)
-            {
-                Debug.LogWarning($"[RemoteControl] Type '{type.Name}' is defined by multiple live class assets ('{owner.name}' and '{asset.name}'); the last registered definition wins.");
-            }
+            // Last registration wins by design: a scene's own asset is meant to be able to
+            // redefine a type the package asset already declared. Definitions are replaced whole
+            // rather than merged, so the winner's member set is the one that reaches the wire.
             _ownerByType[type] = asset;
 
             var signature = sb.ToString();

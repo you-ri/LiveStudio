@@ -113,6 +113,13 @@ namespace Lilium.RemoteControl
             _all[ec.type] = ec;
             _byTypeName[ec.typeName] = ec;
             _RegisterTypeNameAliases(ec);
+
+            // Every registration path funnels through here, so this is the one place that has to
+            // tell connected clients the type table moved. A client fetches /live/types once per
+            // connection; without this, a type registered later (lazy resolution, a live class
+            // asset arriving with a scene or bundle) would never reach it and its properties would
+            // render as "no type info" for the rest of the session.
+            LivePropertyBroadcast.BroadcastTypesUpdate();
         }
 
         private static void _RegisterTypeNameAliases(LiveClass ec)
@@ -149,8 +156,11 @@ namespace Lilium.RemoteControl
 
         static LiveClass()
         {
-            // アセンブリの初期化タイミングでLiveClassの登録を実行
-            _RegisterAllTypesFromAttributes();
+            // アセンブリの初期化タイミングでLiveClassの登録を実行。
+            // ここは HTTP ワーカースレッドからの型初期化でも走りうるため、エディタ API
+            // (TypeCache) を引かないロード済みアセンブリのみの走査にする。取りこぼしは
+            // _RegisterStaticLiveObjects の完全走査が埋める。
+            _RegisterAllTypesFromAttributes(complete: false);
         }
 
         public static void Register<T>(string typeName, LivePropertyDefine[] defines, string category = null, string icon = null, bool hideInScene = false)
@@ -468,11 +478,20 @@ namespace Lilium.RemoteControl
             RegisterProperties(typeof(T));
         }
 
-        private static void _RegisterAllTypesFromAttributes()
+        /// <param name="complete">
+        /// true なら、まだロードされていないアセンブリの型も含めて走査する
+        /// (<see cref="TypeReflectionSystem.FindAllTypesWithAttribute{T}"/>)。エディタでは
+        /// TypeCache を引くためメインスレッドからのみ渡してよい。static コンストラクタは
+        /// ワーカースレッドから誘発されうるので false で呼ぶ。
+        /// </param>
+        private static void _RegisterAllTypesFromAttributes(bool complete)
         {
             // TypeReflectionSystemを使用して属性付きの型を検索
             var typesWithAttribute = new List<Type>();
-            foreach (var type in TypeReflectionSystem.FindTypesWithAttribute<LiveClassAttribute>())
+            var found = complete
+                ? TypeReflectionSystem.FindAllTypesWithAttribute<LiveClassAttribute>()
+                : TypeReflectionSystem.FindTypesWithAttribute<LiveClassAttribute>();
+            foreach (var type in found)
             {
                 typesWithAttribute.Add(type);
             }
@@ -501,9 +520,10 @@ namespace Lilium.RemoteControl
             // _all から欠落する。static 型は lazy 登録経路を持たない (Find(string) は
             // 属性から登録しない) ため、一度欠落するとドメイン生存中ずっと出てこない。
             // ここで走査をやり直す。本メソッドの呼び出し元 (再生時の AfterAssembliesLoaded /
-            // エディタの InitializeOnLoadMethod) はどちらも全アセンブリ読み込み後に走るため、
-            // static 型を確実に拾える。
-            _RegisterAllTypesFromAttributes();
+            // エディタの InitializeOnLoadMethod) はどちらも全アセンブリ読み込み後にメインスレッドで
+            // 走るため、完全走査 (エディタは TypeCache 併用) を掛けられる。ロード済みアセンブリだけを
+            // 見る走査では、そのとき Mono がまだ読んでいないアセンブリの型がまるごと落ちる。
+            _RegisterAllTypesFromAttributes(complete: true);
 
             // 静的クラスを先にスナップショットしておく。static LiveObjectHandle の生成は
             // 既定値キャプチャ (SetDefault) を伴い、その過程で別の型が lazy 登録されて
@@ -545,6 +565,8 @@ namespace Lilium.RemoteControl
                 _all.Remove(liveClass.type);
                 _byTypeName.Remove(liveClass.typeName);
                 _UnregisterTypeNameAliases(liveClass);
+                // Same contract as _SetLiveClass: the table changed, so the client has to refetch.
+                LivePropertyBroadcast.BroadcastTypesUpdate();
             }
         }
 

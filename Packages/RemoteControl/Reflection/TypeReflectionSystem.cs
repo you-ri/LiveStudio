@@ -80,7 +80,44 @@ namespace Lilium.RemoteControl.Reflection
         }
 
         /// <summary>
-        /// 特定の属性を持つすべての型を検索
+        /// 特定の属性を持つすべての型を検索する。<see cref="FindTypesWithAttribute{T}"/> と違い、
+        /// エディタではまだ Mono にロードされていないアセンブリの型も見つける。
+        ///
+        /// ロード済みアセンブリだけを走査する版は、走査した瞬間にたまたま何がロードされていたかで
+        /// 結果が変わる。ドメインリロード直後にこれをやると型テーブルが歯抜けのまま配られるため、
+        /// 起動時の一括登録はこちらを使う。
+        ///
+        /// エディタでは <c>UnityEditor.TypeCache</c> を引くので、**メインスレッドから呼ぶこと**
+        /// (静的コンストラクタ経由でワーカースレッドから走りうる箇所では使わない)。
+        /// </summary>
+        public static IEnumerable<Type> FindAllTypesWithAttribute<T>() where T : Attribute
+        {
+#if UNITY_EDITOR
+            // TypeCache は属性が直接付いた型しか返さない。一方リフレクション走査は属性の継承
+            // (基底に付いた [LiveClass] を派生が引き継ぐ) も拾うので、置き換えず和集合にする。
+            var seen = new HashSet<Type>();
+            foreach (var type in UnityEditor.TypeCache.GetTypesWithAttribute<T>())
+            {
+                if (type == null || !seen.Add(type)) continue;
+                yield return type;
+            }
+            foreach (var type in FindTypesWithAttribute<T>())
+            {
+                if (type == null || !seen.Add(type)) continue;
+                yield return type;
+            }
+#else
+            // プレイヤーでは全スクリプトアセンブリが起動時にロード済みなので、走査で足りる。
+            foreach (var type in FindTypesWithAttribute<T>())
+            {
+                if (type == null) continue;
+                yield return type;
+            }
+#endif
+        }
+
+        /// <summary>
+        /// 特定の属性を持つすべての型を検索 (ロード済みアセンブリのみ)
         /// </summary>
         /// <typeparam name="T">検索する属性の型</typeparam>
         /// <returns>属性を持つ型のコレクション</returns>

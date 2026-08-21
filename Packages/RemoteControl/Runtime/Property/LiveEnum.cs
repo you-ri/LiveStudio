@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
 using UnityEngine;
 using Lilium.RemoteControl.Reflection;
@@ -28,8 +27,21 @@ namespace Lilium.RemoteControl
 
         static LiveEnum()
         {
-            // アセンブリの初期化タイミングで自動登録を実行
-            RegisterAllFromAttributes();
+            // アセンブリの初期化タイミングで自動登録を実行。LiveClass と同じく、ここは
+            // ワーカースレッドから誘発されうるのでエディタ API を引かない走査にする。
+            RegisterAllFromAttributes(complete: false);
+        }
+
+        /// <summary>
+        /// 全アセンブリ読み込み後に走査をやり直す。static ctor は最初に LiveEnum に触れた
+        /// タイミングで走るため、それがゲームアセンブリの読み込み前だと enum がまるごと落ちる。
+        /// enum には LiveClass の <c>_GetOrRegister</c> にあたる遅延登録経路が無く、一度落ちると
+        /// ドメイン生存中ずっと出てこない。
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
+        private static void _RegisterAllFromAttributesAfterAssembliesLoaded()
+        {
+            RegisterAllFromAttributes(complete: true);
         }
 
 #if UNITY_EDITOR
@@ -41,8 +53,10 @@ namespace Lilium.RemoteControl
         [UnityEditor.InitializeOnLoadMethod]
         private static void _EditorEnsureInitialized()
         {
-            // `all` に触ることで static ctor がトリガされる
+            // `all` に触ることで static ctor がトリガされる。そのうえで、まだロードされていない
+            // アセンブリの enum を拾い直す (InitializeOnLoadMethod はメインスレッド)。
             _ = all;
+            RegisterAllFromAttributes(complete: true);
         }
 #endif
 
@@ -57,13 +71,14 @@ namespace Lilium.RemoteControl
             var liveEnum = LiveEnum.Create(type, typeName, help, excludeNames);
             all[liveEnum.type] = liveEnum;
 
+            // Every registration path funnels through here. /live/enums is fetched together with
+            // /live/types, so the same pseudo id covers both (see LiveClass._SetLiveClass).
+            LivePropertyBroadcast.BroadcastTypesUpdate();
         }
 
         public static void Register<T>(string typeName = null) where T : Enum
         {
-            var type = typeof(T);
-            var liveEnum = LiveEnum.Create(type, typeName ?? type.Name);
-            all[liveEnum.type] = liveEnum;
+            RegisterEnumInternal(typeof(T), typeName ?? typeof(T).Name);
         }
 
         public static void Register(Type type, string typeName = null)
@@ -77,36 +92,34 @@ namespace Lilium.RemoteControl
             RegisterEnumInternal(type, typeName ?? type.Name);
         }
 
-        private static void RegisterAllFromAttributes()
+        /// <param name="complete">
+        /// true なら、まだロードされていないアセンブリの enum も走査対象にする。
+        /// エディタでは TypeCache を引くのでメインスレッドからのみ。
+        /// </param>
+        private static void RegisterAllFromAttributes(bool complete)
         {
-            var assemblies = AssemblyUtility.GetLoadedAssemblies();
-            foreach (var assembly in assemblies)
+            var found = complete
+                ? TypeReflectionSystem.FindAllTypesWithAttribute<LiveEnumAttribute>()
+                : TypeReflectionSystem.FindTypesWithAttribute<LiveEnumAttribute>();
+            foreach (var type in found)
             {
-                try
-                {
-                    var types = assembly.GetTypes()
-                        .Where(t => t.IsEnum && t.GetCustomAttribute<LiveEnumAttribute>() != null);
+                if (type == null || !type.IsEnum) continue;
 
-                    foreach (var type in types)
-                    {
-                        var enumAttribute = type.GetCustomAttribute<LiveEnumAttribute>();
-                        var typeName = enumAttribute?.typeName ?? type.Name;
+                var enumAttribute = type.GetCustomAttribute<LiveEnumAttribute>();
+                var typeName = enumAttribute?.typeName ?? type.Name;
 
-                        // HelpAttributeを読み取り
-                        var helpAttr = type.GetCustomAttribute<HelpAttribute>();
-                        var help = helpAttr?.text;
+                // HelpAttributeを読み取り
+                var helpAttr = type.GetCustomAttribute<HelpAttribute>();
+                var help = helpAttr?.text;
 
-                        RegisterEnumInternal(type, typeName, help);
-                    }
-                }
-                catch (ReflectionTypeLoadException)
-                {
-                    // アセンブリの読み込みエラーは無視
-                    Debug.LogWarning($"[RemoteControl] Failed to load types from assembly: {assembly.FullName}");
-                }
+                RegisterEnumInternal(type, typeName, help);
+            }
 
-                // 外部 enum (UnityEngine 組み込み等、属性を付けられない型) の宣言的登録。
-                // assembly 属性なので GetTypes() を呼ばず ReflectionTypeLoadException の心配がない。
+            // 外部 enum (UnityEngine 組み込み等、属性を付けられない型) の宣言的登録。
+            // これはアセンブリ属性なので TypeCache では引けず、ロード済みアセンブリを走査する。
+            // 取りこぼしても、後から登録された時点で @types が記録されクライアントが取り直す。
+            foreach (var assembly in AssemblyUtility.GetLoadedAssemblies())
+            {
                 foreach (var attr in assembly.GetCustomAttributes<LiveExternalEnumAttribute>())
                 {
                     if (attr.type == null) continue;
@@ -125,15 +138,14 @@ namespace Lilium.RemoteControl
 
         /// <summary>
         /// Clears all LiveEnum entries and re-registers them from attributes.
-        /// Also publishes a types change so that connected RemoteApp clients refetch
-        /// /live/types and /live/enums after a manual rebuild
+        /// The re-registration publishes the types change itself (see RegisterEnumInternal), so
+        /// connected RemoteApp clients refetch /live/types and /live/enums after a manual rebuild
         /// (e.g. UI Designer Reset, which calls LiveClass.Reset() then LiveEnum.Reset()).
         /// </summary>
         public static void Reset()
         {
             Clear();
-            RegisterAllFromAttributes();
-            LivePropertyBroadcast.BroadcastTypesUpdate();
+            RegisterAllFromAttributes(complete: true);
         }
 
         public static void Unregister(LiveEnum liveEnum)
@@ -141,6 +153,7 @@ namespace Lilium.RemoteControl
             if (all.ContainsKey(liveEnum.type))
             {
                 all.Remove(liveEnum.type);
+                LivePropertyBroadcast.BroadcastTypesUpdate();
             }
         }
 

@@ -34,6 +34,18 @@ namespace Lilium.LiveStudio
         }
 
 #if UNITY_EDITOR
+        /// <summary>
+        /// Registers the translations in edit mode too. RemoteControl answers REST while the editor
+        /// is not playing, so a remote app asks for labels and help text then as well — and
+        /// RuntimeInitializeOnLoadMethod only fires on play, which left every key untranslated
+        /// (LocalizationSystem.Translate returns the key it cannot find).
+        /// </summary>
+        [UnityEditor.InitializeOnLoadMethod]
+        private static void _EditorInitialize()
+        {
+            _Initialize();
+        }
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void _ResetStatics()
         {

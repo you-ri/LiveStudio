@@ -244,6 +244,27 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
+        public void Container_Reload_UnregistersTypeDroppedFromAsset()
+        {
+            var preset = _CreatePreset();
+            var definition = preset.GetOrAddTypeDefinition(typeof(Light));
+            definition.members.Add(new LiveClassAssetMember { path = "intensity" });
+
+            var container = _CreateContainer(preset);
+            container.Reload();
+            Assert.That(LiveClass.Has(typeof(Light)), Is.True);
+
+            // How the editor window removes a class: the definition leaves the asset first, and
+            // the reload has to take the registration with it anyway.
+            preset.typeDefinitions.Remove(definition);
+            container.Reload();
+
+            Assert.That(LiveClass.Has(typeof(Light)), Is.False,
+                "A type no longer declared by the asset must not stay registered for the rest of " +
+                "the session (it would keep showing up in /live/types and in components lists)");
+        }
+
+        [Test]
         public void Container_Disable_KeepsTypeStillBoundByAnotherContainer()
         {
             var preset = _CreatePreset();

@@ -1,8 +1,5 @@
 // Copyright (c) You-Ri, 2026
 
-using System;
-using System.Diagnostics;
-using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -37,8 +34,6 @@ namespace Lilium.RemoteControl.UI.Editor
         private bool _isUpdatingUI;
         private bool _suppressRebuild;
 
-        private Process _remoteAppProcess;
-        private Button _remoteAppButton;
 
         [SerializeField]
         private string _providerPath;
@@ -136,7 +131,6 @@ namespace Lilium.RemoteControl.UI.Editor
         private void OnEnable()
         {
             EditorApplication.update += _CheckDirty;
-            EditorApplication.update += _UpdateRemoteAppStatus;
             EditorApplication.hierarchyChanged += _OnDefinitionChanged;
             Selection.selectionChanged += _OnSelectionChanged;
         }
@@ -144,7 +138,6 @@ namespace Lilium.RemoteControl.UI.Editor
         private void OnDisable()
         {
             EditorApplication.update -= _CheckDirty;
-            EditorApplication.update -= _UpdateRemoteAppStatus;
             EditorApplication.hierarchyChanged -= _OnDefinitionChanged;
             Selection.selectionChanged -= _OnSelectionChanged;
 
@@ -160,13 +153,7 @@ namespace Lilium.RemoteControl.UI.Editor
             var def = Selection.activeObject as UIDefinition;
             if (def != null)
             {
-                if (def == _definition && _GetProvider() == null) return;
-
-                if (_providerField != null && _GetProvider() != null)
-                    _providerField.value = null;
-
-                if (_definitionField != null)
-                    _definitionField.value = def;
+                _SetDefinition(def);
                 return;
             }
 
@@ -215,12 +202,61 @@ namespace Lilium.RemoteControl.UI.Editor
             }
         }
 
+        // Definition を差し替える。Provider が付いている間は Definition を持つのは Provider 側なので、
+        // アセットを直接編集するときは Provider をクリアしてから差し替える。
+        private void _SetDefinition(UIDefinition definition)
+        {
+            if (definition == null) return;
+            if (definition == _definition && _GetProvider() == null) return;
+
+            if (_definitionField == null)
+            {
+                // CreateGUI 前 (ウィンドウを開いた直後) はフィールドがまだ無いので、
+                // CreateGUI が初期値として読むフィールドへ直接入れる。
+                _definition = definition;
+                _dirtyCount = EditorUtility.GetDirtyCount(definition);
+                _selectedMenuItemId = null;
+                _providerObject = null;
+                _providerPath = null;
+                return;
+            }
+
+            if (_GetProvider() != null)
+                _providerField.value = null;
+
+            _definitionField.value = definition;
+        }
+
         [UnityEditor.MenuItem("Window/Lilium Remote Control/UI Designer")]
         public static void ShowWindow()
         {
             var window = GetWindow<UIDesignerWindow>();
             window.titleContent = new GUIContent("UI Designer");
             window.minSize = new Vector2(600, 400);
+        }
+
+        /// <summary>
+        /// Opens the Designer on a specific definition asset.
+        /// </summary>
+        public static void ShowWindow(UIDefinition definition)
+        {
+            var window = GetWindow<UIDesignerWindow>();
+            window.titleContent = new GUIContent("UI Designer");
+            window.minSize = new Vector2(600, 400);
+            window._SetDefinition(definition);
+            window.Focus();
+        }
+
+        // Project ビューで UIDefinition アセットをダブルクリックしたら Designer で開く。
+        // true を返すと Unity 既定の処理を差し止められる。コールバックの引数は int 固定なので、
+        // EntityId 化のバージョン差を吸収する LiveObjectUtility 経由で逆引きする。
+        [UnityEditor.Callbacks.OnOpenAsset]
+        private static bool _OnOpenAsset(int instanceId, int line)
+        {
+            var definition = LiveObjectUtility.InstanceIDToObject(instanceId) as UIDefinition;
+            if (definition == null) return false;
+            ShowWindow(definition);
+            return true;
         }
 
         private void CreateGUI()
@@ -323,19 +359,6 @@ namespace Lilium.RemoteControl.UI.Editor
             };
             resetButton.style.width = 60;
             toolbar.Add(resetButton);
-
-            // RemoteApp起動ボタン
-            _remoteAppButton = new Button(_OnRemoteAppButtonClicked)
-            {
-                text = "\u25B6",
-                tooltip = "Launch Remote App"
-            };
-            _remoteAppButton.style.width = 28;
-            _remoteAppButton.style.height = 20;
-            _remoteAppButton.style.marginLeft = 4;
-            _remoteAppButton.style.fontSize = 12;
-            _remoteAppButton.style.unityTextAlign = TextAnchor.MiddleCenter;
-            toolbar.Add(_remoteAppButton);
 
             root.Add(toolbar);
 
@@ -996,99 +1019,6 @@ namespace Lilium.RemoteControl.UI.Editor
             _selectedObject = null;
             _propertyScrollView = null;
             _selectedMenuItem = null;
-        }
-
-        private void _OnRemoteAppButtonClicked()
-        {
-            if (_IsRemoteAppRunning())
-                _CloseRemoteApp();
-            else
-                _LaunchRemoteApp();
-        }
-
-        private void _LaunchRemoteApp()
-        {
-            var appPath = _ResolveRemoteAppPath();
-            if (string.IsNullOrEmpty(appPath) || !File.Exists(appPath))
-            {
-                UnityEngine.Debug.LogError($"[RemoteControl] Remote App not found: {appPath}");
-                return;
-            }
-
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = appPath,
-                UseShellExecute = true,
-                WindowStyle = ProcessWindowStyle.Normal
-            };
-
-            _remoteAppProcess = Process.Start(startInfo);
-
-            if (_remoteAppProcess == null)
-            {
-                UnityEngine.Debug.LogError($"[RemoteControl] Failed to launch Remote App: {appPath}");
-            }
-        }
-
-        private void _CloseRemoteApp()
-        {
-            if (_remoteAppProcess == null) return;
-
-            try
-            {
-                if (!_remoteAppProcess.HasExited)
-                    _remoteAppProcess.CloseMainWindow();
-            }
-            catch (InvalidOperationException)
-            {
-                // プロセスが既に終了している
-            }
-            finally
-            {
-                _remoteAppProcess.Dispose();
-                _remoteAppProcess = null;
-            }
-        }
-
-        private bool _IsRemoteAppRunning()
-        {
-            if (_remoteAppProcess == null) return false;
-
-            try
-            {
-                if (_remoteAppProcess.HasExited)
-                {
-                    _remoteAppProcess.Dispose();
-                    _remoteAppProcess = null;
-                    return false;
-                }
-                return true;
-            }
-            catch (InvalidOperationException)
-            {
-                _remoteAppProcess = null;
-                return false;
-            }
-        }
-
-        private void _UpdateRemoteAppStatus()
-        {
-            if (_remoteAppButton == null) return;
-
-            bool running = _IsRemoteAppRunning();
-            _remoteAppButton.tooltip = running ? "Close Remote App" : "Launch Remote App";
-            _remoteAppButton.style.color = running
-                ? new Color(0.3f, 0.85f, 0.3f)
-                : StyleKeyword.Null;
-        }
-
-        private static string _ResolveRemoteAppPath()
-        {
-            var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssetPath("Packages/jp.lilium.remotecontrol");
-            if (packageInfo != null)
-                return Path.GetFullPath(Path.Combine(packageInfo.resolvedPath, "Tools~/VirgoMotionRemote/VirgoMotionRemote.exe"));
-            // フォールバック: プロジェクト相対
-            return Path.GetFullPath(Path.Combine(Application.dataPath, "../Tools/VirgoMotionRemote/VirgoMotionRemote.exe"));
         }
     }
 }

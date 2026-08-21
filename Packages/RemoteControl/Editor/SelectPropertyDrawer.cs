@@ -10,9 +10,20 @@ namespace Lilium.RemoteControl
     [CustomPropertyDrawer(typeof(SelectAttribute))]
     public class SelectPropertyDrawer : PropertyDrawer
     {
-        private Type[] _derivedTypes;
-        private string[] _typeNames;
-        private Type _baseType;
+        /// <summary>Instantiable choices for one managed reference field type, plus the popup labels.</summary>
+        private sealed class TypeChoices
+        {
+            public Type[] types;
+            public string[] names;
+        }
+
+        // Shared across drawer instances on purpose. Unity caches a PropertyHandler - and with it a
+        // drawer instance - per property path, so a list of N managed references gets N drawers.
+        // Holding the type list per instance made every one of them repeat the same lookup, which is
+        // what made expanding a large [SerializeReference, Select] list slow. Static state here is
+        // safe because a domain reload (the only thing that can change the type set) clears it.
+        private static readonly Dictionary<Type, TypeChoices> _choicesByBaseType = new Dictionary<Type, TypeChoices>();
+        private static readonly Dictionary<string, Type> _fieldTypeByTypename = new Dictionary<string, Type>();
 
         public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
         {
@@ -22,43 +33,33 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            // 基底型から派生型を取得
-            if (_derivedTypes == null)
-            {
-                _baseType = GetManagedReferenceFieldType(property);
-                if (_baseType != null)
-                {
-                    _derivedTypes = GetDerivedTypes(_baseType);
-                    _typeNames = new string[] { "None" }.Concat(_derivedTypes.Select(t => t.Name)).ToArray();
-                }
-                else
-                {
-                    _derivedTypes = Array.Empty<Type>();
-                    _typeNames = Array.Empty<string>();
-                }
-            }
+            // 基底型から派生型を取得 (プロセス内で共有キャッシュ)
+            var baseType = GetManagedReferenceFieldType(property);
+            var choices = baseType != null ? GetChoices(baseType) : null;
+            var derivedTypes = choices != null ? choices.types : Array.Empty<Type>();
+            var typeNames = choices != null ? choices.names : Array.Empty<string>();
 
             EditorGUI.BeginProperty(position, label, property);
 
             // 現在の型を取得
             var currentType = property.managedReferenceValue?.GetType();
-            var currentIndex = currentType != null ? Array.IndexOf(_derivedTypes, currentType) + 1 : 0;
+            var currentIndex = currentType != null ? Array.IndexOf(derivedTypes, currentType) + 1 : 0;
 
             // ドロップダウンの位置を計算
             var dropdownRect = new Rect(position.x, position.y, position.width, EditorGUIUtility.singleLineHeight);
 
             // ドロップダウンを描画
             EditorGUI.BeginChangeCheck();
-            var newIndex = EditorGUI.Popup(dropdownRect, label.text, currentIndex, _typeNames);
+            var newIndex = EditorGUI.Popup(dropdownRect, label.text, currentIndex, typeNames);
             if (EditorGUI.EndChangeCheck() && newIndex != currentIndex)
             {
                 if (newIndex == 0)
                 {
                     property.managedReferenceValue = null;
                 }
-                else if (newIndex > 0 && newIndex - 1 < _derivedTypes.Length)
+                else if (newIndex > 0 && newIndex - 1 < derivedTypes.Length)
                 {
-                    var newType = _derivedTypes[newIndex - 1];
+                    var newType = derivedTypes[newIndex - 1];
                     property.managedReferenceValue = Activator.CreateInstance(newType);
                 }
             }
@@ -113,7 +114,7 @@ namespace Lilium.RemoteControl
             return height;
         }
 
-        private Type GetManagedReferenceFieldType(SerializedProperty property)
+        private static Type GetManagedReferenceFieldType(SerializedProperty property)
         {
             var typeName = property.managedReferenceFieldTypename;
             if (string.IsNullOrEmpty(typeName))
@@ -121,6 +122,19 @@ namespace Lilium.RemoteControl
                 return null;
             }
 
+            // 解決できなかった場合も記録する - 走査そのものがコストなので毎回やり直さない
+            if (_fieldTypeByTypename.TryGetValue(typeName, out var cached))
+            {
+                return cached;
+            }
+
+            var resolved = ResolveTypename(typeName);
+            _fieldTypeByTypename[typeName] = resolved;
+            return resolved;
+        }
+
+        private static Type ResolveTypename(string typeName)
+        {
             // フォーマット: "assemblyName typeName"
             var parts = typeName.Split(' ');
             if (parts.Length < 2)
@@ -146,30 +160,44 @@ namespace Lilium.RemoteControl
             return null;
         }
 
-        private Type[] GetDerivedTypes(Type baseType)
+        private static TypeChoices GetChoices(Type baseType)
         {
+            if (_choicesByBaseType.TryGetValue(baseType, out var cached))
+            {
+                return cached;
+            }
+
             var types = new List<Type>();
 
-            foreach (var assembly in AssemblyUtility.GetLoadedAssemblies())
+            // baseType 自身が具象なら候補に含める (旧実装の IsAssignableFrom は自分自身も拾っていた)。
+            // TypeCache.GetTypesDerivedFrom は自分自身を返さないため明示的に足す。
+            if (IsInstantiable(baseType))
             {
-                try
+                types.Add(baseType);
+            }
+
+            // Unity が事前構築した索引を引く。旧実装はロード済み全アセンブリに GetTypes() を掛けており、
+            // このプロジェクトでは 300 前後のアセンブリ・数万個の Type をマテリアライズしていた。
+            foreach (var type in TypeCache.GetTypesDerivedFrom(baseType))
+            {
+                if (IsInstantiable(type))
                 {
-                    foreach (var type in assembly.GetTypes())
-                    {
-                        if (type.IsClass && !type.IsAbstract && baseType.IsAssignableFrom(type)
-                            && type.GetConstructor(Type.EmptyTypes) != null)
-                        {
-                            types.Add(type);
-                        }
-                    }
-                }
-                catch (System.Reflection.ReflectionTypeLoadException)
-                {
-                    // アセンブリの読み込みエラーは無視
+                    types.Add(type);
                 }
             }
 
-            return types.ToArray();
+            var choices = new TypeChoices
+            {
+                types = types.ToArray(),
+                names = new string[] { "None" }.Concat(types.Select(t => t.Name)).ToArray(),
+            };
+            _choicesByBaseType[baseType] = choices;
+            return choices;
+        }
+
+        private static bool IsInstantiable(Type type)
+        {
+            return type.IsClass && !type.IsAbstract && type.GetConstructor(Type.EmptyTypes) != null;
         }
     }
 }

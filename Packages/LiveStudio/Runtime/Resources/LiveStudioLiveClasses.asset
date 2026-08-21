@@ -74,6 +74,53 @@ MonoBehaviour:
       order: 0
       control:
         rid: -2
+  - typeName: UnityEngine.Playables.PlayableDirector, UnityEngine.DirectorModule,
+      Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+    category: 
+    icon: 
+    members:
+    - path: Play
+      isFunction: 1
+      label: Play
+      help: 
+      persistable: 0
+      readOnly: 0
+      icon: 
+      section:
+        title: 
+        subtitle: 
+        icon: 
+      order: 0
+      control:
+        rid: -2
+    - path: Stop
+      isFunction: 1
+      label: Stop
+      help: 
+      persistable: 0
+      readOnly: 0
+      icon: 
+      section:
+        title: 
+        subtitle: 
+        icon: 
+      order: 0
+      control:
+        rid: -2
+    - path: Pause
+      isFunction: 1
+      label: Pause
+      help: 
+      persistable: 0
+      readOnly: 0
+      icon: 
+      section:
+        title: 
+        subtitle: 
+        icon: 
+      order: 0
+      control:
+        rid: -2
   bindings: []
   references:
     version: 2

@@ -33,6 +33,33 @@ namespace Lilium.RemoteControl.Editor
             GetWindow<LiveClassAssetWindow>("Live Class Asset");
         }
 
+        /// <summary>
+        /// Opens the window on a specific asset. Switching assets clears the class selection,
+        /// since the selected type name belongs to the previous asset.
+        /// </summary>
+        public static void Open(LiveClassAsset asset)
+        {
+            var window = GetWindow<LiveClassAssetWindow>("Live Class Asset");
+            if (asset != null && window._preset != asset)
+            {
+                window._preset = asset;
+                window._selectedTypeName = null;
+            }
+            window.Focus();
+        }
+
+        // Double-clicking a LiveClassAsset in the Project view opens it here rather than doing
+        // nothing; returning true tells Unity the open was handled. The callback signature is
+        // fixed at int, so the id goes through LiveObjectUtility to survive the EntityId change.
+        [UnityEditor.Callbacks.OnOpenAsset]
+        private static bool _OnOpenAsset(int instanceId, int line)
+        {
+            var asset = LiveObjectUtility.InstanceIDToObject(instanceId) as LiveClassAsset;
+            if (asset == null) return false;
+            Open(asset);
+            return true;
+        }
+
         private const float kHeaderLabelWidth = 58f;
         private const float kAddButtonWidth = 24f;
         private const float kRemoveButtonWidth = 24f;
