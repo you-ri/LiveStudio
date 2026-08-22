@@ -28,7 +28,7 @@ namespace Lilium.RemoteControl.UI.Editor
             var current = _FromObject(ctx.currentValue);
 
             var container = new VisualElement();
-            container.style.flexDirection = FlexDirection.Column;
+            container.AddToClassList("uid-prop-nested-column");
 
             var positionField = new Vector3Field(kPositionLabel) { value = current.position };
             var rotationField = new Vector3Field(kRotationLabel) { value = current.rotation.eulerAngles };

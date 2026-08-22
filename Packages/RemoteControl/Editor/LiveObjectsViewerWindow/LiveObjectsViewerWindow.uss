@@ -1,0 +1,252 @@
+/* Copyright (c) You-Ri, 2026 */
+
+/* Layout and the semantic palette of the LiveObjects Viewer; everything generic lives in
+ * Editor/Styles/RemoteControlEditor.uss.
+ *
+ * The colors here are mid-saturation on purpose. They used to be light tints picked against the
+ * dark skin only, which left the list unreadable on the light one; at this saturation the same
+ * hue carries on both. */
+
+.lov-root {
+    flex-direction: row;
+}
+
+/* --- Side panel --- */
+
+.lov-side-panel {
+    width: 240px;
+    min-width: 240px;
+    flex-shrink: 0;
+    flex-direction: column;
+    border-right-width: 1px;
+    border-right-color: rgba(127, 127, 127, 0.35);
+}
+
+.lov-tab-row {
+    flex-direction: row;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    margin-left: 4px;
+    margin-right: 4px;
+}
+
+.lov-tab {
+    flex-grow: 1;
+}
+
+.lov-tab--active {
+    background-color: rgba(51, 102, 153, 0.5);
+}
+
+.lov-filter {
+    margin-left: 4px;
+    margin-right: 4px;
+    margin-bottom: 4px;
+}
+
+.lov-filter__placeholder {
+    position: absolute;
+    left: 16px;
+    top: 3px;
+    opacity: 0.5;
+}
+
+.lov-dirty-toggle {
+    margin-left: 4px;
+    margin-right: 4px;
+    margin-bottom: 4px;
+    font-size: 11px;
+}
+
+.lov-count {
+    margin-left: 8px;
+    margin-bottom: 4px;
+    font-size: 10px;
+    opacity: 0.6;
+}
+
+.lov-reset-button {
+    margin-top: 4px;
+    margin-bottom: 4px;
+    margin-left: 4px;
+    margin-right: 4px;
+}
+
+/* --- Side list rows --- */
+
+.lov-list-item {
+    height: 24px;
+    margin-left: 4px;
+    margin-right: 4px;
+    margin-top: 1px;
+    margin-bottom: 1px;
+    overflow: hidden;
+    font-size: 11px;
+    -unity-text-align: middle-left;
+}
+
+.lov-list-item--selected {
+    background-color: rgba(51, 102, 153, 0.5);
+}
+
+.lov-list-item--static {
+    color: rgb(70, 150, 70);
+}
+
+.lov-list-item--invalid {
+    color: rgb(200, 70, 70);
+}
+
+.lov-list-item--unregistered {
+    color: rgb(60, 150, 180);
+}
+
+/* --- Detail pane --- */
+
+.lov-content {
+    flex-grow: 1;
+    flex-direction: column;
+}
+
+.lov-detail-header {
+    padding-left: 8px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(127, 127, 127, 0.35);
+}
+
+.lov-detail-title {
+    font-size: 14px;
+    -unity-font-style: bold;
+    margin-bottom: 4px;
+}
+
+.lov-detail-meta {
+    font-size: 11px;
+    opacity: 0.6;
+}
+
+.lov-detail-help {
+    font-size: 11px;
+    margin-top: 4px;
+    white-space: normal;
+    color: rgb(140, 130, 90);
+}
+
+.lov-detail-scroll {
+    flex-grow: 1;
+    padding-left: 8px;
+    padding-top: 8px;
+    padding-right: 8px;
+}
+
+.lov-section-title {
+    font-size: 12px;
+    -unity-font-style: bold;
+    margin-bottom: 4px;
+}
+
+/* Separates a second section from the one above it. */
+.lov-section-title--spaced {
+    margin-top: 12px;
+}
+
+/* --- Detail rows --- */
+
+.lov-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 2px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+
+.lov-row__name {
+    width: 180px;
+    min-width: 180px;
+    -unity-text-align: middle-left;
+}
+
+.lov-row__name--dirty {
+    -unity-font-style: bold;
+}
+
+.lov-row__type {
+    width: 120px;
+    min-width: 120px;
+    color: rgb(110, 140, 180);
+    -unity-text-align: middle-left;
+}
+
+.lov-row__control {
+    margin-left: 4px;
+    flex-shrink: 0;
+    color: rgb(160, 120, 80);
+}
+
+.lov-row__value {
+    flex-grow: 1;
+    flex-shrink: 1;
+    overflow: hidden;
+    opacity: 0.85;
+    -unity-text-align: middle-left;
+}
+
+.lov-row__enum-value {
+    width: 80px;
+    color: rgb(110, 140, 180);
+    -unity-text-align: middle-left;
+}
+
+.lov-row__enum-display {
+    margin-left: 8px;
+    opacity: 0.6;
+}
+
+.lov-row__function {
+    flex-grow: 1;
+    -unity-text-align: middle-left;
+}
+
+.lov-invoke-button {
+    width: 60px;
+    flex-shrink: 0;
+}
+
+/* --- Badges --- */
+
+.lov-badge {
+    margin-left: 4px;
+    flex-shrink: 0;
+}
+
+.lov-badge--readonly {
+    color: rgb(110, 110, 170);
+}
+
+.lov-badge--static {
+    color: rgb(80, 150, 80);
+}
+
+.lov-badge--persistable {
+    color: rgb(150, 140, 70);
+}
+
+/* --- States --- */
+
+.lov-empty {
+    opacity: 0.6;
+    margin-top: 8px;
+}
+
+.lov-invalid {
+    color: rgb(200, 70, 70);
+    padding-left: 8px;
+    padding-top: 8px;
+}
+
+.lov-detail-static {
+    font-size: 11px;
+    color: rgb(70, 150, 70);
+}

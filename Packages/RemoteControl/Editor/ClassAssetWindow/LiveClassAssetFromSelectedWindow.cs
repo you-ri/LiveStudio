@@ -2,6 +2,7 @@
 using System;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 namespace Lilium.RemoteControl.Editor
 {
@@ -17,11 +18,8 @@ namespace Lilium.RemoteControl.Editor
 
         private Func<LiveClassAsset> _getPreset;
         private Action<string> _onAdded;
-        private Vector2 _scroll;
 
-        // Preset mutations are deferred to the next Layout event so no draw pass ever runs on a
-        // half-modified list, same reasoning as LiveClassAssetWindow.
-        private Action _pendingAction;
+        private VisualElement _content;
 
         public static void Open(Func<LiveClassAsset> getPreset, Action<string> onAdded, Rect screenRect)
         {
@@ -36,77 +34,97 @@ namespace Lilium.RemoteControl.Editor
 
         private void OnEnable()
         {
-            Selection.selectionChanged += Repaint;
+            Selection.selectionChanged += _Rebuild;
         }
 
         private void OnDisable()
         {
-            Selection.selectionChanged -= Repaint;
+            Selection.selectionChanged -= _Rebuild;
         }
 
-        private void OnGUI()
+        private void CreateGUI()
         {
-            if (_pendingAction != null && Event.current.type == EventType.Layout)
-            {
-                var action = _pendingAction;
-                _pendingAction = null;
-                action();
-            }
+            var root = rootVisualElement;
+            LiveClassAssetStyles.Apply(root);
+            root.style.flexDirection = FlexDirection.Column;
 
+            _content = new VisualElement();
+            _content.style.flexGrow = 1;
+            root.Add(_content);
+
+            _Rebuild();
+        }
+
+        private void _Rebuild()
+        {
+            if (_content == null) return;
+            _content.Clear();
+
+            // The delegate does not survive a domain reload, so the window can come back with no
+            // preset to add to.
             var preset = _getPreset?.Invoke();
             if (preset == null)
             {
-                EditorGUILayout.HelpBox("Assign a Live Class Asset in the Live Class Asset window first.", MessageType.Info);
+                _content.Add(_MakeHelp("Assign a Live Class Asset in the Live Class Asset window first."));
                 return;
             }
 
             var go = Selection.activeGameObject;
             if (go == null)
             {
-                EditorGUILayout.HelpBox("Select a GameObject in the scene.", MessageType.Info);
+                _content.Add(_MakeHelp("Select a GameObject in the scene."));
                 return;
             }
 
-            EditorGUILayout.LabelField(go.name, LiveClassAssetStyles.paneHeader);
+            var header = new Label(go.name);
+            header.AddToClassList(LiveClassAssetStyles.kPaneHeader);
+            _content.Add(header);
 
-            _scroll = EditorGUILayout.BeginScrollView(_scroll);
+            var scroll = new ScrollView();
+            scroll.AddToClassList(LiveClassAssetStyles.kScroll);
             foreach (var component in go.GetComponents<Component>())
             {
                 if (component == null) continue; // missing script
-                _DrawRow(preset, component.GetType());
+                scroll.Add(_MakeRow(preset, component.GetType()));
             }
-            EditorGUILayout.EndScrollView();
+            _content.Add(scroll);
         }
 
-        private void _DrawRow(LiveClassAsset preset, Type type)
+        private VisualElement _MakeRow(LiveClassAsset preset, Type type)
         {
             bool added = preset.FindTypeDefinition(type) != null;
 
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.Label(new GUIContent(type.Name, type.FullName),
-                added ? LiveClassAssetStyles.memberTitle : LiveClassAssetStyles.rowTitle);
-            GUILayout.FlexibleSpace();
-            using (new EditorGUI.DisabledScope(added))
-            {
-                if (GUILayout.Button(added ? "Added" : "Add", GUILayout.Width(60)))
-                {
-                    _Defer(() =>
-                    {
-                        LiveClassAssetMemberExposure.BeginEdit(preset, null, "Add Class");
-                        var definition = preset.GetOrAddTypeDefinition(type);
-                        EditorUtility.SetDirty(preset);
-                        _onAdded?.Invoke(definition.typeName);
-                        Repaint();
-                    });
-                }
-            }
-            EditorGUILayout.EndHorizontal();
+            var row = new VisualElement();
+            row.AddToClassList(LiveClassAssetStyles.kPopupRow);
+
+            var title = new Label(type.Name) { tooltip = type.FullName };
+            title.AddToClassList(LiveClassAssetStyles.kPopupRowTitle);
+            title.EnableInClassList(LiveClassAssetStyles.kPopupRowTitleAdded, added);
+            row.Add(title);
+
+            var button = new Button(() => _AddClass(preset, type)) { text = added ? "Added" : "Add" };
+            button.AddToClassList(LiveClassAssetStyles.kPopupRowButton);
+            button.SetEnabled(!added);
+            row.Add(button);
+
+            return row;
         }
 
-        private void _Defer(Action action)
+        private void _AddClass(LiveClassAsset preset, Type type)
         {
-            _pendingAction = action;
-            Repaint();
+            LiveClassAssetMemberExposure.BeginEdit(preset, null, "Add Class");
+            var definition = preset.GetOrAddTypeDefinition(type);
+            EditorUtility.SetDirty(preset);
+            _onAdded?.Invoke(definition.typeName);
+            // Rebuilding here would destroy the button whose click is still being dispatched.
+            rootVisualElement.schedule.Execute(_Rebuild);
+        }
+
+        private static HelpBox _MakeHelp(string text)
+        {
+            var help = new HelpBox(text, HelpBoxMessageType.Info);
+            help.AddToClassList(LiveClassAssetStyles.kHelp);
+            return help;
         }
     }
 }

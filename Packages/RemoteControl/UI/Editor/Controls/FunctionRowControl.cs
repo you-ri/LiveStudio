@@ -12,11 +12,7 @@ namespace Lilium.RemoteControl.UI.Editor
         public static VisualElement CreateFunctionRow(LiveObjectHandle obj, LiveFunctionType funcType)
         {
             var row = new VisualElement();
-            row.style.flexDirection = FlexDirection.Row;
-            row.style.marginBottom = 2;
-            row.style.paddingTop = 2;
-            row.style.paddingBottom = 2;
-            row.style.alignItems = Align.Center;
+            row.AddToClassList("uid-function-row");
 
             var paramText = "";
             if (funcType.parameters != null && funcType.parameters.Length > 0)
@@ -27,16 +23,14 @@ namespace Lilium.RemoteControl.UI.Editor
             var displayName = $"{returnTypeName}  {ObjectNames.NicifyVariableName(funcType.name)}({paramText})";
 
             var nameLabel = new Label(displayName);
-            nameLabel.style.flexGrow = 1;
-            nameLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+            nameLabel.AddToClassList("uid-function-name");
             row.Add(nameLabel);
 
             if (funcType.isStatic)
             {
                 var badge = new Label("[S]");
-                badge.style.color = new Color(0.4f, 0.6f, 0.4f);
-                badge.style.marginLeft = 4;
-                badge.style.flexShrink = 0;
+                badge.AddToClassList("uid-badge");
+                badge.AddToClassList("uid-badge--static");
                 row.Add(badge);
             }
 
@@ -47,8 +41,7 @@ namespace Lilium.RemoteControl.UI.Editor
                     obj.InvokeFunction(funcType.apiName, null);
                 });
                 invokeButton.text = "Invoke";
-                invokeButton.style.width = 60;
-                invokeButton.style.flexShrink = 0;
+                invokeButton.AddToClassList("uid-invoke-button");
                 row.Add(invokeButton);
             }
 

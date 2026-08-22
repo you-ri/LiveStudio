@@ -15,13 +15,10 @@ namespace Lilium.RemoteControl.UI.Editor
             if (slider == null) return new ReadOnlyLabelControl().CreateControl(ctx);
 
             var container = new VisualElement();
-            container.style.flexDirection = FlexDirection.Row;
-            container.style.flexGrow = 1;
-            container.style.alignItems = Align.Center;
+            container.AddToClassList("uid-slider-row");
 
             var sliderField = new Slider(slider.minValue, slider.maxValue);
-            sliderField.style.flexGrow = 1;
-            sliderField.style.flexShrink = 1;
+            sliderField.AddToClassList("uid-slider");
             sliderField.name = "prop-slider";
 
             if (ctx.currentValue is float fv)
@@ -30,10 +27,7 @@ namespace Lilium.RemoteControl.UI.Editor
                 sliderField.value = iv;
 
             var valueField = new FloatField();
-            valueField.style.width = 60;
-            valueField.style.minWidth = 60;
-            valueField.style.flexShrink = 0;
-            valueField.style.marginLeft = 4;
+            valueField.AddToClassList("uid-slider-value");
             valueField.name = "prop-slider-value";
             valueField.value = sliderField.value;
 

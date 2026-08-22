@@ -269,9 +269,11 @@ namespace Lilium.LiveStudio
                 texture2D.Apply();
 
                 RenderTexture.active = null;
-                Lilium.RemoteControl.GameObjectUtility.Destroy(renderTexture);
 
+                // Detach before releasing: destroying a RenderTexture that is still the camera's
+                // targetTexture makes Unity log "Releasing render texture that is set as Camera.targetTexture!".
                 camera.targetTexture = targetCamera;
+                Lilium.RemoteControl.GameObjectUtility.Destroy(renderTexture);
                 camera.transform.position = positionPrev;
                 camera.transform.rotation = rotationPrev;
                 camera.fieldOfView = fieldOfViewPrev;

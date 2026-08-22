@@ -1,0 +1,174 @@
+/* Copyright (c) You-Ri, 2026 */
+
+/*
+ * Shared vocabulary of the Lilium Remote Control editor windows. Anything a second window
+ * could plausibly want belongs here; a window's own sheet carries only what is specific to it.
+ *
+ * Colors are skin-neutral by construction: greys are stated as an alpha over whatever is behind
+ * them, and accents sit at mid saturation so they stay legible against both the light and the
+ * dark editor skin. That is why no rule here reads a --unity-colors-* variable or branches on
+ * the skin.
+ *
+ * One font size throughout - hierarchy comes from weight and opacity only. Unity's mini styles
+ * render at a different size and baseline than the rest of an inspector row, which reads as a
+ * mismatched font once a few of them sit next to normal labels.
+ */
+
+/* --- Text --- */
+
+.rc-title {
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.rc-subtle {
+    opacity: 0.6;
+}
+
+.rc-ellipsis {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* --- Layout --- */
+
+.rc-row {
+    flex-direction: row;
+    align-items: center;
+}
+
+.rc-col {
+    flex-direction: column;
+}
+
+.rc-grow {
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+.rc-fixed {
+    flex-shrink: 0;
+}
+
+/* Pushes whatever follows it to the far end of a row. */
+.rc-spacer {
+    flex-grow: 1;
+}
+
+.rc-scroll {
+    flex-grow: 1;
+}
+
+.rc-pane {
+    flex-grow: 1;
+    flex-direction: column;
+}
+
+/* --- Toolbars --- */
+
+.rc-toolbar-label {
+    width: 58px;
+    flex-shrink: 0;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.rc-toolbar-field {
+    flex-grow: 1;
+    flex-shrink: 1;
+    margin-top: 1px;
+    margin-bottom: 1px;
+}
+
+/* --- Chrome --- */
+
+.rc-card {
+    margin-top: 2px;
+    margin-bottom: 4px;
+    margin-left: 4px;
+    margin-right: 4px;
+    padding-top: 2px;
+    padding-bottom: 4px;
+    padding-left: 4px;
+    padding-right: 4px;
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-right-width: 1px;
+    border-top-color: rgba(127, 127, 127, 0.35);
+    border-bottom-color: rgba(127, 127, 127, 0.35);
+    border-left-color: rgba(127, 127, 127, 0.35);
+    border-right-color: rgba(127, 127, 127, 0.35);
+    border-top-left-radius: 3px;
+    border-top-right-radius: 3px;
+    border-bottom-left-radius: 3px;
+    border-bottom-right-radius: 3px;
+    background-color: rgba(127, 127, 127, 0.08);
+}
+
+.rc-help {
+    margin-top: 4px;
+    margin-bottom: 4px;
+    margin-left: 4px;
+    margin-right: 4px;
+    flex-shrink: 0;
+}
+
+.rc-icon-button {
+    width: 22px;
+    flex-shrink: 0;
+    padding-left: 0;
+    padding-right: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+.rc-icon-button > Image {
+    width: 16px;
+    height: 16px;
+}
+
+.rc-separator-h {
+    height: 1px;
+    flex-shrink: 0;
+    background-color: rgba(127, 127, 127, 0.35);
+}
+
+.rc-separator-v {
+    width: 1px;
+    flex-shrink: 0;
+    background-color: rgba(127, 127, 127, 0.35);
+}
+
+.rc-border-top {
+    border-top-width: 1px;
+    border-top-color: rgba(127, 127, 127, 0.35);
+}
+
+.rc-border-bottom {
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(127, 127, 127, 0.35);
+}
+
+.rc-border-right {
+    border-right-width: 1px;
+    border-right-color: rgba(127, 127, 127, 0.35);
+}
+
+/* --- Accents --- */
+
+.rc-success {
+    color: rgb(60, 160, 80);
+}
+
+.rc-warning {
+    color: rgb(190, 145, 30);
+}
+
+.rc-danger {
+    color: rgb(200, 70, 70);
+}
+
+.rc-accent {
+    color: rgb(50, 150, 170);
+}

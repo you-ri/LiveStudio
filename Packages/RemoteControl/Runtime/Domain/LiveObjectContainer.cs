@@ -190,6 +190,42 @@ namespace Lilium.RemoteControl
             }
         }
 
+        /// <summary>
+        /// The <see cref="UnityEngine.Object"/> that serializes <paramref name="liveObject"/>, or null
+        /// when nothing does.
+        /// </summary>
+        /// <remarks>
+        /// A live object is written into a scene by whoever holds the list it sits in: the
+        /// <see cref="host"/> for the main list, and the source's owner for a merged one. A source
+        /// registered under a plain C# owner — the runtime-only binding wrappers do exactly that —
+        /// has no serialized home and answers null.
+        /// <para/>
+        /// The editor asks this to decide whether a write while not playing has anywhere to land:
+        /// members held by the live object itself (a camera's priority, say, rather than a value
+        /// forwarded to the wrapped component) are saved by the editor's own Save only if the object
+        /// is serialized somewhere.
+        /// </remarks>
+        public UnityEngine.Object FindSerializedOwner(object liveObject)
+        {
+            if (liveObject == null) return null;
+
+            for (int i = 0; i < _objects.Count; i++)
+            {
+                if (ReferenceEquals(_objects[i], liveObject)) return host;
+            }
+
+            for (int s = 0; s < _sources.Count; s++)
+            {
+                var list = _sources[s].list;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    if (ReferenceEquals(list[i], liveObject)) return _sources[s].owner as UnityEngine.Object;
+                }
+            }
+
+            return null;
+        }
+
         private int _IndexOfSource(object owner)
         {
             for (int i = 0; i < _sources.Count; i++)

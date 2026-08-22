@@ -1,0 +1,306 @@
+/* Copyright (c) You-Ri, 2026 */
+
+/* Layout of the UI Designer; everything generic lives in
+ * Editor/Styles/RemoteControlEditor.uss.
+ *
+ * Greys are stated as an alpha over whatever is behind them, so the same rule reads correctly
+ * on both the light and the dark editor skin. */
+
+.uid-root {
+    flex-direction: column;
+}
+
+/* --- Toolbar --- */
+
+.uid-toolbar {
+    flex-direction: row;
+    flex-shrink: 0;
+    align-items: center;
+    padding-left: 4px;
+    padding-right: 4px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(127, 127, 127, 0.35);
+}
+
+.uid-toolbar-field {
+    flex-grow: 1;
+    max-width: 300px;
+    margin-right: 8px;
+}
+
+.uid-reset-button {
+    width: 60px;
+}
+
+/* --- Frame --- */
+
+.uid-main {
+    flex-direction: row;
+    flex-grow: 1;
+}
+
+.uid-side-panel {
+    width: 48px;
+    min-width: 48px;
+    flex-shrink: 0;
+    flex-direction: column;
+    border-right-width: 1px;
+    border-right-color: rgba(127, 127, 127, 0.35);
+}
+
+.uid-side-main {
+    flex-grow: 1;
+}
+
+.uid-side-bottom {
+    flex-shrink: 0;
+}
+
+.uid-side-separator {
+    height: 1px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    background-color: rgba(127, 127, 127, 0.35);
+}
+
+.uid-content-panel {
+    flex-grow: 1;
+    flex-direction: column;
+}
+
+.uid-content {
+    flex-grow: 1;
+    flex-direction: row;
+}
+
+.uid-object-list {
+    width: 160px;
+    min-width: 160px;
+    flex-shrink: 0;
+    border-right-width: 1px;
+    border-right-color: rgba(127, 127, 127, 0.35);
+}
+
+.uid-property-area {
+    flex-grow: 1;
+    flex-direction: column;
+}
+
+/* --- Side menu --- */
+
+.uid-menu-button {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    margin-left: 4px;
+    margin-right: 4px;
+    margin-top: 1px;
+    margin-bottom: 1px;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.uid-menu-button--selected {
+    background-color: rgba(51, 102, 153, 0.5);
+}
+
+.uid-menu-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+/* Fallback when a menu item has no icon: the first two letters of its label. */
+.uid-menu-initials {
+    font-size: 14px;
+    flex-shrink: 0;
+    -unity-text-align: middle-center;
+}
+
+/* --- Object list --- */
+
+.uid-add-button {
+    width: 24px;
+    height: 24px;
+    margin-left: 2px;
+    margin-right: 2px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    font-size: 14px;
+    -unity-text-align: middle-center;
+}
+
+.uid-object-row {
+    flex-direction: row;
+    margin-left: 2px;
+    margin-right: 2px;
+    margin-top: 1px;
+    margin-bottom: 1px;
+}
+
+.uid-object-button {
+    height: 28px;
+    flex-grow: 1;
+    flex-shrink: 1;
+    overflow: hidden;
+}
+
+.uid-object-button--selected {
+    background-color: rgba(51, 102, 153, 0.5);
+}
+
+.uid-object-delete {
+    width: 24px;
+    min-width: 24px;
+    height: 28px;
+    flex-shrink: 0;
+}
+
+/* --- Property pane --- */
+
+.uid-detail-header {
+    padding-left: 8px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(127, 127, 127, 0.35);
+}
+
+.uid-detail-meta {
+    font-size: 11px;
+    opacity: 0.6;
+}
+
+.uid-name-field {
+    margin-bottom: 4px;
+}
+
+.uid-detail-scroll {
+    flex-grow: 1;
+    padding-left: 8px;
+    padding-top: 8px;
+    padding-right: 8px;
+}
+
+/* Controls that own nested properties (type selector, camera control) put the label and the
+ * dropdown on a header row and hang the nested block underneath, inside this wrapper. */
+.uid-prop-wrapper {
+    flex-direction: column;
+    margin-bottom: 1px;
+}
+
+.uid-prop-header-row {
+    flex-direction: row;
+    align-items: center;
+    padding-top: 1px;
+    padding-bottom: 1px;
+    min-height: 20px;
+}
+
+.uid-prop-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 1px;
+    padding-top: 1px;
+    padding-bottom: 1px;
+    min-height: 20px;
+}
+
+.uid-prop-control {
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+.uid-prop-name {
+    width: 160px;
+    min-width: 160px;
+    -unity-text-align: middle-left;
+}
+
+.uid-prop-name--dirty {
+    -unity-font-style: bold;
+}
+
+/* --- States --- */
+
+.uid-placeholder {
+    padding-left: 8px;
+    padding-top: 8px;
+    opacity: 0.6;
+}
+
+.uid-invalid {
+    color: rgb(200, 70, 70);
+    padding-left: 8px;
+    padding-top: 8px;
+}
+
+/* --- Property controls (UI/Editor/Controls) --- */
+
+/* Controls that render their own nested block stack it under the value row. */
+.uid-prop-nested {
+    flex-direction: column;
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+.uid-prop-nested-column {
+    flex-direction: column;
+}
+
+.uid-slider-row {
+    flex-direction: row;
+    align-items: center;
+    flex-grow: 1;
+}
+
+.uid-slider {
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+.uid-slider-value {
+    width: 60px;
+    min-width: 60px;
+    flex-shrink: 0;
+    margin-left: 4px;
+}
+
+.uid-function-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 2px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+
+.uid-function-name {
+    flex-grow: 1;
+    -unity-text-align: middle-left;
+}
+
+.uid-invoke-button {
+    width: 60px;
+    flex-shrink: 0;
+}
+
+.uid-badge {
+    margin-left: 4px;
+    flex-shrink: 0;
+}
+
+.uid-badge--static {
+    color: rgb(80, 150, 80);
+}
+
+.uid-meta {
+    opacity: 0.6;
+}
+
+.uid-readonly-value {
+    opacity: 0.6;
+    -unity-text-align: middle-left;
+}

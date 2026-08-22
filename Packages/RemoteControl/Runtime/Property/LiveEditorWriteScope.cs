@@ -20,9 +20,10 @@ namespace Lilium.RemoteControl
     /// Create it <b>before</b> writing the value: <c>Undo.RecordObject</c> snapshots the value as it is
     /// at the call, so recording after the write would capture the new value.
     /// <para/>
-    /// It only does something in the editor while not playing, and only for
-    /// <see cref="UnityEngine.Object"/> targets. Play mode is left alone (the session baseline owns
-    /// "changed" there), and a plain C# live object has nothing to record onto.
+    /// It only does something in the editor while not playing, and only as far as a
+    /// <see cref="UnityEngine.Object"/> stands behind the value — the same three ways
+    /// <see cref="LiveEditorSession.HasSaveTarget"/> looks for one, so whatever that call lets
+    /// through is recorded here. Play mode is left alone (the session baseline owns "changed" there).
     /// <para/>
     /// ⚠ Undo records <b>serialized fields</b>. Live members exposed as C# properties are restored only
     /// as far as their backing field is serialized, and their setter does not re-run on undo — the
@@ -35,26 +36,51 @@ namespace Lilium.RemoteControl
 
         private readonly UnityEngine.Object _target;
         private readonly UnityEngine.Object _owner;
+        private readonly UnityEngine.Object _serializedOwner;
+
+        /// <summary>
+        /// Whether this scope wraps an editor write at all. Not derivable from the three targets:
+        /// they are also null for a write that reached nothing, and that write still has to redraw.
+        /// </summary>
+        private readonly bool _isEditorWrite;
 #endif
 
         /// <param name="target">The registered live object the request addressed.</param>
         /// <param name="propertyOwner">
         /// The instance that actually holds the member, when the path descends into a nested object.
-        /// Ignored when it is the same as <paramref name="target"/> or is not a Unity object.
+        /// Ignored when it is the same as <paramref name="target"/> or has no Unity object behind it.
         /// </param>
-        public LiveEditorWriteScope(object target, object propertyOwner = null)
+        /// <param name="container">
+        /// The container the request was resolved through, used to find whoever serializes
+        /// <paramref name="target"/>. Needed for members the live object keeps in its own fields:
+        /// those are saved by the scene holding it, not by the object it wraps.
+        /// </param>
+        public LiveEditorWriteScope(object target, object propertyOwner = null, LiveObjectContainer container = null)
         {
 #if UNITY_EDITOR
             _target = null;
             _owner = null;
+            _serializedOwner = null;
+            _isEditorWrite = false;
 
             if (Application.isPlaying) return;
+            _isEditorWrite = true;
 
-            _target = _AsLiveUnityObject(target);
-            _owner = ReferenceEquals(propertyOwner, target) ? null : _AsLiveUnityObject(propertyOwner);
+            _target = LiveEditorSession.ResolveSaveTarget(target);
+            _owner = ReferenceEquals(propertyOwner, target)
+                ? null
+                : LiveEditorSession.ResolveSaveTarget(propertyOwner);
+            _serializedOwner = container?.FindSerializedOwner(target);
 
-            if (_target != null) Undo.RecordObject(_target, kUndoName);
-            if (_owner != null) Undo.RecordObject(_owner, kUndoName);
+            // A proxy and the object it wraps can both resolve to the same target; recording twice
+            // would put two entries on the undo stack for one write.
+            if (ReferenceEquals(_owner, _target)) _owner = null;
+            if (ReferenceEquals(_serializedOwner, _target) || ReferenceEquals(_serializedOwner, _owner))
+                _serializedOwner = null;
+
+            _Record(_target);
+            _Record(_owner);
+            _Record(_serializedOwner);
 #endif
         }
 
@@ -63,14 +89,28 @@ namespace Lilium.RemoteControl
 #if UNITY_EDITOR
             _MarkDirty(_target);
             _MarkDirty(_owner);
+            _MarkDirty(_serializedOwner);
+
+            if (!_isEditorWrite) return;
+
+            // ⚠ 書いただけでは絵は変わらない。エディタは自分が描き直す理由を知らないので、
+            // 頼まないと次にユーザーがシーンへ触るまで古い絵のままになる (「操作しても
+            // 反映されない、シーンをクリックすると反映される」)。再生中は毎フレーム描き
+            // 直されるので、これが要るのはエディタセッションだけ。
+            //
+            // 2 つとも要る: PlayerLoop は値を実体へ流し込む側の処理 ([ExecuteAlways] の
+            // Update など) を 1 度回し、Repaint は回った結果を画面へ出す。
+            EditorApplication.QueuePlayerLoopUpdate();
+            UnityEditorInternal.InternalEditorUtility.RepaintAllViews();
 #endif
         }
 
 #if UNITY_EDITOR
-        private static UnityEngine.Object _AsLiveUnityObject(object obj)
+        private static void _Record(UnityEngine.Object unityObject)
         {
             // The == null comparison is the Unity one on purpose: a destroyed object must not be recorded.
-            return obj is UnityEngine.Object unityObject && unityObject != null ? unityObject : null;
+            if (unityObject == null) return;
+            Undo.RecordObject(unityObject, kUndoName);
         }
 
         private static void _MarkDirty(UnityEngine.Object unityObject)

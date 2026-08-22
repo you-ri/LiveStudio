@@ -114,21 +114,22 @@ namespace Lilium.RemoteControl
         /// <list type="bullet">
         /// <item>members declared <see cref="PersistScope.Project"/> — those are written by the live
         /// scene save, which never runs here, so accepting one means it is gone next launch</item>
-        /// <item>persistable members of a live object that is not a <see cref="UnityEngine.Object"/> —
-        /// a plain C# object has no scene and no asset to be saved in, so the live scene is its only home</item>
+        /// <item>persistable members with no <see cref="UnityEngine.Object"/> anywhere behind them —
+        /// nothing saves those but the live scene, which is not written here</item>
         /// </list>
         /// Everything else stays writable. A member on a component or a ScriptableObject is saved by
         /// the editor itself, and a non-persistable member was never going to outlive the session
         /// anyway — refusing those would take away the scene name, the asset list, and every other
         /// "what is happening right now" value.
         /// <para/>
-        /// ⚠ Main thread only — the null check below is Unity's, which reaches into the native
-        /// object. Every write path already runs there; <see cref="isEditorSession"/> on its own is
-        /// the one part of this class a worker thread may ask.
+        /// ⚠ Main thread only — the null checks reach into the native object through Unity's
+        /// <c>==</c>. Every write path already runs there; <see cref="isEditorSession"/> on its own
+        /// is the one part of this class a worker thread may ask.
         /// </remarks>
+        /// <param name="container">The container the request was resolved through. May be null.</param>
         /// <param name="target">The live object the request addressed.</param>
         /// <param name="property">The resolved member. Its declaration decides where the value lands.</param>
-        public static bool IsWriteRejected(object target, in LiveProperty property)
+        public static bool IsWriteRejected(LiveObjectContainer container, object target, in LiveProperty property)
         {
             if (!isEditorSession) return false;
 
@@ -137,8 +138,49 @@ namespace Lilium.RemoteControl
 
             if (type.persistScope == PersistScope.Project) return true;
 
-            // The Unity == is deliberate: a destroyed object is not somewhere a value can be saved.
-            return !(target is UnityEngine.Object unityObject && unityObject != null);
+            return !HasSaveTarget(container, target, property.obj);
+        }
+
+        /// <summary>
+        /// Whether an editor write on this member reaches a <see cref="UnityEngine.Object"/> that the
+        /// editor's own Save would write out.
+        /// </summary>
+        /// <remarks>
+        /// There are three ways for one to exist, and a member needs only one of them:
+        /// the instance holding the member is itself a Unity object (a component reached through a
+        /// nested path); the live object wraps one (every <see cref="LiveUnityObjectBase"/> proxy —
+        /// the value is forwarded to the object it wraps); or something serializes the live object
+        /// itself, which is what saves members the proxy keeps in its own fields.
+        /// </remarks>
+        public static bool HasSaveTarget(LiveObjectContainer container, object target, object propertyOwner)
+        {
+            if (ResolveSaveTarget(propertyOwner) != null) return true;
+            if (ResolveSaveTarget(target) != null) return true;
+
+            var serializedOwner = container?.FindSerializedOwner(target);
+            return serializedOwner != null;
+        }
+
+        /// <summary>
+        /// The <see cref="UnityEngine.Object"/> an editor write on <paramref name="obj"/> lands in,
+        /// or null when it is not backed by one.
+        /// </summary>
+        /// <remarks>
+        /// ⚠ The <c>!= null</c> comparisons are Unity's on purpose: a destroyed object is not
+        /// somewhere a value can be saved.
+        /// </remarks>
+        public static UnityEngine.Object ResolveSaveTarget(object obj)
+        {
+            if (obj is UnityEngine.Object unityObject) return unityObject != null ? unityObject : null;
+
+            // A proxy is a plain C# object, but the values it exposes belong to the object it wraps.
+            if (obj is LiveUnityObjectBase proxy)
+            {
+                var reference = proxy.reference;
+                return reference != null ? reference : null;
+            }
+
+            return null;
         }
 
         /// <summary>

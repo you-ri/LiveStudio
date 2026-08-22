@@ -525,9 +525,16 @@ namespace Lilium.RemoteControl
             public readonly string propertyPath; // DotBracket 形式 (PropertyPath.Value)
             public readonly string body;         // readBody=false の場合は null
 
-            public PropertyPipelineContext(LiveObjectHandle liveObject, string id,
-                string slashPath, string propertyPath, string body)
+            /// <summary>
+            /// 解決に使ったコンテナ。エディタでの書き込みが「どこに保存されるか」を決めるのに要る
+            /// (公開オブジェクト自身が持つメンバーの保存先は、それを直列化しているコンテナ側)。
+            /// </summary>
+            public readonly LiveObjectContainer container;
+
+            public PropertyPipelineContext(LiveObjectContainer container, LiveObjectHandle liveObject,
+                string id, string slashPath, string propertyPath, string body)
             {
+                this.container = container;
                 this.liveObject = liveObject;
                 this.id = id;
                 this.slashPath = slashPath;
@@ -645,7 +652,7 @@ namespace Lilium.RemoteControl
             }
 
             ctx = new PropertyPipelineContext(
-                liveObject.Value, id, slashPath, propertyPath.Value, body);
+                container, liveObject.Value, id, slashPath, propertyPath.Value, body);
             return true;
         }
 
@@ -757,13 +764,13 @@ namespace Lilium.RemoteControl
 
             var prop = property.Value;
 
-            if (LiveEditorSession.IsWriteRejected(ctx.liveObject.target, in prop))
+            if (LiveEditorSession.IsWriteRejected(ctx.container, ctx.liveObject.target, in prop))
             {
                 return PropertyResult.Error(403, LiveEditorSession.kWriteRejected);
             }
 
             bool result;
-            using (new LiveEditorWriteScope(ctx.liveObject.target, prop.obj))
+            using (new LiveEditorWriteScope(ctx.liveObject.target, prop.obj, ctx.container))
             {
                 result = LivePropertySerializer.FromJson(ctx.body, in prop);
             }
@@ -792,13 +799,13 @@ namespace Lilium.RemoteControl
 
             var prop = property.Value;
 
-            if (LiveEditorSession.IsWriteRejected(ctx.liveObject.target, in prop))
+            if (LiveEditorSession.IsWriteRejected(ctx.container, ctx.liveObject.target, in prop))
             {
                 return PropertyResult.Error(403, LiveEditorSession.kWriteRejected);
             }
 
             bool result;
-            using (new LiveEditorWriteScope(ctx.liveObject.target, prop.obj))
+            using (new LiveEditorWriteScope(ctx.liveObject.target, prop.obj, ctx.container))
             {
                 result = LivePropertySerializer.AddArrayElement(ctx.body, in prop);
             }
@@ -818,13 +825,13 @@ namespace Lilium.RemoteControl
 
             var prop = property.Value;
 
-            if (LiveEditorSession.IsWriteRejected(ctx.liveObject.target, in prop))
+            if (LiveEditorSession.IsWriteRejected(ctx.container, ctx.liveObject.target, in prop))
             {
                 return PropertyResult.Error(403, LiveEditorSession.kWriteRejected);
             }
 
             bool result;
-            using (new LiveEditorWriteScope(ctx.liveObject.target, prop.obj))
+            using (new LiveEditorWriteScope(ctx.liveObject.target, prop.obj, ctx.container))
             {
                 result = LivePropertySerializer.RemoveArrayElement(ctx.body, in prop);
             }
@@ -844,13 +851,13 @@ namespace Lilium.RemoteControl
 
             var prop = property.Value;
 
-            if (LiveEditorSession.IsWriteRejected(ctx.liveObject.target, in prop))
+            if (LiveEditorSession.IsWriteRejected(ctx.container, ctx.liveObject.target, in prop))
             {
                 return PropertyResult.Error(403, LiveEditorSession.kWriteRejected);
             }
 
             bool result;
-            using (new LiveEditorWriteScope(ctx.liveObject.target, prop.obj))
+            using (new LiveEditorWriteScope(ctx.liveObject.target, prop.obj, ctx.container))
             {
                 result = LivePropertySerializer.ReorderArrayElement(ctx.body, in prop);
             }
@@ -870,7 +877,7 @@ namespace Lilium.RemoteControl
 
             var prop = property.Value;
 
-            if (LiveEditorSession.IsWriteRejected(ctx.liveObject.target, in prop))
+            if (LiveEditorSession.IsWriteRejected(ctx.container, ctx.liveObject.target, in prop))
             {
                 return PropertyResult.Error(403, LiveEditorSession.kWriteRejected);
             }
@@ -1453,7 +1460,7 @@ namespace Lilium.RemoteControl
             var args = _BuildInvokeArguments(function, body);
 
             // 関数は何を書き換えるか分からないので、対象ごと控える。
-            using var editorWrite = new LiveEditorWriteScope(liveObject.Value.target, functionTarget);
+            using var editorWrite = new LiveEditorWriteScope(liveObject.Value.target, functionTarget, container);
 
             var invokeResult = function.Invoke(functionTarget, args);
 

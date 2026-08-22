@@ -53,6 +53,7 @@ namespace Lilium.RemoteControl.Tests
         {
             LiveClass.RegisterFromAttributes<SessionGuardComponent>();
             LiveClass.RegisterFromAttributes<SessionGuardPlainObject>();
+            LiveClass.RegisterFromAttributes<LiveGameObject>();
         }
 
         [TearDown]
@@ -81,11 +82,12 @@ namespace Lilium.RemoteControl.Tests
             return plain;
         }
 
-        private static bool _IsRejected(LiveObjectHandle live, string member)
+        private static bool _IsRejected(LiveObjectHandle live, string member,
+            LiveObjectContainer container = null)
         {
             var property = live.FindProperty(member);
             Assert.IsTrue(property.HasValue, $"the test needs '{member}' to resolve");
-            return LiveEditorSession.IsWriteRejected(live.target, property.Value);
+            return LiveEditorSession.IsWriteRejected(container, live.target, property.Value);
         }
 
         [Test]
@@ -128,6 +130,72 @@ namespace Lilium.RemoteControl.Tests
                 // ...but a value that was never going to be saved is unaffected. This is what keeps
                 // "what is open right now" style members writable in the editor.
                 Assert.IsFalse(_IsRejected(live, "volatileValue"));
+            }
+        }
+
+        private LiveGameObject _CreateProxy(bool withReference, out LiveObjectHandle live)
+        {
+            GameObject reference = null;
+            if (withReference)
+            {
+                reference = new GameObject("proxy reference");
+                _created.Add(reference);
+            }
+
+            var proxy = new LiveGameObject(reference);
+            live = new LiveObjectHandle("guard-proxy", LiveClass.Find(typeof(LiveGameObject)), proxy);
+            return proxy;
+        }
+
+        [Test]
+        public void EditorSession_KeepsProxiedValuesWritable()
+        {
+            _CreateProxy(withReference: true, out var live);
+
+            using (new LiveEditorSession.Override(editorSession: true))
+            {
+                // A proxy is a plain C# object, but "active" is forwarded to the GameObject it wraps,
+                // and the editor saves that with the scene. Judging the proxy alone refused every
+                // camera, light and transform the remote can reach in an editor session.
+                Assert.IsFalse(_IsRejected(live, "active"));
+            }
+        }
+
+        [Test]
+        public void EditorSession_KeepsOwnFieldsWritable_WhenSomethingSerializesTheObject()
+        {
+            var proxy = _CreateProxy(withReference: false, out var live);
+
+            var hostGameObject = new GameObject("container host");
+            _created.Add(hostGameObject);
+            var host = hostGameObject.AddComponent<SessionGuardComponent>();
+            var container = new LiveObjectContainer(
+                "guard", new List<ILiveObject> { proxy }, host);
+
+            using (new LiveEditorSession.Override(editorSession: true))
+            {
+                // Nothing is wrapped here, so the value can only be saved by whoever serializes the
+                // proxy itself — the container's host.
+                Assert.IsFalse(_IsRejected(live, "active", container));
+
+                // Same object, but asked without the container: then there is no known home.
+                Assert.IsTrue(_IsRejected(live, "active"));
+            }
+        }
+
+        [Test]
+        public void EditorSession_RefusesRuntimeOnlySources()
+        {
+            var proxy = _CreateProxy(withReference: false, out var live);
+
+            var container = new LiveObjectContainer("guard", new List<ILiveObject>());
+            // Binding wrappers are registered under a plain C# owner precisely because they are
+            // runtime-only: nothing writes them into a scene, so nothing saves what is put on them.
+            container.AddSource(new List<ILiveObject> { proxy }, new object());
+
+            using (new LiveEditorSession.Override(editorSession: true))
+            {
+                Assert.IsTrue(_IsRejected(live, "active", container));
             }
         }
 

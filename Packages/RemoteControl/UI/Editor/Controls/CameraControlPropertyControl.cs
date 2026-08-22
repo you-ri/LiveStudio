@@ -15,7 +15,6 @@ namespace Lilium.RemoteControl.UI.Editor
     /// </summary>
     public class CameraControlPropertyControl : IPropertyControl
     {
-        private const float kPropertyNameWidth = 160f;
 
         /// <summary>
         /// ネストプロパティの配置先。設定されている場合、型切り替え時にここへ再構築する。
@@ -32,9 +31,7 @@ namespace Lilium.RemoteControl.UI.Editor
             // 縦並びコンテナ（ドロップダウン + ネストプロパティ）
             var container = new VisualElement();
             container.name = "camera-control-container";
-            container.style.flexDirection = FlexDirection.Column;
-            container.style.flexGrow = 1;
-            container.style.flexShrink = 1;
+            container.AddToClassList("uid-prop-nested");
 
             // 現在の型名を取得
             var currentTypeName = _GetCurrentTypeName(ctx.currentValue);
@@ -182,18 +179,11 @@ namespace Lilium.RemoteControl.UI.Editor
                 var childPath = ctx.propType.name + "." + childPropType.name;
 
                 var row = new VisualElement();
-                row.style.flexDirection = FlexDirection.Row;
-                row.style.marginBottom = 1;
-                row.style.paddingTop = 1;
-                row.style.paddingBottom = 1;
-                row.style.alignItems = Align.Center;
-                row.style.minHeight = 20;
+                row.AddToClassList("uid-prop-row");
                 row.userData = childPath;
 
                 var nameLabel = new Label(ObjectNames.NicifyVariableName(childPropType.name));
-                nameLabel.style.width = kPropertyNameWidth;
-                nameLabel.style.minWidth = kPropertyNameWidth;
-                nameLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+                nameLabel.AddToClassList("uid-prop-name");
                 nameLabel.name = "prop-name";
                 row.Add(nameLabel);
 
@@ -212,8 +202,7 @@ namespace Lilium.RemoteControl.UI.Editor
                     var refControl = new ReferencePropertyControl();
                     var childControl = refControl.CreateControl(childCtx);
                     childControl.name = "prop-control";
-                    childControl.style.flexGrow = 1;
-                    childControl.style.flexShrink = 1;
+                    childControl.AddToClassList("uid-prop-control");
                     row.Add(childControl);
                 }
                 else
@@ -221,8 +210,7 @@ namespace Lilium.RemoteControl.UI.Editor
                     var propertyControl = PropertyControlFactory.GetControl(childPropType, childProp.HasValue, childPropType.valueType);
                     var childControl = propertyControl.CreateControl(childCtx);
                     childControl.name = "prop-control";
-                    childControl.style.flexGrow = 1;
-                    childControl.style.flexShrink = 1;
+                    childControl.AddToClassList("uid-prop-control");
                     row.Add(childControl);
                 }
 

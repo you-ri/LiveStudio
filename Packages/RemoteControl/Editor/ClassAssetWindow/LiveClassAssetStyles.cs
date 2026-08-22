@@ -1,61 +1,67 @@
 // Copyright (c) You-Ri, 2026
-using UnityEditor;
-using UnityEngine;
+using UnityEngine.UIElements;
 
 namespace Lilium.RemoteControl.Editor
 {
     /// <summary>
-    /// Shared typography for the Live Class Asset windows.
+    /// USS class names the Live Class Asset windows apply, and the entry point that attaches
+    /// their stylesheets. The names live here rather than as literals at each call site so a
+    /// rename stays a single edit across the three windows.
     ///
-    /// One font size throughout — hierarchy comes from weight and color only. Unity's mini
-    /// styles (<c>miniLabel</c> / <c>miniBoldLabel</c>) render at a different size and baseline
-    /// than the rest of an inspector row, which reads as a mismatched font once a few of them
-    /// sit next to normal labels, so they are deliberately not used here.
+    /// Names that resolve to a <see cref="RemoteControlEditorStyles"/> constant are the shared
+    /// vocabulary; the rest are declared in LiveClassAssetWindow.uss and mean nothing outside
+    /// these windows.
     /// </summary>
     internal static class LiveClassAssetStyles
     {
-        private static GUIStyle _paneHeader;
-        private static GUIStyle _paneHeaderDetail;
-        private static GUIStyle _rowTitle;
-        private static GUIStyle _rowMeta;
-        private static GUIStyle _memberTitle;
+        private const string kStyleSheet = "Editor/ClassAssetWindow/LiveClassAssetWindow.uss";
 
-        private static Color kDimText => EditorGUIUtility.isProSkin
-            ? new Color(0.62f, 0.62f, 0.62f)
-            : new Color(0.35f, 0.35f, 0.35f);
+        // --- Shared vocabulary ---
 
-        /// <summary>Title of a pane or popup header bar.</summary>
-        public static GUIStyle paneHeader => _paneHeader ??= new GUIStyle(EditorStyles.boldLabel)
+        public const string kToolbarField = RemoteControlEditorStyles.kToolbarField;
+        public const string kSpacer = RemoteControlEditorStyles.kSpacer;
+        public const string kScroll = RemoteControlEditorStyles.kScroll;
+        public const string kHelp = RemoteControlEditorStyles.kHelp;
+        public const string kIconButton = RemoteControlEditorStyles.kIconButton;
+        public const string kSeparator = RemoteControlEditorStyles.kSeparatorHorizontal;
+        public const string kMember = RemoteControlEditorStyles.kCard;
+
+        // --- Live Class Asset only ---
+
+        public const string kHeader = "lca-header";
+        public const string kHeaderRow = "lca-header-row";
+        public const string kHeaderRowField = "lca-header-row__field";
+        public const string kHeaderRowAction = "lca-header-row__action";
+        public const string kPane = "lca-pane";
+        public const string kPaneDivided = "lca-pane--divided";
+        public const string kPaneHeader = "lca-pane-title";
+        public const string kPaneHeaderDetail = "lca-pane-header-detail";
+        public const string kEmpty = "lca-empty";
+        public const string kDetail = "lca-detail";
+        public const string kRowButton = "lca-row-button";
+        public const string kClassRow = "lca-class-row";
+        public const string kClassRowTitle = "lca-class-row__title";
+        public const string kClassRowTitleUnresolved = "lca-class-row__title--unresolved";
+        public const string kClassRowCount = "lca-class-row__count";
+        public const string kMemberHeader = "lca-member__header";
+        public const string kMemberTitle = "lca-member__title";
+        public const string kMemberSectionDetail = "lca-member__section-detail";
+        public const string kFooter = "lca-footer";
+        public const string kFooterTitle = "lca-footer__title";
+        public const string kBindingRow = "lca-binding-row";
+        public const string kBindingRowField = "lca-binding-row__field";
+        public const string kBindingRowState = "lca-binding-row__state";
+        public const string kPopupRow = "lca-popup-row";
+        public const string kPopupRowToggle = "lca-popup-row__toggle";
+        public const string kPopupRowMeta = "lca-popup-row__meta";
+        public const string kPopupRowTitle = "lca-popup-row__title";
+        public const string kPopupRowTitleAdded = "lca-popup-row__title--added";
+        public const string kPopupRowButton = "lca-popup-row__button";
+
+        /// <summary>Attaches the shared and the window stylesheet to a window root (idempotent).</summary>
+        public static void Apply(VisualElement root)
         {
-            alignment = TextAnchor.MiddleLeft,
-            padding = new RectOffset(2, 2, 0, 0),
-        };
-
-        /// <summary>Secondary text beside a pane title (namespace, unresolved marker).</summary>
-        public static GUIStyle paneHeaderDetail => _paneHeaderDetail ??= new GUIStyle(EditorStyles.label)
-        {
-            alignment = TextAnchor.MiddleLeft,
-            padding = new RectOffset(2, 2, 0, 0),
-            normal = { textColor = kDimText },
-        };
-
-        /// <summary>Main text of a list row.</summary>
-        public static GUIStyle rowTitle => _rowTitle ??= new GUIStyle(EditorStyles.label)
-        {
-            alignment = TextAnchor.MiddleLeft,
-        };
-
-        /// <summary>Trailing, right-aligned annotation of a list row (counts, states).</summary>
-        public static GUIStyle rowMeta => _rowMeta ??= new GUIStyle(EditorStyles.label)
-        {
-            alignment = TextAnchor.MiddleRight,
-            normal = { textColor = kDimText },
-        };
-
-        /// <summary>Header of one exposed member in the detail pane.</summary>
-        public static GUIStyle memberTitle => _memberTitle ??= new GUIStyle(EditorStyles.boldLabel)
-        {
-            alignment = TextAnchor.MiddleLeft,
-        };
+            RemoteControlEditorStyles.Apply(root, kStyleSheet);
+        }
     }
 }

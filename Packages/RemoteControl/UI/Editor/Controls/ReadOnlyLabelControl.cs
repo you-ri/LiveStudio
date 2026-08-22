@@ -10,8 +10,7 @@ namespace Lilium.RemoteControl.UI.Editor
         public VisualElement CreateControl(PropertyControlContext ctx)
         {
             var label = new Label(ctx.currentValue != null ? ctx.currentValue.ToString() : "null");
-            label.style.color = new Color(0.5f, 0.5f, 0.5f);
-            label.style.unityTextAlign = TextAnchor.MiddleLeft;
+            label.AddToClassList("uid-readonly-value");
             return label;
         }
 

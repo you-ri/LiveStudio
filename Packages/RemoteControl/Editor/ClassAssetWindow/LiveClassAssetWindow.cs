@@ -2,7 +2,10 @@
 using System;
 using System.Collections.Generic;
 using UnityEditor;
+using UnityEditor.IMGUI.Controls;
+using UnityEditor.UIElements;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 using Lilium.RemoteControl.LiveScene;
 
@@ -14,16 +17,21 @@ namespace Lilium.RemoteControl.Editor
     /// (<see cref="LiveClassAssetFromSelectedWindow"/>, scoped to the selected GameObject's own
     /// components) adds an empty type definition to the class list on the left; the detail
     /// pane's "+" (<see cref="LiveClassAssetAddMemberWindow"/>, a checkbox list kept open for
-    /// multi-select) fills it with members and methods — then edit the metadata (label, control,
+    /// multi-select) fills it with members and methods - then edit the metadata (label, control,
     /// persistence) of the exposed members in the detail pane on the right.
     ///
     /// Layout: the header holds the class asset and the container, the body is a two-pane class
-    /// list / class detail split, and the footer lists the instance bindings — hidden entirely
+    /// list / class detail split, and the footer lists the instance bindings - hidden entirely
     /// until a container is assigned, since there is nothing to bind into without one.
     ///
     /// Exposure settings are stored in a <see cref="LiveClassAsset"/> asset (shared across
     /// scenes); the scene-object references live in a <see cref="RemoteControlContainer"/> in the
     /// scene, using the standard IExposedPropertyTable mechanism.
+    ///
+    /// The member metadata fields are bound to a <see cref="SerializedObject"/> over the asset, so
+    /// their edits get Unity's undo and dirtying for free; everything that changes the shape of a
+    /// list (add / remove / reorder) goes through the explicit
+    /// <see cref="LiveClassAssetMemberExposure"/> path instead and rebuilds the affected panes.
     /// </summary>
     public class LiveClassAssetWindow : EditorWindow
     {
@@ -44,6 +52,8 @@ namespace Lilium.RemoteControl.Editor
             {
                 window._preset = asset;
                 window._selectedTypeName = null;
+                // Null until CreateGUI has run, which picks the fields up on its own.
+                if (window._presetField != null) window._RefreshAll();
             }
             window.Focus();
         }
@@ -60,47 +70,49 @@ namespace Lilium.RemoteControl.Editor
             return true;
         }
 
-        private const float kHeaderLabelWidth = 58f;
-        private const float kAddButtonWidth = 24f;
-        private const float kRemoveButtonWidth = 24f;
-        private const float kSplitterThickness = 4f;
-        private const float kMinPaneWidth = 160f;
-        private const float kMinFooterHeight = 60f;
+        private const float kClassRowHeight = 20f;
+        private const float kDefaultClassPaneWidth = 240f;
+        private const float kDefaultFooterHeight = 220f;
+        private const float kMinBodyHeight = 140f;
 
-        // The add / remove buttons are icon-sized, so the tooltip carries what they do.
-        // "Toolbar Plus" is Unity's built-in "+" — the same one ReorderableList draws.
-        private static GUIContent _addClassContentCache;
-        private static GUIContent _addMemberContentCache;
-        private static readonly GUIContent kRemoveContent = new GUIContent("✕", "Remove");
+        // A bound PropertyField also raises its change callback once while the binding pushes the
+        // stored value into the field. Treating those as edits would re-register every live type
+        // (and notify every client) each time a class is selected, so container reloads are held
+        // back until the initial bind pass over the freshly built detail pane has run.
+        private const long kBindSettleMs = 50;
 
-        private static GUIContent _AddClassContent => _addClassContentCache ??= _MakeAddIcon("Add a class");
-        private static GUIContent _AddMemberContent => _addMemberContentCache ??= _MakeAddIcon("Add a member");
-
-        // IconContent hands back a shared instance, so copy it before setting the tooltip.
-        private static GUIContent _MakeAddIcon(string tooltip)
-        {
-            return new GUIContent(EditorGUIUtility.IconContent("Toolbar Plus")) { tooltip = tooltip };
-        }
+        private static readonly List<LiveClassAsset.TypeDefinition> kNoDefinitions = new List<LiveClassAsset.TypeDefinition>();
 
         private RemoteControlContainer _container;
         private LiveClassAsset _preset;
 
         // Two-pane body + footer geometry (persisted for the window's lifetime only).
-        [SerializeField] private float _classPaneWidth = 240f;
-        [SerializeField] private float _footerHeight = 220f;
+        [SerializeField] private float _classPaneWidth = kDefaultClassPaneWidth;
+        [SerializeField] private float _footerHeight = kDefaultFooterHeight;
         [SerializeField] private string _selectedTypeName;
         [SerializeField] private bool _bindingsFoldout = true;
 
-        private Vector2 _classListScroll;
-        private Vector2 _detailScroll;
-        private Vector2 _footerScroll;
-
-        // Preset mutations are deferred to the next Layout event so no draw pass ever runs on a
-        // half-modified list (which is what GUIUtility.ExitGUI used to paper over).
-        private Action _pendingAction;
-
         // Searchable class dropdown behind the class list's "+".
-        private readonly UnityEditor.IMGUI.Controls.AdvancedDropdownState _classDropdownState = new UnityEditor.IMGUI.Controls.AdvancedDropdownState();
+        private readonly AdvancedDropdownState _classDropdownState = new AdvancedDropdownState();
+
+        private ObjectField _presetField;
+        private ObjectField _containerField;
+        private Button _createContainerButton;
+        private VisualElement _bodyHost;
+
+        private ListView _classList;
+        private HelpBox _classHelp;
+        private Label _classEmpty;
+        private ToolbarButton _addClassButton;
+        private ToolbarButton _fromSelectedButton;
+
+        private VisualElement _detailTitle;
+        private ToolbarButton _addMemberButton;
+        private ToolbarButton _addBindingButton;
+        private VisualElement _detailContent;
+        private bool _settlingBind;
+
+        private Foldout _bindingsFoldoutElement;
 
         private void OnEnable()
         {
@@ -112,40 +124,112 @@ namespace Lilium.RemoteControl.Editor
             Undo.undoRedoPerformed -= _OnUndoRedo;
         }
 
+        // The container may have been created, deleted or replaced while another window had
+        // focus; pick that up on the way back in rather than polling for it.
+        private void OnFocus()
+        {
+            if (_presetField == null) return;
+            var previousContainer = _container;
+            var previousPreset = _preset;
+            _AcquireContainerAndPreset();
+            if (!ReferenceEquals(previousContainer, _container) || !ReferenceEquals(previousPreset, _preset))
+            {
+                _RefreshAll();
+            }
+        }
+
         // An undo restores the serialized state only; the container's runtime lookup table has to
         // be rebuilt from it, or the bindings keep resolving to the pre-undo objects.
         private void _OnUndoRedo()
         {
             if (_container != null) _container.Reload();
-            Repaint();
+            if (_presetField != null) _RefreshAll();
         }
 
-        private void OnGUI()
+        private void CreateGUI()
         {
-            if (_pendingAction != null && Event.current.type == EventType.Layout)
+            var root = rootVisualElement;
+            LiveClassAssetStyles.Apply(root);
+            root.style.flexDirection = FlexDirection.Column;
+
+            _BuildHeader(root);
+
+            _bodyHost = new VisualElement();
+            _bodyHost.style.flexGrow = 1;
+            root.Add(_bodyHost);
+
+            _RefreshAll();
+        }
+
+        // --- Header: preset asset and container ---
+
+        private void _BuildHeader(VisualElement root)
+        {
+            var header = new VisualElement();
+            header.AddToClassList(LiveClassAssetStyles.kHeader);
+
+            _presetField = new ObjectField("Preset") { objectType = typeof(LiveClassAsset), allowSceneObjects = false };
+            _presetField.RegisterValueChangedCallback(evt =>
             {
-                var action = _pendingAction;
-                _pendingAction = null;
-                action();
-            }
+                _preset = evt.newValue as LiveClassAsset;
+                _selectedTypeName = null;
+                _RefreshAll();
+            });
+            header.Add(_MakeHeaderRow(_presetField, new Button(_CreatePresetAsset) { text = "New" }));
 
-            _AcquireContainerAndPreset();
+            _containerField = new ObjectField("Container") { objectType = typeof(RemoteControlContainer), allowSceneObjects = true };
+            _containerField.RegisterValueChangedCallback(evt =>
+            {
+                _container = evt.newValue as RemoteControlContainer;
+                _RefreshAll();
+            });
+            _createContainerButton = new Button(_CreateContainer) { text = "Create" };
+            header.Add(_MakeHeaderRow(_containerField, _createContainerButton));
 
-            _DrawHeader();
-            _DrawBody();
-            // No container means nothing to bind into, so the instance-bindings footer has
-            // nothing to show; hide the whole pane rather than leave an empty box.
-            if (_container != null) _DrawFooter();
+            root.Add(header);
         }
 
-        // Queues a preset/container mutation for the next Layout event.
-        private void _Defer(Action action)
+        /// <summary>
+        /// One header row: a labelled field that grows, then a fixed-width action column. The
+        /// column keeps its width when its button is hidden, so both fields end at the same x
+        /// whether or not a container still has to be created.
+        /// </summary>
+        private static VisualElement _MakeHeaderRow(ObjectField field, Button action)
         {
-            _pendingAction = action;
-            Repaint();
+            var row = new VisualElement();
+            row.AddToClassList(LiveClassAssetStyles.kHeaderRow);
+
+            field.AddToClassList(LiveClassAssetStyles.kHeaderRowField);
+            row.Add(field);
+
+            var actionColumn = new VisualElement();
+            actionColumn.AddToClassList(LiveClassAssetStyles.kHeaderRowAction);
+            actionColumn.Add(action);
+            row.Add(actionColumn);
+
+            return row;
         }
 
-        // --- Header: preset asset ---
+        private void _CreatePresetAsset()
+        {
+            var path = EditorUtility.SaveFilePanelInProject("Create Live Class Asset", "LiveClassAsset", "asset", "");
+            if (string.IsNullOrEmpty(path)) return;
+
+            var created = CreateInstance<LiveClassAsset>();
+            AssetDatabase.CreateAsset(created, path);
+            AssetDatabase.SaveAssets();
+            _preset = created;
+            _selectedTypeName = null;
+            _RefreshAll();
+        }
+
+        private void _CreateContainer()
+        {
+            var go = new GameObject("Remote Control Container");
+            Undo.RegisterCreatedObjectUndo(go, "Create Remote Control Container");
+            _container = Undo.AddComponent<RemoteControlContainer>(go);
+            _RefreshAll();
+        }
 
         private void _AcquireContainerAndPreset()
         {
@@ -160,224 +244,481 @@ namespace Lilium.RemoteControl.Editor
             }
         }
 
-        private void _DrawHeader()
-        {
-            EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
-            GUILayout.Label("Preset", LiveClassAssetStyles.rowTitle, GUILayout.Width(kHeaderLabelWidth));
-            _preset = (LiveClassAsset)EditorGUILayout.ObjectField(
-                _preset, typeof(LiveClassAsset), allowSceneObjects: false, GUILayout.Height(EditorGUIUtility.singleLineHeight));
-            if (GUILayout.Button("New", EditorStyles.toolbarButton, GUILayout.Width(40)))
-            {
-                var path = EditorUtility.SaveFilePanelInProject("Create Live Class Asset", "LiveClassAsset", "asset", "");
-                if (!string.IsNullOrEmpty(path))
-                {
-                    var created = ScriptableObject.CreateInstance<LiveClassAsset>();
-                    AssetDatabase.CreateAsset(created, path);
-                    AssetDatabase.SaveAssets();
-                    _preset = created;
-                    _selectedTypeName = null;
-                }
-            }
-            EditorGUILayout.EndHorizontal();
+        // --- Body: (class list | class detail) over the instance-bindings footer ---
 
-            EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
-            GUILayout.Label("Container", LiveClassAssetStyles.rowTitle, GUILayout.Width(kHeaderLabelWidth));
-            _container = (RemoteControlContainer)EditorGUILayout.ObjectField(
-                _container, typeof(RemoteControlContainer), allowSceneObjects: true, GUILayout.Height(EditorGUIUtility.singleLineHeight));
-            if (_container == null && GUILayout.Button("Create", EditorStyles.toolbarButton, GUILayout.Width(48)))
-            {
-                var go = new GameObject("Remote Control Container");
-                Undo.RegisterCreatedObjectUndo(go, "Create Remote Control Container");
-                _container = Undo.AddComponent<RemoteControlContainer>(go);
-            }
-            EditorGUILayout.EndHorizontal();
+        /// <summary>
+        /// Refreshes the header state and rebuilds the whole body. The panes are recreated rather
+        /// than patched because the footer's presence changes the split hierarchy itself, and a
+        /// <see cref="TwoPaneSplitView"/> does not survive having its children swapped out.
+        /// </summary>
+        private void _RefreshAll()
+        {
+            _AcquireContainerAndPreset();
+
+            _presetField.SetValueWithoutNotify(_preset);
+            _containerField.SetValueWithoutNotify(_container);
+            _createContainerButton.style.display = _container == null ? DisplayStyle.Flex : DisplayStyle.None;
+
+            _RebuildBody();
         }
 
-        // --- Body: class list | class detail ---
-
-        private void _DrawBody()
+        private void _RebuildBody()
         {
-            EditorGUILayout.BeginHorizontal(GUILayout.ExpandHeight(true));
-            _DrawClassList();
-            _classPaneWidth = _Splitter(_classPaneWidth, kMinPaneWidth,
-                Mathf.Max(kMinPaneWidth, position.width - kMinPaneWidth), horizontal: true, invert: false);
-            _DrawClassDetail();
-            EditorGUILayout.EndHorizontal();
-        }
+            _detailContent?.Unbind();
+            _bindingsFoldoutElement = null;
+            _bodyHost.Clear();
 
-        private void _DrawClassList()
-        {
-            EditorGUILayout.BeginVertical(GUILayout.Width(_classPaneWidth), GUILayout.ExpandHeight(true));
+            var classPane = _BuildClassPane();
+            var detailPane = _BuildDetailPane();
 
-            EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
-            GUILayout.Label("Classes", LiveClassAssetStyles.paneHeader);
-            GUILayout.FlexibleSpace();
-            using (new EditorGUI.DisabledScope(_preset == null))
+            var bodySplit = new TwoPaneSplitView(0, Mathf.Max(1f, _classPaneWidth), TwoPaneSplitViewOrientation.Horizontal);
+            bodySplit.Add(classPane);
+            bodySplit.Add(detailPane);
+            bodySplit.style.minHeight = kMinBodyHeight;
+            classPane.RegisterCallback<GeometryChangedEvent>(evt =>
             {
-                // Class-first flow: pick a class through the searchable dropdown to add its
-                // (initially empty) type definition, then fill it with the detail pane's "+".
-                var addClassRect = GUILayoutUtility.GetRect(_AddClassContent, EditorStyles.toolbarButton, GUILayout.Width(kAddButtonWidth));
-                if (GUI.Button(addClassRect, _AddClassContent, EditorStyles.toolbarButton))
-                {
-                    new LiveClassAssetTypeDropdown(_classDropdownState, new List<Type>(), _EnumerateCandidateTypes,
-                        selected => _Defer(() => _AddClass(selected))).Show(addClassRect);
-                }
+                if (evt.newRect.width > 0f) _classPaneWidth = evt.newRect.width;
+            });
 
-                // Same as "+", but the candidates are the selected GameObject's actual
-                // components instead of a global type search.
-                var fromSelectedRect = GUILayoutUtility.GetRect(new GUIContent("From Selected"), EditorStyles.toolbarButton, GUILayout.Width(90));
-                if (GUI.Button(fromSelectedRect, "From Selected", EditorStyles.toolbarButton))
-                {
-                    LiveClassAssetFromSelectedWindow.Open(() => _preset,
-                        typeName => { _selectedTypeName = typeName; _ApplyChanges(); },
-                        GUIUtility.GUIToScreenRect(fromSelectedRect));
-                }
-            }
-            EditorGUILayout.EndHorizontal();
-
-            _classListScroll = EditorGUILayout.BeginScrollView(_classListScroll, GUILayout.ExpandHeight(true));
-            if (_preset == null)
+            // No container means nothing to bind into, so the instance-bindings footer has
+            // nothing to show; leave the whole pane out rather than show an empty box.
+            if (_container == null)
             {
-                EditorGUILayout.HelpBox("Assign or create a Live Class Asset above. It stores which members are exposed, shared across scenes.", MessageType.Info);
-            }
-            else if (_preset.typeDefinitions.Count == 0)
-            {
-                EditorGUILayout.HelpBox("Nothing exposed yet. Add a class with \"+\" or \"From Selected\", then expose its members with \"+\" in the detail pane.", MessageType.None);
+                _bodyHost.Add(bodySplit);
             }
             else
             {
-                for (int i = 0; i < _preset.typeDefinitions.Count; i++)
+                var footer = _BuildFooter();
+                var footerSplit = new TwoPaneSplitView(1, Mathf.Max(1f, _footerHeight), TwoPaneSplitViewOrientation.Vertical);
+                footerSplit.Add(bodySplit);
+                footerSplit.Add(footer);
+                footer.RegisterCallback<GeometryChangedEvent>(evt =>
                 {
-                    _DrawClassRow(_preset.typeDefinitions[i]);
-                }
+                    if (evt.newRect.height > 0f) _footerHeight = evt.newRect.height;
+                });
+                _bodyHost.Add(footerSplit);
             }
-            EditorGUILayout.EndScrollView();
 
-            EditorGUILayout.EndVertical();
+            _RefreshStructure();
         }
 
-        private void _DrawClassRow(LiveClassAsset.TypeDefinition definition)
+        private VisualElement _BuildClassPane()
         {
-            if (definition == null) return;
+            var pane = new VisualElement();
+            pane.AddToClassList(LiveClassAssetStyles.kPane);
+            pane.AddToClassList(LiveClassAssetStyles.kPaneDivided);
+
+            var bar = new Toolbar();
+            bar.Add(_MakePaneHeader("Classes"));
+            bar.Add(_MakeSpacer());
+
+            // Class-first flow: pick a class through the searchable dropdown to add its
+            // (initially empty) type definition, then fill it with the detail pane's "+".
+            _addClassButton = _MakeAddButton("Add a class", () =>
+            {
+                new LiveClassAssetTypeDropdown(_classDropdownState, new List<Type>(), _EnumerateCandidateTypes, _AddClass)
+                    .Show(_addClassButton.worldBound);
+            });
+            bar.Add(_addClassButton);
+
+            // Same as "+", but the candidates are the selected GameObject's actual components
+            // instead of a global type search.
+            _fromSelectedButton = new ToolbarButton(() =>
+            {
+                LiveClassAssetFromSelectedWindow.Open(() => _preset,
+                    typeName => { _selectedTypeName = typeName; _OnStructureChanged(); },
+                    GUIUtility.GUIToScreenRect(_fromSelectedButton.worldBound));
+            })
+            { text = "From Selected" };
+            bar.Add(_fromSelectedButton);
+            pane.Add(bar);
+
+            _classList = new ListView
+            {
+                fixedItemHeight = kClassRowHeight,
+                selectionType = SelectionType.Single,
+                showBorder = false,
+                makeItem = _MakeClassRow,
+                bindItem = _BindClassRow,
+            };
+            _classList.AddToClassList(LiveClassAssetStyles.kScroll);
+            _classList.selectionChanged += _OnClassSelectionChanged;
+            pane.Add(_classList);
+
+            _classHelp = new HelpBox(string.Empty, HelpBoxMessageType.Info);
+            _classHelp.AddToClassList(LiveClassAssetStyles.kHelp);
+            pane.Add(_classHelp);
+
+            _classEmpty = _MakeEmpty(string.Empty);
+            pane.Add(_classEmpty);
+
+            return pane;
+        }
+
+        private VisualElement _BuildDetailPane()
+        {
+            var pane = new VisualElement();
+            pane.AddToClassList(LiveClassAssetStyles.kPane);
+
+            var bar = new Toolbar();
+            _detailTitle = new VisualElement();
+            _detailTitle.style.flexDirection = FlexDirection.Row;
+            _detailTitle.style.alignItems = Align.Center;
+            _detailTitle.style.flexShrink = 1;
+            _detailTitle.style.overflow = Overflow.Hidden;
+            bar.Add(_detailTitle);
+            bar.Add(_MakeSpacer());
+
+            // Checkbox list of this class's members/methods, kept open for multi-select.
+            _addMemberButton = _MakeAddButton("Add a member", () =>
+            {
+                var type = _FindSelectedDefinition()?.ResolveType();
+                if (type == null) return;
+                LiveClassAssetAddMemberWindow.Open(() => _preset, () => _container, type, _OnStructureChanged,
+                    GUIUtility.GUIToScreenRect(_addMemberButton.worldBound));
+            });
+            bar.Add(_addMemberButton);
+
+            // Creates an unbound instance entry; the object itself is assigned in Instance
+            // Bindings in the footer (or another scene's object through its container). Needs a
+            // container to bind into, so it stays hidden without one.
+            _addBindingButton = new ToolbarButton(() => _AddBinding(_FindSelectedDefinition())) { text = "Add Binding" };
+            bar.Add(_addBindingButton);
+            pane.Add(bar);
+
+            var scroll = new ScrollView();
+            scroll.AddToClassList(LiveClassAssetStyles.kScroll);
+            // The padding goes on the scroll view, not on its content container: padding there
+            // adds to the content width and makes the pane scroll sideways over its own inset.
+            scroll.AddToClassList(LiveClassAssetStyles.kDetail);
+            _detailContent = scroll.contentContainer;
+            pane.Add(scroll);
+
+            return pane;
+        }
+
+        private VisualElement _BuildFooter()
+        {
+            var footer = new VisualElement();
+            footer.AddToClassList(LiveClassAssetStyles.kFooter);
+
+            var scroll = new ScrollView();
+            scroll.AddToClassList(LiveClassAssetStyles.kScroll);
+
+            _bindingsFoldoutElement = new Foldout { value = _bindingsFoldout };
+            _bindingsFoldoutElement.RegisterValueChangedCallback(evt =>
+            {
+                // Toggles inside the foldout raise bool change events of their own that bubble
+                // through here; only the foldout's own event carries the fold state.
+                if (evt.target != _bindingsFoldoutElement) return;
+                _bindingsFoldout = evt.newValue;
+            });
+            scroll.Add(_bindingsFoldoutElement);
+            footer.Add(scroll);
+
+            return footer;
+        }
+
+        // --- Refresh ---
+
+        private void _RefreshStructure()
+        {
+            _RefreshClassList();
+            _RefreshDetail();
+            _RefreshBindings();
+        }
+
+        private void _RefreshClassList()
+        {
+            bool hasPreset = _preset != null;
+            _addClassButton.SetEnabled(hasPreset);
+            _fromSelectedButton.SetEnabled(hasPreset);
+
+            _classList.itemsSource = hasPreset ? _preset.typeDefinitions : kNoDefinitions;
+            _classList.Rebuild();
+
+            int selected = _FindSelectedDefinitionIndex();
+            _classList.SetSelectionWithoutNotify(selected >= 0 ? new[] { selected } : Array.Empty<int>());
+
+            bool hasClasses = hasPreset && _preset.typeDefinitions.Count > 0;
+            _classList.style.display = hasClasses ? DisplayStyle.Flex : DisplayStyle.None;
+
+            // A missing prerequisite is advice and gets an icon; a list that is merely still
+            // empty is not a problem, so it reads as the pane's dimmed empty state instead.
+            _classHelp.style.display = hasPreset ? DisplayStyle.None : DisplayStyle.Flex;
+            _classEmpty.style.display = hasPreset && !hasClasses ? DisplayStyle.Flex : DisplayStyle.None;
+            if (!hasPreset)
+            {
+                _classHelp.text = "Assign or create a Live Class Asset above. It stores which members are exposed, shared across scenes.";
+            }
+            else if (!hasClasses)
+            {
+                _classEmpty.text = "Nothing exposed yet. Add a class with \"+\" or \"From Selected\", then expose its members with \"+\" in the detail pane.";
+            }
+        }
+
+        private void _RefreshBindings()
+        {
+            if (_bindingsFoldoutElement == null) return;
+
+            _bindingsFoldoutElement.Clear();
+            int count = _preset != null ? _preset.bindings.Count : 0;
+            _bindingsFoldoutElement.text = $"Instance Bindings ({count})";
+            // The foldout builds its text label lazily, so the title style can only be applied
+            // once a text has been assigned.
+            _bindingsFoldoutElement.Q<Label>(className: Foldout.textUssClassName)
+                ?.EnableInClassList(LiveClassAssetStyles.kFooterTitle, true);
+
+            if (_preset == null)
+            {
+                _bindingsFoldoutElement.Add(_MakeEmpty("Assign a preset to bind instances."));
+                return;
+            }
+            if (count == 0)
+            {
+                _bindingsFoldoutElement.Add(_MakeEmpty("No instance bound. Use \"Add Binding\" on a class."));
+                return;
+            }
+            foreach (var entry in _preset.bindings)
+            {
+                if (entry == null) continue;
+                _bindingsFoldoutElement.Add(_MakeBindingRow(entry));
+            }
+        }
+
+        // --- Class list rows ---
+
+        private VisualElement _MakeClassRow()
+        {
+            var row = new VisualElement();
+            row.AddToClassList(LiveClassAssetStyles.kClassRow);
+
+            var title = new Label();
+            title.AddToClassList(LiveClassAssetStyles.kClassRowTitle);
+            row.Add(title);
+
+            var count = new Label();
+            count.AddToClassList(LiveClassAssetStyles.kClassRowCount);
+            row.Add(count);
+
+            row.Add(_MakeTextButton("✕", "Remove", () =>
+            {
+                if (row.userData is LiveClassAsset.TypeDefinition definition) _RemoveTypeDefinition(definition);
+            }));
+            return row;
+        }
+
+        private void _BindClassRow(VisualElement row, int index)
+        {
+            var source = _classList.itemsSource as List<LiveClassAsset.TypeDefinition>;
+            var definition = source != null && index >= 0 && index < source.Count ? source[index] : null;
+            row.userData = definition;
+
+            var title = (Label)row[0];
+            var count = (Label)row[1];
+            if (definition == null)
+            {
+                title.text = string.Empty;
+                count.text = string.Empty;
+                return;
+            }
+
             var type = definition.ResolveType();
-            string title = type != null ? type.Name : $"(unresolved: {definition.typeName})";
-            bool selected = string.Equals(_selectedTypeName, definition.typeName, StringComparison.Ordinal);
-
-            var rowRect = GUILayoutUtility.GetRect(GUIContent.none, EditorStyles.label,
-                GUILayout.ExpandWidth(true), GUILayout.Height(EditorGUIUtility.singleLineHeight + 2f));
-            if (Event.current.type == EventType.Repaint && selected)
-            {
-                EditorGUI.DrawRect(rowRect, GUI.skin.settings.selectionColor);
-            }
-
-            int count = definition.members.Count;
-            var countContent = new GUIContent(count == 1 ? "1 member" : $"{count} members");
-            float countWidth = LiveClassAssetStyles.rowMeta.CalcSize(countContent).x;
-            var removeRect = new Rect(rowRect.xMax - kRemoveButtonWidth - 2f, rowRect.y + 1f, kRemoveButtonWidth, rowRect.height - 2f);
-            var countRect = new Rect(removeRect.x - countWidth - 6f, rowRect.y, countWidth, rowRect.height);
-            var labelRect = new Rect(rowRect.x + 4f, rowRect.y, Mathf.Max(0f, countRect.x - rowRect.x - 8f), rowRect.height);
-            GUI.Label(labelRect, new GUIContent(title, type?.FullName),
-                type != null ? LiveClassAssetStyles.rowTitle : LiveClassAssetStyles.rowMeta);
-            GUI.Label(countRect, countContent, LiveClassAssetStyles.rowMeta);
-
-            // Drawn before the row's own click handling so hitting ✕ never also selects the row.
-            if (GUI.Button(removeRect, kRemoveContent))
-            {
-                _Defer(() => _RemoveTypeDefinition(definition));
-            }
-
-            if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && rowRect.Contains(Event.current.mousePosition))
-            {
-                _selectedTypeName = definition.typeName;
-                GUI.FocusControl(null);
-                Event.current.Use();
-                Repaint();
-            }
+            title.text = type != null ? type.Name : $"(unresolved: {definition.typeName})";
+            title.tooltip = type != null ? type.FullName : definition.typeName;
+            title.EnableInClassList(LiveClassAssetStyles.kClassRowTitleUnresolved, type == null);
+            count.text = definition.members.Count == 1 ? "1 member" : $"{definition.members.Count} members";
         }
 
-        private void _DrawClassDetail()
+        private void _OnClassSelectionChanged(IEnumerable<object> selection)
         {
-            EditorGUILayout.BeginVertical(GUILayout.ExpandHeight(true));
+            LiveClassAsset.TypeDefinition picked = null;
+            foreach (var item in selection)
+            {
+                picked = item as LiveClassAsset.TypeDefinition;
+                break;
+            }
+            _selectedTypeName = picked?.typeName;
+            _RefreshDetail();
+        }
+
+        // --- Class detail ---
+
+        private void _RefreshDetail()
+        {
+            _detailContent.Unbind();
+            _detailContent.Clear();
 
             int index = _FindSelectedDefinitionIndex();
             var definition = index >= 0 ? _preset.typeDefinitions[index] : null;
             var type = definition?.ResolveType();
 
-            EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
-            _DrawDetailTitle(definition, type);
-            GUILayout.FlexibleSpace();
-            if (definition != null)
-            {
-                // Checkbox list of this class's members/methods, kept open for multi-select.
-                var addMemberRect = GUILayoutUtility.GetRect(_AddMemberContent, EditorStyles.toolbarButton, GUILayout.Width(kAddButtonWidth));
-                using (new EditorGUI.DisabledScope(type == null))
-                {
-                    if (GUI.Button(addMemberRect, _AddMemberContent, EditorStyles.toolbarButton))
-                    {
-                        LiveClassAssetAddMemberWindow.Open(() => _preset, () => _container, type, _ApplyChanges,
-                            GUIUtility.GUIToScreenRect(addMemberRect));
-                    }
-                }
-                // Create an unbound instance entry, then assign the object in Instance Bindings
-                // in the footer (or bind another scene's object through its container). Needs a
-                // container to bind into, so it's hidden without one.
-                if (_container != null && GUILayout.Button("Add Binding", EditorStyles.toolbarButton, GUILayout.Width(78)))
-                {
-                    _Defer(() => _AddBinding(definition));
-                }
-            }
-            EditorGUILayout.EndHorizontal();
+            _RefreshDetailTitle(definition, type);
+            _addMemberButton.style.display = definition != null ? DisplayStyle.Flex : DisplayStyle.None;
+            _addMemberButton.SetEnabled(type != null);
+            _addBindingButton.style.display = definition != null && _container != null ? DisplayStyle.Flex : DisplayStyle.None;
 
-            _detailScroll = EditorGUILayout.BeginScrollView(_detailScroll, GUILayout.ExpandHeight(true));
             if (definition == null)
             {
-                EditorGUILayout.HelpBox("Select a class on the left to edit its exposed members.", MessageType.None);
+                _detailContent.Add(_MakeEmpty("Select a class on the left to edit its exposed members."));
+                return;
+            }
+
+            var serialized = new SerializedObject(_preset);
+            var definitionProperty = serialized.FindProperty("typeDefinitions").GetArrayElementAtIndex(index);
+
+            // Category and icon describe the type itself rather than any member, so they sit
+            // above the member list. Both are optional: an empty category falls back to
+            // "Binding" (the value assets registered before these fields existed were given),
+            // an empty icon to the type's default.
+            _detailContent.Add(_MakeBoundField(definitionProperty.FindPropertyRelative("category"), null));
+            _detailContent.Add(_MakeBoundField(definitionProperty.FindPropertyRelative("icon"), null));
+            _detailContent.Add(_MakeSeparator());
+
+            var members = definition.members;
+            if (members.Count == 0)
+            {
+                _detailContent.Add(_MakeEmpty("No member exposed on this class yet. Use \"+\" above."));
             }
             else
             {
-                bool changed = _DrawClassMetadata(definition);
-
-                if (definition.members.Count == 0)
+                var membersProperty = definitionProperty.FindPropertyRelative("members");
+                for (int i = 0; i < members.Count; i++)
                 {
-                    EditorGUILayout.HelpBox("No member exposed on this class yet. Use \"+\" above.", MessageType.None);
+                    _detailContent.Add(_MakeMemberCard(members, i, membersProperty.GetArrayElementAtIndex(i)));
                 }
-                else
-                {
-                    var members = definition.members;
-                    for (int i = 0; i < members.Count; i++)
-                    {
-                        changed |= _DrawMember(index, members, i);
-                    }
-                }
-                if (changed) _ApplyChanges();
             }
-            EditorGUILayout.EndScrollView();
 
-            EditorGUILayout.EndVertical();
+            _settlingBind = true;
+            _detailContent.Bind(serialized);
+            _detailContent.schedule.Execute(() => _settlingBind = false).ExecuteLater(kBindSettleMs);
         }
 
         // Type name in bold with the namespace trailing in dimmed text, so the part that
         // identifies the class stays readable when the pane is narrow.
-        private static void _DrawDetailTitle(LiveClassAsset.TypeDefinition definition, Type type)
+        private void _RefreshDetailTitle(LiveClassAsset.TypeDefinition definition, Type type)
         {
+            _detailTitle.Clear();
             if (definition == null)
             {
-                GUILayout.Label("Class Detail", LiveClassAssetStyles.paneHeader);
+                _detailTitle.Add(_MakePaneHeader("Class Detail"));
                 return;
             }
             if (type == null)
             {
-                GUILayout.Label(new GUIContent("(unresolved)", definition.typeName), LiveClassAssetStyles.paneHeaderDetail);
+                var unresolved = new Label("(unresolved)") { tooltip = definition.typeName };
+                unresolved.AddToClassList(LiveClassAssetStyles.kPaneHeaderDetail);
+                _detailTitle.Add(unresolved);
                 return;
             }
 
-            var nameContent = new GUIContent(type.Name, type.AssemblyQualifiedName);
-            GUILayout.Label(nameContent, LiveClassAssetStyles.paneHeader,
-                GUILayout.Width(LiveClassAssetStyles.paneHeader.CalcSize(nameContent).x));
+            var name = _MakePaneHeader(type.Name);
+            name.tooltip = type.AssemblyQualifiedName;
+            _detailTitle.Add(name);
             if (!string.IsNullOrEmpty(type.Namespace))
             {
-                GUILayout.Label(type.Namespace, LiveClassAssetStyles.paneHeaderDetail);
+                var ns = new Label(type.Namespace);
+                ns.AddToClassList(LiveClassAssetStyles.kPaneHeaderDetail);
+                _detailTitle.Add(ns);
             }
+        }
+
+        private VisualElement _MakeMemberCard(List<LiveClassAssetMember> members, int index, SerializedProperty memberProperty)
+        {
+            var member = members[index];
+
+            var card = new VisualElement();
+            card.AddToClassList(LiveClassAssetStyles.kMember);
+
+            // The label is derived from the member name at expose time and needs no editing;
+            // show it as the row title with the wire name alongside.
+            string rowTitle = string.IsNullOrEmpty(member.label) ? member.path : $"{member.label}  ({member.path})";
+            if (member.isFunction) rowTitle += " ()";
+
+            var header = new VisualElement();
+            header.AddToClassList(LiveClassAssetStyles.kMemberHeader);
+            var title = new Label(rowTitle) { tooltip = member.path };
+            title.AddToClassList(LiveClassAssetStyles.kMemberTitle);
+            header.Add(title);
+
+            var moveUp = _MakeTextButton("▲", "Move up", () => _MoveMember(members, index, -1));
+            moveUp.SetEnabled(index > 0);
+            header.Add(moveUp);
+            var moveDown = _MakeTextButton("▼", "Move down", () => _MoveMember(members, index, 1));
+            moveDown.SetEnabled(index < members.Count - 1);
+            header.Add(moveDown);
+            header.Add(_MakeTextButton("✕", "Unexpose", () => _RemoveMember(members, member)));
+            card.Add(header);
+
+            var body = new VisualElement();
+            if (member.isFunction)
+            {
+                body.Add(_MakeBoundField(memberProperty.FindPropertyRelative("icon"), null));
+            }
+            else
+            {
+                body.Add(_MakeBoundField(memberProperty.FindPropertyRelative("persistable"), null));
+                body.Add(_MakeBoundField(memberProperty.FindPropertyRelative("readOnly"), null));
+            }
+
+            if (!member.isFunction)
+            {
+                // The polymorphic controller goes through a PropertyField so the
+                // [SerializeReference, Select] drawer provides the type dropdown and the
+                // per-control fields.
+                body.Add(_MakeBoundField(memberProperty.FindPropertyRelative("control"), "Control"));
+            }
+
+            // Help text is documentation rather than a setting, so it trails the fields that
+            // shape the member itself.
+            body.Add(_MakeBoundField(memberProperty.FindPropertyRelative("help"), null));
+
+            // The section starts at this member and runs until the next one that declares a
+            // title, so an empty title is the normal state - not unset metadata. It describes
+            // where the member lands in the remote UI rather than the member, which is why it
+            // sits last.
+            var sectionProperty = memberProperty.FindPropertyRelative("section");
+            var sectionTitleProperty = sectionProperty.FindPropertyRelative("title");
+            body.Add(_MakeBoundField(sectionTitleProperty, "Section Title"));
+
+            var sectionDetail = new VisualElement();
+            sectionDetail.AddToClassList(LiveClassAssetStyles.kMemberSectionDetail);
+            sectionDetail.Add(_MakeBoundField(sectionProperty.FindPropertyRelative("subtitle"), "Subtitle"));
+            sectionDetail.Add(_MakeBoundField(sectionProperty.FindPropertyRelative("icon"), "Icon"));
+            sectionDetail.style.display = _SectionDetailDisplay(sectionTitleProperty);
+            card.TrackPropertyValue(sectionTitleProperty,
+                property => sectionDetail.style.display = _SectionDetailDisplay(property));
+            body.Add(sectionDetail);
+
+            card.Add(body);
+
+            return card;
+        }
+
+        private static DisplayStyle _SectionDetailDisplay(SerializedProperty sectionTitleProperty)
+        {
+            return string.IsNullOrEmpty(sectionTitleProperty.stringValue) ? DisplayStyle.None : DisplayStyle.Flex;
+        }
+
+        private PropertyField _MakeBoundField(SerializedProperty property, string label)
+        {
+            var field = label == null ? new PropertyField(property) : new PropertyField(property, label);
+            field.RegisterValueChangeCallback(_ => _OnBoundValueChanged());
+            return field;
+        }
+
+        // Bound fields apply and dirty the asset themselves; only the container's live
+        // registration has to be told that the metadata behind it moved.
+        private void _OnBoundValueChanged()
+        {
+            if (_settlingBind) return;
+            _ApplyChanges();
+        }
+
+        private LiveClassAsset.TypeDefinition _FindSelectedDefinition()
+        {
+            int index = _FindSelectedDefinitionIndex();
+            return index >= 0 ? _preset.typeDefinitions[index] : null;
         }
 
         private int _FindSelectedDefinitionIndex()
@@ -394,55 +735,49 @@ namespace Lilium.RemoteControl.Editor
             return -1;
         }
 
-        // --- Footer: instance bindings ---
+        // --- Instance binding rows ---
 
-        private void _DrawFooter()
+        // Only reached with a container present - the footer itself is left out without one.
+        private VisualElement _MakeBindingRow(LiveClassAsset.InstanceBinding entry)
         {
-            _footerHeight = _Splitter(_footerHeight, kMinFooterHeight,
-                Mathf.Max(kMinFooterHeight, position.height - 140f), horizontal: false, invert: true);
+            var expectedType = entry.ResolveType() ?? typeof(UnityEngine.Object);
+            var current = _container.ResolveKey(entry.key);
 
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.Height(_footerHeight));
-            _footerScroll = EditorGUILayout.BeginScrollView(_footerScroll);
+            var row = new VisualElement();
+            row.AddToClassList(LiveClassAssetStyles.kBindingRow);
 
-            _DrawInstanceBindingsSection();
+            var state = new Label("(unbound)");
+            state.AddToClassList(LiveClassAssetStyles.kBindingRowState);
+            state.style.display = current == null ? DisplayStyle.Flex : DisplayStyle.None;
 
-            EditorGUILayout.EndScrollView();
-            EditorGUILayout.EndVertical();
+            var field = new ObjectField(expectedType.Name) { objectType = expectedType, allowSceneObjects = true };
+            field.AddToClassList(LiveClassAssetStyles.kBindingRowField);
+            field.SetValueWithoutNotify(current);
+            field.RegisterValueChangedCallback(evt =>
+            {
+                _BeginEdit("Rebind Instance");
+                _container.SetReferenceValue(new PropertyName(entry.key), evt.newValue);
+                if (evt.newValue != null) entry.typeName = evt.newValue.GetType().AssemblyQualifiedName;
+                _ApplyChanges();
+                // Patched in place instead of rebuilt, so the row the user is still interacting
+                // with survives its own edit.
+                field.label = (entry.ResolveType() ?? typeof(UnityEngine.Object)).Name;
+                state.style.display = evt.newValue == null ? DisplayStyle.Flex : DisplayStyle.None;
+            });
+            row.Add(field);
+            row.Add(state);
+
+            row.Add(_MakeTextButton("✕", "Remove", () =>
+            {
+                _BeginEdit("Remove Binding");
+                _container.ClearReferenceValue(new PropertyName(entry.key));
+                _preset.bindings.Remove(entry);
+                _OnStructureChanged();
+            }));
+            return row;
         }
 
-        // Only called with a container present (see OnGUI) — the footer pane itself is hidden without one.
-        private void _DrawInstanceBindingsSection()
-        {
-            int count = _preset != null ? _preset.bindings.Count : 0;
-            _bindingsFoldout = EditorGUILayout.Foldout(_bindingsFoldout, $"Instance Bindings ({count})", toggleOnLabelClick: true);
-            if (!_bindingsFoldout) return;
-
-            EditorGUI.indentLevel++;
-            if (_preset == null)
-            {
-                EditorGUILayout.HelpBox("Assign a preset to bind instances.", MessageType.None);
-            }
-            else if (count == 0)
-            {
-                EditorGUILayout.HelpBox("No instance bound. Use \"Add Binding\" on a class.", MessageType.None);
-            }
-            else
-            {
-                for (int i = 0; i < _preset.bindings.Count; i++)
-                {
-                    _DrawInstanceBinding(_preset.bindings[i]);
-                }
-            }
-            EditorGUI.indentLevel--;
-        }
-
-        // --- Preset mutations (all run from the deferred queue) ---
-
-        // Ensures the edited preset is registered on the container (so its bindings resolve at runtime).
-        private void _EnsurePresetOnContainer()
-        {
-            LiveClassAssetMemberExposure.EnsurePresetOnContainer(_preset, _container);
-        }
+        // --- Preset mutations ---
 
         private void _ApplyChanges()
         {
@@ -452,13 +787,29 @@ namespace Lilium.RemoteControl.Editor
                 EditorUtility.SetDirty(_container);
                 _container.Reload();
             }
-            Repaint();
+        }
+
+        /// <summary>
+        /// Applies a mutation that changed the shape of a list. The rebuild itself waits for the
+        /// next panel update: these run from click handlers on rows the rebuild destroys, and
+        /// tearing an element down while its own event is still being dispatched is not safe.
+        /// </summary>
+        private void _OnStructureChanged()
+        {
+            _ApplyChanges();
+            rootVisualElement.schedule.Execute(_RefreshStructure);
         }
 
         // Opens one undo step over the asset + container; see LiveClassAssetMemberExposure.BeginEdit.
         private void _BeginEdit(string name)
         {
             LiveClassAssetMemberExposure.BeginEdit(_preset, _container, name);
+        }
+
+        // Ensures the edited preset is registered on the container (so its bindings resolve at runtime).
+        private void _EnsurePresetOnContainer()
+        {
+            LiveClassAssetMemberExposure.EnsurePresetOnContainer(_preset, _container);
         }
 
         private void _AddClass(Type type)
@@ -468,7 +819,7 @@ namespace Lilium.RemoteControl.Editor
             _EnsurePresetOnContainer();
             var added = _preset.GetOrAddTypeDefinition(type);
             _selectedTypeName = added.typeName;
-            _ApplyChanges();
+            _OnStructureChanged();
         }
 
         private void _AddBinding(LiveClassAsset.TypeDefinition definition)
@@ -482,7 +833,8 @@ namespace Lilium.RemoteControl.Editor
                 typeName = definition.typeName,
             });
             _bindingsFoldout = true;
-            _ApplyChanges();
+            if (_bindingsFoldoutElement != null) _bindingsFoldoutElement.value = true;
+            _OnStructureChanged();
         }
 
         private void _RemoveTypeDefinition(LiveClassAsset.TypeDefinition definition)
@@ -491,11 +843,26 @@ namespace Lilium.RemoteControl.Editor
             var type = definition.ResolveType();
 
             _BeginEdit("Remove Class");
-
             _preset.typeDefinitions.Remove(definition);
             LiveClassAssetMemberExposure.RemoveBindingsOfType(_preset, _container, type);
             if (string.Equals(_selectedTypeName, definition.typeName, StringComparison.Ordinal)) _selectedTypeName = null;
-            _ApplyChanges();
+            _OnStructureChanged();
+        }
+
+        private void _MoveMember(List<LiveClassAssetMember> members, int index, int delta)
+        {
+            int target = index + delta;
+            if (target < 0 || target >= members.Count) return;
+            _BeginEdit("Reorder Member");
+            (members[target], members[index]) = (members[index], members[target]);
+            _OnStructureChanged();
+        }
+
+        private void _RemoveMember(List<LiveClassAssetMember> members, LiveClassAssetMember member)
+        {
+            _BeginEdit("Unexpose Member");
+            members.Remove(member);
+            _OnStructureChanged();
         }
 
         // --- Class-first flow: candidate types for the class list's "+" dropdown ---
@@ -524,233 +891,60 @@ namespace Lilium.RemoteControl.Editor
             return true;
         }
 
-        // --- Class-level metadata ---
+        // --- Small element factories ---
 
-        // Category and icon describe the type itself rather than any member, so they sit above the
-        // member list. Both are optional: empty category falls back to "Binding" (the value assets
-        // registered before these fields existed were given), empty icon to the type's default.
-        private bool _DrawClassMetadata(LiveClassAsset.TypeDefinition definition)
+        private static Label _MakePaneHeader(string text)
         {
-            EditorGUI.BeginChangeCheck();
-            string category = EditorGUILayout.TextField(
-                new GUIContent("Category", "Type category shown in RemoteApp. Empty falls back to \"Binding\""),
-                definition.category);
-            string icon = EditorGUILayout.TextField(
-                new GUIContent("Icon", "Material Icons name. Empty uses the type's default icon"),
-                definition.icon);
-            if (!EditorGUI.EndChangeCheck()) return false;
-
-            Undo.RecordObject(_preset, "Edit Class Metadata");
-            definition.category = category;
-            definition.icon = icon;
-            return true;
+            var label = new Label(text);
+            label.AddToClassList(LiveClassAssetStyles.kPaneHeader);
+            return label;
         }
 
-        // --- Member detail rows ---
-
-        private bool _DrawMember(int definitionIndex, List<LiveClassAssetMember> members, int index)
+        // Rule between the fields that describe the class and the cards that describe its members.
+        private static VisualElement _MakeSeparator()
         {
-            var member = members[index];
-            bool changed = false;
-
-            EditorGUILayout.BeginHorizontal();
-            // The label is derived from the member name at expose time and needs no editing;
-            // show it as the row title with the wire name alongside. GUILayout.Label (not
-            // LabelField) so the title starts at the pane edge instead of the field column.
-            string rowTitle = string.IsNullOrEmpty(member.label) ? member.path : $"{member.label}  ({member.path})";
-            if (member.isFunction) rowTitle += " ()";
-            GUILayout.Label(new GUIContent(rowTitle, member.path), LiveClassAssetStyles.memberTitle);
-
-            using (new EditorGUI.DisabledScope(index == 0))
-            {
-                if (GUILayout.Button("▲", GUILayout.Width(kRemoveButtonWidth)))
-                {
-                    _BeginEdit("Reorder Member");
-                    (members[index - 1], members[index]) = (members[index], members[index - 1]);
-                    changed = true;
-                }
-            }
-            using (new EditorGUI.DisabledScope(index == members.Count - 1))
-            {
-                if (GUILayout.Button("▼", GUILayout.Width(kRemoveButtonWidth)))
-                {
-                    _BeginEdit("Reorder Member");
-                    (members[index + 1], members[index]) = (members[index], members[index + 1]);
-                    changed = true;
-                }
-            }
-            if (GUILayout.Button(kRemoveContent, GUILayout.Width(kRemoveButtonWidth)))
-            {
-                _Defer(() =>
-                {
-                    _BeginEdit("Unexpose Member");
-                    members.Remove(member);
-                    _ApplyChanges();
-                });
-            }
-            EditorGUILayout.EndHorizontal();
-
-            EditorGUI.indentLevel++;
-            EditorGUI.BeginChangeCheck();
-            string help = EditorGUILayout.TextField("Help", member.help);
-
-            bool persistable = member.persistable;
-            bool readOnly = member.readOnly;
-            string icon = member.icon;
-            if (member.isFunction)
-            {
-                icon = EditorGUILayout.TextField(
-                    new GUIContent("Icon", "Material Icons name shown on the button"), member.icon);
-            }
-            else
-            {
-                persistable = EditorGUILayout.Toggle("Persistable", member.persistable);
-                readOnly = EditorGUILayout.Toggle(
-                    new GUIContent("Read Only", "Forbid writes through the API and show as display-only"),
-                    member.readOnly);
-            }
-
-            // The section starts at this member and runs until the next one that declares a title,
-            // so an empty title is the normal state — do not treat it as unset metadata.
-            string sectionTitle = EditorGUILayout.TextField(
-                new GUIContent("Section Title", "Leave empty to keep the member in the current section"),
-                member.section?.title);
-            string sectionSubtitle = member.section?.subtitle;
-            string sectionIcon = member.section?.icon;
-            if (!string.IsNullOrEmpty(sectionTitle))
-            {
-                EditorGUI.indentLevel++;
-                sectionSubtitle = EditorGUILayout.TextField("Subtitle", sectionSubtitle);
-                sectionIcon = EditorGUILayout.TextField("Icon", sectionIcon);
-                EditorGUI.indentLevel--;
-            }
-
-            if (EditorGUI.EndChangeCheck())
-            {
-                // A scalar field edit, so the incremental diff is enough here — the full snapshot
-                // of _BeginEdit is only needed where the list shape changes.
-                Undo.RecordObject(_preset, "Edit Member Metadata");
-                member.help = help;
-                member.persistable = persistable;
-                member.readOnly = readOnly;
-                member.icon = icon;
-                member.section ??= new LiveClassAssetSection();
-                member.section.title = sectionTitle;
-                member.section.subtitle = sectionSubtitle;
-                member.section.icon = sectionIcon;
-                changed = true;
-            }
-
-            if (!member.isFunction)
-            {
-                changed |= _DrawControlField(definitionIndex, index);
-            }
-            EditorGUI.indentLevel--;
-
-            return changed;
+            var separator = new VisualElement();
+            separator.AddToClassList(LiveClassAssetStyles.kSeparator);
+            separator.style.marginTop = 4f;
+            separator.style.marginBottom = 4f;
+            return separator;
         }
 
-        // Draws the polymorphic controller through the SerializedProperty path so the
-        // [SerializeReference, Select] drawer provides the type dropdown and per-control fields.
-        private bool _DrawControlField(int definitionIndex, int memberIndex)
+        private static VisualElement _MakeSpacer()
         {
-            var serialized = new SerializedObject(_preset);
-            var property = serialized.FindProperty(
-                $"typeDefinitions.Array.data[{definitionIndex}].members.Array.data[{memberIndex}].control");
-            if (property == null) return false;
-
-            EditorGUI.BeginChangeCheck();
-            EditorGUILayout.PropertyField(property, new GUIContent("Control"), includeChildren: true);
-            if (EditorGUI.EndChangeCheck())
-            {
-                serialized.ApplyModifiedProperties();
-                return true;
-            }
-            return false;
+            var spacer = new VisualElement();
+            spacer.AddToClassList(LiveClassAssetStyles.kSpacer);
+            return spacer;
         }
 
-        private void _DrawInstanceBinding(LiveClassAsset.InstanceBinding entry)
+        // What a pane shows in place of a list that has no entries yet.
+        private static Label _MakeEmpty(string text)
         {
-            if (entry == null) return;
-            var expectedType = entry.ResolveType() ?? typeof(UnityEngine.Object);
-            var current = _container.ResolveKey(entry.key);
-
-            EditorGUILayout.BeginHorizontal();
-            EditorGUI.BeginChangeCheck();
-            var next = EditorGUILayout.ObjectField(expectedType.Name, current, expectedType, allowSceneObjects: true);
-            if (EditorGUI.EndChangeCheck())
-            {
-                _BeginEdit("Rebind Instance");
-                _container.SetReferenceValue(new PropertyName(entry.key), next);
-                if (next != null) entry.typeName = next.GetType().AssemblyQualifiedName;
-                _ApplyChanges();
-            }
-            if (current == null)
-            {
-                GUILayout.Label("(unbound)", LiveClassAssetStyles.rowMeta, GUILayout.Width(64));
-            }
-            if (GUILayout.Button(kRemoveContent, GUILayout.Width(kRemoveButtonWidth)))
-            {
-                _Defer(() =>
-                {
-                    _BeginEdit("Remove Binding");
-                    _container.ClearReferenceValue(new PropertyName(entry.key));
-                    _preset.bindings.Remove(entry);
-                    _ApplyChanges();
-                });
-            }
-            EditorGUILayout.EndHorizontal();
+            var label = new Label(text);
+            label.AddToClassList(LiveClassAssetStyles.kEmpty);
+            return label;
         }
 
-        // --- Draggable pane splitters ---
-
-        /// <summary>
-        /// Reserves a splitter bar and returns the dragged size. <paramref name="invert"/> is for
-        /// the footer, which grows when dragged up (its bar sits above the resized area).
-        /// </summary>
-        private float _Splitter(float value, float min, float max, bool horizontal, bool invert)
+        // Borderless glyph button for the affordances that sit inside a list row; a framed
+        // button per row reads as heavier than the row it acts on.
+        private static Button _MakeTextButton(string text, string tooltip, Action onClick)
         {
-            var rect = horizontal
-                ? GUILayoutUtility.GetRect(kSplitterThickness, kSplitterThickness, GUILayout.Width(kSplitterThickness), GUILayout.ExpandHeight(true))
-                : GUILayoutUtility.GetRect(kSplitterThickness, kSplitterThickness, GUILayout.Height(kSplitterThickness), GUILayout.ExpandWidth(true));
+            var button = new Button(onClick) { text = text, tooltip = tooltip };
+            button.AddToClassList(LiveClassAssetStyles.kRowButton);
+            return button;
+        }
 
-            if (Event.current.type == EventType.Repaint)
+        // "Toolbar Plus" is Unity's built-in "+" - the same one ReorderableList draws.
+        private static ToolbarButton _MakeAddButton(string tooltip, Action onClick)
+        {
+            var button = new ToolbarButton(onClick) { tooltip = tooltip };
+            button.AddToClassList(LiveClassAssetStyles.kIconButton);
+            button.Add(new Image
             {
-                EditorGUI.DrawRect(rect, EditorGUIUtility.isProSkin
-                    ? new Color(0.15f, 0.15f, 0.15f)
-                    : new Color(0.55f, 0.55f, 0.55f));
-            }
-            EditorGUIUtility.AddCursorRect(rect, horizontal ? MouseCursor.ResizeHorizontal : MouseCursor.ResizeVertical);
-
-            int id = GUIUtility.GetControlID(FocusType.Passive);
-            var e = Event.current;
-            switch (e.GetTypeForControl(id))
-            {
-                case EventType.MouseDown:
-                    if (e.button == 0 && rect.Contains(e.mousePosition))
-                    {
-                        GUIUtility.hotControl = id;
-                        e.Use();
-                    }
-                    break;
-                case EventType.MouseDrag:
-                    if (GUIUtility.hotControl == id)
-                    {
-                        float delta = horizontal ? e.delta.x : e.delta.y;
-                        value = Mathf.Clamp(value + (invert ? -delta : delta), min, max);
-                        e.Use();
-                        Repaint();
-                    }
-                    break;
-                case EventType.MouseUp:
-                    if (GUIUtility.hotControl == id)
-                    {
-                        GUIUtility.hotControl = 0;
-                        e.Use();
-                    }
-                    break;
-            }
-            return value;
+                image = EditorGUIUtility.IconContent("Toolbar Plus").image,
+                scaleMode = ScaleMode.ScaleToFit,
+            });
+            return button;
         }
     }
 }

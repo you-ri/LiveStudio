@@ -10,8 +10,7 @@ namespace Lilium.RemoteControl.Editor
 {
     public class LiveObjectsViewerWindow : EditorWindow
     {
-        private const float kSideMenuWidth = 240f;
-        private const float kPropertyNameWidth = 180f;
+        private const string kStyleSheet = "Editor/LiveObjectsViewerWindow/LiveObjectsViewerWindow.uss";
 
         private enum ViewMode { Types, Enums, Objects }
 
@@ -85,40 +84,32 @@ namespace Lilium.RemoteControl.Editor
         private void CreateGUI()
         {
             var root = rootVisualElement;
-            root.style.flexDirection = FlexDirection.Row;
+            RemoteControlEditorStyles.Apply(root, kStyleSheet);
+            root.AddToClassList("lov-root");
 
             // サイドパネル
             var sidePanel = new VisualElement();
-            sidePanel.style.width = kSideMenuWidth;
-            sidePanel.style.minWidth = kSideMenuWidth;
-            sidePanel.style.flexShrink = 0;
-            sidePanel.style.borderRightWidth = 1;
-            sidePanel.style.borderRightColor = new Color(0.15f, 0.15f, 0.15f);
-            sidePanel.style.flexDirection = FlexDirection.Column;
+            sidePanel.AddToClassList("lov-side-panel");
 
             // タブ切り替え
             var tabRow = new VisualElement();
-            tabRow.style.flexDirection = FlexDirection.Row;
-            tabRow.style.marginLeft = 4;
-            tabRow.style.marginRight = 4;
-            tabRow.style.marginTop = 4;
-            tabRow.style.marginBottom = 4;
+            tabRow.AddToClassList("lov-tab-row");
 
             var objectTab = new Button(() => _SwitchViewMode(ViewMode.Objects));
             objectTab.text = "Objects";
-            objectTab.style.flexGrow = 1;
+            objectTab.AddToClassList("lov-tab");
             objectTab.name = "tab-objects";
             tabRow.Add(objectTab);
 
             var classTab = new Button(() => _SwitchViewMode(ViewMode.Types));
             classTab.text = "Types";
-            classTab.style.flexGrow = 1;
+            classTab.AddToClassList("lov-tab");
             classTab.name = "tab-classes";
             tabRow.Add(classTab);
 
             var enumTab = new Button(() => _SwitchViewMode(ViewMode.Enums));
             enumTab.text = "Enums";
-            enumTab.style.flexGrow = 1;
+            enumTab.AddToClassList("lov-tab");
             enumTab.name = "tab-enums";
             tabRow.Add(enumTab);
 
@@ -126,15 +117,10 @@ namespace Lilium.RemoteControl.Editor
 
             // フィルタ
             _filterField = new TextField();
-            _filterField.style.marginLeft = 4;
-            _filterField.style.marginRight = 4;
-            _filterField.style.marginBottom = 4;
+            _filterField.AddToClassList("lov-filter");
             _filterField.value = "";
             var placeholder = new Label("Filter...");
-            placeholder.style.position = Position.Absolute;
-            placeholder.style.left = 16;
-            placeholder.style.top = 3;
-            placeholder.style.color = new Color(0.5f, 0.5f, 0.5f);
+            placeholder.AddToClassList("lov-filter__placeholder");
             placeholder.pickingMode = PickingMode.Ignore;
             _filterField.Add(placeholder);
             _filterField.RegisterValueChangedCallback(evt =>
@@ -149,10 +135,7 @@ namespace Lilium.RemoteControl.Editor
             var dirtyToggle = new Toggle("Show dirty (*)");
             dirtyToggle.name = "dirty-toggle";
             dirtyToggle.value = _showDirtyMarks;
-            dirtyToggle.style.marginLeft = 4;
-            dirtyToggle.style.marginRight = 4;
-            dirtyToggle.style.marginBottom = 4;
-            dirtyToggle.style.fontSize = 11;
+            dirtyToggle.AddToClassList("lov-dirty-toggle");
             dirtyToggle.RegisterValueChangedCallback(evt =>
             {
                 _showDirtyMarks = evt.newValue;
@@ -164,15 +147,12 @@ namespace Lilium.RemoteControl.Editor
             // カウントラベル
             var countLabel = new Label();
             countLabel.name = "count-label";
-            countLabel.style.marginLeft = 8;
-            countLabel.style.marginBottom = 4;
-            countLabel.style.fontSize = 10;
-            countLabel.style.color = new Color(0.5f, 0.5f, 0.5f);
+            countLabel.AddToClassList("lov-count");
             sidePanel.Add(countLabel);
 
             // 型リスト (ScrollView)
             var sideScrollView = new ScrollView(ScrollViewMode.Vertical);
-            sideScrollView.style.flexGrow = 1;
+            sideScrollView.AddToClassList(RemoteControlEditorStyles.kScroll);
 
             _typeList = new VisualElement();
             sideScrollView.Add(_typeList);
@@ -198,18 +178,14 @@ namespace Lilium.RemoteControl.Editor
                 }
             });
             resetButton.text = "Reset All";
-            resetButton.style.marginLeft = 4;
-            resetButton.style.marginRight = 4;
-            resetButton.style.marginBottom = 4;
-            resetButton.style.marginTop = 4;
+            resetButton.AddToClassList("lov-reset-button");
             sidePanel.Add(resetButton);
 
             root.Add(sidePanel);
 
             // コンテンツエリア
             _contentArea = new VisualElement();
-            _contentArea.style.flexGrow = 1;
-            _contentArea.style.flexDirection = FlexDirection.Column;
+            _contentArea.AddToClassList("lov-content");
             root.Add(_contentArea);
 
             _UpdateTabHighlight();
@@ -234,10 +210,9 @@ namespace Lilium.RemoteControl.Editor
             var objectTab = root.Q<Button>("tab-objects");
             if (classTab == null || enumTab == null || objectTab == null) return;
 
-            var activeColor = new Color(0.2f, 0.4f, 0.6f, 0.5f);
-            classTab.style.backgroundColor = _viewMode == ViewMode.Types ? activeColor : StyleKeyword.Null;
-            enumTab.style.backgroundColor = _viewMode == ViewMode.Enums ? activeColor : StyleKeyword.Null;
-            objectTab.style.backgroundColor = _viewMode == ViewMode.Objects ? activeColor : StyleKeyword.Null;
+            classTab.EnableInClassList("lov-tab--active", _viewMode == ViewMode.Types);
+            enumTab.EnableInClassList("lov-tab--active", _viewMode == ViewMode.Enums);
+            objectTab.EnableInClassList("lov-tab--active", _viewMode == ViewMode.Objects);
 
             var dirtyToggle = root.Q<Toggle>("dirty-toggle");
             if (dirtyToggle != null)
@@ -289,20 +264,9 @@ namespace Lilium.RemoteControl.Editor
                     displayText += $"  [{ec.category}]";
 
                 button.text = displayText;
-                button.style.height = 24;
-                button.style.marginLeft = 4;
-                button.style.marginRight = 4;
-                button.style.marginTop = 1;
-                button.style.marginBottom = 1;
-                button.style.overflow = Overflow.Hidden;
-                button.style.unityTextAlign = TextAnchor.MiddleLeft;
-                button.style.fontSize = 11;
-
-                if (ec.isStatic)
-                    button.style.color = new Color(0.4f, 0.7f, 0.4f);
-
-                if (_selectedItem == (object)ec)
-                    button.style.backgroundColor = new Color(0.2f, 0.4f, 0.6f, 0.5f);
+                button.AddToClassList("lov-list-item");
+                button.EnableInClassList("lov-list-item--static", ec.isStatic);
+                button.EnableInClassList("lov-list-item--selected", _selectedItem == (object)ec);
 
                 button.userData = ec;
                 _typeList.Add(button);
@@ -344,17 +308,8 @@ namespace Lilium.RemoteControl.Editor
                 });
 
                 button.text = ee.typeName;
-                button.style.height = 24;
-                button.style.marginLeft = 4;
-                button.style.marginRight = 4;
-                button.style.marginTop = 1;
-                button.style.marginBottom = 1;
-                button.style.overflow = Overflow.Hidden;
-                button.style.unityTextAlign = TextAnchor.MiddleLeft;
-                button.style.fontSize = 11;
-
-                if (_selectedItem == (object)ee)
-                    button.style.backgroundColor = new Color(0.2f, 0.4f, 0.6f, 0.5f);
+                button.AddToClassList("lov-list-item");
+                button.EnableInClassList("lov-list-item--selected", _selectedItem == (object)ee);
 
                 button.userData = ee;
                 _typeList.Add(button);
@@ -395,32 +350,13 @@ namespace Lilium.RemoteControl.Editor
                 if (_showDirtyMarks && obj.isDirty) displayName += " *";
                 button.text = displayName;
 
-                button.style.height = 24;
-                button.style.marginLeft = 4;
-                button.style.marginRight = 4;
-                button.style.marginTop = 1;
-                button.style.marginBottom = 1;
-                button.style.overflow = Overflow.Hidden;
-                button.style.unityTextAlign = TextAnchor.MiddleLeft;
-                button.style.fontSize = 11;
-
-                if (!obj.isValid)
-                {
-                    button.style.color = new Color(0.8f, 0.3f, 0.3f);
-                }
-                else if (!obj.hasId)
-                {
-                    button.style.color = new Color(0.5f, 0.8f, 0.9f);
-                }
-                else if (obj.targetType != null && obj.targetType.isStatic)
-                {
-                    button.style.color = new Color(0.4f, 0.7f, 0.4f);
-                }
-
-                if (_selectedItem is LiveObjectHandle selObj && selObj.Equals(obj))
-                {
-                    button.style.backgroundColor = new Color(0.2f, 0.4f, 0.6f, 0.5f);
-                }
+                button.AddToClassList("lov-list-item");
+                button.EnableInClassList("lov-list-item--invalid", !obj.isValid);
+                button.EnableInClassList("lov-list-item--unregistered", obj.isValid && !obj.hasId);
+                button.EnableInClassList("lov-list-item--static",
+                    obj.isValid && obj.hasId && obj.targetType != null && obj.targetType.isStatic);
+                button.EnableInClassList("lov-list-item--selected",
+                    _selectedItem is LiveObjectHandle selObj && selObj.Equals(obj));
 
                 button.userData = obj;
                 _typeList.Add(button);
@@ -461,9 +397,7 @@ namespace Lilium.RemoteControl.Editor
             {
                 if (child is Button button)
                 {
-                    button.style.backgroundColor = (button.userData == _selectedItem)
-                        ? new Color(0.2f, 0.4f, 0.6f, 0.5f)
-                        : StyleKeyword.Null;
+                    button.EnableInClassList("lov-list-item--selected", button.userData == _selectedItem);
                 }
             }
         }
@@ -477,54 +411,41 @@ namespace Lilium.RemoteControl.Editor
 
             // ヘッダー
             var headerContainer = new VisualElement();
-            headerContainer.style.paddingLeft = 8;
-            headerContainer.style.paddingTop = 8;
-            headerContainer.style.paddingBottom = 8;
-            headerContainer.style.borderBottomWidth = 1;
-            headerContainer.style.borderBottomColor = new Color(0.15f, 0.15f, 0.15f);
+            headerContainer.AddToClassList("lov-detail-header");
 
             var header = new Label(ec.typeName);
-            header.style.fontSize = 14;
-            header.style.unityFontStyleAndWeight = FontStyle.Bold;
-            header.style.marginBottom = 4;
+            header.AddToClassList("lov-detail-title");
             headerContainer.Add(header);
 
             var typeLabel = new Label($"Type: {ec.type.FullName}");
-            typeLabel.style.color = new Color(0.5f, 0.5f, 0.5f);
-            typeLabel.style.fontSize = 11;
+            typeLabel.AddToClassList("lov-detail-meta");
             headerContainer.Add(typeLabel);
 
             if (!string.IsNullOrEmpty(ec.category))
             {
                 var catLabel = new Label($"Category: {ec.category}");
-                catLabel.style.color = new Color(0.5f, 0.5f, 0.5f);
-                catLabel.style.fontSize = 11;
+                catLabel.AddToClassList("lov-detail-meta");
                 headerContainer.Add(catLabel);
             }
 
             if (!string.IsNullOrEmpty(ec.icon))
             {
                 var iconLabel = new Label($"Icon: {ec.icon}");
-                iconLabel.style.color = new Color(0.5f, 0.5f, 0.5f);
-                iconLabel.style.fontSize = 11;
+                iconLabel.AddToClassList("lov-detail-meta");
                 headerContainer.Add(iconLabel);
             }
 
             if (ec.isStatic)
             {
                 var staticLabel = new Label("static class");
-                staticLabel.style.color = new Color(0.4f, 0.7f, 0.4f);
-                staticLabel.style.fontSize = 11;
+                staticLabel.AddToClassList("lov-detail-static");
                 headerContainer.Add(staticLabel);
             }
 
             if (!string.IsNullOrEmpty(ec.help))
             {
                 var helpLabel = new Label(ec.help);
-                helpLabel.style.color = new Color(0.6f, 0.6f, 0.5f);
-                helpLabel.style.fontSize = 11;
-                helpLabel.style.marginTop = 4;
-                helpLabel.style.whiteSpace = WhiteSpace.Normal;
+                helpLabel.AddToClassList("lov-detail-help");
                 headerContainer.Add(helpLabel);
             }
 
@@ -532,18 +453,13 @@ namespace Lilium.RemoteControl.Editor
 
             // スクロール可能なコンテンツ
             _contentScrollView = new ScrollView(ScrollViewMode.Vertical);
-            _contentScrollView.style.flexGrow = 1;
-            _contentScrollView.style.paddingLeft = 8;
-            _contentScrollView.style.paddingTop = 8;
-            _contentScrollView.style.paddingRight = 8;
+            _contentScrollView.AddToClassList("lov-detail-scroll");
 
             // プロパティ一覧
             if (ec.propertyTypes != null && ec.propertyTypes.Length > 0)
             {
                 var propHeader = new Label($"Properties ({ec.propertyTypes.Length})");
-                propHeader.style.fontSize = 12;
-                propHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
-                propHeader.style.marginBottom = 4;
+                propHeader.AddToClassList("lov-section-title");
                 _contentScrollView.Add(propHeader);
 
                 var sorted = ec.propertyTypes.OrderBy(p => p.order).ToArray();
@@ -558,10 +474,8 @@ namespace Lilium.RemoteControl.Editor
             if (ec.functionTypes != null && ec.functionTypes.Length > 0)
             {
                 var funcHeader = new Label($"Functions ({ec.functionTypes.Length})");
-                funcHeader.style.fontSize = 12;
-                funcHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
-                funcHeader.style.marginTop = 12;
-                funcHeader.style.marginBottom = 4;
+                funcHeader.AddToClassList("lov-section-title");
+                funcHeader.AddToClassList("lov-section-title--spaced");
                 _contentScrollView.Add(funcHeader);
 
                 var sortedFuncs = ec.functionTypes.OrderBy(f => f.order).ToArray();
@@ -576,8 +490,7 @@ namespace Lilium.RemoteControl.Editor
                 (ec.functionTypes == null || ec.functionTypes.Length == 0))
             {
                 var empty = new Label("No properties or functions");
-                empty.style.color = new Color(0.5f, 0.5f, 0.5f);
-                empty.style.marginTop = 8;
+                empty.AddToClassList("lov-empty");
                 _contentScrollView.Add(empty);
             }
 
@@ -587,35 +500,24 @@ namespace Lilium.RemoteControl.Editor
         private VisualElement _CreatePropertyRow(LivePropertyType propType)
         {
             var row = new VisualElement();
-            row.style.flexDirection = FlexDirection.Row;
-            row.style.marginBottom = 2;
-            row.style.paddingTop = 2;
-            row.style.paddingBottom = 2;
-            row.style.alignItems = Align.Center;
+            row.AddToClassList("lov-row");
 
             // 名前
             var nameLabel = new Label(propType.name);
-            nameLabel.style.width = kPropertyNameWidth;
-            nameLabel.style.minWidth = kPropertyNameWidth;
-            nameLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+            nameLabel.AddToClassList("lov-row__name");
             row.Add(nameLabel);
 
             // 型名
             var typeName = propType.valueType != null ? propType.valueType.Name : "?";
             var typeLabel = new Label(typeName);
-            typeLabel.style.color = new Color(0.6f, 0.7f, 0.8f);
-            typeLabel.style.width = 120;
-            typeLabel.style.minWidth = 120;
-            typeLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+            typeLabel.AddToClassList("lov-row__type");
             row.Add(typeLabel);
 
             // コントロールタイプ
             if (propType.controlAttribute != null && propType.controlAttribute.controlName != "default")
             {
                 var ctrlLabel = new Label(propType.controlAttribute.controlName);
-                ctrlLabel.style.color = new Color(0.7f, 0.6f, 0.5f);
-                ctrlLabel.style.marginLeft = 4;
-                ctrlLabel.style.flexShrink = 0;
+                ctrlLabel.AddToClassList("lov-row__control");
                 row.Add(ctrlLabel);
             }
 
@@ -623,27 +525,24 @@ namespace Lilium.RemoteControl.Editor
             if (propType.isReadOnly)
             {
                 var badge = new Label("[R]");
-                badge.style.color = new Color(0.4f, 0.4f, 0.6f);
-                badge.style.marginLeft = 4;
-                badge.style.flexShrink = 0;
+                badge.AddToClassList("lov-badge");
+                badge.AddToClassList("lov-badge--readonly");
                 row.Add(badge);
             }
 
             if (propType.isStatic)
             {
                 var badge = new Label("[S]");
-                badge.style.color = new Color(0.4f, 0.6f, 0.4f);
-                badge.style.marginLeft = 4;
-                badge.style.flexShrink = 0;
+                badge.AddToClassList("lov-badge");
+                badge.AddToClassList("lov-badge--static");
                 row.Add(badge);
             }
 
             if (propType.isPersistable)
             {
                 var badge = new Label("[P]");
-                badge.style.color = new Color(0.6f, 0.6f, 0.4f);
-                badge.style.marginLeft = 4;
-                badge.style.flexShrink = 0;
+                badge.AddToClassList("lov-badge");
+                badge.AddToClassList("lov-badge--persistable");
                 row.Add(badge);
             }
 
@@ -653,11 +552,7 @@ namespace Lilium.RemoteControl.Editor
         private VisualElement _CreateFunctionRow(LiveFunctionType funcType)
         {
             var row = new VisualElement();
-            row.style.flexDirection = FlexDirection.Row;
-            row.style.marginBottom = 2;
-            row.style.paddingTop = 2;
-            row.style.paddingBottom = 2;
-            row.style.alignItems = Align.Center;
+            row.AddToClassList("lov-row");
 
             // 関数名 + パラメータ
             var paramText = "";
@@ -670,16 +565,14 @@ namespace Lilium.RemoteControl.Editor
             var displayName = $"{returnTypeName}  {funcType.name}({paramText})";
 
             var nameLabel = new Label(displayName);
-            nameLabel.style.flexGrow = 1;
-            nameLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+            nameLabel.AddToClassList("lov-row__function");
             row.Add(nameLabel);
 
             if (funcType.isStatic)
             {
                 var badge = new Label("[S]");
-                badge.style.color = new Color(0.4f, 0.6f, 0.4f);
-                badge.style.marginLeft = 4;
-                badge.style.flexShrink = 0;
+                badge.AddToClassList("lov-badge");
+                badge.AddToClassList("lov-badge--static");
                 row.Add(badge);
             }
 
@@ -695,30 +588,20 @@ namespace Lilium.RemoteControl.Editor
 
             // ヘッダー
             var headerContainer = new VisualElement();
-            headerContainer.style.paddingLeft = 8;
-            headerContainer.style.paddingTop = 8;
-            headerContainer.style.paddingBottom = 8;
-            headerContainer.style.borderBottomWidth = 1;
-            headerContainer.style.borderBottomColor = new Color(0.15f, 0.15f, 0.15f);
+            headerContainer.AddToClassList("lov-detail-header");
 
             var header = new Label(ee.typeName);
-            header.style.fontSize = 14;
-            header.style.unityFontStyleAndWeight = FontStyle.Bold;
-            header.style.marginBottom = 4;
+            header.AddToClassList("lov-detail-title");
             headerContainer.Add(header);
 
             var typeLabel = new Label($"Type: {ee.type.FullName}");
-            typeLabel.style.color = new Color(0.5f, 0.5f, 0.5f);
-            typeLabel.style.fontSize = 11;
+            typeLabel.AddToClassList("lov-detail-meta");
             headerContainer.Add(typeLabel);
 
             if (!string.IsNullOrEmpty(ee.help))
             {
                 var helpLabel = new Label(ee.help);
-                helpLabel.style.color = new Color(0.6f, 0.6f, 0.5f);
-                helpLabel.style.fontSize = 11;
-                helpLabel.style.marginTop = 4;
-                helpLabel.style.whiteSpace = WhiteSpace.Normal;
+                helpLabel.AddToClassList("lov-detail-help");
                 headerContainer.Add(helpLabel);
             }
 
@@ -726,45 +609,31 @@ namespace Lilium.RemoteControl.Editor
 
             // スクロール可能なコンテンツ
             _contentScrollView = new ScrollView(ScrollViewMode.Vertical);
-            _contentScrollView.style.flexGrow = 1;
-            _contentScrollView.style.paddingLeft = 8;
-            _contentScrollView.style.paddingTop = 8;
-            _contentScrollView.style.paddingRight = 8;
+            _contentScrollView.AddToClassList("lov-detail-scroll");
 
             if (ee.values != null && ee.values.Length > 0)
             {
                 var valuesHeader = new Label($"Values ({ee.values.Length})");
-                valuesHeader.style.fontSize = 12;
-                valuesHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
-                valuesHeader.style.marginBottom = 4;
+                valuesHeader.AddToClassList("lov-section-title");
                 _contentScrollView.Add(valuesHeader);
 
                 foreach (var val in ee.values)
                 {
                     var row = new VisualElement();
-                    row.style.flexDirection = FlexDirection.Row;
-                    row.style.marginBottom = 2;
-                    row.style.paddingTop = 2;
-                    row.style.paddingBottom = 2;
-                    row.style.alignItems = Align.Center;
+                    row.AddToClassList("lov-row");
 
                     var nameLabel = new Label(val.name);
-                    nameLabel.style.width = kPropertyNameWidth;
-                    nameLabel.style.minWidth = kPropertyNameWidth;
-                    nameLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+                    nameLabel.AddToClassList("lov-row__name");
                     row.Add(nameLabel);
 
                     var valueLabel = new Label($"= {val.value}");
-                    valueLabel.style.color = new Color(0.6f, 0.7f, 0.8f);
-                    valueLabel.style.width = 80;
-                    valueLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+                    valueLabel.AddToClassList("lov-row__enum-value");
                     row.Add(valueLabel);
 
                     if (val.displayName != val.name)
                     {
                         var displayLabel = new Label(val.displayName);
-                        displayLabel.style.color = new Color(0.5f, 0.5f, 0.5f);
-                        displayLabel.style.marginLeft = 8;
+                        displayLabel.AddToClassList("lov-row__enum-display");
                         row.Add(displayLabel);
                     }
 
@@ -774,7 +643,7 @@ namespace Lilium.RemoteControl.Editor
             else
             {
                 var empty = new Label("No values");
-                empty.style.color = new Color(0.5f, 0.5f, 0.5f);
+                empty.AddToClassList("lov-empty");
                 _contentScrollView.Add(empty);
             }
 
@@ -793,9 +662,7 @@ namespace Lilium.RemoteControl.Editor
                 if (objOrNull != null)
                 {
                     var invalid = new Label("Invalid object");
-                    invalid.style.color = new Color(0.8f, 0.3f, 0.3f);
-                    invalid.style.paddingLeft = 8;
-                    invalid.style.paddingTop = 8;
+                    invalid.AddToClassList("lov-invalid");
                     _contentArea.Add(invalid);
                 }
                 return;
@@ -805,48 +672,35 @@ namespace Lilium.RemoteControl.Editor
 
             // ヘッダー
             var headerContainer = new VisualElement();
-            headerContainer.style.paddingLeft = 8;
-            headerContainer.style.paddingTop = 8;
-            headerContainer.style.paddingBottom = 8;
-            headerContainer.style.borderBottomWidth = 1;
-            headerContainer.style.borderBottomColor = new Color(0.15f, 0.15f, 0.15f);
+            headerContainer.AddToClassList("lov-detail-header");
 
             // クラス名（上段）
             var classLabel = new Label(obj.targetTypeName);
-            classLabel.style.color = new Color(0.5f, 0.5f, 0.5f);
-            classLabel.style.fontSize = 11;
+            classLabel.AddToClassList("lov-detail-meta");
             headerContainer.Add(classLabel);
 
             // オブジェクト名（メインタイトル）
             var header = new Label(obj.name);
-            header.style.fontSize = 14;
-            header.style.unityFontStyleAndWeight = FontStyle.Bold;
-            header.style.marginBottom = 4;
+            header.AddToClassList("lov-detail-title");
             headerContainer.Add(header);
 
             // ID
             var idLabel = new Label($"ID: {obj.id}");
-            idLabel.style.color = new Color(0.5f, 0.5f, 0.5f);
-            idLabel.style.fontSize = 11;
+            idLabel.AddToClassList("lov-detail-meta");
             headerContainer.Add(idLabel);
 
             _contentArea.Add(headerContainer);
 
             // スクロール可能なコンテンツ
             _contentScrollView = new ScrollView(ScrollViewMode.Vertical);
-            _contentScrollView.style.flexGrow = 1;
-            _contentScrollView.style.paddingLeft = 8;
-            _contentScrollView.style.paddingTop = 8;
-            _contentScrollView.style.paddingRight = 8;
+            _contentScrollView.AddToClassList("lov-detail-scroll");
 
             // プロパティ一覧
             var propertyTypes = obj.propertyTypes;
             if (propertyTypes != null && propertyTypes.Length > 0)
             {
                 var propHeader = new Label("Properties");
-                propHeader.style.fontSize = 12;
-                propHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
-                propHeader.style.marginBottom = 4;
+                propHeader.AddToClassList("lov-section-title");
                 _contentScrollView.Add(propHeader);
 
                 var sorted = propertyTypes.OrderBy(p => p.order).ToArray();
@@ -862,10 +716,8 @@ namespace Lilium.RemoteControl.Editor
             if (functionTypes != null && functionTypes.Length > 0)
             {
                 var funcHeader = new Label("Functions");
-                funcHeader.style.fontSize = 12;
-                funcHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
-                funcHeader.style.marginTop = 12;
-                funcHeader.style.marginBottom = 4;
+                funcHeader.AddToClassList("lov-section-title");
+                funcHeader.AddToClassList("lov-section-title--spaced");
                 _contentScrollView.Add(funcHeader);
 
                 var sortedFuncs = functionTypes.OrderBy(f => f.order).ToArray();
@@ -882,34 +734,21 @@ namespace Lilium.RemoteControl.Editor
         private VisualElement _CreateObjectPropertyRow(LiveObjectHandle obj, LivePropertyType propType)
         {
             var row = new VisualElement();
-            row.style.flexDirection = FlexDirection.Row;
-            row.style.marginBottom = 2;
-            row.style.paddingTop = 2;
-            row.style.paddingBottom = 2;
-            row.style.alignItems = Align.Center;
+            row.AddToClassList("lov-row");
 
             // 名前ラベル
             var nameLabel = new Label(propType.name);
-            nameLabel.style.width = kPropertyNameWidth;
-            nameLabel.style.minWidth = kPropertyNameWidth;
-            nameLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+            nameLabel.AddToClassList("lov-row__name");
             nameLabel.name = "prop-name";
 
-            if (obj.IsPropertyDirty(propType.name))
-            {
-                nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-            }
+            nameLabel.EnableInClassList("lov-row__name--dirty", obj.IsPropertyDirty(propType.name));
 
             row.Add(nameLabel);
 
             // 値ラベル
             var valueText = _GetObjectPropertyValueText(obj, propType);
             var valueLabel = new Label(valueText);
-            valueLabel.style.color = new Color(0.7f, 0.7f, 0.7f);
-            valueLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
-            valueLabel.style.flexGrow = 1;
-            valueLabel.style.flexShrink = 1;
-            valueLabel.style.overflow = Overflow.Hidden;
+            valueLabel.AddToClassList("lov-row__value");
             valueLabel.name = "prop-value";
             row.Add(valueLabel);
 
@@ -917,18 +756,16 @@ namespace Lilium.RemoteControl.Editor
             if (propType.isReadOnly)
             {
                 var badge = new Label("[R]");
-                badge.style.color = new Color(0.4f, 0.4f, 0.6f);
-                badge.style.marginLeft = 4;
-                badge.style.flexShrink = 0;
+                badge.AddToClassList("lov-badge");
+                badge.AddToClassList("lov-badge--readonly");
                 row.Add(badge);
             }
 
             if (propType.isStatic)
             {
                 var badge = new Label("[S]");
-                badge.style.color = new Color(0.4f, 0.6f, 0.4f);
-                badge.style.marginLeft = 4;
-                badge.style.flexShrink = 0;
+                badge.AddToClassList("lov-badge");
+                badge.AddToClassList("lov-badge--static");
                 row.Add(badge);
             }
 
@@ -941,11 +778,7 @@ namespace Lilium.RemoteControl.Editor
         private VisualElement _CreateObjectFunctionRow(LiveObjectHandle obj, LiveFunctionType funcType)
         {
             var row = new VisualElement();
-            row.style.flexDirection = FlexDirection.Row;
-            row.style.marginBottom = 2;
-            row.style.paddingTop = 2;
-            row.style.paddingBottom = 2;
-            row.style.alignItems = Align.Center;
+            row.AddToClassList("lov-row");
 
             // 関数名 + パラメータ
             var paramText = "";
@@ -956,16 +789,14 @@ namespace Lilium.RemoteControl.Editor
             var displayName = $"{funcType.name}({paramText})";
 
             var nameLabel = new Label(displayName);
-            nameLabel.style.flexGrow = 1;
-            nameLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+            nameLabel.AddToClassList("lov-row__function");
             row.Add(nameLabel);
 
             if (funcType.isStatic)
             {
                 var badge = new Label("[S]");
-                badge.style.color = new Color(0.4f, 0.6f, 0.4f);
-                badge.style.marginLeft = 4;
-                badge.style.flexShrink = 0;
+                badge.AddToClassList("lov-badge");
+                badge.AddToClassList("lov-badge--static");
                 row.Add(badge);
             }
 
@@ -977,8 +808,7 @@ namespace Lilium.RemoteControl.Editor
                     obj.InvokeFunction(funcType.apiName, null);
                 });
                 invokeButton.text = "Invoke";
-                invokeButton.style.width = 60;
-                invokeButton.style.flexShrink = 0;
+                invokeButton.AddToClassList("lov-invoke-button");
                 row.Add(invokeButton);
             }
 
@@ -1024,9 +854,7 @@ namespace Lilium.RemoteControl.Editor
                 var nameLabel = child.Q<Label>("prop-name");
                 if (nameLabel != null)
                 {
-                    nameLabel.style.unityFontStyleAndWeight = obj.IsPropertyDirty(propName)
-                        ? FontStyle.Bold
-                        : FontStyle.Normal;
+                    nameLabel.EnableInClassList("lov-row__name--dirty", obj.IsPropertyDirty(propName));
                 }
             }
         }

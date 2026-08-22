@@ -1,0 +1,55 @@
+/* Copyright (c) You-Ri, 2026 */
+
+/* Layout specific to the Remote Control Server window; everything generic lives in
+ * Editor/Styles/RemoteControlEditor.uss. */
+
+.rcs-add-button {
+    height: 30px;
+    margin-top: 6px;
+    margin-bottom: 6px;
+    margin-left: 4px;
+    margin-right: 4px;
+    flex-shrink: 0;
+}
+
+.rcs-list-title {
+    margin-left: 6px;
+    margin-bottom: 2px;
+    flex-shrink: 0;
+}
+
+.rcs-card-header {
+    margin-bottom: 4px;
+}
+
+.rcs-config-field {
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+.rcs-status {
+    width: 96px;
+    flex-shrink: 0;
+    margin-left: 6px;
+    -unity-text-align: middle-left;
+}
+
+.rcs-url {
+    margin-left: 2px;
+}
+
+.rcs-buttons {
+    flex-direction: row;
+    margin-top: 6px;
+}
+
+.rcs-button {
+    height: 25px;
+    flex-grow: 1;
+}
+
+/* Listed after .rc-button so the narrower, non-growing width wins at equal specificity. */
+.rcs-button--delete {
+    flex-grow: 0;
+    width: 100px;
+}

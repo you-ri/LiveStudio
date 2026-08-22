@@ -1,15 +1,57 @@
+// Copyright (c) You-Ri, 2026
+using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.UIElements;
 using UnityEngine;
+using UnityEngine.UIElements;
 
+using Lilium.RemoteControl.Editor;
 using Lilium.RemoteControl.Server;
 
 namespace Lilium.RemoteControl
 {
+    /// <summary>
+    /// Lists the editor's REST server configurations and lets each one be created, started,
+    /// stopped and removed.
+    ///
+    /// A config is a <see cref="RemoteControlServerConfig"/> asset; the running server itself is
+    /// owned by <see cref="RemoteControlServerManager"/> and keyed by port, so a config can exist
+    /// with no server behind it. That gives each row three states - not created, stopped, running
+    /// - and the buttons differ per state.
+    ///
+    /// The manager's state changes without telling anyone (a server can also be started from
+    /// code), so the rows poll it on a timer. Only the state-dependent parts are refreshed;
+    /// rebuilding the rows would fight with a port being typed into.
+    /// </summary>
     public class RemoteControlServerWindow : EditorWindow
     {
+        // How often the rows re-read RemoteControlServerManager. Slow enough to be free, fast
+        // enough that a server started from elsewhere shows up as a live window.
+        private const long kStatePollMs = 500;
+
+        private const string kStyleSheet = "Editor/RemoteControlServerWindow/RemoteControlServerWindow.uss";
+        private const string kConfigFolder = "Assets/Settings/RemoteControl";
+
         private RemoteControlServerSettings _settings;
-        private Vector2 _scrollPosition;
+
+        private VisualElement _list;
+        private HelpBox _emptyHelp;
+
+        // One entry per drawn config, so the poll can refresh the state-dependent elements
+        // without rebuilding the rows.
+        private readonly List<ServerRow> _rows = new List<ServerRow>();
+
+        private class ServerRow
+        {
+            public RemoteControlServerConfig config;
+            public Label status;
+            public IntegerField port;
+            public Toggle cors;
+            public Label url;
+            public Button run;
+            public Button remove;
+        }
 
         [MenuItem("Window/Lilium Remote Control/Remote Control Server")]
         public static void ShowWindow()
@@ -21,12 +63,12 @@ namespace Lilium.RemoteControl
         [InitializeOnLoadMethod]
         private static void AutoStartServer()
         {
-            // エディタ起動時に自動起動設定をチェック
+            // Start the servers marked as editor-resident as soon as the editor comes up.
             var settings = RemoteControlServerSettings.GetOrCreate();
 
             foreach (var config in settings.serverConfigs)
             {
-                // 設定リストに壊れた参照 (削除済みアセット) が残っていることがあるため null を許容する
+                // The list can hold broken references (assets deleted since), so allow null.
                 if (config == null || !config.runningInEditor) continue;
                 if (RemoteControlServerManager.HasServer(config.port)) continue;
 
@@ -39,236 +81,238 @@ namespace Lilium.RemoteControl
             }
         }
 
-        private void OnEnable()
+        private void CreateGUI()
         {
             _settings = RemoteControlServerSettings.GetOrCreate();
+
+            var root = rootVisualElement;
+            RemoteControlEditorStyles.Apply(root, kStyleSheet);
+            root.AddToClassList(RemoteControlEditorStyles.kColumn);
+
+            var add = new Button(_AddServer) { text = "+ Add New Server" };
+            add.AddToClassList("rcs-add-button");
+            add.AddToClassList(RemoteControlEditorStyles.kAccent);
+            root.Add(add);
+
+            var title = new Label("Server List");
+            title.AddToClassList(RemoteControlEditorStyles.kTitle);
+            title.AddToClassList("rcs-list-title");
+            root.Add(title);
+
+            _emptyHelp = new HelpBox("No servers configured. Click '+ Add New Server' to create one.", HelpBoxMessageType.Info);
+            _emptyHelp.AddToClassList(RemoteControlEditorStyles.kHelp);
+            root.Add(_emptyHelp);
+
+            var scroll = new ScrollView();
+            scroll.AddToClassList(RemoteControlEditorStyles.kScroll);
+            _list = scroll.contentContainer;
+            root.Add(scroll);
+
+            _RebuildList();
+            root.schedule.Execute(_RefreshStates).Every(kStatePollMs);
         }
 
-        private void OnGUI()
+        // --- List ---
+
+        private void _RebuildList()
         {
-            EditorGUILayout.Space();
+            _rows.Clear();
+            _list.Clear();
 
-            DrawAddServerButton();
-
-            EditorGUILayout.Space();
-
-            DrawServerList();
-        }
-
-        private void DrawAddServerButton()
-        {
-            GUI.color = Color.cyan;
-            if (GUILayout.Button("+ Add New Server", GUILayout.Height(30)))
+            foreach (var config in _settings.serverConfigs)
             {
-                // 使用可能な次のポート番号を見つける
-                int newPort = 3002;
-                while (_settings.serverConfigs.Any(c => c != null && c.port == newPort))
-                {
-                    newPort++;
-                }
-
-                // ScriptableObjectアセットとして作成
-                var newConfig = ScriptableObject.CreateInstance<RemoteControlServerConfig>();
-                newConfig.port = newPort;
-                newConfig.enableCors = true;
-                newConfig.runningInEditor = false;
-
-                // アセットフォルダを確保
-                const string kConfigFolder = "Assets/Settings/RemoteControl";
-                if (!AssetDatabase.IsValidFolder("Assets/Settings"))
-                {
-                    AssetDatabase.CreateFolder("Assets", "Settings");
-                }
-                if (!AssetDatabase.IsValidFolder(kConfigFolder))
-                {
-                    AssetDatabase.CreateFolder("Assets/Settings", "RemoteControl");
-                }
-
-                // アセット保存
-                string assetPath = $"{kConfigFolder}/RemoteControl_Port{newPort}.asset";
-                AssetDatabase.CreateAsset(newConfig, assetPath);
-                AssetDatabase.SaveAssets();
-
-                // リストに追加
-                _settings.serverConfigs.Add(newConfig);
-                EditorUtility.SetDirty(_settings);
-                AssetDatabase.SaveAssets();
+                // The referenced asset may not exist in this project (came from another one, or
+                // was deleted).
+                if (config == null) continue;
+                _list.Add(_MakeServerCard(config));
             }
-            GUI.color = Color.white;
+
+            _emptyHelp.style.display = _rows.Count == 0 ? DisplayStyle.Flex : DisplayStyle.None;
+            _RefreshStates();
         }
 
-        private void DrawServerList()
+        private VisualElement _MakeServerCard(RemoteControlServerConfig config)
         {
-            GUILayout.Label("Server List", EditorStyles.boldLabel);
+            var row = new ServerRow { config = config };
 
-            if (_settings.serverConfigs.Count == 0)
+            var card = new VisualElement();
+            card.AddToClassList(RemoteControlEditorStyles.kCard);
+
+            var header = new VisualElement();
+            header.AddToClassList(RemoteControlEditorStyles.kRow);
+            header.AddToClassList("rcs-card-header");
+            // Shown for identification only - the config is edited through the fields below.
+            var configField = new ObjectField { objectType = typeof(RemoteControlServerConfig), allowSceneObjects = false };
+            configField.AddToClassList("rcs-config-field");
+            configField.SetValueWithoutNotify(config);
+            configField.SetEnabled(false);
+            header.Add(configField);
+            row.status = new Label();
+            row.status.AddToClassList("rcs-status");
+            header.Add(row.status);
+            card.Add(header);
+
+            // Committed on Enter / focus loss rather than per keystroke: every commit writes the
+            // asset back to disk.
+            row.port = new IntegerField("Port") { isDelayed = true };
+            row.port.SetValueWithoutNotify(config.port);
+            row.port.RegisterValueChangedCallback(evt => _Commit(config, () => config.port = evt.newValue));
+            card.Add(row.port);
+
+            row.cors = new Toggle("Enable CORS");
+            row.cors.SetValueWithoutNotify(config.enableCors);
+            row.cors.RegisterValueChangedCallback(evt => _Commit(config, () => config.enableCors = evt.newValue));
+            card.Add(row.cors);
+
+            var runningInEditor = new Toggle("Running in Editor");
+            runningInEditor.SetValueWithoutNotify(config.runningInEditor);
+            runningInEditor.RegisterValueChangedCallback(evt => _Commit(config, () => config.runningInEditor = evt.newValue));
+            card.Add(runningInEditor);
+
+            row.url = new Label();
+            row.url.AddToClassList("rcs-url");
+            row.url.AddToClassList(RemoteControlEditorStyles.kSubtle);
+            card.Add(row.url);
+
+            var buttons = new VisualElement();
+            buttons.AddToClassList("rcs-buttons");
+            row.run = _MakeButton(string.Empty, () => _ToggleServer(config));
+            buttons.Add(row.run);
+            row.remove = _MakeButton("Remove Server", () => RemoteControlServerManager.RemoveServer(config.port));
+            row.remove.AddToClassList(RemoteControlEditorStyles.kDanger);
+            buttons.Add(row.remove);
+            var delete = _MakeButton("Delete Config", () => _DeleteConfig(config));
+            delete.AddToClassList("rcs-button--delete");
+            delete.AddToClassList(RemoteControlEditorStyles.kDanger);
+            buttons.Add(delete);
+            card.Add(buttons);
+
+            _rows.Add(row);
+            return card;
+        }
+
+        private static Button _MakeButton(string text, System.Action onClick)
+        {
+            var button = new Button(onClick) { text = text };
+            button.AddToClassList("rcs-button");
+            return button;
+        }
+
+        // --- State poll ---
+
+        /// <summary>
+        /// Re-reads the manager for every row. Only touches the state-dependent parts, so a field
+        /// being edited is never overwritten from under the cursor.
+        /// </summary>
+        private void _RefreshStates()
+        {
+            foreach (var row in _rows)
             {
-                EditorGUILayout.HelpBox("No servers configured. Click '+ Add New Server' to create one.", MessageType.Info);
+                if (row.config == null) continue;
+                bool hasServer = RemoteControlServerManager.HasServer(row.config.port);
+                bool isRunning = RemoteControlServerManager.IsServerRunning(row.config.port);
+
+                row.status.text = hasServer ? (isRunning ? "● Running" : "○ Stopped") : "○ Not Created";
+                row.status.EnableInClassList(RemoteControlEditorStyles.kSuccess, isRunning);
+                row.status.EnableInClassList(RemoteControlEditorStyles.kWarning, hasServer && !isRunning);
+                row.status.EnableInClassList(RemoteControlEditorStyles.kSubtle, !hasServer);
+
+                // The port and CORS are baked into the server when it is created, so they can
+                // only be edited while none is listening on that port.
+                bool editable = !hasServer || !isRunning;
+                row.port.SetEnabled(editable);
+                row.cors.SetEnabled(editable);
+
+                row.url.text = isRunning ? $"http://localhost:{row.config.port}/" : string.Empty;
+                row.url.style.display = isRunning ? DisplayStyle.Flex : DisplayStyle.None;
+
+                row.run.text = isRunning ? "Stop Server" : (hasServer ? "Start" : "Start Server");
+                row.run.EnableInClassList(RemoteControlEditorStyles.kSuccess, !isRunning);
+                row.run.EnableInClassList(RemoteControlEditorStyles.kWarning, isRunning);
+                row.remove.style.display = hasServer ? DisplayStyle.Flex : DisplayStyle.None;
+            }
+        }
+
+        // --- Actions ---
+
+        private void _ToggleServer(RemoteControlServerConfig config)
+        {
+            if (RemoteControlServerManager.IsServerRunning(config.port))
+            {
+                RemoteControlServerManager.StopServer(config.port);
+                return;
+            }
+            if (!RemoteControlServerManager.HasServer(config.port)
+                && RemoteControlServerManager.GetOrCreateServer(config.port, config) == null)
+            {
+                return;
+            }
+            RemoteControlServerManager.StartServer(config.port);
+        }
+
+        private void _Commit(RemoteControlServerConfig config, System.Action edit)
+        {
+            edit();
+            EditorUtility.SetDirty(config);
+            AssetDatabase.SaveAssets();
+        }
+
+        private void _AddServer()
+        {
+            int newPort = 3002;
+            while (_settings.serverConfigs.Any(c => c != null && c.port == newPort))
+            {
+                newPort++;
+            }
+
+            var newConfig = CreateInstance<RemoteControlServerConfig>();
+            newConfig.port = newPort;
+            newConfig.enableCors = true;
+            newConfig.runningInEditor = false;
+
+            if (!AssetDatabase.IsValidFolder("Assets/Settings"))
+            {
+                AssetDatabase.CreateFolder("Assets", "Settings");
+            }
+            if (!AssetDatabase.IsValidFolder(kConfigFolder))
+            {
+                AssetDatabase.CreateFolder("Assets/Settings", "RemoteControl");
+            }
+
+            AssetDatabase.CreateAsset(newConfig, $"{kConfigFolder}/RemoteControl_Port{newPort}.asset");
+            AssetDatabase.SaveAssets();
+
+            _settings.serverConfigs.Add(newConfig);
+            EditorUtility.SetDirty(_settings);
+            AssetDatabase.SaveAssets();
+
+            _RebuildList();
+        }
+
+        private void _DeleteConfig(RemoteControlServerConfig config)
+        {
+            if (!EditorUtility.DisplayDialog("Confirm", $"Delete server configuration for port {config.port}?", "Yes", "No"))
+            {
                 return;
             }
 
-            _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
-
-            for (int i = 0; i < _settings.serverConfigs.Count; i++)
+            if (RemoteControlServerManager.HasServer(config.port))
             {
-                // 参照先アセットが現在のプロジェクトに存在しない (別プロジェクト由来・削除済み) 場合がある
-                if (_settings.serverConfigs[i] == null) continue;
-
-                DrawServerInstance(_settings.serverConfigs[i], i);
-                EditorGUILayout.Space();
+                RemoteControlServerManager.RemoveServer(config.port);
             }
 
-            EditorGUILayout.EndScrollView();
-        }
-
-        private void DrawServerInstance(RemoteControlServerConfig config, int index)
-        {
-            EditorGUILayout.BeginVertical("box");
-
-            // Header
-            var hasServer = RemoteControlServerManager.HasServer(config.port);
-            var isRunning = RemoteControlServerManager.IsServerRunning(config.port);
-
-            var statusText = hasServer ? (isRunning ? "● Running" : "○ Stopped") : "○ Not Created";
-            var statusColor = isRunning ? Color.green : (hasServer ? Color.yellow : Color.gray);
-
-            EditorGUILayout.BeginHorizontal();
-            GUI.enabled = false;
-            EditorGUILayout.ObjectField(config, typeof(RemoteControlServerConfig), false);
-            GUI.enabled = true;
-            GUI.color = statusColor;
-            GUILayout.Label(statusText, GUILayout.Width(100));
-            GUI.color = Color.white;
-            EditorGUILayout.EndHorizontal();
-
-            EditorGUILayout.Space();
-
-            // Settings
-            GUI.enabled = !hasServer || !isRunning;
-
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.Label("Port:", GUILayout.Width(100));
-            EditorGUI.BeginChangeCheck();
-            config.port = EditorGUILayout.IntField(config.port);
-            if (EditorGUI.EndChangeCheck())
+            string assetPath = AssetDatabase.GetAssetPath(config);
+            if (!string.IsNullOrEmpty(assetPath))
             {
-                EditorUtility.SetDirty(config);
-                AssetDatabase.SaveAssets();
-            }
-            EditorGUILayout.EndHorizontal();
-
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.Label("Enable CORS:", GUILayout.Width(100));
-            EditorGUI.BeginChangeCheck();
-            config.enableCors = EditorGUILayout.Toggle(config.enableCors);
-            if (EditorGUI.EndChangeCheck())
-            {
-                EditorUtility.SetDirty(config);
-                AssetDatabase.SaveAssets();
-            }
-            EditorGUILayout.EndHorizontal();
-
-            GUI.enabled = true;
-
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.Label("Running in Editor:", GUILayout.Width(120));
-            EditorGUI.BeginChangeCheck();
-            config.runningInEditor = EditorGUILayout.Toggle(config.runningInEditor);
-            if (EditorGUI.EndChangeCheck())
-            {
-                EditorUtility.SetDirty(config);
-                AssetDatabase.SaveAssets();
-            }
-            EditorGUILayout.EndHorizontal();
-
-            if (hasServer && isRunning)
-            {
-                EditorGUILayout.BeginHorizontal();
-                GUILayout.Label("URL:", GUILayout.Width(100));
-                GUILayout.Label($"http://localhost:{config.port}/");
-                EditorGUILayout.EndHorizontal();
+                AssetDatabase.DeleteAsset(assetPath);
             }
 
-            EditorGUILayout.Space();
+            _settings.serverConfigs.Remove(config);
+            EditorUtility.SetDirty(_settings);
+            AssetDatabase.SaveAssets();
 
-            // Control Buttons
-            EditorGUILayout.BeginHorizontal();
-
-            if (!hasServer)
-            {
-                GUI.color = Color.green;
-                if (GUILayout.Button("Start Server", GUILayout.Height(25)))
-                {
-                    var server = RemoteControlServerManager.GetOrCreateServer(config.port, config);
-                    if (server != null)
-                    {
-                        RemoteControlServerManager.StartServer(config.port);
-                    }
-                }
-                GUI.color = Color.white;
-            }
-            else if (isRunning)
-            {
-                GUI.color = Color.yellow;
-                if (GUILayout.Button("Stop Server", GUILayout.Height(25)))
-                {
-                    RemoteControlServerManager.StopServer(config.port);
-                }
-                GUI.color = Color.white;
-            }
-            else
-            {
-                GUI.color = Color.green;
-                if (GUILayout.Button("Start", GUILayout.Height(25)))
-                {
-                    RemoteControlServerManager.StartServer(config.port);
-                }
-                GUI.color = Color.white;
-            }
-
-            if (hasServer)
-            {
-                GUI.color = Color.red;
-                if (GUILayout.Button("Remove Server", GUILayout.Height(25)))
-                {
-                    RemoteControlServerManager.RemoveServer(config.port);
-                }
-                GUI.color = Color.white;
-            }
-
-            GUI.color = Color.red;
-            if (GUILayout.Button("Delete Config", GUILayout.Height(25), GUILayout.Width(100)))
-            {
-                if (EditorUtility.DisplayDialog("Confirm", $"Delete server configuration for port {config.port}?", "Yes", "No"))
-                {
-                    if (hasServer)
-                    {
-                        RemoteControlServerManager.RemoveServer(config.port);
-                    }
-
-                    // アセットファイルを削除
-                    string assetPath = AssetDatabase.GetAssetPath(config);
-                    if (!string.IsNullOrEmpty(assetPath))
-                    {
-                        AssetDatabase.DeleteAsset(assetPath);
-                    }
-
-                    // リストから削除
-                    _settings.serverConfigs.RemoveAt(index);
-                    EditorUtility.SetDirty(_settings);
-                    AssetDatabase.SaveAssets();
-                }
-            }
-            GUI.color = Color.white;
-
-            EditorGUILayout.EndHorizontal();
-
-            EditorGUILayout.EndVertical();
-        }
-
-        private void OnInspectorUpdate()
-        {
-            Repaint();
+            // Rebuilding here would destroy the button whose click is still being dispatched.
+            rootVisualElement.schedule.Execute(_RebuildList);
         }
     }
 }

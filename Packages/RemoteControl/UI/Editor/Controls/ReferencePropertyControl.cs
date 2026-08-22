@@ -11,7 +11,6 @@ namespace Lilium.RemoteControl.UI.Editor
     public class ReferencePropertyControl : IPropertyControl
     {
         private const int kMaxReferenceDepth = 5;
-        private const float kPropertyNameWidth = 160f;
 
         public VisualElement CreateControl(PropertyControlContext ctx)
         {
@@ -63,7 +62,7 @@ namespace Lilium.RemoteControl.UI.Editor
             if (depth >= kMaxReferenceDepth || !ctx.prop.isValid)
             {
                 var depthLabel = new Label(depth >= kMaxReferenceDepth ? "(max depth)" : "(null)");
-                depthLabel.style.color = new Color(0.5f, 0.5f, 0.5f);
+                depthLabel.AddToClassList("uid-meta");
                 foldout.Add(depthLabel);
                 return foldout;
             }
@@ -84,18 +83,11 @@ namespace Lilium.RemoteControl.UI.Editor
                     : parentPath + "." + childPropType.name;
 
                 var row = new VisualElement();
-                row.style.flexDirection = FlexDirection.Row;
-                row.style.marginBottom = 1;
-                row.style.paddingTop = 1;
-                row.style.paddingBottom = 1;
-                row.style.alignItems = Align.Center;
-                row.style.minHeight = 20;
+                row.AddToClassList("uid-prop-row");
                 row.userData = childPath;
 
                 var nameLabel = new Label(ObjectNames.NicifyVariableName(childPropType.name));
-                nameLabel.style.width = kPropertyNameWidth;
-                nameLabel.style.minWidth = kPropertyNameWidth;
-                nameLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+                nameLabel.AddToClassList("uid-prop-name");
                 nameLabel.name = "prop-name";
                 row.Add(nameLabel);
 
@@ -112,8 +104,7 @@ namespace Lilium.RemoteControl.UI.Editor
                     };
                     var childFoldout = _CreateFoldout(childCtx, depth + 1, childPath);
                     childFoldout.name = "prop-control";
-                    childFoldout.style.flexGrow = 1;
-                    childFoldout.style.flexShrink = 1;
+                    childFoldout.AddToClassList("uid-prop-control");
                     row.Add(childFoldout);
                 }
                 else
@@ -130,8 +121,7 @@ namespace Lilium.RemoteControl.UI.Editor
                     };
                     var control = propertyControl.CreateControl(childCtx);
                     control.name = "prop-control";
-                    control.style.flexGrow = 1;
-                    control.style.flexShrink = 1;
+                    control.AddToClassList("uid-prop-control");
                     row.Add(control);
                 }
 

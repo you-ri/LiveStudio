@@ -5,6 +5,7 @@ using UnityEditor;
 using UnityEngine;
 using UnityEditor.UIElements;
 using UnityEngine.UIElements;
+using Lilium.RemoteControl.Editor;
 using Lilium.RemoteControl.Server;
 
 namespace Lilium.RemoteControl.UI.Editor
@@ -26,9 +27,7 @@ namespace Lilium.RemoteControl.UI.Editor
         private ScrollView _propertyScrollView;
         private MenuItem _selectedMenuItem;
 
-        private const float kSideMenuWidth = 48f;
-        private const float kObjectListWidth = 160f;
-        private const float kPropertyNameWidth = 160f;
+        private const string kStyleSheet = "UI/Editor/UIDesignerWindow.uss";
 
         private int _dirtyCount;
         private bool _isUpdatingUI;
@@ -262,27 +261,18 @@ namespace Lilium.RemoteControl.UI.Editor
         private void CreateGUI()
         {
             var root = rootVisualElement;
-            root.style.flexDirection = FlexDirection.Column;
+            RemoteControlEditorStyles.Apply(root, kStyleSheet);
+            root.AddToClassList("uid-root");
 
             // ツールバー
             var toolbar = new VisualElement();
-            toolbar.style.flexDirection = FlexDirection.Row;
-            toolbar.style.flexShrink = 0;
-            toolbar.style.alignItems = Align.Center;
-            toolbar.style.paddingLeft = 4;
-            toolbar.style.paddingRight = 4;
-            toolbar.style.paddingTop = 2;
-            toolbar.style.paddingBottom = 2;
-            toolbar.style.borderBottomWidth = 1;
-            toolbar.style.borderBottomColor = new Color(0.15f, 0.15f, 0.15f);
+            toolbar.AddToClassList("uid-toolbar");
 
             // Definition ObjectField
             _definitionField = new ObjectField();
             _definitionField.objectType = typeof(UIDefinition);
             _definitionField.value = _definition;
-            _definitionField.style.flexGrow = 1;
-            _definitionField.style.maxWidth = 300;
-            _definitionField.style.marginRight = 8;
+            _definitionField.AddToClassList("uid-toolbar-field");
             _definitionField.SetEnabled(false);
             _definitionField.RegisterValueChangedCallback(evt =>
             {
@@ -304,9 +294,7 @@ namespace Lilium.RemoteControl.UI.Editor
             _providerField = new ObjectField();
             _providerField.objectType = typeof(UIRemoteControlBehaviour);
             _providerField.value = _GetProvider();
-            _providerField.style.flexGrow = 1;
-            _providerField.style.maxWidth = 300;
-            _providerField.style.marginRight = 8;
+            _providerField.AddToClassList("uid-toolbar-field");
             _providerField.SetEnabled(false);
             _providerField.RegisterValueChangedCallback(evt =>
             {
@@ -357,66 +345,50 @@ namespace Lilium.RemoteControl.UI.Editor
             {
                 text = "Reset"
             };
-            resetButton.style.width = 60;
+            resetButton.AddToClassList("uid-reset-button");
             toolbar.Add(resetButton);
 
             root.Add(toolbar);
 
             // メインコンテンツ (サイドメニュー + コンテンツエリア)
             var mainContent = new VisualElement();
-            mainContent.style.flexDirection = FlexDirection.Row;
-            mainContent.style.flexGrow = 1;
+            mainContent.AddToClassList("uid-main");
 
             // サイドメニューパネル
             var sidePanel = new VisualElement();
-            sidePanel.style.width = kSideMenuWidth;
-            sidePanel.style.minWidth = kSideMenuWidth;
-            sidePanel.style.flexShrink = 0;
-            sidePanel.style.borderRightWidth = 1;
-            sidePanel.style.borderRightColor = new Color(0.15f, 0.15f, 0.15f);
-            sidePanel.style.flexDirection = FlexDirection.Column;
+            sidePanel.AddToClassList("uid-side-panel");
 
             // Main メニュー領域
             _sideMenuMain = new VisualElement();
-            _sideMenuMain.style.flexGrow = 1;
+            _sideMenuMain.AddToClassList("uid-side-main");
             sidePanel.Add(_sideMenuMain);
 
             // セパレーター
             var separator = new VisualElement();
-            separator.style.height = 1;
-            separator.style.backgroundColor = new Color(0.15f, 0.15f, 0.15f);
-            separator.style.marginTop = 4;
-            separator.style.marginBottom = 4;
+            separator.AddToClassList("uid-side-separator");
             sidePanel.Add(separator);
 
             // Bottom メニュー領域
             _sideMenuBottom = new VisualElement();
-            _sideMenuBottom.style.flexShrink = 0;
+            _sideMenuBottom.AddToClassList("uid-side-bottom");
             sidePanel.Add(_sideMenuBottom);
 
             mainContent.Add(sidePanel);
 
             // コンテンツエリア
             var contentPanel = new VisualElement();
-            contentPanel.style.flexGrow = 1;
-            contentPanel.style.flexDirection = FlexDirection.Column;
+            contentPanel.AddToClassList("uid-content-panel");
 
             // コンテンツ本体（オブジェクトリスト＋プロパティエリア）
             _contentArea = new VisualElement();
-            _contentArea.style.flexGrow = 1;
-            _contentArea.style.flexDirection = FlexDirection.Row;
+            _contentArea.AddToClassList("uid-content");
 
             _objectList = new VisualElement();
-            _objectList.style.width = kObjectListWidth;
-            _objectList.style.minWidth = kObjectListWidth;
-            _objectList.style.flexShrink = 0;
-            _objectList.style.borderRightWidth = 1;
-            _objectList.style.borderRightColor = new Color(0.15f, 0.15f, 0.15f);
+            _objectList.AddToClassList("uid-object-list");
             _contentArea.Add(_objectList);
 
             _propertyArea = new VisualElement();
-            _propertyArea.style.flexGrow = 1;
-            _propertyArea.style.flexDirection = FlexDirection.Column;
+            _propertyArea.AddToClassList("uid-property-area");
             _contentArea.Add(_propertyArea);
 
             contentPanel.Add(_contentArea);
@@ -456,25 +428,14 @@ namespace Lilium.RemoteControl.UI.Editor
         {
             var button = new Button(() => _OnMenuItemClicked(item));
             button.tooltip = item.label ?? item.id;
-            button.style.flexDirection = FlexDirection.Row;
-            button.style.alignItems = Align.Center;
-            button.style.justifyContent = Justify.Center;
-            button.style.height = 36;
-            button.style.marginLeft = 4;
-            button.style.marginRight = 4;
-            button.style.marginTop = 1;
-            button.style.marginBottom = 1;
-            button.style.paddingLeft = 0;
-            button.style.paddingRight = 0;
+            button.AddToClassList("uid-menu-button");
 
             // アイコン表示（editorIcon優先、フォールバックでlabel先頭2文字）
             if (item.editorIcon != null)
             {
                 var iconImage = new Image();
                 iconImage.image = item.editorIcon;
-                iconImage.style.width = 20;
-                iconImage.style.height = 20;
-                iconImage.style.flexShrink = 0;
+                iconImage.AddToClassList("uid-menu-icon");
                 button.Add(iconImage);
             }
             else
@@ -482,17 +443,12 @@ namespace Lilium.RemoteControl.UI.Editor
                 var displayText = item.label ?? item.id ?? "";
                 if (displayText.Length > 2) displayText = displayText.Substring(0, 2);
                 var iconLabel = new Label(displayText);
-                iconLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
-                iconLabel.style.fontSize = 14;
-                iconLabel.style.flexShrink = 0;
+                iconLabel.AddToClassList("uid-menu-initials");
                 button.Add(iconLabel);
             }
 
             // 選択状態のハイライト
-            if (_selectedMenuItemId == item.id)
-            {
-                button.style.backgroundColor = new Color(0.2f, 0.4f, 0.6f, 0.5f);
-            }
+            button.EnableInClassList("uid-menu-button--selected", _selectedMenuItemId == item.id);
 
             return button;
         }
@@ -519,9 +475,7 @@ namespace Lilium.RemoteControl.UI.Editor
             if (categoryPage == null || categoryPage.selector == null)
             {
                 var placeholder = new Label("Custom page");
-                placeholder.style.paddingLeft = 8;
-                placeholder.style.paddingTop = 8;
-                placeholder.style.color = new Color(0.5f, 0.5f, 0.5f);
+                placeholder.AddToClassList("uid-placeholder");
                 _propertyArea.Add(placeholder);
                 return;
             }
@@ -560,23 +514,14 @@ namespace Lilium.RemoteControl.UI.Editor
                     menu.ShowAsContext();
                 });
                 addButton.text = "+";
-                addButton.style.width = 24;
-                addButton.style.height = 24;
-                addButton.style.marginLeft = 2;
-                addButton.style.marginRight = 2;
-                addButton.style.marginTop = 4;
-                addButton.style.marginBottom = 4;
-                addButton.style.fontSize = 14;
-                addButton.style.unityTextAlign = TextAnchor.MiddleCenter;
+                addButton.AddToClassList("uid-add-button");
                 _objectList.Add(addButton);
             }
 
             if (objects == null || objects.Length == 0)
             {
                 var noObjects = new Label("No objects found");
-                noObjects.style.paddingLeft = 8;
-                noObjects.style.paddingTop = 8;
-                noObjects.style.color = new Color(0.5f, 0.5f, 0.5f);
+                noObjects.AddToClassList("uid-placeholder");
                 _objectList.Add(noObjects);
                 return;
             }
@@ -592,27 +537,18 @@ namespace Lilium.RemoteControl.UI.Editor
                     firstLive = exposed;
 
                 var row = new VisualElement();
-                row.style.flexDirection = FlexDirection.Row;
-                row.style.marginLeft = 2;
-                row.style.marginRight = 2;
-                row.style.marginTop = 1;
-                row.style.marginBottom = 1;
+                row.AddToClassList("uid-object-row");
 
                 var capturedLive = exposed;
                 var objButton = new Button(() => _SelectObject(capturedLive.Value));
                 objButton.text = exposed.Value.name;
-                objButton.style.height = 28;
-                objButton.style.flexGrow = 1;
-                objButton.style.flexShrink = 1;
-                objButton.style.overflow = Overflow.Hidden;
+                objButton.AddToClassList("uid-object-button");
                 objButton.name = "obj-button";
                 objButton.userData = exposed;
 
                 // 選択状態のハイライト
-                if (_selectedObject != null && _selectedObject == exposed)
-                {
-                    objButton.style.backgroundColor = new Color(0.2f, 0.4f, 0.6f, 0.5f);
-                }
+                objButton.EnableInClassList("uid-object-button--selected",
+                    _selectedObject != null && _selectedObject == exposed);
 
                 row.Add(objButton);
 
@@ -633,10 +569,7 @@ namespace Lilium.RemoteControl.UI.Editor
                         _ShowPage(capturedItem);
                     });
                     deleteButton.text = "×";
-                    deleteButton.style.width = 24;
-                    deleteButton.style.minWidth = 24;
-                    deleteButton.style.height = 28;
-                    deleteButton.style.flexShrink = 0;
+                    deleteButton.AddToClassList("uid-object-delete");
                     row.Add(deleteButton);
                 }
 
@@ -667,9 +600,7 @@ namespace Lilium.RemoteControl.UI.Editor
                 if (button == null) continue;
 
                 var isSelected = button.userData as LiveObjectHandle? == _selectedObject;
-                button.style.backgroundColor = isSelected
-                    ? new Color(0.2f, 0.4f, 0.6f, 0.5f)
-                    : StyleKeyword.Null;
+                button.EnableInClassList("uid-object-button--selected", isSelected);
             }
         }
 
@@ -683,9 +614,7 @@ namespace Lilium.RemoteControl.UI.Editor
                 if (obj != null)
                 {
                     var invalid = new Label("Invalid object");
-                    invalid.style.color = new Color(0.8f, 0.3f, 0.3f);
-                    invalid.style.paddingLeft = 8;
-                    invalid.style.paddingTop = 8;
+                    invalid.AddToClassList("uid-invalid");
                     _propertyArea.Add(invalid);
                 }
                 return;
@@ -693,16 +622,11 @@ namespace Lilium.RemoteControl.UI.Editor
 
             // ヘッダー
             var headerContainer = new VisualElement();
-            headerContainer.style.paddingLeft = 8;
-            headerContainer.style.paddingTop = 8;
-            headerContainer.style.paddingBottom = 8;
-            headerContainer.style.borderBottomWidth = 1;
-            headerContainer.style.borderBottomColor = new Color(0.15f, 0.15f, 0.15f);
+            headerContainer.AddToClassList("uid-detail-header");
 
             // クラス名（上段）
             var classLabel = new Label(obj.targetTypeName);
-            classLabel.style.color = new Color(0.5f, 0.5f, 0.5f);
-            classLabel.style.fontSize = 11;
+            classLabel.AddToClassList("uid-detail-meta");
             headerContainer.Add(classLabel);
 
             // オブジェクト名（メインタイトル）
@@ -714,7 +638,7 @@ namespace Lilium.RemoteControl.UI.Editor
                 nameField.name = "header-name-field";
                 nameField.label = "";
                 nameField.value = obj.name;
-                nameField.style.marginBottom = 4;
+                nameField.AddToClassList("uid-name-field");
                 var capturedObj = obj;
                 nameField.RegisterValueChangedCallback(evt =>
                 {
@@ -749,24 +673,20 @@ namespace Lilium.RemoteControl.UI.Editor
                 header.label = "";
                 header.value = obj.name;
                 header.isReadOnly = true;
-                header.style.marginBottom = 4;
+                header.AddToClassList("uid-name-field");
                 headerContainer.Add(header);
             }
 
             // ID
             var idLabel = new Label($"ID: {obj.id}");
-            idLabel.style.color = new Color(0.5f, 0.5f, 0.5f);
-            idLabel.style.fontSize = 11;
+            idLabel.AddToClassList("uid-detail-meta");
             headerContainer.Add(idLabel);
 
             _propertyArea.Add(headerContainer);
 
             // スクロール可能なコンテンツ
             _propertyScrollView = new ScrollView(ScrollViewMode.Vertical);
-            _propertyScrollView.style.flexGrow = 1;
-            _propertyScrollView.style.paddingLeft = 8;
-            _propertyScrollView.style.paddingTop = 8;
-            _propertyScrollView.style.paddingRight = 8;
+            _propertyScrollView.AddToClassList("uid-detail-scroll");
 
             // プロパティ一覧
             if (propertyTypes != null && propertyTypes.Length > 0)
@@ -818,16 +738,11 @@ namespace Lilium.RemoteControl.UI.Editor
             if (propertyControl is TypeSelectorPropertyControl tsControl)
             {
                 var wrapper = new VisualElement();
-                wrapper.style.flexDirection = FlexDirection.Column;
-                wrapper.style.marginBottom = 1;
+                wrapper.AddToClassList("uid-prop-wrapper");
 
                 // ラベル + ドロップダウン行
                 var headerRow = new VisualElement();
-                headerRow.style.flexDirection = FlexDirection.Row;
-                headerRow.style.paddingTop = 1;
-                headerRow.style.paddingBottom = 1;
-                headerRow.style.alignItems = Align.Center;
-                headerRow.style.minHeight = 20;
+                headerRow.AddToClassList("uid-prop-header-row");
 
                 var nameLabel = _CreatePropertyNameLabel(obj, propType);
                 headerRow.Add(nameLabel);
@@ -837,8 +752,7 @@ namespace Lilium.RemoteControl.UI.Editor
 
                 var control = tsControl.CreateControl(ctx);
                 control.name = "prop-control";
-                control.style.flexGrow = 1;
-                control.style.flexShrink = 1;
+                control.AddToClassList("uid-prop-control");
                 headerRow.Add(control);
 
                 wrapper.Add(headerRow);
@@ -859,15 +773,10 @@ namespace Lilium.RemoteControl.UI.Editor
             if (propertyControl is CameraControlPropertyControl ccControl)
             {
                 var wrapper = new VisualElement();
-                wrapper.style.flexDirection = FlexDirection.Column;
-                wrapper.style.marginBottom = 1;
+                wrapper.AddToClassList("uid-prop-wrapper");
 
                 var headerRow = new VisualElement();
-                headerRow.style.flexDirection = FlexDirection.Row;
-                headerRow.style.paddingTop = 1;
-                headerRow.style.paddingBottom = 1;
-                headerRow.style.alignItems = Align.Center;
-                headerRow.style.minHeight = 20;
+                headerRow.AddToClassList("uid-prop-header-row");
 
                 var nameLabel = _CreatePropertyNameLabel(obj, propType);
                 headerRow.Add(nameLabel);
@@ -876,8 +785,7 @@ namespace Lilium.RemoteControl.UI.Editor
 
                 var control = ccControl.CreateControl(ctx);
                 control.name = "prop-control";
-                control.style.flexGrow = 1;
-                control.style.flexShrink = 1;
+                control.AddToClassList("uid-prop-control");
                 headerRow.Add(control);
 
                 wrapper.Add(headerRow);
@@ -895,20 +803,14 @@ namespace Lilium.RemoteControl.UI.Editor
 
             // 通常のプロパティ行
             var row = new VisualElement();
-            row.style.flexDirection = FlexDirection.Row;
-            row.style.marginBottom = 1;
-            row.style.paddingTop = 1;
-            row.style.paddingBottom = 1;
-            row.style.alignItems = Align.Center;
-            row.style.minHeight = 20;
+            row.AddToClassList("uid-prop-row");
 
             var label = _CreatePropertyNameLabel(obj, propType);
             row.Add(label);
 
             var ctrl = propertyControl.CreateControl(ctx);
             ctrl.name = "prop-control";
-            ctrl.style.flexGrow = 1;
-            ctrl.style.flexShrink = 1;
+            ctrl.AddToClassList("uid-prop-control");
             row.Add(ctrl);
 
             // プロパティ名をuserDataに保存（値更新用）
@@ -920,15 +822,9 @@ namespace Lilium.RemoteControl.UI.Editor
         private Label _CreatePropertyNameLabel(LiveObjectHandle obj, LivePropertyType propType)
         {
             var nameLabel = new Label(ObjectNames.NicifyVariableName(propType.name));
-            nameLabel.style.width = kPropertyNameWidth;
-            nameLabel.style.minWidth = kPropertyNameWidth;
-            nameLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+            nameLabel.AddToClassList("uid-prop-name");
             nameLabel.name = "prop-name";
-
-            if (obj.IsPropertyDirty(propType.name))
-            {
-                nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-            }
+            nameLabel.EnableInClassList("uid-prop-name--dirty", obj.IsPropertyDirty(propType.name));
 
             return nameLabel;
         }
@@ -997,9 +893,7 @@ namespace Lilium.RemoteControl.UI.Editor
                     var nameLabel = child.Q<Label>("prop-name");
                     if (nameLabel != null)
                     {
-                        nameLabel.style.unityFontStyleAndWeight = selected.IsPropertyDirty(propName)
-                            ? FontStyle.Bold
-                            : FontStyle.Normal;
+                        nameLabel.EnableInClassList("uid-prop-name--dirty", selected.IsPropertyDirty(propName));
                     }
                 }
             }
