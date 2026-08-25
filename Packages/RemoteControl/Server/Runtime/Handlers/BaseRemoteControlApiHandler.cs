@@ -1,3 +1,4 @@
+using Lilium.RemoteControl.Frames;
 using System;
 using System.IO;
 using System.Net;
@@ -363,6 +364,37 @@ namespace Lilium.RemoteControl.RestApi
         }
 
 
+
+        /// <summary>
+        /// Source recorded for anything arriving over REST.
+        ///
+        /// The transport, not the individual client: what a recording needs to tell apart is
+        /// outside-versus-inside, and naming each connection would add a symbol per ephemeral port
+        /// -- an unbounded table for no gain.
+        /// </summary>
+        protected const string kRestSource = "rest";
+
+        /// <summary>
+        /// Applies a state-changing request through the frame gate, so it takes its place in the
+        /// order and lands at the head of a frame.
+        ///
+        /// Read-only work stays on <see cref="ExecuteOnMainThread{T}"/>. Needing the main thread is
+        /// not the same as changing state, and sending reads through the gate would bury the record
+        /// under lookups that change nothing.
+        /// </summary>
+        protected Task<T> ExecuteAsInput<T>(InputKind kind, string target, string payload, Func<T> action)
+            => FrameGate.SubmitAsync(kind, kRestSource, target, payload, action);
+
+        /// <summary>Void form of <see cref="ExecuteAsInput{T}"/>.</summary>
+        protected Task ExecuteAsInput(InputKind kind, string target, string payload, Action action)
+            => FrameGate.SubmitAsync(kind, kRestSource, target, payload, () => { action(); return true; });
+
+        /// <summary>
+        /// Applies several operations as one unit, for a bundled request whose parts have to take
+        /// effect in the same frame.
+        /// </summary>
+        protected Task<T> ExecuteGroupAsInput<T>(IReadOnlyList<InputDescriptor> operations, Func<T> action)
+            => FrameGate.SubmitGroupAsync(operations, kRestSource, action);
 
         /// <summary>
         /// メインスレッドで処理を実行

@@ -6,13 +6,12 @@ using UnityEngine.SceneManagement;
 
 using Lilium.RemoteControl;
 using Lilium.RemoteControl.Dialogs;
-using Lilium.RemoteControl.Notification;
 
 namespace Lilium.RemoteControl.LiveScene
 {
     /// <summary>
     /// Pure C# scene save/load helper. Used to be a MonoBehaviour; host
-    /// <see cref="RemoteControlBehaviour"/> now drives Unity lifecycle
+    /// <c>RemoteControlBehaviour</c> now drives Unity lifecycle
     /// (wantsToQuit / playModeStateChanged / coroutines for dialogs).
     /// </summary>
     public class LiveSceneSaveSystem
@@ -413,9 +412,9 @@ namespace Lilium.RemoteControl.LiveScene
             Debug.Log($"[RemoteControl] Live scene saved to '{fullPath}'");
 
             // Let connected remote apps know the save completed (shown as a toast there).
-            RemoteNotificationSystem.Show(
+            RemoteControlService.Notify(
                 LocalizationSystem.Translate("NOTIFY_LIVESCENE_SAVED"),
-                RemoteNotificationSystem.Type.Success,
+                NoticeLevel.Success,
                 icon: "save");
         }
 

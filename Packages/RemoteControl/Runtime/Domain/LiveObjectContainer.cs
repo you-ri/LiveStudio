@@ -9,7 +9,7 @@ namespace Lilium.RemoteControl
     /// <summary>
     /// Holds a list of <see cref="ILiveObject"/> instances and acts as a resolver that finds
     /// objects by id or by target reference. Used to be a MonoBehaviour; the host
-    /// <see cref="Lilium.RemoteControl.LiveScene.RemoteControlBehaviour"/> now owns the serialized
+    /// <c>RemoteControlBehaviour</c> now owns the serialized
     /// list and forwards Unity lifecycle calls.
     /// </summary>
     [LiveClass("ObjectContainer", Icon = "widgets", HideInScene = true)]
@@ -21,6 +21,15 @@ namespace Lilium.RemoteControl
         public string liveName => _name;
 
         public IReadOnlyList<ILiveObject> objects => _objects;
+
+        /// <summary>
+        /// The container the running host merged every source into, or null when no host is active.
+        /// Scene restore has to resolve ids against that merged set, but it must not reach for the
+        /// host itself: the host lives with the HTTP server, and persistence has to keep working
+        /// with no server running. The host installs itself here on startup and clears it on
+        /// shutdown.
+        /// </summary>
+        public static LiveObjectContainer main { get; set; }
 
         // List instance is owned by the host MonoBehaviour (SerializeReference) and shared by reference.
         // Internal so LiveSceneSerializer can append wrapper entries during deserialization.
@@ -45,7 +54,7 @@ namespace Lilium.RemoteControl
 
         /// <summary>
         /// Optional host UnityEngine.Object reference. Used for editor undo recording when the
-        /// container's _objects list mutates (set by <see cref="Lilium.RemoteControl.LiveScene.RemoteControlBehaviour"/>).
+        /// container's _objects list mutates (set by <c>RemoteControlBehaviour</c>).
         /// </summary>
         public UnityEngine.Object host { get; }
 

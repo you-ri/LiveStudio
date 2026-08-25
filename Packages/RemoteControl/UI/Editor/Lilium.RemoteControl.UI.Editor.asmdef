@@ -6,7 +6,8 @@
         "Lilium.RemoteControl.Reflection",
         "Lilium.RemoteControl.UI",
         "Lilium.RemoteControl.LiveScene",
-        "Lilium.RemoteControl.Editor"
+        "Lilium.RemoteControl.Editor",
+        "Lilium.RemoteControl.Server"
     ],
     "includePlatforms": [
         "Editor"

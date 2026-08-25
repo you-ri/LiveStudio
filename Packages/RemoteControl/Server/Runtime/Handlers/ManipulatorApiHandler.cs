@@ -1,4 +1,5 @@
 // Copyright (c) You-Ri, 2026
+using Lilium.RemoteControl.Frames;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -134,7 +135,9 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            var session = await ExecuteOnMainThread(() => ManipulatorCameraService.Open(req.objectId, req.propertyPath));
+            var session = await ExecuteAsInput(InputKind.StructureChange,
+                context.Request.Url.AbsolutePath, body,
+                () => ManipulatorCameraService.Open(req.objectId, req.propertyPath));
             if (session == null)
             {
                 await WriteError(context, 404, "Failed to open manipulator session (object not found or invalid).");
@@ -194,7 +197,9 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            await ExecuteOnMainThread(() => ManipulatorCameraService.Close(session.id));
+            await ExecuteAsInput(InputKind.StructureChange,
+                context.Request.Url.AbsolutePath, session.id.ToString(),
+                () => ManipulatorCameraService.Close(session.id));
             context.Response.StatusCode = 204;
             await WriteResponse(context.Response, string.Empty, "application/json");
         }
@@ -226,7 +231,8 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            await ExecuteOnMainThread(() =>
+            await ExecuteAsInput(InputKind.PropertyWrite,
+                context.Request.Url.AbsolutePath, body, () =>
             {
                 ManipulatorCameraService.UpdatePose(session.id, req.yaw, req.pitch, req.distance);
                 if (req.panDx.HasValue || req.panDy.HasValue)

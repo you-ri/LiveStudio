@@ -1,3 +1,4 @@
+using Lilium.RemoteControl.Frames;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -591,7 +592,7 @@ namespace Lilium.RemoteControl
             // (object 未解決時に InputStream を読むかどうかは応答内容に影響しない)。
             var body = readBody ? await ReadRequestBody(context.Request) : null;
 
-            var result = await ExecuteOnMainThread(() =>
+            var result = await ExecuteAsInput(InputKind.PropertyWrite, path, body, () =>
             {
                 if (!TryBuildPropertyContext(GetObjectContainer(), path, stripResetSuffix, body,
                         out var ctx, out var errStatus, out var errMessage))
@@ -926,8 +927,15 @@ namespace Lilium.RemoteControl
 
             // Pass 2: 実行 + 応答構築はメインスレッド (各オペレーションが Unity API を含む)。
             // 全件を 1 ホップで適用しフレーム内で一貫させる。
-            var responseJson = await ExecuteOnMainThread(
-                () => ExecuteBatchItems(GetObjectContainer(), GetResolver(), items, preResolved));
+            // A bundle that only reads never reaches the gate: it would fill the record with
+            // lookups, and the polling loop sends one of these every hundred milliseconds.
+            var writes = _DescribeBatchWrites(items);
+
+            var responseJson = writes == null
+                ? await ExecuteOnMainThread(
+                    () => ExecuteBatchItems(GetObjectContainer(), GetResolver(), items, preResolved))
+                : await ExecuteGroupAsInput(writes,
+                    () => ExecuteBatchItems(GetObjectContainer(), GetResolver(), items, preResolved));
             await WriteResponse(200, context.Response, responseJson);
         }
 
@@ -979,6 +987,35 @@ namespace Lilium.RemoteControl
 
         // batch サブリクエスト 1 件分の抽出結果。JObject ツリー (JObject/JProperty/内部辞書/ラッパ JValue)
         // を作らず、ストリーム読みで軽量に取り出すためのタプル。id は echo 用の JToken (欠落/null 可)。
+        /// <summary>
+        /// The write sub-requests of a bundle, or null when it only reads.
+        ///
+        /// One descriptor per sub-request rather than one for the whole bundle: a single record
+        /// holding the entire body would always exceed what a record can keep, and the bundle is
+        /// how the remote app sends most of its writes -- recording it as one truncated blob would
+        /// leave the main path unreplayable.
+        /// </summary>
+        private static List<InputDescriptor> _DescribeBatchWrites(List<BatchItem> items)
+        {
+            List<InputDescriptor> writes = null;
+
+            for (int i = 0; i < items.Count; i++)
+            {
+                var item = items[i];
+                if (string.Equals(item.method, "GET", StringComparison.OrdinalIgnoreCase)) continue;
+
+                var kind = string.Equals(item.method, "POST", StringComparison.OrdinalIgnoreCase) &&
+                           item.path != null && item.path.StartsWith("/live/function/", StringComparison.OrdinalIgnoreCase)
+                    ? InputKind.FunctionCall
+                    : InputKind.PropertyWrite;
+
+                writes ??= new List<InputDescriptor>(items.Count);
+                writes.Add(new InputDescriptor(kind, item.path, item.body));
+            }
+
+            return writes;
+        }
+
         internal readonly struct BatchItem
         {
             public readonly JToken id;
@@ -1411,8 +1448,11 @@ namespace Lilium.RemoteControl
 
             var body = await ReadRequestBody(context.Request);
 
-            // 関数の解決・パラメータ準備・実行・結果 JSON 化をすべてメインスレッドで行う
-            var result = await ExecuteOnMainThread(
+            // 関数の解決・パラメータ準備・実行・結果 JSON 化をすべてメインスレッドで行う。
+            // A call is an input in its own right: a trigger or a scene change never shows up as a
+            // property value changing, so recording only writes would lose it.
+            var result = await ExecuteAsInput(InputKind.FunctionCall,
+                context.Request.Url.AbsolutePath, body,
                 () => InvokeFunctionCore(GetObjectContainer(), GetResolver(), id, functionPath, body));
 
             if (!result.ok)
@@ -1649,7 +1689,8 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            var result = await ExecuteOnMainThread(() =>
+            var result = await ExecuteAsInput(InputKind.StructureChange,
+                context.Request.Url.AbsolutePath, body, () =>
             {
                 var ok = LiveObjectRegistry.SetParent(id, parentId, out var err);
                 if (!ok) return (ok: false, error: err, value: (JObject)null);

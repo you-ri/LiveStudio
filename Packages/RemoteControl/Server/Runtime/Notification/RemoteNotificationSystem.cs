@@ -1,4 +1,6 @@
 // Copyright (c) You-Ri, 2026
+using UnityEngine;
+
 using Lilium.RemoteControl.Server;
 
 namespace Lilium.RemoteControl.Notification
@@ -20,6 +22,38 @@ namespace Lilium.RemoteControl.Notification
             Success,
             Warning,
             Error,
+        }
+
+        /// <summary>
+        /// データ層が上げた知らせを接続中の RemoteApp へ橋渡しする。データ層はサーバーを知らない
+        /// (永続化はサーバー未起動でも動く) ので、購読はこちら側で張る。
+        /// 再生中とエディタの両方で張るのは、シーン保存が非再生中にも走るため。
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+#if UNITY_EDITOR
+        [UnityEditor.InitializeOnLoadMethod]
+#endif
+        private static void _InstallNoticeBridge()
+        {
+            // Domain Reload 無効時に二重購読しないよう、必ず外してから張る。
+            RemoteControlService.onNotice -= _OnNotice;
+            RemoteControlService.onNotice += _OnNotice;
+        }
+
+        private static void _OnNotice(string message, NoticeLevel level, string title, string icon)
+        {
+            Show(message, _FromNoticeLevel(level), title, icon);
+        }
+
+        private static Type _FromNoticeLevel(NoticeLevel level)
+        {
+            switch (level)
+            {
+                case NoticeLevel.Success: return Type.Success;
+                case NoticeLevel.Warning: return Type.Warning;
+                case NoticeLevel.Error: return Type.Error;
+                default: return Type.Information;
+            }
         }
 
         /// <summary>

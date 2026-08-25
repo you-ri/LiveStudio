@@ -248,6 +248,10 @@ namespace Lilium.RemoteControl.LiveScene
 
             _container.Initialize();
 
+            // Publish the merged container so persistence can resolve ids without reaching for this
+            // host (which owns the HTTP server and must stay out of the persistence layer).
+            LiveObjectContainer.main = _container;
+
             if (!Application.isPlaying) return;
 
             _StartServerAndRegister();
@@ -317,6 +321,7 @@ namespace Lilium.RemoteControl.LiveScene
                 _sceneSave.OnDisable();
             }
 
+            if (ReferenceEquals(LiveObjectContainer.main, _container)) LiveObjectContainer.main = null;
             _container?.Shutdown();
 
             // Last: the save above (autoSaveOnQuit) has to see the asset-declared types still

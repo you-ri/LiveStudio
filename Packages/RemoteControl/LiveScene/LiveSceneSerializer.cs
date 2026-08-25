@@ -855,12 +855,7 @@ namespace Lilium.RemoteControl.LiveScene
             var typeName = jObject["@type"]?.Value<string>();
             if (string.IsNullOrEmpty(typeName)) return false;
 
-#if UNITY_2022_3_OR_NEWER
-            var host = UnityEngine.Object.FindFirstObjectByType<RemoteControlBehaviour>();
-#else
-            var host = UnityEngine.Object.FindObjectOfType<RemoteControlBehaviour>();
-#endif
-            var resolver = host != null ? host.objectContainer : null;
+            var resolver = LiveObjectContainer.main;
             if (resolver == null) return false;
             if (resolver.FindById(id) != null) return true; // already restored (e.g. a raced drain)
 

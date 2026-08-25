@@ -10,7 +10,7 @@ namespace Lilium.RemoteControl.LiveScene
 {
     /// <summary>
     /// Holds a list of remote-controllable <see cref="ILiveObject"/> instances for the scene it
-    /// lives in, and registers itself in a static registry so a <see cref="RemoteControlBehaviour"/>
+    /// lives in, and registers itself in a static registry so a <c>RemoteControlBehaviour</c>
     /// (which owns the single HTTP server) can discover and merge those objects.
     ///
     /// It is also the scene side of <see cref="LiveClassAsset"/>: it implements the standard
@@ -70,7 +70,7 @@ namespace Lilium.RemoteControl.LiveScene
         private readonly List<ILiveObject> _bindingObjects = new List<ILiveObject>();
 
         /// <summary>
-        /// The runtime binding wrappers, merged by the host <see cref="RemoteControlBehaviour"/> as
+        /// The runtime binding wrappers, merged by the host <c>RemoteControlBehaviour</c> as
         /// a source separate from <see cref="_objects"/>. The list instance is stable for the life
         /// of the component, so the host can hold it by reference.
         /// </summary>

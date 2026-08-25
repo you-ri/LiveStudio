@@ -8,6 +8,8 @@
         "Lilium.RemoteControl.UI",
         "Lilium.RemoteControl.UI.Editor",
         "Lilium.RemoteControl.LiveScene",
+        "Lilium.RemoteControl.Server",
+        "Unity.Collections",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

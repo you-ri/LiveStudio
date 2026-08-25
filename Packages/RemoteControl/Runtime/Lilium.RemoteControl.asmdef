@@ -3,7 +3,8 @@
     "rootNamespace": "Lilium.RemoteControl",
     "references": [
         "Lilium.RemoteControl.Reflection",
-        "Lilium.RemoteControl.Core"
+        "Lilium.RemoteControl.Core",
+        "Unity.Collections"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

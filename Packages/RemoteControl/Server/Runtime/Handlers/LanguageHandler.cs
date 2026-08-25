@@ -1,4 +1,5 @@
 // Copyright (c) You-Ri, 2026
+using Lilium.RemoteControl.Frames;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -53,7 +54,8 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            await ExecuteOnMainThread(() =>
+            await ExecuteAsInput(InputKind.PropertyWrite,
+                context.Request.Url.AbsolutePath, language, () =>
             {
                 LocalizationSystem.currentLanguage = language;
             });

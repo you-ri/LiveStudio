@@ -24,6 +24,7 @@
     "server"
   ],
   "dependencies": {
+    "com.unity.collections": "2.6.2",
     "com.unity.nuget.newtonsoft-json": "3.2.1",
     "com.unity.modules.jsonserialize": "1.0.0"
   }

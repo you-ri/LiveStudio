@@ -32,9 +32,15 @@ namespace Lilium.RemoteControl
         /// <summary>
         /// FPS as a decimal value (e.g. 60.0 for 60fps).
         /// </summary>
+        /// <remarks>
+        /// The numerator is promoted to double before dividing. Dividing the two uints directly is
+        /// integer division, which truncated every rate that is not a whole number of frames per
+        /// second: 60000/1001 came back as 59 instead of 59.94, so a caller scaling a time by this
+        /// drifted by roughly one frame per second.
+        /// </remarks>
         public double AsDecimal()
         {
-            return denominator / numerator;
+            return denominator / (double)numerator;
         }
 
         /// <summary>
