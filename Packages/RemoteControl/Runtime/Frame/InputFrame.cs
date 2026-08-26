@@ -1,5 +1,7 @@
 // Copyright (c) You-Ri, 2026
 using System;
+using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 
 namespace Lilium.RemoteControl.Frames
 {
@@ -12,12 +14,17 @@ namespace Lilium.RemoteControl.Frames
     /// stream). <see cref="timecode"/> derives the readable form from those two; it is not stored,
     /// so the two can never disagree.
     ///
-    /// Instances are owned and reused by <see cref="InputFrameBuffer"/>, so the input array is a
-    /// capacity buffer. Read <see cref="inputCount"/>, never <c>inputs.Length</c>.
+    /// The records sit in native storage, like the state blocks: they were always unmanaged, and
+    /// holding them where the address does not move keeps a copy between frames a block move and
+    /// leaves the door open to reading them from a job.
+    ///
+    /// Instances are owned and reused by <see cref="InputFrameBuffer"/>, so the storage is a
+    /// capacity buffer. Read <see cref="inputCount"/>, never the storage length. Whoever creates one
+    /// disposes it; a frame that never received a record never allocates and costs nothing to drop.
     /// </summary>
-    public sealed class InputFrame
+    public sealed unsafe class InputFrame : IDisposable
     {
-        private InputRecord[] _inputs = Array.Empty<InputRecord>();
+        private NativeArray<InputRecord> _inputs;
         private int _inputCount;
 
         /// <summary>Monotonic frame number since the start of the run.</summary>
@@ -32,14 +39,15 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>Number of valid entries in <see cref="inputs"/>.</summary>
         public int inputCount => _inputCount;
 
-        /// <summary>Backing store. Only the first <see cref="inputCount"/> entries are valid.</summary>
-        public InputRecord[] inputs => _inputs;
+        /// <summary>Storage. Only the first <see cref="inputCount"/> entries are valid.</summary>
+        public NativeArray<InputRecord> inputs => _inputs;
 
         public InputRecord this[int index]
         {
             get
             {
                 if ((uint)index >= (uint)_inputCount) throw new ArgumentOutOfRangeException(nameof(index));
+
                 return _inputs[index];
             }
         }
@@ -53,33 +61,61 @@ namespace Lilium.RemoteControl.Frames
 
         internal void Add(in InputRecord record)
         {
-            if (_inputCount == _inputs.Length)
-            {
-                // Grow to the high-water mark and stay there; steady state does not reallocate.
-                var grown = new InputRecord[_inputs.Length == 0 ? 8 : _inputs.Length * 2];
-                Array.Copy(_inputs, grown, _inputCount);
-                _inputs = grown;
-            }
+            _EnsureCapacity(_inputCount + 1);
 
-            _inputs[_inputCount++] = record;
+            UnsafeUtility.WriteArrayElement(_inputs.GetUnsafePtr(), _inputCount, record);
+            _inputCount++;
         }
 
         /// <summary>
-        /// Copies this frame into <paramref name="destination"/>, growing its buffer if needed. A
+        /// Copies this frame into <paramref name="destination"/>, growing its storage if needed. A
         /// reader that reuses one destination settles at the high-water mark and stops allocating.
         /// </summary>
         internal void CopyTo(InputFrame destination)
         {
             destination.frameNumber = frameNumber;
             destination.frameRate = frameRate;
+            destination._inputCount = _inputCount;
 
-            if (destination._inputs.Length < _inputCount)
+            if (_inputCount == 0) return;
+
+            destination._EnsureCapacity(_inputCount);
+
+            UnsafeUtility.MemCpy(destination._inputs.GetUnsafePtr(), _inputs.GetUnsafeReadOnlyPtr(),
+                (long)_inputCount * sizeof(InputRecord));
+        }
+
+        /// <summary>
+        /// Releases the storage. The frame stays usable and allocates again on next write, so a
+        /// buffer that is released between runs does not have to rebuild its slots.
+        /// </summary>
+        public void Dispose()
+        {
+            if (_inputs.IsCreated) _inputs.Dispose();
+
+            _inputs = default;
+            _inputCount = 0;
+        }
+
+        private void _EnsureCapacity(int required)
+        {
+            var capacity = _inputs.IsCreated ? _inputs.Length : 0;
+            if (capacity >= required) return;
+
+            // Grow to the high-water mark and stay there; steady state does not reallocate.
+            var grown = Math.Max(required, capacity == 0 ? 8 : capacity * 2);
+            var replacement = new NativeArray<InputRecord>(grown, Allocator.Persistent,
+                NativeArrayOptions.ClearMemory);
+
+            if (_inputs.IsCreated)
             {
-                destination._inputs = new InputRecord[_inputCount];
+                UnsafeUtility.MemCpy(replacement.GetUnsafePtr(), _inputs.GetUnsafeReadOnlyPtr(),
+                    (long)_inputCount * sizeof(InputRecord));
+
+                _inputs.Dispose();
             }
 
-            Array.Copy(_inputs, destination._inputs, _inputCount);
-            destination._inputCount = _inputCount;
+            _inputs = replacement;
         }
 
         public override string ToString() => $"frame {frameNumber} @ {timecode} ({_inputCount} inputs)";

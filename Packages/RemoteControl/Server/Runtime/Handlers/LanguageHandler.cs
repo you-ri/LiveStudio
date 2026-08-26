@@ -54,7 +54,7 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            await ExecuteAsInput(InputKind.PropertyWrite,
+            await ExecuteAsInput(InputKind.PropertyWrite, context.Request.HttpMethod,
                 context.Request.Url.AbsolutePath, language, () =>
             {
                 LocalizationSystem.currentLanguage = language;

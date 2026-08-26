@@ -135,7 +135,7 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            var session = await ExecuteAsInput(InputKind.StructureChange,
+            var session = await ExecuteAsInput(InputKind.StructureChange, context.Request.HttpMethod,
                 context.Request.Url.AbsolutePath, body,
                 () => ManipulatorCameraService.Open(req.objectId, req.propertyPath));
             if (session == null)
@@ -197,7 +197,7 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            await ExecuteAsInput(InputKind.StructureChange,
+            await ExecuteAsInput(InputKind.StructureChange, context.Request.HttpMethod,
                 context.Request.Url.AbsolutePath, session.id.ToString(),
                 () => ManipulatorCameraService.Close(session.id));
             context.Response.StatusCode = 204;
@@ -231,7 +231,7 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            await ExecuteAsInput(InputKind.PropertyWrite,
+            await ExecuteAsInput(InputKind.PropertyWrite, context.Request.HttpMethod,
                 context.Request.Url.AbsolutePath, body, () =>
             {
                 ManipulatorCameraService.UpdatePose(session.id, req.yaw, req.pitch, req.distance);

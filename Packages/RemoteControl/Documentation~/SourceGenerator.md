@@ -34,6 +34,53 @@ Practical consequences:
 
 ---
 
+## State blocks
+
+The generator also emits the **state-lane blocks** the deterministic frame carries.
+
+A member declared `lane = FrameLane.State` is read every frame, for every object that has one. That
+is the case reflection handles worst, so the generator turns it into field assignments: for each type
+with such members it emits a blittable struct and the two functions that move an object in and out of
+it, then registers them with `StateBridgeRegistry` from the same module initializer as the
+declaration-order table.
+
+```csharp
+[LiveClass]
+public partial class Lamp
+{
+    [LiveField(lane = FrameLane.State)] private float _intensity;
+    [LiveField(lane = FrameLane.State)] private Vector3 _position;
+    [LiveField]                         private string _label;   // input lane, not carried here
+}
+```
+
+emits, inside `Lamp`:
+
+```csharp
+public struct LiveStateBlock { public float _intensity; public UnityEngine.Vector3 _position; }
+internal static void CaptureLiveState(Lamp source, ref LiveStateBlock block) { ... }
+internal static void ApplyLiveState(in LiveStateBlock block, Lamp target) { ... }
+```
+
+### Rules
+
+| | |
+|---|---|
+| The owner must be `partial` | The block is emitted **inside** the type. The convention here is a private field with the attribute on it, and a free function could not read one. Not partial → `LRC001`, and nothing is emitted for that type |
+| The owner must not be nested | Not supported yet → `LRC003` |
+| A member's type must be unmanaged | Asked of the compiler rather than kept as a list of blessed types, so enums, `Vector3`, `Color` and anyone's own struct all work without being named. `string`, arrays, classes and `Nullable<T>` are refused → `LRC002`, and the member is left out |
+
+A refused member is a warning rather than an error: leaving it in the input lane is a legitimate
+answer, and the recording is still correct — it just carries that member when it changes instead of
+every frame.
+
+### Why the block is not shared with the scene file
+
+A scene snapshot holds the members that are **persisted**. A frame holds every member declared
+`State` whether it is persisted or not, because a member that changes the world without being saved
+is exactly the one that makes a resynchronised machine drift straight back out of step. The block is
+therefore a superset of what a snapshot carries, not the same set in a different encoding.
+
 ## Fallback behavior
 
-When the generator is disabled (`CS9057`, missing DLL, unsupported runtime), `LiveClassDeclarationOrderTable.Register` is never called. The runtime falls back to ordering members by `MemberInfo.MetadataToken` — which sorts members **by kind first** (all properties, then all fields, then all methods, in their declaration order within each kind), not by interleaved source order. The remote client still works, but pane layouts will look "blocked" instead of mirroring the source layout.
+When the generator is disabled (`CS9057`, missing DLL, unsupported runtime), `LiveClassDeclarationOrderTable.Register` is never called and `GetDeclarationOrderIndex` returns `-1` for every member of the type. Explicit `order` values on `[LiveProperty]`/`[LiveField]`/`[LiveFunction]` still decide the ordering, but members sharing an `order` all tie on the second key, so their relative order is left to `List<T>.Sort` — an unstable introsort whose output is implementation-defined. It is **not** source order, and it is not grouped by member kind either. `LiveClass` logs a one-time warning per type in this state (see `RegisterProperties`). The remote client still works, but pane layouts are arbitrary wherever explicit `order` does not pin them down.

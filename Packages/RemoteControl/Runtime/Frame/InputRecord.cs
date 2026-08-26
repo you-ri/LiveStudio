@@ -60,18 +60,29 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>Id of what the input addressed, or <see cref="InputSymbolTable.kNone"/>.</summary>
         public int targetId;
 
+        /// <summary>
+        /// Id of how the target was addressed -- for REST the method, since a path on its own does
+        /// not say which operation was asked for. Interned like everything else, so the handful of
+        /// distinct values cost one symbol each however many records use them.
+        ///
+        /// Without this a replay has to guess: the same path answers to more than one verb, and
+        /// picking the wrong one is the difference between setting a value and resetting it.
+        /// </summary>
+        public int methodId;
+
         public InputFlags flags;
 
         /// <summary>The value or arguments, in the form they arrived in.</summary>
         public FixedString512Bytes payload;
 
         public InputRecord(long sequence, InputKind kind, int sourceId, int targetId,
-            in FixedString512Bytes payload, InputFlags flags)
+            in FixedString512Bytes payload, InputFlags flags, int methodId = InputSymbolTable.kNone)
         {
             this.sequence = sequence;
             this.kind = kind;
             this.sourceId = sourceId;
             this.targetId = targetId;
+            this.methodId = methodId;
             this.payload = payload;
             this.flags = flags;
         }
@@ -97,17 +108,24 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>What the operation addresses, e.g. the property path.</summary>
         public readonly string target;
 
+        /// <summary>
+        /// How the target was addressed -- the HTTP method for anything arriving over REST. A path
+        /// answers to more than one verb, so a replay that only had the path would have to guess.
+        /// </summary>
+        public readonly string method;
+
         /// <summary>The value or arguments, in the form they arrived in.</summary>
         public readonly string payload;
 
-        public InputDescriptor(InputKind kind, string target, string payload = null)
+        public InputDescriptor(InputKind kind, string method, string target, string payload = null)
         {
             this.kind = kind;
+            this.method = method;
             this.target = target;
             this.payload = payload;
         }
 
-        public override string ToString() => $"{kind} {target}";
+        public override string ToString() => $"{method} {target} ({kind})";
     }
 
     /// <summary>

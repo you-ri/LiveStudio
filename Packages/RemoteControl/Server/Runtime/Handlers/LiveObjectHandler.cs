@@ -592,7 +592,7 @@ namespace Lilium.RemoteControl
             // (object 未解決時に InputStream を読むかどうかは応答内容に影響しない)。
             var body = readBody ? await ReadRequestBody(context.Request) : null;
 
-            var result = await ExecuteAsInput(InputKind.PropertyWrite, path, body, () =>
+            var result = await ExecuteAsInput(InputKind.PropertyWrite, context.Request.HttpMethod, path, body, () =>
             {
                 if (!TryBuildPropertyContext(GetObjectContainer(), path, stripResetSuffix, body,
                         out var ctx, out var errStatus, out var errMessage))
@@ -1010,7 +1010,7 @@ namespace Lilium.RemoteControl
                     : InputKind.PropertyWrite;
 
                 writes ??= new List<InputDescriptor>(items.Count);
-                writes.Add(new InputDescriptor(kind, item.path, item.body));
+                writes.Add(new InputDescriptor(kind, item.method, item.path, item.body));
             }
 
             return writes;
@@ -1273,6 +1273,30 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
+        /// Runs one recorded operation through the same table a request would have taken.
+        ///
+        /// Replay dispatches here rather than reimplementing the routing: one table means a replayed
+        /// write reaches exactly the operation the live run reached, and there is no second answer to
+        /// drift away from the first.
+        /// </summary>
+        public static bool ApplyRecordedOperation(
+            LiveObjectContainer container, ILiveObjectResolver resolver,
+            string method, string absolutePath, string body, out int status, out string error)
+        {
+            var result = ExecuteOperation(container, resolver, method, absolutePath, body);
+            if (result.ok)
+            {
+                status = 200;
+                error = null;
+                return true;
+            }
+
+            status = result.errorStatus;
+            error = result.errorMessage;
+            return false;
+        }
+
+        /// <summary>
         /// サブリクエストの (method, path) を <see cref="_kLiveRoutes"/> で内側ディスパッチする。
         /// 単発の HTTP 経路と同じ表・同じ宣言順を引くので、「まとめ送りから何が呼べるか」は
         /// 表の <see cref="LiveRouteScope"/> がそのまま答えになる。
@@ -1451,7 +1475,7 @@ namespace Lilium.RemoteControl
             // 関数の解決・パラメータ準備・実行・結果 JSON 化をすべてメインスレッドで行う。
             // A call is an input in its own right: a trigger or a scene change never shows up as a
             // property value changing, so recording only writes would lose it.
-            var result = await ExecuteAsInput(InputKind.FunctionCall,
+            var result = await ExecuteAsInput(InputKind.FunctionCall, context.Request.HttpMethod,
                 context.Request.Url.AbsolutePath, body,
                 () => InvokeFunctionCore(GetObjectContainer(), GetResolver(), id, functionPath, body));
 
@@ -1689,7 +1713,7 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            var result = await ExecuteAsInput(InputKind.StructureChange,
+            var result = await ExecuteAsInput(InputKind.StructureChange, context.Request.HttpMethod,
                 context.Request.Url.AbsolutePath, body, () =>
             {
                 var ok = LiveObjectRegistry.SetParent(id, parentId, out var err);

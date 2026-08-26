@@ -179,6 +179,17 @@ namespace Lilium.RemoteControl
         /// </summary>
         public PersistScope persistScope { get; set; } = PersistScope.Scene;
 
+        /// <summary>
+        /// Which lane of the deterministic frame carries this member. Default
+        /// <see cref="FrameLane.Input"/>, which records it only when it changes.
+        ///
+        /// Set <see cref="FrameLane.State"/> for a member that changes many times a second, or one
+        /// that is also written from inside the application without passing through the frame gate
+        /// -- such writes are not inputs and leave no trace in the input lane.
+        /// Set <see cref="FrameLane.None"/> to keep it out of the frame entirely.
+        /// </summary>
+        public FrameLane lane { get; set; } = FrameLane.Input;
+
         public LivePropertyAttribute()
         {
             this.name = null;
@@ -220,6 +231,17 @@ namespace Lilium.RemoteControl
         /// shadow field として使う場合、ペアとなる property の保存先も本値を継承する。
         /// </summary>
         public PersistScope persistScope { get; set; } = PersistScope.Scene;
+
+        /// <summary>
+        /// Which lane of the deterministic frame carries this member. Default
+        /// <see cref="FrameLane.Input"/>, which records it only when it changes.
+        ///
+        /// Set <see cref="FrameLane.State"/> for a member that changes many times a second, or one
+        /// that is also written from inside the application without passing through the frame gate
+        /// -- such writes are not inputs and leave no trace in the input lane.
+        /// Set <see cref="FrameLane.None"/> to keep it out of the frame entirely.
+        /// </summary>
+        public FrameLane lane { get; set; } = FrameLane.Input;
 
         public LiveFieldAttribute()
         {

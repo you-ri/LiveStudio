@@ -44,9 +44,60 @@ namespace Lilium.RemoteControl.Frames
         private static volatile bool _gateClosed;
         private static long _bypassedCount;
         private static long _truncatedPayloadCount;
+        private static long _repeatedWriteCount;
+        private static int _lastRepeatedTargetId = InputSymbolTable.kNone;
+
+        // Declared source names, sorted, so interning them assigns the same ids on every reset.
+        private static string[] _declaredSources;
+        private static volatile bool _declaredInterned;
+        private static readonly object _sourceLock = new object();
+        private static readonly HashSet<string> _warnedUndeclaredSources = new HashSet<string>();
+
+        // Writes already seen this frame, keyed by (source, target). Reused across frames so the
+        // duplicate check costs nothing after the first frame.
+        private static readonly HashSet<long> _writeKeysThisFrame = new HashSet<long>();
+
+        private static readonly List<FrameHeadDelegate> _frameHeadHandlers = new List<FrameHeadDelegate>();
+        private static FrameHeadDelegate[] _frameHeadSnapshot = Array.Empty<FrameHeadDelegate>();
+        private static bool _frameHeadSnapshotStale;
+
+        // The frame currently being built. Kept as a field rather than a local so it can be handed
+        // out by reference without the callee's writes landing in a copy.
+        private static Frame _frame;
+
+        // Carried from frame to frame: together these are the current state of the world, so they
+        // are created once and reset only when a run restarts.
+        private static readonly StructureBlock _structure = new StructureBlock();
+        private static readonly StateBlockSet _state = new StateBlockSet();
+
+        private static IFrameSink _sink;
 
         /// <summary>Frames retained for read-back, indexed by frame number.</summary>
         public static InputFrameBuffer buffer => _buffer;
+
+        /// <summary>
+        /// Shape of the world: what exists and how many. Carried across frames, and handed to
+        /// producers as part of <see cref="Frame"/> at each head.
+        /// </summary>
+        public static StructureBlock structure => _structure;
+
+        /// <summary>
+        /// Values of the world, one dense array per element type. Carried across frames -- an
+        /// element that stops being written keeps its last value.
+        /// </summary>
+        public static StateBlockSet state => _state;
+
+        /// <summary>
+        /// Where completed frames go: a recorder, a mirror sender, or nothing.
+        ///
+        /// One at a time. Two consumers at once is a fan-out sink's job rather than a list here --
+        /// the gate should not be the place that decides what order they run in.
+        /// </summary>
+        public static IFrameSink sink
+        {
+            get => _sink;
+            set => _sink = value;
+        }
 
         /// <summary>
         /// The strings behind the ids in the records. A recording writes this into its
@@ -77,6 +128,24 @@ namespace Lilium.RemoteControl.Frames
         public static long nextSequence => _sequencer.nextSequence;
 
         /// <summary>
+        /// Writes that landed in the same frame as an earlier write to the same target from the same
+        /// source. Nothing is dropped -- the record stays exact -- but a target that keeps showing up
+        /// here is one that should be declared <see cref="FrameLane.State"/> instead.
+        ///
+        /// Coalescing these away was considered and rejected: it would be the only lossy step in the
+        /// design (a live run fires N callbacks where a replay would fire one), and the sending side
+        /// already coalesces, so at sixty writes a second on a sixty-hertz frame there is usually
+        /// nothing to fold.
+        /// </summary>
+        public static long repeatedWriteCount => Interlocked.Read(ref _repeatedWriteCount);
+
+        /// <summary>
+        /// The target most recently counted by <see cref="repeatedWriteCount"/>, so the number can be
+        /// acted on. Empty until one is seen.
+        /// </summary>
+        public static string lastRepeatedTarget => _symbols.Resolve(Volatile.Read(ref _lastRepeatedTargetId));
+
+        /// <summary>
         /// Replaces the clock, for an external sync source or for replay. Main thread only, and not
         /// while a frame is being filled -- <see cref="Pump"/> reads the clock and the buffer as a
         /// pair.
@@ -95,7 +164,164 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         public static void SetBufferFrames(int frameCapacity)
         {
+            var replaced = _buffer;
             _buffer = new InputFrameBuffer(frameCapacity);
+
+            // Released after the swap, so nothing is reading the old one through the property while
+            // its storage goes away.
+            replaced?.Dispose();
+        }
+
+        /// <summary>
+        /// Every source name declared with <see cref="FrameSourceAttribute"/>, sorted, with
+        /// <see cref="FrameSource.kUnknown"/> first. This is what a recording writes into its header
+        /// as the set of sources that took part.
+        /// </summary>
+        public static IReadOnlyList<string> declaredSources => _DeclaredSources();
+
+        /// <summary>
+        /// Looks up a declared source. Throws if the name was never declared, which is the point:
+        /// a misspelling fails here rather than becoming a second source nobody notices.
+        /// </summary>
+        public static FrameSource ResolveSource(string name)
+        {
+            if (TryResolveSource(name, out var source)) return source;
+
+            throw new ArgumentException(
+                $"[RemoteControl] Input source '{name}' is not declared. " +
+                $"Add [assembly: FrameSource(\"{name}\")] to the assembly that submits it.",
+                nameof(name));
+        }
+
+        /// <summary>Looks up a declared source without throwing.</summary>
+        public static bool TryResolveSource(string name, out FrameSource source)
+        {
+            source = default;
+            if (string.IsNullOrEmpty(name)) return false;
+
+            // Declared names are interned as a block before any of them is handed out, so their ids
+            // are the same on every run. Resolving one first would give it whichever id happened to
+            // be free, and a FrameSource cached in a static field would then point at another name
+            // after the next reset.
+            _EnsureDeclaredInterned();
+
+            var declared = _DeclaredSources();
+            for (int i = 0; i < declared.Length; i++)
+            {
+                if (!string.Equals(declared[i], name, StringComparison.Ordinal)) continue;
+
+                source = new FrameSource(_symbols.Intern(name));
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Runs at the head of every frame, after that frame's inputs have been applied and before
+        /// the frame is committed. This is where state-lane producers write their block: the order
+        /// is input then state, because an input can change the structure and the container has to
+        /// exist before values go into it.
+        ///
+        /// Main thread only. A handler that throws is logged and the rest still run -- one
+        /// misbehaving producer must not stop inputs from being applied.
+        /// </summary>
+        public static void AddFrameHeadHandler(FrameHeadDelegate handler)
+        {
+            if (handler == null) throw new ArgumentNullException(nameof(handler));
+            if (_frameHeadHandlers.Contains(handler)) return;
+
+            _frameHeadHandlers.Add(handler);
+            _frameHeadSnapshotStale = true;
+        }
+
+        /// <summary>Removes a handler added by <see cref="AddFrameHeadHandler"/>.</summary>
+        public static void RemoveFrameHeadHandler(FrameHeadDelegate handler)
+        {
+            if (handler == null) return;
+            if (!_frameHeadHandlers.Remove(handler)) return;
+
+            _frameHeadSnapshotStale = true;
+        }
+
+        private static string[] _DeclaredSources()
+        {
+            var cached = Volatile.Read(ref _declaredSources);
+            if (cached != null) return cached;
+
+            lock (_sourceLock)
+            {
+                if (_declaredSources != null) return _declaredSources;
+
+                var names = new SortedSet<string>(StringComparer.Ordinal);
+
+                foreach (var assembly in Reflection.AssemblyUtility.GetLoadedAssemblies())
+                {
+                    foreach (FrameSourceAttribute attribute in
+                        assembly.GetCustomAttributes(typeof(FrameSourceAttribute), false))
+                    {
+                        if (string.IsNullOrEmpty(attribute.name)) continue;
+                        if (string.Equals(attribute.name, FrameSource.kUnknown, StringComparison.Ordinal)) continue;
+
+                        names.Add(attribute.name);
+                    }
+                }
+
+                // Unknown first, then the declared names in a fixed order, so interning them assigns
+                // the same ids after every reset. Without that, a FrameSource resolved into a static
+                // field would point at a different name once the gate restarted.
+                var ordered = new string[names.Count + 1];
+                ordered[0] = FrameSource.kUnknown;
+                names.CopyTo(ordered, 1);
+
+                Volatile.Write(ref _declaredSources, ordered);
+                return ordered;
+            }
+        }
+
+        private static void _InternDeclaredSources()
+        {
+            var declared = _DeclaredSources();
+            for (int i = 0; i < declared.Length; i++) _symbols.Intern(declared[i]);
+            _declaredInterned = true;
+        }
+
+        private static void _EnsureDeclaredInterned()
+        {
+            if (_declaredInterned) return;
+
+            lock (_sourceLock)
+            {
+                if (_declaredInterned) return;
+                _InternDeclaredSources();
+            }
+        }
+
+        /// <summary>
+        /// Resolves the source of an input submitted by name. An undeclared name is filed under
+        /// <see cref="FrameSource.kUnknown"/> and reported once, so a caller not yet migrated keeps
+        /// working instead of failing, but does not disappear quietly either.
+        /// </summary>
+        private static int _ResolveSourceId(string sourceId)
+        {
+            _EnsureDeclaredInterned();
+
+            if (TryResolveSource(sourceId, out var source)) return source.id;
+
+            bool first;
+            lock (_sourceLock)
+            {
+                first = _warnedUndeclaredSources.Add(sourceId ?? string.Empty);
+            }
+
+            if (first)
+            {
+                Debug.LogWarning(
+                    $"[RemoteControl] Input source '{sourceId}' is not declared and is recorded as " +
+                    $"'{FrameSource.kUnknown}'. Add [assembly: FrameSource(\"{sourceId}\")] to declare it.");
+            }
+
+            return _symbols.Intern(FrameSource.kUnknown);
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -106,6 +332,9 @@ namespace Lilium.RemoteControl.Frames
 
             _CaptureMainThread();
             _InstallPlayerLoopHook();
+
+            Application.quitting -= _ReleaseNativeStorage;
+            Application.quitting += _ReleaseNativeStorage;
 
             Application.quitting -= _CloseGate;
             Application.quitting += _CloseGate;
@@ -125,10 +354,29 @@ namespace Lilium.RemoteControl.Frames
             _FaultPending(reason);
             _sequencer.Reset();
             _symbols.Reset();
+            _declaredInterned = false;
+
+            // Re-interned straight after the wipe and in a fixed order, so a FrameSource held in a
+            // static field still points at the name it was resolved from.
+            _InternDeclaredSources();
+
             _buffer.Reset();
             _clock.Reset();
+            _structure.Reset();
+            _state.Reset();
+
+            // Left attached across a reset would mean a recording quietly spanning two runs.
+            _sink = null;
+            _writeKeysThisFrame.Clear();
+
+            // Cleared so a new run reports its undeclared sources again rather than staying quiet
+            // about them because a previous run already mentioned them.
+            lock (_sourceLock) _warnedUndeclaredSources.Clear();
+
             Interlocked.Exchange(ref _bypassedCount, 0);
             Interlocked.Exchange(ref _truncatedPayloadCount, 0);
+            Interlocked.Exchange(ref _repeatedWriteCount, 0);
+            Volatile.Write(ref _lastRepeatedTargetId, InputSymbolTable.kNone);
         }
 
         /// <summary>
@@ -168,6 +416,11 @@ namespace Lilium.RemoteControl.Frames
             // a frame head and its caller would wait forever.
             UnityEditor.EditorApplication.update -= _EditorTick;
             UnityEditor.EditorApplication.update += _EditorTick;
+
+            // Statics survive a domain reload only as far as their managed side; the native storage
+            // behind them would be reported as a leak. Released here and rebuilt on next use.
+            UnityEditor.AssemblyReloadEvents.beforeAssemblyReload -= _ReleaseNativeStorage;
+            UnityEditor.AssemblyReloadEvents.beforeAssemblyReload += _ReleaseNativeStorage;
         }
 
         private static void _EditorTick()
@@ -179,6 +432,18 @@ namespace Lilium.RemoteControl.Frames
             Pump();
         }
 #endif
+
+        /// <summary>
+        /// Frees the structure and state storage. They allocate again on next use, so this is a
+        /// release rather than a teardown -- what it prevents is native memory outliving the domain
+        /// that was holding the only reference to it.
+        /// </summary>
+        internal static void _ReleaseNativeStorage()
+        {
+            _structure.Dispose();
+            _state.Dispose();
+            _buffer.Dispose();
+        }
 
         private static void _CaptureMainThread()
         {
@@ -246,7 +511,15 @@ namespace Lilium.RemoteControl.Frames
         public static void Pump()
         {
             var frameNumber = _clock.Advance();
-            var frame = _buffer.BeginFrame(frameNumber, _clock.frameRate);
+            var inputs = _buffer.BeginFrame(frameNumber, _clock.frameRate);
+
+            _frame.frameNumber = frameNumber;
+            _frame.frameRate = _clock.frameRate;
+            _frame.structure = _structure;
+            _frame.state = _state;
+            _frame.inputs = inputs;
+
+            _writeKeysThisFrame.Clear();
 
             var drained = _sequencer.Drain();
             for (int i = 0; i < drained.Count; i++)
@@ -268,22 +541,118 @@ namespace Lilium.RemoteControl.Frames
 
                 for (int r = 0; r < input.recordCount; r++)
                 {
-                    frame.Add(input.records[r]);
+                    _CountIfRepeatedWrite(in input.records[r]);
+                    inputs.Add(input.records[r]);
                 }
 
                 input.Clear();
             }
 
             drained.Clear();
+
+            // State after input: an input can change the structure, and a state block is only
+            // meaningful against the structure it belongs to.
+            _RunFrameHeadHandlers();
+
+            // After the producers, so what the sink sees is the finished frame rather than half of
+            // one, and before the commit, so a sink that throws cannot leave the frame unpublished.
+            _DeliverToSink();
+
+            // Dropped so a handler that stashed the frame cannot reach a slot that is about to be
+            // handed to a later frame.
+            _frame.inputs = null;
+
             _buffer.Commit(frameNumber);
+        }
+
+        /// <summary>
+        /// Notes a write that follows an earlier write to the same target in this frame. The record
+        /// is kept either way; the count is a signal that the target belongs in the state lane.
+        /// </summary>
+        private static void _CountIfRepeatedWrite(in InputRecord record)
+        {
+            if (record.kind != InputKind.PropertyWrite) return;
+            if (record.targetId == InputSymbolTable.kNone) return;
+
+            var key = ((long)record.sourceId << 32) | (uint)record.targetId;
+            if (_writeKeysThisFrame.Add(key)) return;
+
+            Interlocked.Increment(ref _repeatedWriteCount);
+            Volatile.Write(ref _lastRepeatedTargetId, record.targetId);
+        }
+
+        private static void _DeliverToSink()
+        {
+            var sink = _sink;
+            if (sink == null) return;
+
+            try
+            {
+                sink.OnFrameCompleted(in _frame, _symbols);
+            }
+            catch (Exception e)
+            {
+                // Detached rather than left to throw every frame: a recorder that has lost its disk
+                // would otherwise turn one failure into one per frame, and the run itself is still
+                // fine without it.
+                _sink = null;
+                Debug.LogError($"[RemoteControl] Frame sink failed and was detached: {e}");
+            }
+        }
+
+        private static void _RunFrameHeadHandlers()
+        {
+            if (_frameHeadSnapshotStale)
+            {
+                _frameHeadSnapshot = _frameHeadHandlers.ToArray();
+                _frameHeadSnapshotStale = false;
+            }
+
+            var handlers = _frameHeadSnapshot;
+            for (int i = 0; i < handlers.Length; i++)
+            {
+                try
+                {
+                    handlers[i](ref _frame);
+                }
+                catch (Exception e)
+                {
+                    // Taken over a rethrow: one producer failing must not stop the others or leave
+                    // the frame uncommitted, which would strand every caller waiting on it.
+                    Debug.LogError($"[RemoteControl] Frame head handler failed: {e}");
+                }
+            }
         }
 
         /// <summary>
         /// Puts an input in the queue and completes once it has been applied at a frame head.
         /// </summary>
-        public static Task<T> SubmitAsync<T>(InputKind kind, string sourceId, string target,
-            string payload, Func<T> action)
-            => SubmitGroupAsync(new[] { new InputDescriptor(kind, target, payload) }, sourceId, action);
+        public static Task<T> SubmitAsync<T>(InputKind kind, string sourceId, string method,
+            string target, string payload, Func<T> action)
+            => SubmitGroupAsync(new[] { new InputDescriptor(kind, method, target, payload) }, sourceId, action);
+
+        /// <summary>
+        /// Puts an input in the queue on behalf of a source resolved once with
+        /// <see cref="ResolveSource"/>. Preferred over the string form: the name has already been
+        /// checked against a declaration and interned, so nothing is hashed per call.
+        /// </summary>
+        public static Task<T> SubmitAsync<T>(InputKind kind, FrameSource source, string method,
+            string target, string payload, Func<T> action)
+            => SubmitGroupAsync(new[] { new InputDescriptor(kind, method, target, payload) }, source, action);
+
+        /// <summary>Group form of <see cref="SubmitAsync{T}(InputKind, FrameSource, string, string, Func{T})"/>.</summary>
+        public static Task<T> SubmitGroupAsync<T>(IReadOnlyList<InputDescriptor> operations,
+            FrameSource source, Func<T> action)
+        {
+            if (!source.isValid)
+            {
+                throw new ArgumentException(
+                    "[RemoteControl] Input source was never resolved. Use FrameGate.ResolveSource.",
+                    nameof(source));
+            }
+
+            return _SubmitGroup(operations, source.id, action);
+        }
 
         /// <summary>
         /// Puts several operations in the queue as one unit and completes once they have been
@@ -295,6 +664,14 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         public static Task<T> SubmitGroupAsync<T>(IReadOnlyList<InputDescriptor> operations,
             string sourceId, Func<T> action)
+        {
+            // Resolved before the bypass checks so that an undeclared name is reported even when the
+            // input never reaches the queue.
+            return _SubmitGroup(operations, _ResolveSourceId(sourceId), action);
+        }
+
+        private static Task<T> _SubmitGroup<T>(IReadOnlyList<InputDescriptor> operations,
+            int sourceId, Func<T> action)
         {
             if (action == null) throw new ArgumentNullException(nameof(action));
             if (operations == null) throw new ArgumentNullException(nameof(operations));
@@ -322,7 +699,13 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>Single-operation convenience for tests. See <see cref="_Enqueue{T}"/>.</summary>
         internal static Task<T> _Enqueue<T>(InputKind kind, string sourceId, string target,
             string payload, Func<T> action)
-            => _Enqueue(new[] { new InputDescriptor(kind, target, payload) }, sourceId, action);
+            => _Enqueue(new[] { new InputDescriptor(kind, "PUT", target, payload) },
+                _ResolveSourceId(sourceId), action);
+
+        /// <summary>Group convenience for tests, resolving the source by name.</summary>
+        internal static Task<T> _Enqueue<T>(IReadOnlyList<InputDescriptor> operations,
+            string sourceId, Func<T> action)
+            => _Enqueue(operations, _ResolveSourceId(sourceId), action);
 
         /// <summary>
         /// Queues an input without the bypass checks. Split out so tests can drive the real queue
@@ -330,7 +713,7 @@ namespace Lilium.RemoteControl.Frames
         /// deliberately refuse to wait.
         /// </summary>
         internal static Task<T> _Enqueue<T>(IReadOnlyList<InputDescriptor> operations,
-            string sourceId, Func<T> action)
+            int source, Func<T> action)
         {
             // Continuations run asynchronously so that whatever the caller does after its await --
             // building a response, writing it out -- does not run inside the pump on the main
@@ -338,9 +721,8 @@ namespace Lilium.RemoteControl.Frames
             // the whole cost of a frame's callers onto the frame head.
             var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            // Interned here rather than at the frame head: this runs on the worker thread that is
-            // going to wait anyway, and the main thread should not pay for it.
-            var source = _symbols.Intern(sourceId);
+            // Targets are interned here rather than at the frame head: this runs on the worker
+            // thread that is going to wait anyway, and the main thread should not pay for it.
             var records = new InputRecord[operations.Count];
 
             for (int i = 0; i < operations.Count; i++)
@@ -358,7 +740,8 @@ namespace Lilium.RemoteControl.Frames
 
                 // The sequence is stamped by the sequencer, which is where order is decided.
                 records[i] = new InputRecord(0, operation.kind, source,
-                    _symbols.Intern(operation.target), payload, flags);
+                    _symbols.Intern(operation.target), payload, flags,
+                    _symbols.Intern(operation.method));
             }
 
             var input = new PendingInput

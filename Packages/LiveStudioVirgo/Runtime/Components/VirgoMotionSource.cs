@@ -7,6 +7,7 @@ using Unity.Collections.LowLevel.Unsafe;
 using Lilium.LiveStudio;
 using Lilium.LiveStudio.Virgo.Networking;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Frames;
 
 
 namespace Lilium.LiveStudio.Virgo
@@ -117,15 +118,39 @@ namespace Lilium.LiveStudio.Virgo
         // Written on the receive thread only.
         long _lastReceivedFrames = -1;
 
+        // Set by the receive thread once enough valid frames have arrived, consumed at the frame
+        // head. The reset writes the placement offsets, which are part of the reference point, and
+        // the reference point has a single writer: the frame head.
+        private volatile bool _resetCameraRequested;
+
+        // Resolved once against its declaration in AssemblyInfo. Declared sources keep the same id
+        // across a gate reset, so this stays valid for the life of the domain.
+        private static readonly FrameSource _fusionSource = FrameGate.ResolveSource("fusion");
+
+        // The frame the automatic reset was requested for, copied by the receive thread before it
+        // raises the flag. Read at the frame head instead of _lastReceivedFrameData, which the
+        // receive thread keeps overwriting -- the struct is far too large to be read while it is
+        // being written. The flag is volatile and set once, so the copy is complete by the time the
+        // frame head sees it.
+        private AvatarAnimationData _resetCameraSample;
+
         void OnEnable()
         {
             AvatarBuildNotifier.onAvatarBuilt += _OnAvatarBuilt;
+
+            // Sampling runs at the head of a frame rather than in Update, so the pose for frame N
+            // is produced at a fixed point instead of wherever this component happens to be in the
+            // script order. The gate applies that frame's inputs first, so a write to the reference
+            // point lands before the pose that is placed by it.
+            FrameGate.AddFrameHeadHandler(_OnFrameHead);
+
             Open();
         }
 
         void OnDisable()
         {
             AvatarBuildNotifier.onAvatarBuilt -= _OnAvatarBuilt;
+            FrameGate.RemoveFrameHeadHandler(_OnFrameHead);
             Close();
         }
 
@@ -207,13 +232,98 @@ namespace Lilium.LiveStudio.Virgo
             _udpConnection.Close();
         }
 
-        void Update()
+        /// <summary>
+        /// Produces the pose for this frame: build the reference point, sample the received frames,
+        /// then place the sample with the reference point.
+        ///
+        /// Order matters. The reference point used to be applied on the receive thread, which left
+        /// two problems: the placement origin was written here and read there with nothing to order
+        /// them, and a recording of the placed pose could never be re-placed, so editing the camera
+        /// afterwards would have had no effect. Sampling first and placing last fixes both.
+        ///
+        /// Interpolating before placing gives the same result as placing before interpolating: the
+        /// placement is a rotation and a translation, spherical interpolation is invariant under a
+        /// rotation applied from the left, and translation commutes with linear interpolation. The
+        /// two differ only while the reference point itself is moving, and then only by one frame's
+        /// worth of its motion.
+        /// </summary>
+        void _OnFrameHead(ref Frame frame)
+        {
+            _UpdatePlacementOrigin();
+
+            // Consumed here rather than run on the receive thread, so the placement offsets have a
+            // single writer.
+            if (_resetCameraRequested)
+            {
+                _resetCameraRequested = false;
+                _ResetCameraFrom(in _resetCameraSample);
+            }
+
+            if (!_TrySamplePose(out var sampled, out var sampledFrom)) return;
+
+            _PublishState(ref frame, in sampled, sampledFrom);
+
+            // height/distance are already part of the placement origin, so they are not added again.
+            AvatarAnimationSystem.Transform(in sampled, _PlacementMatrix(), out frameData);
+        }
+
+        /// <summary>
+        /// Puts this frame's pose into the state lane.
+        ///
+        /// The pose stored is the one before placement. Placement is a property of the camera rig,
+        /// not of the capture, and folding it in would make the recorded pose unusable for anything
+        /// but the camera position it happened to be shot with.
+        ///
+        /// Nothing reads this yet -- the live path still goes through <c>frameData</c>. It is here so
+        /// the recorder and the drift check have the frame's own copy to work from rather than
+        /// reaching into this component.
+        /// </summary>
+        private void _PublishState(ref Frame frame, in AvatarAnimationData sampled, long sampledFrom)
+        {
+            if (frame.state == null) return;
+
+            var owner = _OwnerId();
+            if (owner == InputSymbolTable.kNone) return;
+
+            ref var element = ref frame.state.GetOrCreate<AvatarAnimationData>().GetOrCreate(owner);
+            element.source = _fusionSource;
+
+            // The sender's frame number, not this frame's. The two run off different clocks, and
+            // keeping the sender's is what lets an alignment be applied afterwards.
+            element.time = sampledFrom;
+            element.value = sampled;
+        }
+
+        /// <summary>
+        /// Interned id of this source as an exposed object, or none while it has not been registered.
+        ///
+        /// Interned every frame rather than cached: a gate reset wipes the symbol table, and a
+        /// cached id would then name whatever took its place. Object ids are not re-interned in a
+        /// fixed order the way declared sources are.
+        /// </summary>
+        private int _OwnerId()
+        {
+            if (!LiveObjectRegistry.TryFindByTarget(this, out var handle)) return InputSymbolTable.kNone;
+
+            return FrameGate.symbols.Intern(handle.id);
+        }
+
+        private Matrix4x4 _PlacementMatrix()
+            => Matrix4x4.TRS(_rotation * _offsetPosition + _position,
+                _rotation * Quaternion.Euler(_offsetRotation), Vector3.one);
+
+        private void _UpdatePlacementOrigin()
         {
             // VirgoMotionSource（この GameObject）はキャプチャカメラの基準点: anchor(= AvatarController,
             // WarpTo の移動先 mark = 被写体) の cameraHeight 上・cameraDistance 前方(+forward) に置く。
             // アバターは ResetCamera で mark の正面(+Z = source.forward)を向くよう揃えられ、撮影カメラは
             // その正面側に居る。マーカーは被写体を見返すよう Y180° 反転（+Z が AvatarController を向く）。
             // standalone（anchor 未設定）時は自身の transform を基準点にする。
+            //
+            // Read at the frame head, which is before this frame's animation update: the reference
+            // point therefore follows the anchor one frame behind. That lag was already there and
+            // was non-deterministic (whichever value the receive thread happened to see); it is now
+            // a fixed one frame.
             var source = anchor != null ? anchor : this.transform;
             if (source != this.transform)
             {
@@ -224,6 +334,19 @@ namespace Lilium.LiveStudio.Virgo
             // 基準点）。_rotation はマーカーの反転回転ではなく被写体(mark)の回転を使う（matrix の従来挙動を維持）。
             _position = transform.position;
             _rotation = source.rotation;
+        }
+
+        /// <summary>
+        /// Samples the received frames at the current playback position. False when there is nothing
+        /// to sample, in which case the previous pose is left alone.
+        ///
+        /// <paramref name="sampledFrom"/> is the sender's frame number the sample was anchored on --
+        /// the producer's own time axis, which is what an alignment is expressed against.
+        /// </summary>
+        private bool _TrySamplePose(out AvatarAnimationData sampled, out long sampledFrom)
+        {
+            sampled = default;
+            sampledFrom = -1;
 
             // 受信は 60fps 固定だが render は可変 fps。受信フレームをそのまま hold すると
             // フレーム間で姿勢が据え置きになり、揺れ物 (SpringBone) がその上で震える。
@@ -254,15 +377,18 @@ namespace Lilium.LiveStudio.Virgo
             if (prevNo >= 0 && nextNo >= 0)
             {
                 float spanT = (float)((playbackPos - prevNo) / (nextNo - prevNo));
-                AvatarAnimationSystem.Lerp(prev, next, spanT, out AvatarAnimationData sampled);
-                frameData = sampled;
+                AvatarAnimationSystem.Lerp(prev, next, spanT, out sampled);
+                sampledFrom = prevNo;
+                return true;
             }
             else if (prevNo >= 0)
             {
                 // Caught up with the newest frame (or a short overrun past it):
                 // hold the last available pose instead of resyncing, which would
                 // jump the playback position backwards.
-                frameData = prev;
+                sampled = prev;
+                sampledFrom = prevNo;
+                return true;
             }
             else
             {
@@ -278,6 +404,8 @@ namespace Lilium.LiveStudio.Virgo
                     Debug.Log($"[Studio] Resync playback position: playbackPos={playbackPos:F2} latest={latest} offsetJump={newOffset - _frameOffset}");
                     _frameOffset = newOffset;
                 }
+
+                return false;
             }
         }
 
@@ -342,22 +470,26 @@ namespace Lilium.LiveStudio.Virgo
                 if (receivedFrameData.isValid)
                 {
                     // 0フレーム目はまだ受信した情報が安定していないため、カメラリセットしない。
+                    // Requested rather than run here: the reset writes the placement offsets, and
+                    // those belong to the frame head.
                     if (_validFrameCount == kResetCameraDelayCount && resetCameraAtReceived)
                     {
-                        ResetCamera();
+                        _resetCameraSample = receivedFrameData;
+                        _resetCameraRequested = true;
                     }
 
                     _validFrameCount++;
                 }
 
-                // height/distance は _position（= transform.position）に既に含まれるため、ここでは加算しない。
-                AvatarAnimationSystem.Transform(in receivedFrameData, Matrix4x4.TRS(_rotation * _offsetPosition + _position, _rotation * Quaternion.Euler(_offsetRotation), Vector3.one), out var transformedFrameData);
-                _animationFrameBuffer.Set(receivedFrameData.frames, in transformedFrameData);
+                // Stored unplaced. The reference point is applied at the frame head, after
+                // interpolation, so that the pose kept here stays independent of where the camera
+                // was standing when the packet arrived.
+                _animationFrameBuffer.Set(receivedFrameData.frames, in receivedFrameData);
 
                 _receivedFrameCount ++;
             }
 
-            // frameData の生成 (補間サンプリング) は Update (メインスレッド) で毎フレーム行う。
+            // frameData の生成 (補間サンプリングと配置) はフレーム先頭 (メインスレッド) で毎フレーム行う。
             // ここ (ワーカースレッド) ではバッファ書き込みのみに留める。
         }
 
@@ -431,13 +563,19 @@ namespace Lilium.LiveStudio.Virgo
 
         [ContextMenu("Reset Camera")]
         [LiveFunction]
-        public override void ResetCamera()
+        public override void ResetCamera() => _ResetCameraFrom(in _lastReceivedFrameData);
+
+        private void _ResetCameraFrom(in AvatarAnimationData reference)
         {
             // Pin the capture camera (cam0) to the placement origin (_position = VirgoMotionSource, the camera
             // reference at cameraHeight/cameraDistance from the mark) — camera-anchored position.
             // (ref var avoids naming CameraData: the wire-side Lilium.LiveStudio.Virgo.CameraData would shadow
             //  the Lilium.LiveStudio.CameraData returned here.)
-            ref var camera = ref _lastReceivedFrameData.AsCamera(0);
+            //
+            // Copied locally because AsCamera hands back a ref, which needs somewhere mutable to
+            // point at, and because the caller may be handing over a field the receive thread writes.
+            var sample = reference;
+            ref var camera = ref sample.AsCamera(0);
 
             // Align the capture camera (cam0) so its +Z faces the mark, matching this GameObject's own
             // placement orientation (source.rotation * 180°, which points back at the mark). The avatar then
@@ -450,7 +588,7 @@ namespace Lilium.LiveStudio.Virgo
 
             // オフセット適用後のカメラワールド位置を原点 (_position = VirgoMotionSource) に合わせる（cam.pos≈0）。
             var rotation = Quaternion.Euler(_offsetRotation);
-            _offsetPosition = -(rotation * camera.position) / _lastReceivedFrameData.root.scale.x;
+            _offsetPosition = -(rotation * camera.position) / sample.root.scale.x;
         }
     }
 }

@@ -375,6 +375,13 @@ namespace Lilium.RemoteControl.RestApi
         protected const string kRestSource = "rest";
 
         /// <summary>
+        /// <see cref="kRestSource"/> resolved once against its declaration in AssemblyInfo. Held in a
+        /// static field because declared sources keep the same id across a gate reset, so nothing has
+        /// to be looked up again per request.
+        /// </summary>
+        private static readonly FrameSource _restSource = FrameGate.ResolveSource(kRestSource);
+
+        /// <summary>
         /// Applies a state-changing request through the frame gate, so it takes its place in the
         /// order and lands at the head of a frame.
         ///
@@ -382,19 +389,22 @@ namespace Lilium.RemoteControl.RestApi
         /// not the same as changing state, and sending reads through the gate would bury the record
         /// under lookups that change nothing.
         /// </summary>
-        protected Task<T> ExecuteAsInput<T>(InputKind kind, string target, string payload, Func<T> action)
-            => FrameGate.SubmitAsync(kind, kRestSource, target, payload, action);
+        protected Task<T> ExecuteAsInput<T>(InputKind kind, string method, string target,
+            string payload, Func<T> action)
+            => FrameGate.SubmitAsync(kind, _restSource, method, target, payload, action);
 
         /// <summary>Void form of <see cref="ExecuteAsInput{T}"/>.</summary>
-        protected Task ExecuteAsInput(InputKind kind, string target, string payload, Action action)
-            => FrameGate.SubmitAsync(kind, kRestSource, target, payload, () => { action(); return true; });
+        protected Task ExecuteAsInput(InputKind kind, string method, string target, string payload,
+            Action action)
+            => FrameGate.SubmitAsync(kind, _restSource, method, target, payload,
+                () => { action(); return true; });
 
         /// <summary>
         /// Applies several operations as one unit, for a bundled request whose parts have to take
         /// effect in the same frame.
         /// </summary>
         protected Task<T> ExecuteGroupAsInput<T>(IReadOnlyList<InputDescriptor> operations, Func<T> action)
-            => FrameGate.SubmitGroupAsync(operations, kRestSource, action);
+            => FrameGate.SubmitGroupAsync(operations, _restSource, action);
 
         /// <summary>
         /// メインスレッドで処理を実行

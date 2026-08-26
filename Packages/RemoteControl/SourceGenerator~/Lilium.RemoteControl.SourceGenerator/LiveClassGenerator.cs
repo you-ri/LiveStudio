@@ -54,6 +54,14 @@ namespace Lilium.RemoteControl.SourceGenerator
             {
                 var (list, polyfill) = pair;
                 if (list.IsDefaultOrEmpty) return;
+
+                foreach (var info in list)
+                {
+                    if (info?.State == null) continue;
+
+                    StateBlockEmitter.ReportProblems(spc, info.State);
+                }
+
                 var source = _Emit(list, polyfill);
                 spc.AddSource("LiveClassDeclarationOrder.g.cs", source);
             });
@@ -131,7 +139,8 @@ namespace Lilium.RemoteControl.SourceGenerator
             return new ClassInfo(
                 typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                 members.ToImmutable(),
-                accessors.ToImmutable());
+                accessors.ToImmutable(),
+                StateBlockEmitter.Collect(typeSymbol, typeNode, chain));
         }
 
         // メンバーから高速アクセサ情報を生成する。生成コードがコンパイルできる
@@ -261,12 +270,17 @@ namespace Lilium.RemoteControl.SourceGenerator
                 sb.AppendLine(" });");
             }
 
+            _EmitStateRegistrations(sb, classes);
+
             sb.AppendLine("        }");
             sb.AppendLine("    }");
 
             _EmitAccessors(sb, classes);
 
             sb.AppendLine("}");
+            sb.AppendLine();
+
+            _EmitStateBlocks(sb, classes);
             sb.AppendLine();
             // ModuleInitializerAttribute polyfill (netstandard2.0 互換)。
             // アクセス可能な定義が既に存在するアセンブリでは emitPolyfill=false となり、
@@ -283,6 +297,38 @@ namespace Lilium.RemoteControl.SourceGenerator
             }
 
             return sb.ToString();
+        }
+
+        // 状態レーンのブリッジ登録を宣言順テーブルと同じモジュール初期化子に相乗りさせる。
+        // 初期化子を別に持つと polyfill の二重定義判定をもう一度やることになる。
+        static void _EmitStateRegistrations(StringBuilder sb, ImmutableArray<ClassInfo> classes)
+        {
+            var emitted = new HashSet<string>();
+
+            foreach (var info in classes)
+            {
+                if (info?.State == null) continue;
+                if (!StateBlockEmitter.CanEmit(info.State)) continue;
+                if (!emitted.Add(info.State.FullyQualifiedName)) continue;
+
+                StateBlockEmitter.EmitRegistration(sb, info.State);
+            }
+        }
+
+        // 所有者型の後半 (ブロック構造体と出し入れ 2 関数) を emit する。
+        // private メンバーに届く必要があるため、型の内側に出す。
+        static void _EmitStateBlocks(StringBuilder sb, ImmutableArray<ClassInfo> classes)
+        {
+            var emitted = new HashSet<string>();
+
+            foreach (var info in classes)
+            {
+                if (info?.State == null) continue;
+                if (!StateBlockEmitter.CanEmit(info.State)) continue;
+                if (!emitted.Add(info.State.FullyQualifiedName)) continue;
+
+                StateBlockEmitter.EmitOwnerHalf(sb, info.State);
+            }
         }
 
         // 高速アクセサ登録クラスを emit する。(DeclaringType, MemberName) で重複排除する
@@ -361,12 +407,16 @@ namespace Lilium.RemoteControl.SourceGenerator
             public ImmutableArray<string> MemberNames { get; }
             public ImmutableArray<AccessorInfo> Accessors { get; }
 
+            /// <summary>What this type puts in the state lane, or null when it puts nothing there.</summary>
+            public StateInfo State { get; }
+
             public ClassInfo(string fullyQualifiedName, ImmutableArray<string> memberNames,
-                ImmutableArray<AccessorInfo> accessors)
+                ImmutableArray<AccessorInfo> accessors, StateInfo state)
             {
                 FullyQualifiedName = fullyQualifiedName;
                 MemberNames = memberNames;
                 Accessors = accessors;
+                State = state;
             }
 
             public override bool Equals(object obj)
@@ -374,7 +424,8 @@ namespace Lilium.RemoteControl.SourceGenerator
                 return obj is ClassInfo other
                     && FullyQualifiedName == other.FullyQualifiedName
                     && MemberNames.SequenceEqual(other.MemberNames)
-                    && Accessors.SequenceEqual(other.Accessors);
+                    && Accessors.SequenceEqual(other.Accessors)
+                    && Equals(State, other.State);
             }
 
             public override int GetHashCode()

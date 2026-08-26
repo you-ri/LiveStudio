@@ -44,7 +44,7 @@ namespace Lilium.RemoteControl.Frames
     /// standby machine kept a few frames back absorbs arrival jitter without a barrier, so a slow
     /// standby can never stall the machine actually on air.
     /// </summary>
-    public sealed class InputFrameBuffer
+    public sealed class InputFrameBuffer : IDisposable
     {
         private readonly object _lock = new object();
         private readonly InputFrame[] _slots;
@@ -66,6 +66,24 @@ namespace Lilium.RemoteControl.Frames
 
         /// <summary>How many frames are retained.</summary>
         public int size => _slots.Length;
+
+        /// <summary>
+        /// Releases the storage every slot holds. The slots stay, so a buffer released between runs
+        /// keeps its shape and allocates again as frames come in.
+        /// </summary>
+        public void Dispose()
+        {
+            lock (_lock)
+            {
+                for (int i = 0; i < _slots.Length; i++)
+                {
+                    _slots[i].Dispose();
+                    _slotFrameNumbers[i] = -1;
+                }
+
+                _frameCount = 0;
+            }
+        }
 
         /// <summary>One past the highest committed frame number.</summary>
         public long frameCount { get { lock (_lock) { return _frameCount; } } }
