@@ -172,8 +172,7 @@ namespace Lilium.RemoteControl.Tests
             var frame = buffer.BeginFrame(frameNumber, kRate60);
             for (int i = 0; i < inputCount; i++)
             {
-                frame.Add(new InputRecord(i, InputKind.PropertyWrite, 0, 0,
-                    default, InputFlags.None));
+                frame.Add(new InputRecord(i, InputKind.PropertyWrite, 0, 0, InputFlags.None));
             }
             buffer.Commit(frameNumber);
         }
@@ -476,14 +475,13 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Flags_ReadBackThroughTheirProperties()
         {
-            var record = new InputRecord(1, InputKind.FunctionCall, 0, 1, default,
+            var record = new InputRecord(1, InputKind.FunctionCall, 0, 1,
                 InputFlags.Faulted | InputFlags.PayloadTruncated);
 
             Assert.IsTrue(record.faulted);
             Assert.IsTrue(record.payloadTruncated);
 
-            var clean = new InputRecord(2, InputKind.PropertyWrite, 0, 1, default,
-                InputFlags.None);
+            var clean = new InputRecord(2, InputKind.PropertyWrite, 0, 1, InputFlags.None);
 
             Assert.IsFalse(clean.faulted);
             Assert.IsFalse(clean.payloadTruncated);

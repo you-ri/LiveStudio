@@ -1,6 +1,5 @@
 // Copyright (c) You-Ri, 2026
 using System;
-using Unity.Collections;
 
 namespace Lilium.RemoteControl.Frames
 {
@@ -33,8 +32,11 @@ namespace Lilium.RemoteControl.Frames
         Faulted = 1 << 0,
 
         /// <summary>
-        /// The payload did not fit and was cut short. The input still applied correctly -- the
-        /// original string was used for that -- but what was kept cannot be replayed faithfully.
+        /// The payload did not fit and was cut short. The input still applied correctly -- what
+        /// arrived was used for that -- but what was kept cannot be replayed faithfully.
+        ///
+        /// Only reachable for a payload with no fixed size, which in practice means text: a typed
+        /// value is written at its own width and either fits or was never going to.
         /// </summary>
         PayloadTruncated = 1 << 1,
     }
@@ -47,8 +49,14 @@ namespace Lilium.RemoteControl.Frames
     /// a <see cref="InputSymbolTable"/> and referred to by id, which is what keeps this struct
     /// small even though the same property path arrives sixty times a second.
     /// </summary>
-    public struct InputRecord
+    public unsafe struct InputRecord
     {
+        /// <summary>
+        /// Room for one payload. Wide enough for any value with a fixed width and for the text an
+        /// input carries when it has no such width, which is the only case that can overflow it.
+        /// </summary>
+        public const int kPayloadCapacity = 512;
+
         /// <summary>Order this input was accepted in. Gaps mean something was dropped.</summary>
         public long sequence;
 
@@ -61,35 +69,113 @@ namespace Lilium.RemoteControl.Frames
         public int targetId;
 
         /// <summary>
-        /// Id of how the target was addressed -- for REST the method, since a path on its own does
-        /// not say which operation was asked for. Interned like everything else, so the handful of
-        /// distinct values cost one symbol each however many records use them.
+        /// Id of which operation was asked for on the target, since a target on its own does not
+        /// say. Interned like everything else, so the handful of distinct values cost one symbol
+        /// each however many records use them.
         ///
-        /// Without this a replay has to guess: the same path answers to more than one verb, and
+        /// Without this a replay has to guess: the same target answers to more than one verb, and
         /// picking the wrong one is the difference between setting a value and resetting it.
+        ///
+        /// The vocabulary belongs to whoever submitted the input -- over REST it is the HTTP method
+        /// -- and nothing in this lane interprets it. It is a symbol id and stays one.
         /// </summary>
-        public int methodId;
+        public int verbId;
+
+        /// <summary>
+        /// Id of the type name <see cref="payload"/> holds, or <see cref="InputSymbolTable.kNone"/>
+        /// when the record carries no payload.
+        ///
+        /// Bytes with no type are unreadable, so the two always travel together. The name is what
+        /// <see cref="InputPayload"/> resolves to lay the bytes back out, and it is what lets a
+        /// viewer walk a payload with the same machinery it walks a state element with.
+        /// </summary>
+        public int payloadTypeId;
+
+        /// <summary>How much of <see cref="payload"/> is used.</summary>
+        public int payloadLength;
 
         public InputFlags flags;
 
-        /// <summary>The value or arguments, in the form they arrived in.</summary>
-        public FixedString512Bytes payload;
+        /// <summary>
+        /// The value, as bytes of the type <see cref="payloadTypeId"/> names.
+        ///
+        /// Bytes rather than text because the values that arrive here are values: a float is four
+        /// bytes and a pose is a struct, and turning either into digits and back costs the parse,
+        /// the allocation, and the precision. Text is still a payload -- it is simply one whose
+        /// type says so.
+        /// </summary>
+        public fixed byte payload[kPayloadCapacity];
 
         public InputRecord(long sequence, InputKind kind, int sourceId, int targetId,
-            in FixedString512Bytes payload, InputFlags flags, int methodId = InputSymbolTable.kNone)
+            InputFlags flags, int verbId = InputSymbolTable.kNone)
         {
             this.sequence = sequence;
             this.kind = kind;
             this.sourceId = sourceId;
             this.targetId = targetId;
-            this.methodId = methodId;
-            this.payload = payload;
+            this.verbId = verbId;
             this.flags = flags;
+            payloadTypeId = InputSymbolTable.kNone;
+            payloadLength = 0;
         }
 
         public bool faulted => (flags & InputFlags.Faulted) != 0;
 
         public bool payloadTruncated => (flags & InputFlags.PayloadTruncated) != 0;
+
+        /// <summary>True when this record carries a value at all.</summary>
+        public bool hasPayload => payloadTypeId != InputSymbolTable.kNone;
+
+        /// <summary>
+        /// Puts a value in the record, replacing whatever was there. Returns false when it did not
+        /// fit, in which case what fits is kept and the caller is expected to raise
+        /// <see cref="InputFlags.PayloadTruncated"/> -- half a value is not a value, and only the
+        /// caller knows whether saying so matters.
+        /// </summary>
+        public bool SetPayload(ReadOnlySpan<byte> value, int typeId)
+        {
+            payloadTypeId = typeId;
+
+            var length = value.Length;
+            var fits = length <= kPayloadCapacity;
+            if (!fits) length = kPayloadCapacity;
+
+            payloadLength = length;
+
+            fixed (byte* destination = payload)
+            {
+                value.Slice(0, length).CopyTo(new Span<byte>(destination, kPayloadCapacity));
+            }
+
+            return fits;
+        }
+
+        /// <summary>Copies the payload out. Returns how many bytes were written.</summary>
+        public int CopyPayloadTo(Span<byte> destination)
+        {
+            var length = Math.Min(payloadLength, destination.Length);
+
+            fixed (byte* source = payload)
+            {
+                new ReadOnlySpan<byte>(source, length).CopyTo(destination);
+            }
+
+            return length;
+        }
+
+        /// <summary>
+        /// The payload as bytes, valid only while <paramref name="record"/> stays put.
+        ///
+        /// Takes the record by reference on purpose: a span over a copy would point into a struct
+        /// that is about to go out of scope, and the compiler cannot see that for a fixed buffer.
+        /// </summary>
+        public static ReadOnlySpan<byte> PayloadOf(ref InputRecord record)
+        {
+            fixed (byte* bytes = record.payload)
+            {
+                return new ReadOnlySpan<byte>(bytes, record.payloadLength);
+            }
+        }
 
         public override string ToString() => $"#{sequence} {kind} target:{targetId}";
     }
@@ -109,23 +195,33 @@ namespace Lilium.RemoteControl.Frames
         public readonly string target;
 
         /// <summary>
-        /// How the target was addressed -- the HTTP method for anything arriving over REST. A path
-        /// answers to more than one verb, so a replay that only had the path would have to guess.
+        /// Which operation is being asked for on the target. A target answers to more than one
+        /// verb, so a replay that only had the target would have to guess.
+        ///
+        /// Named by the submitter in its own terms -- the HTTP method for anything arriving over
+        /// REST. The gate interns it and never reads it.
         /// </summary>
-        public readonly string method;
+        public readonly string verb;
 
-        /// <summary>The value or arguments, in the form they arrived in.</summary>
-        public readonly string payload;
+        /// <summary>
+        /// The request as it arrived, before anything has worked out what it means.
+        ///
+        /// Kept as the fallback payload: at submit time the target has not been resolved, so its
+        /// type is not known yet. Whoever applies the input knows the value it really wrote and
+        /// replaces this with it -- see <see cref="FrameGate.StampAppliedPayload"/>. What stays
+        /// text is what has no other form.
+        /// </summary>
+        public readonly string requestText;
 
-        public InputDescriptor(InputKind kind, string method, string target, string payload = null)
+        public InputDescriptor(InputKind kind, string verb, string target, string requestText = null)
         {
             this.kind = kind;
-            this.method = method;
+            this.verb = verb;
             this.target = target;
-            this.payload = payload;
+            this.requestText = requestText;
         }
 
-        public override string ToString() => $"{method} {target} ({kind})";
+        public override string ToString() => $"{verb} {target} ({kind})";
     }
 
     /// <summary>

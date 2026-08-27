@@ -57,14 +57,15 @@ namespace Lilium.RemoteControl.Frames.Recording
         public static readonly byte[] kFooterMagic = { (byte)'L', (byte)'V', (byte)'D', (byte)'E' };
 
         /// <summary>
-        /// 2 added the keyframe list to the tail; 3 added the method to an input entry. Refused
-        /// rather than guessed at: an older layout read at the newer offsets produces values that
-        /// look plausible, which is worse than a file that will not open.
+        /// 2 added the keyframe list to the tail; 3 added the verb to an input entry; 4 made an
+        /// input payload typed bytes rather than text. Refused rather than guessed at: an older
+        /// layout read at the newer offsets produces values that look plausible, which is worse
+        /// than a file that will not open.
         ///
         /// The marks above changed with the rename to live data, which is a clean break: a file
         /// written before it is refused at the first four bytes rather than at the version.
         /// </summary>
-        public const int kVersion = 3;
+        public const int kVersion = 4;
 
         /// <summary>
         /// Bytes the footer occupies: the three tail offsets and the marker. Read from the end.

@@ -17,10 +17,38 @@ namespace Lilium.RemoteControl.Tests
             FrameGate.ResetState("[test] cleared");
         }
 
-        /// <summary>Collects what a replay hands it instead of applying anything.</summary>
+        /// <summary>What one call handed the applier, kept past the call.</summary>
+        private readonly struct AppliedInput
+        {
+            public readonly InputKind kind;
+            public readonly string verb;
+            public readonly string target;
+            public readonly string source;
+            public readonly string payloadTypeName;
+            public readonly byte[] payload;
+            public readonly string text;
+
+            public AppliedInput(in ReplayInput input)
+            {
+                kind = input.kind;
+                verb = input.verb;
+                target = input.target;
+                source = input.source;
+                payloadTypeName = input.payloadTypeName;
+                payload = input.payload.ToArray();
+                text = input.text;
+            }
+        }
+
+        /// <summary>
+        /// Collects what a replay hands it instead of applying anything.
+        ///
+        /// Copies rather than keeping the ReplayInput: its payload is a window over the replayer's
+        /// one buffer, so a list of them would all read as whatever the last input happened to be.
+        /// </summary>
         private sealed class RecordingApplier : IInputApplier
         {
-            public readonly List<ReplayInput> applied = new List<ReplayInput>();
+            public readonly List<AppliedInput> applied = new List<AppliedInput>();
 
             /// <summary>Targets to refuse, standing in for something that no longer exists.</summary>
             public readonly HashSet<string> refuse = new HashSet<string>();
@@ -34,7 +62,7 @@ namespace Lilium.RemoteControl.Tests
                 }
 
                 error = null;
-                applied.Add(input);
+                applied.Add(new AppliedInput(in input));
                 return true;
             }
         }
@@ -88,20 +116,20 @@ namespace Lilium.RemoteControl.Tests
             Assert.AreEqual(4, applier.applied.Count);
             for (int i = 0; i < 4; i++)
             {
-                Assert.AreEqual(i.ToString(), applier.applied[i].payload);
+                Assert.AreEqual(i.ToString(), applier.applied[i].text);
                 Assert.AreEqual("/live/object/cam/fov", applier.applied[i].target);
                 Assert.AreEqual(InputKind.PropertyWrite, applier.applied[i].kind);
             }
         }
 
         [Test]
-        public void TheMethod_SurvivesSoAReplayDoesNotHaveToGuessTheVerb()
+        public void TheVerb_SurvivesSoAReplayDoesNotHaveToGuessIt()
         {
             // The same path answers to more than one verb, so replaying a write as a reset would be
             // a plausible-looking wrong answer rather than a failure.
             var bytes = Record(1, () =>
                 FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/object/cam/fov", "35.0",
-                    () => true));
+                    () => true, verb: "PUT"));
 
             var applier = new RecordingApplier();
             using (var replayer = new FrameReplayer(new MemoryStream(bytes), applier))
@@ -109,7 +137,7 @@ namespace Lilium.RemoteControl.Tests
                 while (replayer.Advance()) { }
             }
 
-            Assert.AreEqual("PUT", applier.applied[0].method);
+            Assert.AreEqual("PUT", applier.applied[0].verb);
         }
 
         [Test]
@@ -197,7 +225,7 @@ namespace Lilium.RemoteControl.Tests
 
                 Assert.AreEqual(4, replayer.frameNumber);
                 Assert.AreEqual(1, replayer.appliedInputCount);
-                Assert.AreEqual("4", applier.applied[0].payload);
+                Assert.AreEqual("4", applier.applied[0].text);
             }
         }
     }

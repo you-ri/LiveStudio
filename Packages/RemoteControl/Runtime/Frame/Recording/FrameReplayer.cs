@@ -10,14 +10,23 @@ namespace Lilium.RemoteControl.Frames.Recording
     {
         public readonly InputKind kind;
 
-        /// <summary>How the target was addressed. The HTTP method for anything that came over REST.</summary>
-        public readonly string method;
+        /// <summary>Which operation was asked for. The HTTP method for anything that came over REST.</summary>
+        public readonly string verb;
 
         /// <summary>What was addressed, e.g. the property path.</summary>
         public readonly string target;
 
-        /// <summary>The value or arguments, as they arrived.</summary>
-        public readonly string payload;
+        /// <summary>The name of the type <see cref="payload"/> holds, or null when it holds nothing.</summary>
+        public readonly string payloadTypeName;
+
+        /// <summary>
+        /// The value, as bytes of <see cref="payloadTypeName"/>.
+        ///
+        /// Points into the replayer's own buffer and is valid for the duration of the
+        /// <see cref="IInputApplier.Apply"/> call. An applier that wants to keep it copies it --
+        /// the next input reuses the same memory.
+        /// </summary>
+        public readonly ReadOnlyMemory<byte> payload;
 
         /// <summary>Which producer it came from, for choosing what to replay and what to leave out.</summary>
         public readonly string source;
@@ -25,18 +34,32 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// <summary>True when the payload did not fit the record and was cut short at capture.</summary>
         public readonly bool payloadTruncated;
 
-        public ReplayInput(InputKind kind, string method, string target, string payload, string source,
-            bool payloadTruncated)
+        public ReplayInput(InputKind kind, string verb, string target, string payloadTypeName,
+            ReadOnlyMemory<byte> payload, string source, bool payloadTruncated)
         {
             this.kind = kind;
-            this.method = method;
+            this.verb = verb;
             this.target = target;
+            this.payloadTypeName = payloadTypeName;
             this.payload = payload;
             this.source = source;
             this.payloadTruncated = payloadTruncated;
         }
 
-        public override string ToString() => $"{method} {target} ({kind})";
+        /// <summary>True when the payload is a string value rather than a laid-out one.</summary>
+        public bool payloadIsString => InputPayload.IsString(payloadTypeName);
+
+        /// <summary>True when the payload is a request body nothing worked out the meaning of.</summary>
+        public bool payloadIsRequest => InputPayload.IsRequest(payloadTypeName);
+
+        /// <summary>
+        /// The payload as text -- a string value or a request body -- or null when it is neither.
+        /// Allocates, so call it once.
+        /// </summary>
+        public string text
+            => InputPayload.IsTextual(payloadTypeName) ? InputPayload.ReadString(payload.Span) : null;
+
+        public override string ToString() => $"{verb} {target} ({kind})";
     }
 
     /// <summary>
@@ -73,6 +96,10 @@ namespace Lilium.RemoteControl.Frames.Recording
     {
         private readonly FrameRecordPlayer _player;
         private readonly IInputApplier _applier;
+
+        // One buffer for every input. Handed to the applier as a window over it, which is why an
+        // applier is told not to hold on to it past the call.
+        private readonly byte[] _payloadBuffer = new byte[InputRecord.kPayloadCapacity];
 
         /// <summary>Inputs handed to the applier so far.</summary>
         public int appliedInputCount { get; private set; }
@@ -173,11 +200,14 @@ namespace Lilium.RemoteControl.Frames.Recording
                     continue;
                 }
 
+                var length = record.CopyPayloadTo(_payloadBuffer);
+
                 var input = new ReplayInput(
                     record.kind,
-                    _player.Resolve(record.methodId),
+                    _player.Resolve(record.verbId),
                     _player.Resolve(record.targetId),
-                    record.payload.Length == 0 ? null : record.payload.ToString(),
+                    _player.Resolve(record.payloadTypeId),
+                    new ReadOnlyMemory<byte>(_payloadBuffer, 0, length),
                     _player.Resolve(record.sourceId),
                     record.payloadTruncated);
 

@@ -191,22 +191,23 @@ namespace Lilium.RemoteControl.Frames.Recording
                 if (_IsExcluded(record.targetId, symbols)) continue;
 
                 // The payload is a fixed-size buffer but only its used length is stored: a record
-                // costs 536 bytes in memory and whatever it actually says on disk.
-                var payloadLength = record.payload.Length;
+                // costs the whole buffer in memory and whatever it actually says on disk. A typed
+                // value is usually a handful of bytes, so most records cost almost nothing here.
+                var payloadLength = record.payloadLength;
 
-                _BeginEntry(FrameEntryKind.Input, 8 + 4 + 4 + 4 + 4 + 1 + 4 + payloadLength);
+                _BeginEntry(FrameEntryKind.Input, 8 + 4 + 4 + 4 + 4 + 4 + 1 + 4 + payloadLength);
                 _writer.Write(record.sequence);
                 _writer.Write((int)record.kind);
                 _writer.Write(record.sourceId);
                 _writer.Write(record.targetId);
-                _writer.Write(record.methodId);
+                _writer.Write(record.verbId);
+                _writer.Write(record.payloadTypeId);
                 _writer.Write((byte)record.flags);
                 _writer.Write(payloadLength);
 
-                // Written as one block. The record is a local copy, so its buffer sits on the stack
-                // and the pointer cannot be moved out from under this call.
-                var bytes = record.payload.GetUnsafePtr();
-                _writer.Write(new ReadOnlySpan<byte>(bytes, payloadLength));
+                // Written as one block, raw. The record is a local copy, so its buffer sits on the
+                // stack -- already pinned, and the pointer cannot be moved out from under this call.
+                _writer.Write(new ReadOnlySpan<byte>(record.payload, payloadLength));
             }
         }
 

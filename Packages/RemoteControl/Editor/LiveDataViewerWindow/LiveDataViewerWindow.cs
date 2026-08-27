@@ -675,9 +675,9 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             source.AddToClassList(RemoteControlEditorStyles.kSubtle);
             line.Add(source);
 
-            var method = new Label(string.IsNullOrEmpty(input.method) ? input.kind.ToString() : input.method);
-            method.AddToClassList("ldv-col-narrow");
-            line.Add(method);
+            var verb = new Label(string.IsNullOrEmpty(input.verb) ? input.kind.ToString() : input.verb);
+            verb.AddToClassList("ldv-col-narrow");
+            line.Add(verb);
 
             var target = new Label(input.target);
             target.AddToClassList(RemoteControlEditorStyles.kGrow);
@@ -771,14 +771,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                 var field = layout[i];
                 var text = LiveDataValueLayout.Read(snapshot.selectedValue, snapshot.selectedValueLength, field);
 
-                // A fixed buffer of bytes is where reflection runs out: the type says 880 bytes and
-                // nothing about what they mean. Say so rather than printing 880 numbers.
-                if (field.bufferElementType == typeof(byte) && field.bufferLength > 64)
-                {
-                    text = $"{field.bufferLength} バイト — 読み方が登録されていません";
-                }
-
-                _rows.Add(new LiveDataValueRow(_LeafName(field.path), text, field.depth));
+                _rows.Add(new LiveDataValueRow(field.label, text, field.depth));
             }
         }
 
@@ -797,14 +790,85 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _rows.Add(new LiveDataValueRow("sequence", input.sequence.ToString()));
             _rows.Add(new LiveDataValueRow("kind", input.kind.ToString()));
             _rows.Add(new LiveDataValueRow("source", string.IsNullOrEmpty(input.source) ? "-" : input.source));
-            _rows.Add(new LiveDataValueRow("method", string.IsNullOrEmpty(input.method) ? "-" : input.method));
+            _rows.Add(new LiveDataValueRow("verb", string.IsNullOrEmpty(input.verb) ? "-" : input.verb));
             _rows.Add(new LiveDataValueRow("target", input.target));
 
             if (input.faulted) _rows.Add(new LiveDataValueRow("状態", "適用に失敗しました"));
             if (input.truncated) _rows.Add(new LiveDataValueRow("状態", "記録時に payload が切り詰められました"));
 
+            _AddPayloadRows(in input);
+        }
+
+        /// <summary>
+        /// Shows the payload the way the state lane shows a value: by its type.
+        ///
+        /// The same walker, so the same declarations apply -- a payload struct carrying
+        /// <c>[LiveArray]</c> reads here exactly as it would in the state lane, and there is no
+        /// second place that has to be taught what a type looks like.
+        /// </summary>
+        private void _AddPayloadRows(in InputRow input)
+        {
+            if (input.payload == null || input.payload.Length == 0)
+            {
+                _rows.Add(new LiveDataValueRow("payload", "(なし)"));
+                return;
+            }
+
             _rows.Add(new LiveDataValueRow("payload",
-                string.IsNullOrEmpty(input.payload) ? "(なし)" : input.payload));
+                $"{_ShortTypeName(input.payloadTypeName)}  ({input.payload.Length} B)"));
+
+            if (InputPayload.IsTextual(input.payloadTypeName))
+            {
+                _rows.Add(new LiveDataValueRow(string.Empty,
+                    InputPayload.ReadString(input.payload), depth: 1));
+                return;
+            }
+
+            var type = InputPayload.Resolve(input.payloadTypeName);
+            if (type == null)
+            {
+                _rows.Add(new LiveDataValueRow(string.Empty,
+                    $"このビルドに {input.payloadTypeName} がありません。", depth: 1));
+                _rows.Add(new LiveDataValueRow(string.Empty, _Hex(input.payload), depth: 1));
+                return;
+            }
+
+            var presenter = LiveDataValuePresenters.Find(type);
+            if (presenter != null)
+            {
+                presenter(input.payload, input.payload.Length, _rows);
+                return;
+            }
+
+            var layout = LiveDataValueLayout.For(type);
+            if (layout == null || layout.Count == 0)
+            {
+                _rows.Add(new LiveDataValueRow(string.Empty, _Hex(input.payload), depth: 1));
+                return;
+            }
+
+            for (int i = 0; i < layout.Count; i++)
+            {
+                var field = layout[i];
+                var text = LiveDataValueLayout.Read(input.payload, input.payload.Length, field);
+
+                _rows.Add(new LiveDataValueRow(field.label, text, field.depth + 1));
+            }
+        }
+
+        private static string _Hex(byte[] bytes)
+        {
+            var shown = System.Math.Min(bytes.Length, 24);
+            var text = new System.Text.StringBuilder(shown * 3);
+
+            for (int i = 0; i < shown; i++)
+            {
+                if (i > 0) text.Append(' ');
+                text.Append(bytes[i].ToString("X2"));
+            }
+
+            if (shown < bytes.Length) text.Append(" …");
+            return text.ToString();
         }
 
         /// <summary>

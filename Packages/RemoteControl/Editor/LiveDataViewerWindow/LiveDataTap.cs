@@ -252,15 +252,19 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             {
                 var record = inputs[i];
 
+                var payload = record.payloadLength == 0 ? null : new byte[record.payloadLength];
+                if (payload != null) record.CopyPayloadTo(payload);
+
                 _inputs[_inputHead] = new InputRow
                 {
                     frameNumber = frame.frameNumber,
                     sequence = record.sequence,
                     kind = record.kind,
                     source = resolve(record.sourceId),
-                    method = resolve(record.methodId),
+                    verb = resolve(record.verbId),
                     target = resolve(record.targetId),
-                    payload = record.payload.Length == 0 ? string.Empty : record.payload.ToString(),
+                    payloadTypeName = resolve(record.payloadTypeId),
+                    payload = payload,
                     faulted = record.faulted,
                     truncated = record.payloadTruncated,
                 };

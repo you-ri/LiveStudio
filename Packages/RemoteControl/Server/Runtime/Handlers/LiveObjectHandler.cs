@@ -527,13 +527,20 @@ namespace Lilium.RemoteControl
             public readonly string body;         // readBody=false の場合は null
 
             /// <summary>
+            /// The path exactly as it arrived, suffix and all. This is what the frame record used
+            /// as its target, so it is what a stamp has to be addressed to -- the stripped form
+            /// would miss the record it belongs to.
+            /// </summary>
+            public readonly string requestPath;
+
+            /// <summary>
             /// 解決に使ったコンテナ。エディタでの書き込みが「どこに保存されるか」を決めるのに要る
             /// (公開オブジェクト自身が持つメンバーの保存先は、それを直列化しているコンテナ側)。
             /// </summary>
             public readonly LiveObjectContainer container;
 
             public PropertyPipelineContext(LiveObjectContainer container, LiveObjectHandle liveObject,
-                string id, string slashPath, string propertyPath, string body)
+                string id, string slashPath, string propertyPath, string body, string requestPath)
             {
                 this.container = container;
                 this.liveObject = liveObject;
@@ -541,6 +548,7 @@ namespace Lilium.RemoteControl
                 this.slashPath = slashPath;
                 this.propertyPath = propertyPath;
                 this.body = body;
+                this.requestPath = requestPath;
             }
         }
 
@@ -653,7 +661,7 @@ namespace Lilium.RemoteControl
             }
 
             ctx = new PropertyPipelineContext(
-                container, liveObject.Value, id, slashPath, propertyPath.Value, body);
+                container, liveObject.Value, id, slashPath, propertyPath.Value, body, absolutePath);
             return true;
         }
 
@@ -780,6 +788,11 @@ namespace Lilium.RemoteControl
             {
                 return PropertyResult.Error(400, "Failed to set property");
             }
+
+            // What the record keeps is the value that landed, not the request that asked for it.
+            // Read back rather than parsed again: a property is free to clamp or normalise what it
+            // was given, and the recording should hold what the property now says.
+            FrameGate.StampAppliedPayload(ctx.requestPath, prop.type?.resolvedValueType, prop.GetValue());
 
             var json = LivePropertySerializer.ToJson(property.Value, resolver);
 
@@ -1294,6 +1307,57 @@ namespace Lilium.RemoteControl
             status = result.errorStatus;
             error = result.errorMessage;
             return false;
+        }
+
+        /// <summary>
+        /// Writes a recorded value straight into the property its path names, without going back
+        /// through text.
+        ///
+        /// Used when the recording kept the value as bytes, which is the case for every write whose
+        /// property has a fixed width. The path resolves the same way a live write resolves it, so
+        /// the same object and the same property are reached; only the parsing step is gone,
+        /// because there is nothing left to parse.
+        /// </summary>
+        public static bool ApplyRecordedValue(
+            LiveObjectContainer container, ILiveObjectResolver resolver,
+            string absolutePath, object value, out int status, out string error)
+        {
+            status = 0;
+            error = null;
+
+            if (!TryBuildPropertyContext(container, absolutePath, stripResetSuffix: false, body: null,
+                    out var ctx, out status, out error))
+            {
+                return false;
+            }
+
+            var property = ctx.liveObject.FindProperty(ctx.propertyPath);
+            if (property == null)
+            {
+                status = 404;
+                error = "Property not found";
+                return false;
+            }
+
+            var prop = property.Value;
+
+            if (LiveEditorSession.IsWriteRejected(container, ctx.liveObject.target, in prop))
+            {
+                status = 403;
+                error = LiveEditorSession.kWriteRejected;
+                return false;
+            }
+
+            // Same scope as the live write, for the same reasons: undo captures the value as it was
+            // before, and the editor is told about the change before anyone asks whether there was
+            // one. See the note above the Apply* operations.
+            using (new LiveEditorWriteScope(ctx.liveObject.target, prop.obj, container))
+            {
+                prop.SetValue(value);
+            }
+
+            status = 200;
+            return true;
         }
 
         /// <summary>

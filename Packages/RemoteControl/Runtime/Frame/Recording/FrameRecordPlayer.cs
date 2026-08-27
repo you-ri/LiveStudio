@@ -349,18 +349,21 @@ namespace Lilium.RemoteControl.Frames.Recording
             var kind = (InputKind)BitConverter.ToInt32(payload.Slice(8, 4));
             var sourceId = BitConverter.ToInt32(payload.Slice(12, 4));
             var targetId = BitConverter.ToInt32(payload.Slice(16, 4));
-            var methodId = BitConverter.ToInt32(payload.Slice(20, 4));
-            var flags = (InputFlags)payload[24];
-            var payloadLength = BitConverter.ToInt32(payload.Slice(25, 4));
+            var verbId = BitConverter.ToInt32(payload.Slice(20, 4));
+            var payloadTypeId = BitConverter.ToInt32(payload.Slice(24, 4));
+            var flags = (InputFlags)payload[28];
+            var payloadLength = BitConverter.ToInt32(payload.Slice(29, 4));
 
-            var value = default(Unity.Collections.FixedString512Bytes);
+            var record = new InputRecord(sequence, kind, sourceId, targetId, flags, verbId);
+
+            // Copied as bytes, not decoded: what the payload means is the reader's business, and
+            // going through text on the way in would round-trip a value that never was one.
             if (payloadLength > 0)
             {
-                Unity.Collections.FixedStringMethods.CopyFromTruncated(
-                    ref value, Encoding.UTF8.GetString(payload.Slice(29, payloadLength)));
+                record.SetPayload(payload.Slice(33, payloadLength), payloadTypeId);
             }
 
-            _inputs.Add(new InputRecord(sequence, kind, sourceId, targetId, value, flags, methodId));
+            _inputs.Add(record);
         }
     }
 }

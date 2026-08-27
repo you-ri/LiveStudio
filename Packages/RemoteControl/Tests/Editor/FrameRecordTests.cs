@@ -83,7 +83,7 @@ namespace Lilium.RemoteControl.Tests
                 {
                     inputs.Reset(f, FrameRate.FPS60);
                     inputs.Add(new InputRecord(f, InputKind.PropertyWrite, symbols.Intern("rest"),
-                        symbols.Intern("/live/a"), default, InputFlags.None));
+                        symbols.Intern("/live/a"), InputFlags.None));
 
                     var frame = new Frame { frameNumber = f, frameRate = FrameRate.FPS60, inputs = inputs };
                     writer.BeginFrame(in frame, symbols);
@@ -118,14 +118,18 @@ namespace Lilium.RemoteControl.Tests
         public void Input_ComesBackWithEveryFieldIntact()
         {
             using var inputs = new InputFrame();
-            var payload = default(FixedString512Bytes);
-            payload.CopyFromTruncated("35.0");
-
             var bytes = Write((writer, symbols) =>
             {
                 inputs.Reset(0, FrameRate.FPS60);
-                inputs.Add(new InputRecord(7, InputKind.FunctionCall, symbols.Intern("rest"),
-                    symbols.Intern("/live/camera/reset"), payload, InputFlags.PayloadTruncated));
+
+                var record = new InputRecord(7, InputKind.FunctionCall, symbols.Intern("rest"),
+                    symbols.Intern("/live/camera/reset"), InputFlags.PayloadTruncated);
+                Span<byte> text = stackalloc byte[InputRecord.kPayloadCapacity];
+                InputPayload.TryWriteString("35.0", text, out var textLength);
+                record.SetPayload(text.Slice(0, textLength),
+                    symbols.Intern(InputPayload.kRequestTypeName));
+
+                inputs.Add(record);
 
                 var frame = new Frame { frameNumber = 0, frameRate = FrameRate.FPS60, inputs = inputs };
                 writer.BeginFrame(in frame, symbols);
@@ -141,11 +145,15 @@ namespace Lilium.RemoteControl.Tests
 
                     Assert.AreEqual(7L, BitConverter.ToInt64(entry.payload.Slice(0, 8).ToArray(), 0));
                     Assert.AreEqual((int)InputKind.FunctionCall, BitConverter.ToInt32(entry.payload.Slice(8, 4).ToArray(), 0));
-                    // 8 sequence, 4 kind, 4 source, 4 target, 4 method, 1 flags, 4 length, payload.
-                    Assert.AreEqual((byte)InputFlags.PayloadTruncated, entry.payload[24]);
+                    // 8 sequence, 4 kind, 4 source, 4 target, 4 verb, 4 payload type, 1 flags,
+                    // 4 length, payload.
+                    Assert.AreEqual((byte)InputFlags.PayloadTruncated, entry.payload[28]);
 
-                    var payloadLength = BitConverter.ToInt32(entry.payload.Slice(25, 4).ToArray(), 0);
-                    Assert.AreEqual("35.0", Encoding.UTF8.GetString(entry.payload.Slice(29, payloadLength).ToArray()));
+                    var payloadLength = BitConverter.ToInt32(entry.payload.Slice(29, 4).ToArray(), 0);
+                    Assert.AreEqual("35.0", InputPayload.ReadString(entry.payload.Slice(33, payloadLength)));
+
+                    var payloadTypeId = BitConverter.ToInt32(entry.payload.Slice(24, 4).ToArray(), 0);
+                    Assert.AreEqual(InputPayload.kRequestTypeName, reader.symbols[payloadTypeId]);
 
                     // The target resolves through the table the file carries.
                     var targetId = BitConverter.ToInt32(entry.payload.Slice(16, 4).ToArray(), 0);
@@ -327,7 +335,7 @@ namespace Lilium.RemoteControl.Tests
                 {
                     inputs.Reset(f, FrameRate.FPS60);
                     inputs.Add(new InputRecord(f, InputKind.PropertyWrite, symbols.Intern("rest"),
-                        symbols.Intern("/live/object/cam/fov"), default, InputFlags.None));
+                        symbols.Intern("/live/object/cam/fov"), InputFlags.None));
 
                     var frame = new Frame { frameNumber = f, frameRate = FrameRate.FPS60, inputs = inputs };
                     writer.BeginFrame(in frame, symbols);

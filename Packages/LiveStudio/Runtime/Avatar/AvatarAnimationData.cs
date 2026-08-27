@@ -3,6 +3,7 @@
 using UnityEngine;
 using Unity.Collections.LowLevel.Unsafe;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Frames;
 
 namespace Lilium.LiveStudio
 {
@@ -24,6 +25,7 @@ namespace Lilium.LiveStudio
 
         public ARKitWeightData expression;
 
+        [LiveArray(typeof(CameraData))]
         public fixed byte cameras[kCameraChannelCount * CameraData.Size];
 
         public long frames;

@@ -150,6 +150,74 @@ namespace Lilium.RemoteControl.Frames
             _observerSnapshotStale = true;
         }
 
+        /// <summary>
+        /// The input currently being applied at a frame head, or null outside one. Main thread only,
+        /// because that is the only thread a frame head runs on.
+        /// </summary>
+        private static PendingInput _applyingInput;
+
+        /// <summary>
+        /// Says what value an input actually wrote, so the record keeps the value rather than the
+        /// request that asked for it.
+        ///
+        /// Called from inside the apply of an input, by the code that resolved the target and knows
+        /// its type. That is the earliest the type is knowable: at submit time the target is still
+        /// a path. Outside a frame head this does nothing, which is what makes it safe to call from
+        /// a write path that is also reachable without the gate.
+        ///
+        /// A string is written length first, inline. A property that declares a maximum is a
+        /// FixedString, which is unmanaged and packs at its own width like any other value.
+        /// Anything else with no layout is left alone -- the request text already stands in for it,
+        /// and half a value would be worse than the text that produced it.
+        /// </summary>
+        public static void StampAppliedPayload(string target, Type type, object value)
+        {
+            var input = _applyingInput;
+            if (input == null || type == null || value == null || string.IsNullOrEmpty(target)) return;
+
+            Span<byte> packed = stackalloc byte[InputRecord.kPayloadCapacity];
+            int written;
+            string typeName;
+
+            var fitted = true;
+
+            if (type == typeof(string))
+            {
+                fitted = InputPayload.TryWriteString((string)value, packed, out written);
+                typeName = InputPayload.kStringTypeName;
+            }
+            else
+            {
+                if (!InputPayload.TryPack(type, value, packed, out written)) return;
+                typeName = InputPayload.NameOf(type);
+            }
+
+            var targetId = _symbols.Intern(target);
+            var typeId = _symbols.Intern(typeName);
+
+            for (int i = 0; i < input.recordCount; i++)
+            {
+                if (input.records[i].targetId != targetId) continue;
+
+                input.records[i].SetPayload(packed.Slice(0, written), typeId);
+
+                // The mark belongs to what is in the record now, not to the request text this
+                // replaced. A laid-out value is written at its own width and always fits; only a
+                // string long enough to overrun the record can still be short.
+                if (fitted)
+                {
+                    input.records[i].flags &= ~InputFlags.PayloadTruncated;
+                }
+                else
+                {
+                    input.records[i].flags |= InputFlags.PayloadTruncated;
+                    Interlocked.Increment(ref _truncatedPayloadCount);
+                }
+
+                return;
+            }
+        }
+
         /// <summary>Stops watching. Safe to call from inside a notification.</summary>
         public static void RemoveFrameObserver(IFrameObserver observer)
         {
@@ -438,6 +506,11 @@ namespace Lilium.RemoteControl.Frames
             Interlocked.Exchange(ref _bypassedCount, 0);
             Interlocked.Exchange(ref _truncatedPayloadCount, 0);
             Interlocked.Exchange(ref _repeatedWriteCount, 0);
+
+            // Reset with the other diagnostics even though the observers themselves stay attached:
+            // the count says how much went quiet during this run, and carrying it over would report
+            // a previous run's losses against a run that has not lost anything.
+            _detachedObserverCount = 0;
             Volatile.Write(ref _lastRepeatedTargetId, InputSymbolTable.kNone);
         }
 
@@ -595,6 +668,10 @@ namespace Lilium.RemoteControl.Frames
 
                 try
                 {
+                    // Published while the input runs so the code that applies it can say what value
+                    // it wrote. Records are added to the lane below, after this, so a stamp made
+                    // here is part of what gets recorded.
+                    _applyingInput = input;
                     input.apply?.Invoke();
                 }
                 catch (Exception e)
@@ -604,6 +681,10 @@ namespace Lilium.RemoteControl.Frames
                     // every record it carries is marked.
                     input.SetFlags(InputFlags.Faulted);
                     Debug.LogError($"[RemoteControl] Frame input #{input.firstSequence} ({_DescribeFirst(input)}) failed: {e}");
+                }
+                finally
+                {
+                    _applyingInput = null;
                 }
 
                 for (int r = 0; r < input.recordCount; r++)
@@ -766,18 +847,18 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>
         /// Puts an input in the queue and completes once it has been applied at a frame head.
         /// </summary>
-        public static Task<T> SubmitAsync<T>(InputKind kind, string sourceId, string method,
+        public static Task<T> SubmitAsync<T>(InputKind kind, string sourceId, string verb,
             string target, string payload, Func<T> action)
-            => SubmitGroupAsync(new[] { new InputDescriptor(kind, method, target, payload) }, sourceId, action);
+            => SubmitGroupAsync(new[] { new InputDescriptor(kind, verb, target, payload) }, sourceId, action);
 
         /// <summary>
         /// Puts an input in the queue on behalf of a source resolved once with
         /// <see cref="ResolveSource"/>. Preferred over the string form: the name has already been
         /// checked against a declaration and interned, so nothing is hashed per call.
         /// </summary>
-        public static Task<T> SubmitAsync<T>(InputKind kind, FrameSource source, string method,
+        public static Task<T> SubmitAsync<T>(InputKind kind, FrameSource source, string verb,
             string target, string payload, Func<T> action)
-            => SubmitGroupAsync(new[] { new InputDescriptor(kind, method, target, payload) }, source, action);
+            => SubmitGroupAsync(new[] { new InputDescriptor(kind, verb, target, payload) }, source, action);
 
         /// <summary>Group form of <see cref="SubmitAsync{T}(InputKind, FrameSource, string, string, Func{T})"/>.</summary>
         public static Task<T> SubmitGroupAsync<T>(IReadOnlyList<InputDescriptor> operations,
@@ -837,8 +918,8 @@ namespace Lilium.RemoteControl.Frames
 
         /// <summary>Single-operation convenience for tests. See <see cref="_Enqueue{T}"/>.</summary>
         internal static Task<T> _Enqueue<T>(InputKind kind, string sourceId, string target,
-            string payload, Func<T> action)
-            => _Enqueue(new[] { new InputDescriptor(kind, "PUT", target, payload) },
+            string payload, Func<T> action, string verb = null)
+            => _Enqueue(new[] { new InputDescriptor(kind, verb, target, payload) },
                 _ResolveSourceId(sourceId), action);
 
         /// <summary>Group convenience for tests, resolving the source by name.</summary>
@@ -864,23 +945,38 @@ namespace Lilium.RemoteControl.Frames
             // thread that is going to wait anyway, and the main thread should not pay for it.
             var records = new InputRecord[operations.Count];
 
+            // One buffer for the whole group. Payloads are copied into the records, so nothing
+            // outlives this frame's stack.
+            Span<byte> scratch = stackalloc byte[InputRecord.kPayloadCapacity];
+
             for (int i = 0; i < operations.Count; i++)
             {
                 var operation = operations[i];
-                var payload = default(FixedString512Bytes);
-                var flags = InputFlags.None;
-
-                if (!string.IsNullOrEmpty(operation.payload) &&
-                    payload.CopyFromTruncated(operation.payload) == CopyError.Truncation)
-                {
-                    flags |= InputFlags.PayloadTruncated;
-                    Interlocked.Increment(ref _truncatedPayloadCount);
-                }
 
                 // The sequence is stamped by the sequencer, which is where order is decided.
-                records[i] = new InputRecord(0, operation.kind, source,
-                    _symbols.Intern(operation.target), payload, flags,
-                    _symbols.Intern(operation.method));
+                var record = new InputRecord(0, operation.kind, source,
+                    _symbols.Intern(operation.target), InputFlags.None,
+                    _symbols.Intern(operation.verb));
+
+                // The request text, until whoever applies it says what value it really wrote.
+                // The target has not been resolved yet here, so its type is not knowable -- see
+                // StampAppliedPayload for where the typed form arrives.
+                if (!string.IsNullOrEmpty(operation.requestText))
+                {
+                    // Held inline, length first: this is one request body, not a value that
+                    // recurs, and a table entry per distinct body would grow without bound.
+                    var fits = InputPayload.TryWriteString(operation.requestText, scratch, out var kept);
+
+                    record.SetPayload(scratch.Slice(0, kept), _symbols.Intern(InputPayload.kRequestTypeName));
+
+                    if (!fits)
+                    {
+                        record.flags |= InputFlags.PayloadTruncated;
+                        Interlocked.Increment(ref _truncatedPayloadCount);
+                    }
+                }
+
+                records[i] = record;
             }
 
             var input = new PendingInput

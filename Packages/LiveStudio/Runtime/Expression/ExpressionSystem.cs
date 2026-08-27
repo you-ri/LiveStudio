@@ -6,6 +6,7 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Collections;
 
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Frames;
 
 namespace Lilium.LiveStudio
 {
@@ -24,6 +25,8 @@ namespace Lilium.LiveStudio
     {
         static ARKitWeightData() => CompilerUtility.CheckUnmanaged<ARKitWeightData>();
 
+        // Floats already, so only the names are missing.
+        [LiveArray(labels = typeof(ARKitBlendShapeLocation))]
         public fixed float weights[(int)ARKitBlendShapeLocation.Max];
 
         public ref float AtWeight(ARKitBlendShapeLocation index)

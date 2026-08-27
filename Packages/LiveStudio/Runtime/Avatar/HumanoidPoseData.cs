@@ -3,6 +3,7 @@
 using UnityEngine;
 using Unity.Collections.LowLevel.Unsafe;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Frames;
 
 namespace Lilium.LiveStudio
 {
@@ -17,6 +18,11 @@ namespace Lilium.LiveStudio
 
         public Vector3 hipPosition;
 
+        // Quaternions, not bytes -- the buffer is bytes only because a fixed buffer of a struct is
+        // not a thing C# has. Shown with its presence beside it, because a rotation whose presence is
+        // zero is last frame's value rather than data.
+        [LiveArray(typeof(Quaternion), labels = typeof(HumanBodyBones),
+            pairedWith = nameof(bonePresences))]
         public fixed byte boneRotations[(int)HumanBodyBones.LastBone * CompilerUtility.QuaternionSize];
 
         // Per-bone tracking presence (0..1). 1 = fully tracked (use the mocap rotation),

@@ -41,17 +41,65 @@ namespace Lilium.RemoteControl.Replay
                 return false;
             }
 
-            if (string.IsNullOrEmpty(input.method))
+            if (string.IsNullOrEmpty(input.verb))
             {
-                // Recorded before the method was carried, or by a source that never had one. Guessing
+                // Recorded before the verb was carried, or by a source that never had one. Guessing
                 // would be worse than refusing: the same path answers to more than one verb.
-                error = "no method recorded";
+                error = "no verb recorded";
+                return false;
+            }
+
+            int status;
+            string message;
+
+            // A string value is written straight in too. It is a value like any other; the only
+            // difference is that its bytes say their own length rather than having a fixed one.
+            if (input.payloadIsString)
+            {
+                if (LiveObjectHandler.ApplyRecordedValue(
+                        _container, _resolver, input.target, input.text, out status, out message))
+                {
+                    return true;
+                }
+
+                error = $"{status} {message}";
+                return false;
+            }
+
+            // A typed payload is written straight into the property: the bytes already are the
+            // value, and going back out through text to come in through the parser again would
+            // only add a way for the two to disagree.
+            var valueType = input.payloadIsRequest ? null : InputPayload.Resolve(input.payloadTypeName);
+
+            if (valueType != null)
+            {
+                if (!InputPayload.TryUnpack(valueType, input.payload.Span, out var value))
+                {
+                    error = $"payload does not fit {input.payloadTypeName}";
+                    return false;
+                }
+
+                if (LiveObjectHandler.ApplyRecordedValue(
+                        _container, _resolver, input.target, value, out status, out message))
+                {
+                    return true;
+                }
+
+                error = $"{status} {message}";
+                return false;
+            }
+
+            if (!input.payloadIsRequest && !string.IsNullOrEmpty(input.payloadTypeName))
+            {
+                // The recording names a type this build does not have. Said rather than guessed at:
+                // reading the bytes as something else would apply a plausible wrong value.
+                error = $"unknown payload type '{input.payloadTypeName}'";
                 return false;
             }
 
             if (LiveObjectHandler.ApplyRecordedOperation(
-                    _container, _resolver, input.method, input.target, input.payload,
-                    out var status, out var message))
+                    _container, _resolver, input.verb, input.target, input.text,
+                    out status, out message))
             {
                 return true;
             }

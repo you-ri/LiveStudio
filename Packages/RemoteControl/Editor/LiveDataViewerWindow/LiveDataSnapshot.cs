@@ -60,9 +60,18 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         public long sequence;
         public InputKind kind;
         public string source;
-        public string method;
+        public string verb;
         public string target;
-        public string payload;
+
+        /// <summary>Name of the type <see cref="payload"/> holds, or null when it holds nothing.</summary>
+        public string payloadTypeName;
+
+        /// <summary>
+        /// The value as bytes. Copied out of the record because the record's slot is reused by the
+        /// next frame, and the viewer keeps a ring of these to look back through.
+        /// </summary>
+        public byte[] payload;
+
         public bool faulted;
         public bool truncated;
     }

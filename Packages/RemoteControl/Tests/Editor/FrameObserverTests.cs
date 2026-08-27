@@ -62,6 +62,13 @@ namespace Lilium.RemoteControl.Tests
 
         private readonly List<IFrameObserver> _attached = new List<IFrameObserver>();
 
+        /// <summary>
+        /// Watchers already attached when the test began. Observers survive
+        /// <see cref="FrameGate.ResetState"/> by design, so an open LiveData Viewer is a legitimate
+        /// extra watcher and the fixture counts its own on top of whatever was there.
+        /// </summary>
+        private int _otherObservers;
+
         private T Attach<T>(T observer) where T : IFrameObserver
         {
             FrameGate.AddFrameObserver(observer);
@@ -70,7 +77,11 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [SetUp]
-        public void StartClean() => FrameGate.ResetState("[test] cleared");
+        public void StartClean()
+        {
+            FrameGate.ResetState("[test] cleared");
+            _otherObservers = FrameGate.observerCount;
+        }
 
         [TearDown]
         public void Detach()
@@ -141,7 +152,7 @@ namespace Lilium.RemoteControl.Tests
             FrameGate.Pump();
 
             Assert.AreEqual(1, observer.frames.Count);
-            Assert.AreEqual(1, FrameGate.observerCount);
+            Assert.AreEqual(_otherObservers + 1, FrameGate.observerCount);
         }
 
         [Test]
