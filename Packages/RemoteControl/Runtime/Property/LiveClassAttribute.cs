@@ -180,7 +180,7 @@ namespace Lilium.RemoteControl
         public PersistScope persistScope { get; set; } = PersistScope.Scene;
 
         /// <summary>
-        /// Which lane of the deterministic frame carries this member. Default
+        /// Which lane of the live data carries this member. Default
         /// <see cref="FrameLane.Input"/>, which records it only when it changes.
         ///
         /// Set <see cref="FrameLane.State"/> for a member that changes many times a second, or one
@@ -233,7 +233,7 @@ namespace Lilium.RemoteControl
         public PersistScope persistScope { get; set; } = PersistScope.Scene;
 
         /// <summary>
-        /// Which lane of the deterministic frame carries this member. Default
+        /// Which lane of the live data carries this member. Default
         /// <see cref="FrameLane.Input"/>, which records it only when it changes.
         ///
         /// Set <see cref="FrameLane.State"/> for a member that changes many times a second, or one

@@ -191,6 +191,77 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
+        public void TheRecordersOwnButtons_AreLeftOutOfTheRecording()
+        {
+            // A recorded button press is still a button press. Keeping them means the replay presses
+            // them again: a recorded Record starts a second recording, and a recorded Stop tears down
+            // the replay that is running it. This is the bug that showed up the first time a take was
+            // played back on a real machine.
+            // Two ids, matching the real shape: the page carrying the buttons, and the component
+            // behind it that the page's settings write through to.
+            _recorder.excludeObjectIds = new[] { "recorder-page", "recorder-id" };
+            _recorder.Start(_stream, leaveOpen: true);
+            FrameGate.sink = _recorder;
+
+            FrameGate._Enqueue(InputKind.FunctionCall, "test", "/live/function/recorder-page/Record",
+                "{}", () => true);
+            FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/object/recorder-page/take",
+                "2", () => true);
+            FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/object/recorder-id/_take",
+                "2", () => true);
+            FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/object/cam/fov",
+                "35", () => true);
+
+            FrameGate.Pump();
+
+            FrameGate.sink = null;
+            _recorder.Stop();
+
+            using (var reader = new FrameRecordReader(new MemoryStream(_stream.ToArray())))
+            {
+                var targets = new System.Collections.Generic.List<string>();
+                while (reader.TryReadEntry(out var entry))
+                {
+                    if (entry.kind != FrameEntryKind.Input) continue;
+
+                    var targetId = System.BitConverter.ToInt32(entry.payload.Slice(16, 4).ToArray(), 0);
+                    targets.Add(reader.symbols[targetId]);
+                }
+
+                CollectionAssert.AreEqual(new[] { "/live/object/cam/fov" }, targets,
+                    "only what happened to the world should be in the take");
+            }
+        }
+
+        [Test]
+        public void WithNoExclusion_EverythingIsRecorded()
+        {
+            _recorder.Start(_stream, leaveOpen: true);
+            FrameGate.sink = _recorder;
+
+            FrameGate._Enqueue(InputKind.FunctionCall, "test", "/live/function/recorder-id/Record",
+                "{}", () => true);
+            FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/object/cam/fov", "35",
+                () => true);
+
+            FrameGate.Pump();
+
+            FrameGate.sink = null;
+            _recorder.Stop();
+
+            using (var reader = new FrameRecordReader(new MemoryStream(_stream.ToArray())))
+            {
+                var inputs = 0;
+                while (reader.TryReadEntry(out var entry))
+                {
+                    if (entry.kind == FrameEntryKind.Input) inputs++;
+                }
+
+                Assert.AreEqual(2, inputs, "nothing is left out unless it was asked for");
+            }
+        }
+
+        [Test]
         public void ResetState_DetachesTheSink()
         {
             // Otherwise a recording would quietly span two runs, whose frame numbers both start over.

@@ -5,7 +5,7 @@ using Lilium.RemoteControl.Frames;
 namespace Lilium.RemoteControl
 {
     /// <summary>
-    /// Declares a source of input to the deterministic frame. Applied at assembly level and
+    /// Declares a source of input to the live data. Applied at assembly level and
     /// collected at start-up, the same way an external enum is declared.
     ///
     /// The declaration is static on purpose: the set of sources has to be settled by the time a

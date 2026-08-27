@@ -31,6 +31,15 @@ MonoBehaviour:
     position: 0
     order: 100
     accessLevel: 1
+  - id: recorder
+    icon: fiber_manual_record
+    editorIcon: {fileID: 0}
+    label: MENU_FRAME_RECORDER
+    page:
+      rid: 2100000000000000001
+    position: 0
+    order: 400
+    accessLevel: 1
   - id: settings
     icon: 
     editorIcon: {fileID: 0}
@@ -58,6 +67,16 @@ MonoBehaviour:
       type: {class: StandardObjectFactory, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
       data:
         factories: []
+    - rid: 2100000000000000001
+      type: {class: NavigatePage, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
+      data:
+        selector:
+          rid: 2100000000000000002
+    - rid: 2100000000000000002
+      type: {class: NavigateObjectSelector, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
+      data:
+        objectIds:
+        - FrameRecorderPage
     - rid: 1948541681775935488
       type: {class: NavigatePage, ns: Lilium.RemoteControl.UI, asm: Lilium.RemoteControl.UI}
       data:

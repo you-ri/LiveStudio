@@ -54,6 +54,17 @@ namespace Lilium.RemoteControl.Frames.Recording
         public int keyframeCount => _writer?.keyframes.Count ?? 0;
 
         /// <summary>
+        /// Exposed objects whose inputs are left out of the recording. Set this to whatever is
+        /// driving the recording -- both the page holding the controls and the component behind it.
+        ///
+        /// Their buttons are not part of the world being recorded, and keeping them means the replay
+        /// presses them again: a recorded Record starts a second recording, and a recorded Stop tears
+        /// down the replay that is running it. This is the design's "内部起点は記録から除外する"
+        /// applied to the recorder itself.
+        /// </summary>
+        public string[] excludeObjectIds { get; set; }
+
+        /// <summary>
         /// Fills in what a recording says about the run it came from. A recording does not replay
         /// against a different build, so this is what a reader checks rather than guesses.
         /// </summary>
@@ -137,7 +148,7 @@ namespace Lilium.RemoteControl.Frames.Recording
             if (_writer.keyframes.Count != before) _lastKeyframeFrame = frame.frameNumber;
 
             _writer.WriteState(frame.state, symbols);
-            _writer.WriteInputs(frame.inputs, symbols);
+            _writer.WriteInputs(frame.inputs, symbols, excludeObjectIds);
             _writer.EndFrame();
         }
 

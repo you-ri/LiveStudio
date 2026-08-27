@@ -47,16 +47,22 @@ namespace Lilium.RemoteControl.Frames.Recording
     /// </summary>
     public static class FrameRecordFormat
     {
-        /// <summary>Start of file.</summary>
-        public static readonly byte[] kMagic = { (byte)'L', (byte)'S', (byte)'F', (byte)'R' };
+        /// <summary>Start of file. "LiVe DaTa".</summary>
+        public static readonly byte[] kMagic = { (byte)'L', (byte)'V', (byte)'D', (byte)'T' };
 
-        /// <summary>Start of the footer, so a reader can tell a finished file from a cut one.</summary>
-        public static readonly byte[] kFooterMagic = { (byte)'L', (byte)'S', (byte)'F', (byte)'E' };
+        /// <summary>
+        /// Start of the footer, so a reader can tell a finished file from a cut one. Same stem as
+        /// <see cref="kMagic"/> with an E for end, so the two cannot be mistaken for each other.
+        /// </summary>
+        public static readonly byte[] kFooterMagic = { (byte)'L', (byte)'V', (byte)'D', (byte)'E' };
 
         /// <summary>
         /// 2 added the keyframe list to the tail; 3 added the method to an input entry. Refused
         /// rather than guessed at: an older layout read at the newer offsets produces values that
         /// look plausible, which is worse than a file that will not open.
+        ///
+        /// The marks above changed with the rename to live data, which is a clean break: a file
+        /// written before it is refused at the first four bytes rather than at the version.
         /// </summary>
         public const int kVersion = 3;
 

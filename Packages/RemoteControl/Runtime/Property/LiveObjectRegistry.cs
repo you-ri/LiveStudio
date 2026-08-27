@@ -128,6 +128,32 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
+        /// Id of the exposed object that stands for <paramref name="self"/> itself, or null.
+        ///
+        /// A component on a scene object is not registered under its own target: what the registry
+        /// holds is the proxy wrapping the GameObject, and the component is reached as one of its
+        /// members. So <see cref="FindByTarget"/> on a component finds nothing -- and finding nothing
+        /// is a silent answer, which is how a producer can end up publishing to no one at all.
+        /// Anything asking "which exposed object am I part of" asks here instead.
+        ///
+        /// Walks the proxies rather than the targets, so it answers for the GameObject and for any
+        /// component on it alike.
+        /// </summary>
+        public static string FindOwnLiveId(Transform self)
+        {
+            if (self == null) return null;
+
+            foreach (var obj in _instances)
+            {
+                if (!obj.isValid) continue;
+                if (!(obj.target is LiveUnityObjectBase proxy)) continue;
+                if (proxy.reference == null) continue;
+                if (ExtractTransform(proxy.reference) == self) return obj.id;
+            }
+            return null;
+        }
+
+        /// <summary>
         /// 指定 Transform の祖先方向に辿り、最初に見つかった LiveObjectHandle の id を返す。
         /// 自身は含めず parent 方向から探索する。見つからなければ null。
         /// LiveUnityObjectBase.parentId getter の派生実装で使用。

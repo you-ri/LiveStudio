@@ -2,7 +2,7 @@
 namespace Lilium.RemoteControl
 {
     /// <summary>
-    /// Which lane of the deterministic frame carries an exposed member.
+    /// Which lane of the live data carries an exposed member.
     ///
     /// The two lanes are of equal standing. For a member whose writes all pass through the frame
     /// gate the choice is about cost, not correctness: a property write is recorded with the value

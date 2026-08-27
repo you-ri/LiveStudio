@@ -61,6 +61,11 @@ namespace Lilium.RemoteControl.Frames
         private static FrameHeadDelegate[] _frameHeadSnapshot = Array.Empty<FrameHeadDelegate>();
         private static bool _frameHeadSnapshotStale;
 
+        private static readonly List<IFrameObserver> _observers = new List<IFrameObserver>();
+        private static IFrameObserver[] _observerSnapshot = Array.Empty<IFrameObserver>();
+        private static bool _observerSnapshotStale;
+        private static int _detachedObserverCount;
+
         // The frame currently being built. Kept as a field rather than a local so it can be handed
         // out by reference without the callee's writes landing in a copy.
         private static Frame _frame;
@@ -71,6 +76,7 @@ namespace Lilium.RemoteControl.Frames
         private static readonly StateBlockSet _state = new StateBlockSet();
 
         private static IFrameSink _sink;
+        private static IFrameSource _source;
 
         /// <summary>Frames retained for read-back, indexed by frame number.</summary>
         public static InputFrameBuffer buffer => _buffer;
@@ -97,6 +103,60 @@ namespace Lilium.RemoteControl.Frames
         {
             get => _sink;
             set => _sink = value;
+        }
+
+        /// <summary>
+        /// Where frames come from when they are not being produced here: a recording being played,
+        /// or another machine being followed. Null for an ordinary live run.
+        ///
+        /// One at a time, for the same reason as <see cref="sink"/>. Retired automatically when it
+        /// runs out, which raises <see cref="onSourceEnded"/>.
+        /// </summary>
+        public static IFrameSource source
+        {
+            get => _source;
+            set => _source = value;
+        }
+
+        /// <summary>
+        /// Raised on the main thread when a source runs out and is detached, so whoever attached it
+        /// can put the run back the way it was. Not raised when a source is cleared by hand -- the
+        /// caller doing that already knows.
+        /// </summary>
+        public static event Action onSourceEnded;
+
+        /// <summary>Observers watching frames go by. For diagnostics.</summary>
+        public static int observerCount => _observers.Count;
+
+        /// <summary>
+        /// Observers dropped for throwing, since the run started. Not zero means something that was
+        /// watching has stopped, which a viewer has to say out loud rather than just going quiet.
+        /// </summary>
+        public static int detachedObserverCount => _detachedObserverCount;
+
+        /// <summary>
+        /// Starts watching frames. Idempotent, and safe to call from inside a notification.
+        ///
+        /// Unlike <see cref="sink"/> there can be any number, and unlike <see cref="source"/> they
+        /// survive <see cref="ResetState"/>: watching is not owning, and a watcher that quietly
+        /// stopped at the start of a run is exactly the kind of silence this is here to find.
+        /// </summary>
+        public static void AddFrameObserver(IFrameObserver observer)
+        {
+            if (observer == null) throw new ArgumentNullException(nameof(observer));
+            if (_observers.Contains(observer)) return;
+
+            _observers.Add(observer);
+            _observerSnapshotStale = true;
+        }
+
+        /// <summary>Stops watching. Safe to call from inside a notification.</summary>
+        public static void RemoveFrameObserver(IFrameObserver observer)
+        {
+            if (observer == null) return;
+            if (!_observers.Remove(observer)) return;
+
+            _observerSnapshotStale = true;
         }
 
         /// <summary>
@@ -367,6 +427,8 @@ namespace Lilium.RemoteControl.Frames
 
             // Left attached across a reset would mean a recording quietly spanning two runs.
             _sink = null;
+            _source = null;
+            onSourceEnded = null;
             _writeKeysThisFrame.Clear();
 
             // Cleared so a new run reports its undeclared sources again rather than staying quiet
@@ -518,8 +580,13 @@ namespace Lilium.RemoteControl.Frames
             _frame.structure = _structure;
             _frame.state = _state;
             _frame.inputs = inputs;
+            _frame.isSupplied = false;
 
             _writeKeysThisFrame.Clear();
+
+            // Before the queued inputs, so what the recording asked for lands first and an operator
+            // acting right now lands on top of it rather than under it.
+            _FillFromSource();
 
             var drained = _sequencer.Drain();
             for (int i = 0; i < drained.Count; i++)
@@ -558,6 +625,10 @@ namespace Lilium.RemoteControl.Frames
             // one, and before the commit, so a sink that throws cannot leave the frame unpublished.
             _DeliverToSink();
 
+            // The same point, for the same reason: a watcher wants the frame that was, not half of
+            // it. After the sink, so the one that owns the frame gets it first.
+            _NotifyObservers();
+
             // Dropped so a handler that stashed the frame cannot reach a slot that is about to be
             // handed to a later frame.
             _frame.inputs = null;
@@ -581,6 +652,46 @@ namespace Lilium.RemoteControl.Frames
             Volatile.Write(ref _lastRepeatedTargetId, record.targetId);
         }
 
+        private static void _FillFromSource()
+        {
+            var source = _source;
+            if (source == null) return;
+
+            try
+            {
+                if (source.FillFrame(ref _frame))
+                {
+                    _frame.isSupplied = true;
+                    return;
+                }
+            }
+            catch (Exception e)
+            {
+                // Detached rather than left to throw every frame, for the same reason as the sink:
+                // one failure must not become one per frame, and the run is still fine live.
+                _source = null;
+                Debug.LogError($"[RemoteControl] Frame source failed and was detached: {e}");
+                _RaiseSourceEnded();
+                return;
+            }
+
+            // Ran out. The frame falls back to the live lanes it was already pointing at.
+            _source = null;
+            _RaiseSourceEnded();
+        }
+
+        private static void _RaiseSourceEnded()
+        {
+            try
+            {
+                onSourceEnded?.Invoke();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[RemoteControl] Frame source teardown failed: {e}");
+            }
+        }
+
         private static void _DeliverToSink()
         {
             var sink = _sink;
@@ -597,6 +708,34 @@ namespace Lilium.RemoteControl.Frames
                 // fine without it.
                 _sink = null;
                 Debug.LogError($"[RemoteControl] Frame sink failed and was detached: {e}");
+            }
+        }
+
+        private static void _NotifyObservers()
+        {
+            if (_observerSnapshotStale)
+            {
+                _observerSnapshot = _observers.ToArray();
+                _observerSnapshotStale = false;
+            }
+
+            var observers = _observerSnapshot;
+            for (int i = 0; i < observers.Length; i++)
+            {
+                var observer = observers[i];
+
+                try
+                {
+                    observer.OnFrameCompleted(in _frame, _symbols);
+                }
+                catch (Exception e)
+                {
+                    // Detached rather than left to throw every frame, like the sink. Counted as well
+                    // as logged, so a viewer can say it stopped watching instead of just freezing.
+                    RemoveFrameObserver(observer);
+                    _detachedObserverCount++;
+                    Debug.LogError($"[RemoteControl] Frame observer failed and was detached: {e}");
+                }
             }
         }
 

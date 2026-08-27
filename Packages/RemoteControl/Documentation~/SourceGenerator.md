@@ -36,7 +36,7 @@ Practical consequences:
 
 ## State blocks
 
-The generator also emits the **state-lane blocks** the deterministic frame carries.
+The generator also emits the **state-lane blocks** the live data carries.
 
 A member declared `lane = FrameLane.State` is read every frame, for every object that has one. That
 is the case reflection handles worst, so the generator turns it into field assignments: for each type

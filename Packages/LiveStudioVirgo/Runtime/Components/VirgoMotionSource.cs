@@ -123,6 +123,11 @@ namespace Lilium.LiveStudio.Virgo
         // the reference point has a single writer: the frame head.
         private volatile bool _resetCameraRequested;
 
+        // Exposed id of the object this source belongs to. The string is kept, not the interned
+        // number: finding it walks every registered object, but the number it interns to is only
+        // good until the next gate reset.
+        private string _ownerLiveId;
+
         // Resolved once against its declaration in AssemblyInfo. Declared sources keep the same id
         // across a gate reset, so this stays valid for the life of the domain.
         private static readonly FrameSource _fusionSource = FrameGate.ResolveSource("fusion");
@@ -259,10 +264,12 @@ namespace Lilium.LiveStudio.Virgo
                 _ResetCameraFrom(in _resetCameraSample);
             }
 
-            if (!_TrySamplePose(out var sampled, out var sampledFrom)) return;
+            if (!_TryResolvePose(ref frame, out var sampled)) return;
 
-            _PublishState(ref frame, in sampled, sampledFrom);
-
+            // Runs on a supplied frame too, and that is the point: the pose on the state lane is the
+            // one before placement, so the reference point can be edited and the take drawn again.
+            // Fold the placement into what is recorded and this step has nothing left to do.
+            //
             // height/distance are already part of the placement origin, so they are not added again.
             AvatarAnimationSystem.Transform(in sampled, _PlacementMatrix(), out frameData);
         }
@@ -274,9 +281,8 @@ namespace Lilium.LiveStudio.Virgo
         /// not of the capture, and folding it in would make the recorded pose unusable for anything
         /// but the camera position it happened to be shot with.
         ///
-        /// Nothing reads this yet -- the live path still goes through <c>frameData</c>. It is here so
-        /// the recorder and the drift check have the frame's own copy to work from rather than
-        /// reaching into this component.
+        /// Read back on a supplied frame by <see cref="_TryResolvePose"/>, so the value that reaches
+        /// the avatar comes off the frame either way.
         /// </summary>
         private void _PublishState(ref Frame frame, in AvatarAnimationData sampled, long sampledFrom)
         {
@@ -295,17 +301,81 @@ namespace Lilium.LiveStudio.Virgo
         }
 
         /// <summary>
+        /// Announces the pose type so a recording carrying it can be played back into a block, even
+        /// on a run that has not published one live -- which is every run that only ever replays.
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void _RegisterStateType()
+        {
+            StateTypeRegistry.Register<AvatarAnimationData>();
+        }
+
+        /// <summary>
+        /// This frame's pose, from whichever side is supplying the frame.
+        ///
+        /// One opening, two suppliers. Live, the pose is sampled from what arrived over the wire and
+        /// written onto the frame; supplied, it is read straight back off the frame. Everything after
+        /// this point is the same code either way, which is what stops a replay from being a second
+        /// path that can quietly drift from the first.
+        ///
+        /// A supplied frame with nothing for this source is not an error -- the recording simply had
+        /// no pose at that point -- so the avatar is left as it was rather than snapped to nothing.
+        /// </summary>
+        private bool _TryResolvePose(ref Frame frame, out AvatarAnimationData pose)
+        {
+            if (frame.isSupplied) return _TryReadState(in frame, out pose);
+
+            if (!_TrySamplePose(out pose, out var sampledFrom)) return false;
+
+            _PublishState(ref frame, in pose, sampledFrom);
+            return true;
+        }
+
+        private bool _TryReadState(in Frame frame, out AvatarAnimationData pose)
+        {
+            pose = default;
+
+            if (frame.state == null) return false;
+
+            var owner = _OwnerId();
+            if (owner == InputSymbolTable.kNone) return false;
+
+            var block = frame.state.Find<AvatarAnimationData>();
+            if (block == null) return false;
+
+            var index = block.IndexOfOwner(owner);
+            if (index < 0) return false;
+
+            pose = block[index].value;
+            return true;
+        }
+
+        /// <summary>
         /// Interned id of this source as an exposed object, or none while it has not been registered.
         ///
-        /// Interned every frame rather than cached: a gate reset wipes the symbol table, and a
-        /// cached id would then name whatever took its place. Object ids are not re-interned in a
-        /// fixed order the way declared sources are.
+        /// Two different lifetimes, so two different things are kept. The exposed id is found once,
+        /// because finding it walks every registered object and the answer only changes when this
+        /// component's object is registered or dropped. The number it interns to is taken every
+        /// frame, because a gate reset wipes the symbol table and a kept number would then name
+        /// whatever took its place -- object ids are not re-interned in a fixed order the way
+        /// declared sources are.
+        ///
+        /// The id is asked of the transform, not of this component. A component is not registered
+        /// under its own target -- the registry holds the proxy for its GameObject -- so a lookup by
+        /// target returns nothing, and nothing is indistinguishable from "not ready yet". That is
+        /// what used to make every pose published here go nowhere.
         /// </summary>
         private int _OwnerId()
         {
-            if (!LiveObjectRegistry.TryFindByTarget(this, out var handle)) return InputSymbolTable.kNone;
+            if (_ownerLiveId == null)
+            {
+                var id = LiveObjectRegistry.FindOwnLiveId(transform);
+                if (string.IsNullOrEmpty(id)) return InputSymbolTable.kNone;
 
-            return FrameGate.symbols.Intern(handle.id);
+                _ownerLiveId = id;
+            }
+
+            return FrameGate.symbols.Intern(_ownerLiveId);
         }
 
         private Matrix4x4 _PlacementMatrix()

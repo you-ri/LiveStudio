@@ -283,6 +283,10 @@ namespace Lilium.RemoteControl
 
             // プリミティブ型とEnum: JToken.FromObject の JsonSerializer 経由を避け、型付き JValue を
             // 直接生成する (出力 JSON は同一。値ごとの一時アロケーションを削減)。
+            //
+            // ⚠ ここに無い数値型は下の POCO フォールバックへ落ち、JsonUtility が "{}" を返すため
+            //    値ではなく {"@type":"Int64"} のような型スタブになる (サイレントに値が消える)。
+            //    書き込み側 DeserializeUnityType が受け付ける数値型と必ず揃えること。
             switch (value)
             {
                 case string s: return new JValue(s);
@@ -290,6 +294,9 @@ namespace Lilium.RemoteControl
                 case float f: return new JValue(f);
                 case bool b: return new JValue(b);
                 case double d: return new JValue(d);
+                case long l: return new JValue(l);
+                case short sh: return new JValue(sh);
+                case byte by: return new JValue(by);
             }
 
             if (value is System.Enum)

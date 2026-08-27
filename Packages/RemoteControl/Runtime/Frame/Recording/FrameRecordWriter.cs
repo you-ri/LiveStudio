@@ -38,6 +38,11 @@ namespace Lilium.RemoteControl.Frames.Recording
         // Epoch of the inventory as last written, so an unchanged structure is not written again.
         private long _structureEpoch = -1;
 
+        // Prefixes an input's target must not start with to be written, two per excluded id
+        // (its properties and its functions). Rebuilt only when the caller's list changes.
+        private string[] _excludePrefixes;
+        private string[] _excludeIds;
+
         private long _firstFrameNumber = -1;
         private long _currentFrameNumber = -1;
         private bool _closed;
@@ -160,17 +165,30 @@ namespace Lilium.RemoteControl.Frames.Recording
             }
         }
 
-        /// <summary>Writes the inputs applied at this frame's head, in the order they were applied.</summary>
-        public unsafe void WriteInputs(InputFrame inputs, InputSymbolTable symbols)
+        /// <summary>
+        /// Writes the inputs applied at this frame's head, in the order they were applied.
+        ///
+        /// <paramref name="excludeObjectIds"/> names exposed objects whose inputs are left out.
+        /// This is for whatever drives the recording: its buttons are not part of the world being
+        /// recorded, and keeping them means a replay presses them again -- starting a recording, or
+        /// tearing down the replay that is running. It takes a list because the controls and the
+        /// machinery behind them are usually two separate exposed objects.
+        /// </summary>
+        public unsafe void WriteInputs(InputFrame inputs, InputSymbolTable symbols,
+            string[] excludeObjectIds = null)
         {
             _RequireFrame();
             _WriteSymbolsSince(symbols);
 
             if (inputs == null) return;
 
+            _UpdateExclusion(excludeObjectIds);
+
             for (int i = 0; i < inputs.inputCount; i++)
             {
                 var record = inputs[i];
+
+                if (_IsExcluded(record.targetId, symbols)) continue;
 
                 // The payload is a fixed-size buffer but only its used length is stored: a record
                 // costs 536 bytes in memory and whatever it actually says on disk.
@@ -240,6 +258,66 @@ namespace Lilium.RemoteControl.Frames.Recording
             _writer.Dispose();
 
             if (_ownsStream) _stream.Dispose();
+        }
+
+        private void _UpdateExclusion(string[] excludeObjectIds)
+        {
+            if (_SameIds(excludeObjectIds)) return;
+
+            _excludeIds = excludeObjectIds;
+
+            var count = 0;
+            if (excludeObjectIds != null)
+            {
+                for (int i = 0; i < excludeObjectIds.Length; i++)
+                {
+                    if (!string.IsNullOrEmpty(excludeObjectIds[i])) count++;
+                }
+            }
+
+            if (count == 0)
+            {
+                _excludePrefixes = null;
+                return;
+            }
+
+            _excludePrefixes = new string[count * 2];
+            var next = 0;
+            for (int i = 0; i < excludeObjectIds.Length; i++)
+            {
+                var id = excludeObjectIds[i];
+                if (string.IsNullOrEmpty(id)) continue;
+
+                _excludePrefixes[next++] = "/live/object/" + id + "/";
+                _excludePrefixes[next++] = "/live/function/" + id + "/";
+            }
+        }
+
+        // The caller hands the same array every frame, so identity is the common case. Compared by
+        // content as well, because nothing stops a caller from rebuilding it.
+        private bool _SameIds(string[] ids)
+        {
+            if (ReferenceEquals(_excludeIds, ids)) return true;
+            if (_excludeIds == null || ids == null) return false;
+            if (_excludeIds.Length != ids.Length) return false;
+
+            for (int i = 0; i < ids.Length; i++)
+            {
+                if (!string.Equals(_excludeIds[i], ids[i], StringComparison.Ordinal)) return false;
+            }
+            return true;
+        }
+
+        private bool _IsExcluded(int targetId, InputSymbolTable symbols)
+        {
+            if (_excludePrefixes == null) return false;
+            if (!symbols.TryResolve(targetId, out var target)) return false;
+
+            for (int i = 0; i < _excludePrefixes.Length; i++)
+            {
+                if (target.StartsWith(_excludePrefixes[i], StringComparison.Ordinal)) return true;
+            }
+            return false;
         }
 
         private void _WriteSymbolsSince(InputSymbolTable symbols)

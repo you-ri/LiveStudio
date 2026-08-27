@@ -89,6 +89,27 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>Owner of the element at an index, so two runs can be lined up by owner.</summary>
         public abstract int OwnerIdAt(int index);
 
+        /// <summary>The producer that wrote an element, as an interned id, or none.</summary>
+        public abstract int SourceIdAt(int index);
+
+        /// <summary>
+        /// The producer's own stamp on an element. Meaningful against that producer's clock only.
+        /// </summary>
+        public abstract long TimeAt(int index);
+
+        /// <summary>
+        /// Copies one element's value -- the part after the metadata -- into <paramref name="destination"/>.
+        /// Written this way so a reader can take a single element without knowing the element type,
+        /// and without the metadata layout being guessed at anywhere else.
+        /// </summary>
+        public abstract void CopyValueTo(int index, byte[] destination);
+
+        /// <summary>
+        /// Bytes an element spends on metadata before its value: the owner, the producer and the
+        /// stamp. Fixed by the layout of the element, which is what the recording stores.
+        /// </summary>
+        public abstract int metaSize { get; }
+
         /// <summary>Index of an owner's element, or -1. The non-generic form of the lookup.</summary>
         public abstract int IndexOfOwner(int ownerId);
 
@@ -240,6 +261,35 @@ namespace Lilium.RemoteControl.Frames
 
         public override int OwnerIdAt(int index) => this[index].ownerId;
 
+        public override int SourceIdAt(int index)
+        {
+            var source = this[index].source;
+            return source.isValid ? source.id : InputSymbolTable.kNone;
+        }
+
+        public override long TimeAt(int index) => this[index].time;
+
+        // Taken from the type rather than assumed: the value sits wherever the compiler put it after
+        // the three metadata fields, and that offset is what the recording's bytes already follow.
+        public override int metaSize => (int)UnsafeUtility.GetFieldOffset(
+            typeof(StateElement<T>).GetField(nameof(StateElement<T>.value)));
+
+        public override void CopyValueTo(int index, byte[] destination)
+        {
+            if (destination == null) throw new ArgumentNullException(nameof(destination));
+
+            var offset = metaSize;
+            var length = elementSize - offset;
+            if (destination.Length < length)
+                throw new ArgumentException("Destination is too small for one value.", nameof(destination));
+
+            ref var element = ref this[index];
+            fixed (byte* target = destination)
+            {
+                UnsafeUtility.MemCpy(target, (byte*)UnsafeUtility.AddressOf(ref element) + offset, length);
+            }
+        }
+
         public override int IndexOfOwner(int ownerId) => IndexOf(ownerId);
 
         public override bool ElementEquals(int index, StateBlock other, int otherIndex)
@@ -311,10 +361,24 @@ namespace Lilium.RemoteControl.Frames
         {
             if (_blocks.TryGetValue(typeof(T), out var existing)) return (StateBlock<T>)existing;
 
+            // Making a block is also how a type announces that it belongs on the lane, so a player
+            // meeting the name in a recording can make one too. Guarded per type rather than by a
+            // lookup, because this sits on the per-frame path of every producer.
+            if (!_Announced<T>.done)
+            {
+                _Announced<T>.done = true;
+                StateTypeRegistry.Register<T>();
+            }
+
             var created = new StateBlock<T>();
             _blocks.Add(typeof(T), created);
             _ordered.Add(created);
             return created;
+        }
+
+        private static class _Announced<T> where T : unmanaged
+        {
+            public static bool done;
         }
 
         /// <summary>The block for an element type, or null when nothing has written one yet.</summary>

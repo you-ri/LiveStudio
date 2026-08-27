@@ -118,13 +118,43 @@ namespace Lilium.RemoteControl.Tests
 
             var bytes = Record(2, Producer);
 
+            // Stands in for a machine that has never held this type. Recording it here announced it,
+            // and an announced type is given a block on playback rather than reported -- which is the
+            // point of announcing. Forget it again to get back to the case this test is about.
+            StateTypeRegistry.Clear();
+
             using (var player = new FrameRecordPlayer(new MemoryStream(bytes)))
             {
-                // No block created for Pose: the replay is missing part of the world, and saying so
-                // is the difference between a hole and an empty scene nobody questions.
+                // No block can be made for Pose: the replay is missing part of the world, and saying
+                // so is the difference between a hole and an empty scene nobody questions.
                 while (player.Advance()) { }
 
                 CollectionAssert.Contains(player.unknownStateTypes, typeof(Pose).FullName);
+            }
+        }
+
+        [Test]
+        public void StateOfAnAnnouncedType_GetsABlockWithoutOneBeingMadeFirst()
+        {
+            // The other half, and the one that actually bit: a take carried a pose every frame and
+            // the replay showed none of it, because the playing side had a producer for the type but
+            // had not happened to publish one yet. Nothing was wrong with the file.
+            void Producer(ref Frame frame)
+                => frame.state.GetOrCreate<Pose>().GetOrCreate(7).value.x = 3f;
+
+            var bytes = Record(2, Producer);
+
+            using (var player = new FrameRecordPlayer(new MemoryStream(bytes)))
+            {
+                while (player.Advance()) { }
+
+                CollectionAssert.IsEmpty(player.unknownStateTypes,
+                    "an announced type has somewhere to go");
+
+                var block = player.state.Find<Pose>();
+                Assert.IsNotNull(block, "the player has to be able to make the block from the name");
+                Assert.AreEqual(1, block.count);
+                Assert.AreEqual(3f, block[0].value.x);
             }
         }
 

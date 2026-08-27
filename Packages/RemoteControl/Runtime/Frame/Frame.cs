@@ -42,6 +42,16 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         public InputFrame inputs;
 
+        /// <summary>
+        /// True when this frame's lanes were filled by an <see cref="IFrameSource"/> -- played from a
+        /// recording, or followed from another machine -- rather than produced by what is running.
+        ///
+        /// Producers of the state lane read the frame instead of writing it when this is set. That is
+        /// the whole of the difference between live and replay from a producer's side: not "am I
+        /// being replayed" but "has this frame already been filled".
+        /// </summary>
+        public bool isSupplied;
+
         /// <summary>Readable position, derived from the number and the rate rather than stored.</summary>
         public Timecode timecode => new Timecode(frameNumber, frameRate);
 

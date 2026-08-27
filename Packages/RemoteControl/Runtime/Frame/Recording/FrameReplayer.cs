@@ -69,7 +69,7 @@ namespace Lilium.RemoteControl.Frames.Recording
     /// For a same-machine record-and-compare that is harmless; for anything that talks to the
     /// outside world it is not, and the suppression the design calls for is still to come.
     /// </summary>
-    public sealed class FrameReplayer : IDisposable
+    public sealed class FrameReplayer : IFrameSource, IDisposable
     {
         private readonly FrameRecordPlayer _player;
         private readonly IInputApplier _applier;
@@ -113,6 +113,29 @@ namespace Lilium.RemoteControl.Frames.Recording
         public bool Advance()
         {
             if (!_player.Advance()) return false;
+
+            _ApplyInputsOfCurrentFrame();
+            return true;
+        }
+
+        /// <summary>
+        /// Supplies the frame from the recording: points its lanes at what was recorded, then puts
+        /// that frame's inputs back.
+        ///
+        /// The lanes are pointed at rather than copied into. The player already holds the restored
+        /// world as a structure and a set of blocks, and a frame is a view of those two -- copying
+        /// them into the gate's own lanes every frame would buy nothing and would leave the live
+        /// world overwritten once the recording stopped. The player outlives the frame head, which
+        /// is what the interface asks of a source that does this.
+        /// </summary>
+        public bool FillFrame(ref Frame frame)
+        {
+            if (!_player.Advance()) return false;
+
+            // Structure before state, the same way round a keyframe is applied: the container has to
+            // exist before the values that belong in it.
+            frame.structure = _player.structure;
+            frame.state = _player.state;
 
             _ApplyInputsOfCurrentFrame();
             return true;

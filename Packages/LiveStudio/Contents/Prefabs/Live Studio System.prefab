@@ -1,5 +1,52 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!1 &5908484416615053803
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 3905383820399355080}
+  - component: {fileID: 3898988407963471941}
+  m_Layer: 0
+  m_Name: Frame Recorder
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &3905383820399355080
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5908484416615053803}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 4182531810669895509}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &3898988407963471941
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5908484416615053803}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b32bcfac67f7a004b94295467838d08f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _take: 1
+  _keyframeInterval: 60
+  _replayFilename: 
 --- !u!1 &5944317548342265899
 GameObject:
   m_ObjectHideFlags: 0
@@ -77,6 +124,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 8078696532104633044}
+  - {fileID: 3905383820399355080}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &6233107601310072511
@@ -91,8 +139,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6954cb2cc38b4515b84178f8e465239a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _serverConfig: {fileID: 11400000, guid: fe5d91a57c882da4791babe82a0d8d75, type: 2}
-  _persistAcrossScenes: 1
   _objects:
   - rid: 4217817217901789388
   - rid: 4217817217901789389
@@ -100,6 +146,11 @@ MonoBehaviour:
   - rid: 4217817217901789390
   - rid: 4217817217901789391
   - rid: 4217817297473503388
+  - rid: 6395816828084159292
+  _assets: []
+  _references: []
+  _serverConfig: {fileID: 11400000, guid: fe5d91a57c882da4791babe82a0d8d75, type: 2}
+  _persistAcrossScenes: 1
   _uiDefinition: {fileID: 11400000, guid: 0d7378062cf94704d8b17ee9440d3b21, type: 2}
   references:
     version: 2
@@ -124,3 +175,8 @@ MonoBehaviour:
     - rid: 4217817297473503389
       type: {class: RenderQuality, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
       data: 
+    - rid: 6395816828084159292
+      type: {class: LiveGameObject, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl}
+      data:
+        _id: d056d6d7-d38b-450c-884a-99b3e749ae5d
+        _reference: {fileID: 5908484416615053803}

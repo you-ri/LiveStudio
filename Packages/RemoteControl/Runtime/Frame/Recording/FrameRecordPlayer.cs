@@ -307,7 +307,12 @@ namespace Lilium.RemoteControl.Frames.Recording
             var count = BitConverter.ToInt32(payload.Slice(8, 4));
 
             var typeName = Resolve(typeId);
-            var block = state.FindByTypeName(typeName);
+
+            // Made on demand rather than required up front. A recording names its types, and any
+            // type that has announced itself can be given a block here -- otherwise a take plays
+            // into an application that has the producer but has not published that type yet, and
+            // the whole lane is dropped with only a warning.
+            var block = StateTypeRegistry.EnsureBlock(state, typeName);
 
             if (block == null)
             {
@@ -315,7 +320,7 @@ namespace Lilium.RemoteControl.Frames.Recording
                 {
                     Debug.LogWarning(
                         $"[RemoteControl] Recording carries state for '{typeName}', which nothing here holds. " +
-                        "Create its block before playing, or that part of the world stays empty.");
+                        "Register the type before playing, or that part of the world stays empty.");
                 }
 
                 return;

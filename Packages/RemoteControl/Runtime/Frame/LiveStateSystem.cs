@@ -21,15 +21,20 @@ namespace Lilium.RemoteControl.Frames
         private static FrameSource _source;
         private static bool _installed;
         private static long _capturedObjectCount;
+        private static long _appliedObjectCount;
 
         /// <summary>Objects whose state was captured on the most recent frame.</summary>
         public static long capturedObjectCount => _capturedObjectCount;
+
+        /// <summary>Objects whose state was written back on the most recent supplied frame.</summary>
+        public static long appliedObjectCount => _appliedObjectCount;
 
         /// <summary>True while the per-frame capture is running.</summary>
         public static bool isRunning => _installed;
 
         /// <summary>
-        /// Starts putting exposed state into the frame at each head. Idempotent.
+        /// Starts carrying exposed state at each frame head: written into the frame on a live one,
+        /// read back out of it on a supplied one. Idempotent.
         /// </summary>
         public static void Install()
         {
@@ -115,6 +120,15 @@ namespace Lilium.RemoteControl.Frames
 
         private static void _OnFrameHead(ref Frame frame)
         {
+            // A supplied frame already carries the world. Capturing into it here would replace the
+            // recording with the present, on the very frame meant to reproduce it -- and the replay
+            // would then compare the present against itself and find no difference at all.
+            if (frame.isSupplied)
+            {
+                _appliedObjectCount = ApplyFrom(frame.state);
+                return;
+            }
+
             _capturedObjectCount = CaptureInto(frame.state, frame.frameNumber);
         }
     }

@@ -1,0 +1,193 @@
+/* Copyright (c) You-Ri, 2026 */
+
+.ldv-root {
+    flex-grow: 1;
+}
+
+/* --- status bar ------------------------------------------------------- */
+
+.ldv-status {
+    flex-direction: row;
+    align-items: center;
+    padding: 3px 6px;
+    background-color: rgba(0, 0, 0, 0.18);
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(0, 0, 0, 0.35);
+}
+
+.ldv-status-item {
+    margin-right: 12px;
+    -unity-text-align: middle-left;
+}
+
+/* Numbers that tick every frame, so they must not shift the row as they grow. */
+.ldv-num {
+    min-width: 74px;
+    -unity-text-align: middle-right;
+    margin-right: 10px;
+}
+
+.ldv-pill {
+    padding: 0 6px;
+    border-radius: 7px;
+    margin-right: 6px;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.ldv-pill-on {
+    background-color: rgba(70, 140, 90, 0.55);
+}
+
+.ldv-pill-supplied {
+    background-color: rgba(80, 110, 175, 0.6);
+}
+
+/* --- banners ---------------------------------------------------------- */
+
+.ldv-banner {
+    padding: 5px 8px;
+    white-space: normal;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(0, 0, 0, 0.35);
+}
+
+.ldv-banner-danger {
+    background-color: rgba(150, 55, 50, 0.55);
+}
+
+.ldv-banner-warning {
+    background-color: rgba(150, 120, 40, 0.45);
+}
+
+/* --- panes ------------------------------------------------------------ */
+
+/* Sized by the split view it sits in, so it must not fight that with a flex basis of its own. */
+.ldv-lane {
+    min-width: 120px;
+    min-height: 60px;
+    overflow: hidden;
+}
+
+/* Draggable separators between the two lanes and between them and the detail pane. */
+.unity-two-pane-split-view__dragline-anchor {
+    background-color: rgba(0, 0, 0, 0.45);
+}
+
+.unity-two-pane-split-view__dragline-anchor--vertical {
+    height: 3px;
+}
+
+.unity-two-pane-split-view__dragline-anchor--horizontal {
+    width: 3px;
+}
+
+.ldv-lane-header {
+    flex-direction: row;
+    align-items: center;
+    padding: 3px 6px;
+    background-color: rgba(0, 0, 0, 0.12);
+}
+
+/* --- state lane ------------------------------------------------------- */
+
+.ldv-type {
+    margin: 3px 4px 0 4px;
+    padding: 3px 5px;
+    border-left-width: 3px;
+    border-left-color: rgba(255, 255, 255, 0.14);
+    background-color: rgba(255, 255, 255, 0.03);
+}
+
+/* A type that announced itself but has no block, or a block with nothing in it. */
+.ldv-type-empty {
+    border-left-color: rgba(200, 165, 60, 0.9);
+}
+
+.ldv-type-head {
+    flex-direction: row;
+    align-items: center;
+}
+
+.ldv-element {
+    flex-direction: row;
+    align-items: center;
+    padding: 1px 4px 1px 14px;
+}
+
+.ldv-element:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+.ldv-element-selected {
+    background-color: rgba(70, 110, 170, 0.45);
+}
+
+/* Written on this very frame. */
+.ldv-fresh {
+    color: rgb(150, 220, 160);
+}
+
+/* Held over: the producer stopped writing and the block kept the last value. */
+.ldv-stale {
+    color: rgb(190, 150, 90);
+}
+
+/* --- input lane ------------------------------------------------------- */
+
+.ldv-input {
+    flex-direction: row;
+    align-items: center;
+    padding: 1px 4px;
+}
+
+.ldv-input:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+.ldv-input-faulted {
+    color: rgb(230, 130, 120);
+}
+
+.ldv-col-narrow {
+    min-width: 58px;
+    max-width: 58px;
+}
+
+.ldv-col-mid {
+    min-width: 96px;
+    max-width: 96px;
+}
+
+.ldv-empty {
+    padding: 10px;
+    white-space: normal;
+}
+
+/* --- detail ----------------------------------------------------------- */
+
+.ldv-detail-row {
+    flex-direction: row;
+    align-items: center;
+    padding: 1px 4px;
+}
+
+.ldv-detail-row:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+.ldv-detail-name {
+    min-width: 150px;
+    max-width: 150px;
+    color: rgba(200, 200, 200, 0.75);
+}
+
+/* Frame numbers are zero padded to eight, so the column is sized for exactly that. */
+.ldv-col-frame {
+    min-width: 72px;
+    max-width: 72px;
+}
+
+/* Long payloads wrap rather than running off the pane. */
+.ldv-detail-value {
+    white-space: normal;
+}
