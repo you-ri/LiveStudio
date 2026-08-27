@@ -848,8 +848,8 @@ namespace Lilium.RemoteControl.Frames
         /// Puts an input in the queue and completes once it has been applied at a frame head.
         /// </summary>
         public static Task<T> SubmitAsync<T>(InputKind kind, string sourceId, string verb,
-            string target, string payload, Func<T> action)
-            => SubmitGroupAsync(new[] { new InputDescriptor(kind, verb, target, payload) }, sourceId, action);
+            string target, string requestText, Func<T> action)
+            => SubmitGroupAsync(new[] { new InputDescriptor(kind, verb, target, requestText) }, sourceId, action);
 
         /// <summary>
         /// Puts an input in the queue on behalf of a source resolved once with
@@ -857,8 +857,8 @@ namespace Lilium.RemoteControl.Frames
         /// checked against a declaration and interned, so nothing is hashed per call.
         /// </summary>
         public static Task<T> SubmitAsync<T>(InputKind kind, FrameSource source, string verb,
-            string target, string payload, Func<T> action)
-            => SubmitGroupAsync(new[] { new InputDescriptor(kind, verb, target, payload) }, source, action);
+            string target, string requestText, Func<T> action)
+            => SubmitGroupAsync(new[] { new InputDescriptor(kind, verb, target, requestText) }, source, action);
 
         /// <summary>Group form of <see cref="SubmitAsync{T}(InputKind, FrameSource, string, string, Func{T})"/>.</summary>
         public static Task<T> SubmitGroupAsync<T>(IReadOnlyList<InputDescriptor> operations,
@@ -918,8 +918,8 @@ namespace Lilium.RemoteControl.Frames
 
         /// <summary>Single-operation convenience for tests. See <see cref="_Enqueue{T}"/>.</summary>
         internal static Task<T> _Enqueue<T>(InputKind kind, string sourceId, string target,
-            string payload, Func<T> action, string verb = null)
-            => _Enqueue(new[] { new InputDescriptor(kind, verb, target, payload) },
+            string requestText, Func<T> action, string verb = null)
+            => _Enqueue(new[] { new InputDescriptor(kind, verb, target, requestText) },
                 _ResolveSourceId(sourceId), action);
 
         /// <summary>Group convenience for tests, resolving the source by name.</summary>

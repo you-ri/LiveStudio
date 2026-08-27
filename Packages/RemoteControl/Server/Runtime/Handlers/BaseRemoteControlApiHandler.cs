@@ -390,13 +390,13 @@ namespace Lilium.RemoteControl.RestApi
         /// under lookups that change nothing.
         /// </summary>
         protected Task<T> ExecuteAsInput<T>(InputKind kind, string method, string target,
-            string payload, Func<T> action)
-            => FrameGate.SubmitAsync(kind, _restSource, method, target, payload, action);
+            string body, Func<T> action)
+            => FrameGate.SubmitAsync(kind, _restSource, method, target, body, action);
 
         /// <summary>Void form of <see cref="ExecuteAsInput{T}"/>.</summary>
-        protected Task ExecuteAsInput(InputKind kind, string method, string target, string payload,
+        protected Task ExecuteAsInput(InputKind kind, string method, string target, string body,
             Action action)
-            => FrameGate.SubmitAsync(kind, _restSource, method, target, payload,
+            => FrameGate.SubmitAsync(kind, _restSource, method, target, body,
                 () => { action(); return true; });
 
         /// <summary>

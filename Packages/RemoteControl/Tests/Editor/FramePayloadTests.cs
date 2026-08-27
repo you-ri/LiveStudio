@@ -5,6 +5,7 @@ using System.Text;
 using NUnit.Framework;
 using UnityEngine;
 using Lilium.RemoteControl.Frames;
+using Unity.Collections.LowLevel.Unsafe;
 using Lilium.RemoteControl.Frames.Recording;
 
 namespace Lilium.RemoteControl.Tests
@@ -266,6 +267,34 @@ namespace Lilium.RemoteControl.Tests
 
             Assert.IsFalse(frame[0].payloadTruncated,
                 "the value that replaced the text was not cut short, so the mark would be a lie");
+        }
+
+        // ---- What the lanes are allowed to carry ----
+
+        [Test]
+        public void EverythingTheLanesCarry_IsUnmanaged()
+        {
+            // NativeArray<T> already refuses anything else at compile time, so this is here to say
+            // it out loud: a managed field added to one of these would be caught as a build error
+            // with no explanation of why it is not allowed.
+            Assert.IsTrue(UnsafeUtility.IsUnmanaged<InputRecord>(), "the input lane");
+            Assert.IsTrue(UnsafeUtility.IsUnmanaged<ObjectEntry>(), "the structure lane");
+            Assert.IsTrue(UnsafeUtility.IsUnmanaged<StateElement<float>>(), "the state lane");
+            Assert.IsTrue(UnsafeUtility.IsUnmanaged<FrameSource>(), "carried by every state element");
+            Assert.IsTrue(UnsafeUtility.IsUnmanaged<Timecode>());
+            Assert.IsTrue(UnsafeUtility.IsUnmanaged<FrameRate>());
+        }
+
+        [Test]
+        public void ARecord_CostsItsPayloadAndLittleElse()
+        {
+            // Guards against a field creeping in beside the payload: the bookkeeping is a handful
+            // of ids, and a record that grew past that would be carrying something it should not.
+            var size = UnsafeUtility.SizeOf<InputRecord>();
+
+            Assert.GreaterOrEqual(size, InputRecord.kPayloadCapacity);
+            Assert.LessOrEqual(size, InputRecord.kPayloadCapacity + 64,
+                "the payload is what a record is for; everything else is ids");
         }
 
         // ---- Through the file ----
