@@ -3,6 +3,7 @@
 using System;
 using UnityEngine.Scripting.APIUpdating;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Frames;
 
 namespace Lilium.LiveStudio
 {
@@ -71,12 +72,34 @@ namespace Lilium.LiveStudio
             }
         }
 
+        /// <summary>The operator's own controls, as a producer. See the assembly declaration.</summary>
+        private static readonly FrameSource _source = FrameGate.ResolveSource("operation");
+
         public override void Apply(in OperationContext context)
         {
             if (!context.triggered) return;
             // Guard the id lookup so a dangling target is a silent no-op rather than logging every press.
             var handle = LiveObjectRegistry.FindById(targetId);
             if (handle == null) return;
+
+            // Sent through the frame gate rather than called here: a call never shows up as a value
+            // changing, so an unrecorded one is a part of the show a replay simply does not have.
+            // The arguments travel as the request text, which is the form the remote path uses too.
+            var target = LivePath();
+
+            FrameGate.Post(InputKind.FunctionCall, _source, "POST", target, _Invoke,
+                OperationRequest.FromArgsJson(argsJson));
+        }
+
+        /// <summary>
+        /// The call, run at a frame head. Resolved here rather than where it was posted: a frame
+        /// passes in between and the target may be gone by the time this runs.
+        /// </summary>
+        private void _Invoke()
+        {
+            var handle = LiveObjectRegistry.FindById(targetId);
+            if (handle == null) return;
+
             // Resolve the function on the target directly, or on the value at propertyPath for a nested member
             // (e.g. a StageManager set's WarpTo). A dangling path/function is a silent no-op: valid surfaces it.
             var function = handle.Value.ResolveFunction(propertyPath, _ApiName(), out var functionTarget);
@@ -98,5 +121,14 @@ namespace Lilium.LiveStudio
                 UnityEngine.Debug.LogError($"[LiveStudio] InvokeFunctionOperation failed to invoke '{functionName}': {ex.Message}");
             }
         }
+
+        /// <summary>
+        /// The call's address in the same form a remote invoke uses, so a recorded operation
+        /// replays through exactly the path a recorded request does.
+        /// </summary>
+        internal string LivePath()
+            => string.IsNullOrEmpty(propertyPath)
+                ? $"/live/function/{targetId}/{_ApiName()}"
+                : $"/live/function/{targetId}/{propertyPath}/{_ApiName()}";
     }
 }

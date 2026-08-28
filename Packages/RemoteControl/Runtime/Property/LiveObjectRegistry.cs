@@ -139,6 +139,26 @@ namespace Lilium.RemoteControl
         /// Walks the proxies rather than the targets, so it answers for the GameObject and for any
         /// component on it alike.
         /// </summary>
+        /// <summary>
+        /// Id of the proxy standing for exactly this Unity object, or null.
+        ///
+        /// Distinct from <see cref="FindOwnLiveId"/>, which matches on the transform: a GameObject
+        /// and every component on it share one transform, so that lookup cannot say which of them
+        /// was meant. This one compares the reference itself.
+        /// </summary>
+        public static string FindProxyId(UnityEngine.Object reference)
+        {
+            if (reference == null) return null;
+
+            foreach (var obj in _instances)
+            {
+                if (!obj.isValid) continue;
+                if (!(obj.target is LiveUnityObjectBase proxy)) continue;
+                if (ReferenceEquals(proxy.reference, reference)) return obj.id;
+            }
+            return null;
+        }
+
         public static string FindOwnLiveId(Transform self)
         {
             if (self == null) return null;

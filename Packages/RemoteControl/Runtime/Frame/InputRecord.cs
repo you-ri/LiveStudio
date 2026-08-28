@@ -39,6 +39,18 @@ namespace Lilium.RemoteControl.Frames
         /// value is written at its own width and either fits or was never going to.
         /// </summary>
         PayloadTruncated = 1 << 1,
+
+        /// <summary>
+        /// Applied, but deliberately left out of the frame.
+        ///
+        /// For a write whose target the state lane already carries: the value arrives in the state
+        /// lane every frame regardless, so keeping the input as well says the same thing twice --
+        /// and the input record costs its full width to say it. The write still goes through the
+        /// gate, because ordering is the other half of what the gate is for.
+        ///
+        /// Never reaches a recording: the frame drops these before committing.
+        /// </summary>
+        NotRecorded = 1 << 2,
     }
 
     /// <summary>

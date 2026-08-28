@@ -54,7 +54,7 @@ namespace Lilium.LiveStudio
 
         private readonly FrameRecorder _recorder = new FrameRecorder();
         private FrameReplayer _replayer;
-        private bool _drivesStateSystem;
+        private bool _holdsStateSystems;
 
         // Reused so starting a recording does not allocate. Filled in Record().
         private readonly string[] _excludeIds = new string[2];
@@ -296,17 +296,24 @@ namespace Lilium.LiveStudio
 
         private void _StartStateSystem()
         {
-            _drivesStateSystem = !LiveStateSystem.isRunning;
-            if (_drivesStateSystem) LiveStateSystem.Install();
+            if (_holdsStateSystems) return;
+            _holdsStateSystems = true;
+
+            LiveStateSystem.Retain();
+
+            // The inventory goes with the values. A recording of state addressed to objects it
+            // never lists cannot say whether the world it is being replayed into is the right one.
+            LiveStructureSystem.Retain();
         }
 
         // Undoes what this object turned on, and only that: a system someone else installed stays.
         private void _StopStateSystem()
         {
-            if (!_drivesStateSystem) return;
+            if (!_holdsStateSystems) return;
+            _holdsStateSystems = false;
 
-            _drivesStateSystem = false;
-            LiveStateSystem.Uninstall();
+            LiveStructureSystem.Release();
+            LiveStateSystem.Release();
         }
     }
 }

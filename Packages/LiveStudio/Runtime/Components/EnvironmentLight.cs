@@ -9,7 +9,7 @@ namespace Lilium.LiveStudio
 {
     [Serializable]
     [LiveClass(Category = "Light", Icon = "light_mode")]
-    public class EnvironmentLight : ILiveObject, ILiveDeserializeCallback
+    public partial class EnvironmentLight : ILiveObject, ILiveDeserializeCallback
     {
         const string kId = "d9714ab0-e81b-44c8-9e76-22f177864ebe";
 
@@ -55,13 +55,14 @@ namespace Lilium.LiveStudio
 
         public void Update()
         {
+            _ApplyAmbient();
         }
 
         public void Reset()
         {
         }
 
-        [LiveField, Hide]
+        [LiveField(lane = FrameLane.State), Hide]
         [FormerlyNamedAs("ambientLightSource")]
         private BackgroundType _ambientLightSource = BackgroundType.SolidColor;
 
@@ -76,7 +77,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [LiveField, Hide]
+        [LiveField(lane = FrameLane.State), Hide]
         [FormerlyNamedAs("ambientColor")]
         private Color _ambientColor = Color.gray;
 
@@ -91,7 +92,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [LiveField, Hide]
+        [LiveField(lane = FrameLane.State), Hide]
         [FormerlyNamedAs("ambientIntensity")]
         private float _ambientIntensity = 1f;
 

@@ -77,6 +77,19 @@ namespace Lilium.LiveStudio.EditorTests
             LiveObjectRegistry.ClearAll();
         }
 
+        /// <summary>
+        /// Applies the operation and runs the frame head it posted its work to.
+        ///
+        /// An operation no longer writes inside Apply: it queues the write through the frame gate so
+        /// it takes its place in the order with everything else that arrived, and that lands at the
+        /// head of the next frame. One frame is the cost of the ordering.
+        /// </summary>
+        static void Fire(OperationBase operation, in OperationContext context)
+        {
+            operation.Apply(in context);
+            Lilium.RemoteControl.Frames.FrameGate.Pump();
+        }
+
         static OperationContext Triggered(bool active)
             => new OperationContext(active ? 1f : 0f, pressed: active, released: !active, active: active, triggered: true);
 
@@ -85,7 +98,7 @@ namespace Lilium.LiveStudio.EditorTests
         {
             var action = new InvokeFunctionOperation { targetId = kTargetId, functionName = "DoThing" };
 
-            action.Apply(Triggered(active: true));
+            Fire(action, Triggered(active: true));
 
             Assert.AreEqual(1, _target.invokeCount, "the bound function runs on the trigger pulse");
         }
@@ -100,7 +113,7 @@ namespace Lilium.LiveStudio.EditorTests
                 argsJson = "[42]",
             };
 
-            action.Apply(Triggered(active: true));
+            Fire(action, Triggered(active: true));
 
             Assert.AreEqual(42, _target.lastValue,
                 "the stored JSON argument is deserialized to the parameter type and passed to the function");
@@ -121,7 +134,7 @@ namespace Lilium.LiveStudio.EditorTests
 
             Assert.IsTrue(action.valid, "valid resolves the nested function through the property path");
 
-            action.Apply(Triggered(active: true));
+            Fire(action, Triggered(active: true));
 
             Assert.AreEqual(0.25f, _target.weights[1].weight, 1e-5f,
                 "the nested function runs on the element resolved by propertyPath, with the deserialized arg");
@@ -140,7 +153,7 @@ namespace Lilium.LiveStudio.EditorTests
                 argsJson = string.Empty,
             };
 
-            action.Apply(Triggered(active: true));
+            Fire(action, Triggered(active: true));
 
             Assert.AreEqual(1, _target.invokeCount, "the no-argument function still runs when argsJson is empty");
         }
@@ -151,7 +164,7 @@ namespace Lilium.LiveStudio.EditorTests
             var action = new InvokeFunctionOperation { targetId = kTargetId, functionName = "DoThing" };
             var context = new OperationContext(0f, pressed: false, released: false, active: false, triggered: false);
 
-            action.Apply(context);
+            Fire(action, context);
 
             Assert.AreEqual(0, _target.invokeCount, "no invoke without a trigger pulse");
         }
@@ -174,7 +187,7 @@ namespace Lilium.LiveStudio.EditorTests
         {
             var action = new InvokeFunctionOperation { targetId = "nope", functionName = "DoThing" };
 
-            Assert.DoesNotThrow(() => action.Apply(Triggered(active: true)));
+            Assert.DoesNotThrow(() => Fire(action, Triggered(active: true)));
             Assert.AreEqual(0, _target.invokeCount);
         }
 
@@ -183,10 +196,10 @@ namespace Lilium.LiveStudio.EditorTests
         {
             var action = new SetPropertyOperation { targetId = kTargetId, propertyPath = "flag" };
 
-            action.Apply(Triggered(active: true));
+            Fire(action, Triggered(active: true));
             Assert.IsTrue(_target.flag, "active writes the bool on");
 
-            action.Apply(Triggered(active: false));
+            Fire(action, Triggered(active: false));
             Assert.IsFalse(_target.flag, "inactive writes the bool off");
         }
 
@@ -208,7 +221,7 @@ namespace Lilium.LiveStudio.EditorTests
         {
             var action = new SetPropertyOperation { targetId = "nope", propertyPath = "flag" };
 
-            Assert.DoesNotThrow(() => action.Apply(Triggered(active: true)));
+            Assert.DoesNotThrow(() => Fire(action, Triggered(active: true)));
             Assert.IsFalse(_target.flag);
         }
 
@@ -220,7 +233,7 @@ namespace Lilium.LiveStudio.EditorTests
         {
             var action = new SetPropertyOperation { targetId = kTargetId, propertyPath = "weights[Beta].weight" };
 
-            action.Apply(Value(0.5f));
+            Fire(action, Value(0.5f));
 
             Assert.AreEqual(0.5f, _target.weights[1].weight, "the float weight is written from context.value via the key path");
             Assert.AreEqual(0f, _target.weights[0].weight, "the other entry is untouched");
@@ -232,13 +245,13 @@ namespace Lilium.LiveStudio.EditorTests
             var beta = _target.weights[1];
             var action = new SetPropertyOperation { targetId = kTargetId, propertyPath = "weights[Beta].weight" };
 
-            action.Apply(Value(0.3f));
+            Fire(action, Value(0.3f));
             Assert.AreEqual(0.3f, beta.weight);
 
             // Reorder so Beta is no longer at index 1.
             (_target.weights[0], _target.weights[1]) = (_target.weights[1], _target.weights[0]);
 
-            action.Apply(Value(0.8f));
+            Fire(action, Value(0.8f));
             Assert.AreEqual(0.8f, beta.weight, "the key drives the same Beta entry after reordering");
         }
 
@@ -249,7 +262,7 @@ namespace Lilium.LiveStudio.EditorTests
             // DotBracket before lookup, so "weights/Beta/weight" drives the same entry as the bracket form.
             var action = new SetPropertyOperation { targetId = kTargetId, propertyPath = "weights/Beta/weight" };
 
-            action.Apply(Value(0.7f));
+            Fire(action, Value(0.7f));
 
             Assert.AreEqual(0.7f, _target.weights[1].weight, "the slash key path resolves by key after normalization");
             Assert.IsTrue(action.valid, "valid also resolves the slash key path");

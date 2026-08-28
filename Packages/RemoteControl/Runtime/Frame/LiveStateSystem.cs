@@ -19,7 +19,7 @@ namespace Lilium.RemoteControl.Frames
     public static class LiveStateSystem
     {
         private static FrameSource _source;
-        private static bool _installed;
+        private static int _users;
         private static long _capturedObjectCount;
         private static long _appliedObjectCount;
 
@@ -30,28 +30,30 @@ namespace Lilium.RemoteControl.Frames
         public static long appliedObjectCount => _appliedObjectCount;
 
         /// <summary>True while the per-frame capture is running.</summary>
-        public static bool isRunning => _installed;
+        public static bool isRunning => _users > 0;
 
         /// <summary>
-        /// Starts carrying exposed state at each frame head: written into the frame on a live one,
-        /// read back out of it on a supplied one. Idempotent.
+        /// Asks for exposed state to be carried at each frame head: written into the frame on a
+        /// live one, read back out of it on a supplied one.
+        ///
+        /// Counted, and balanced by <see cref="Release"/>. A recording and an open viewer both want
+        /// this running, and a plain on/off would let whichever stopped first take it away from the
+        /// other -- which reads as a recording that quietly stopped carrying state.
         /// </summary>
-        public static void Install()
+        public static void Retain()
         {
-            if (_installed) return;
+            if (_users++ > 0) return;
 
             _source = FrameGate.ResolveSource(kSourceName);
             FrameGate.AddFrameHeadHandler(_OnFrameHead);
-            _installed = true;
         }
 
-        /// <summary>Stops the per-frame capture. What is already in the frame stays there.</summary>
-        public static void Uninstall()
+        /// <summary>Gives it up. Stops once nobody wants it. What is in the frame stays there.</summary>
+        public static void Release()
         {
-            if (!_installed) return;
+            if (_users == 0 || --_users > 0) return;
 
             FrameGate.RemoveFrameHeadHandler(_OnFrameHead);
-            _installed = false;
         }
 
         /// <summary>

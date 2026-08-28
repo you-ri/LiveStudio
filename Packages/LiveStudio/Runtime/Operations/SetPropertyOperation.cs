@@ -3,6 +3,7 @@
 using System;
 using UnityEngine.Scripting.APIUpdating;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Frames;
 using Lilium.RemoteControl.Reflection;
 
 namespace Lilium.LiveStudio
@@ -105,6 +106,9 @@ namespace Lilium.LiveStudio
             }
         }
 
+        /// <summary>The operator's own controls, as a producer. See the assembly declaration.</summary>
+        private static readonly FrameSource _source = FrameGate.ResolveSource("operation");
+
         public override void Apply(in OperationContext context)
         {
             var property = _ResolveProperty();
@@ -119,7 +123,7 @@ namespace Lilium.LiveStudio
                 bool desired = context.active;
                 if (property.Value.TryGetValue<bool>(out var currentBool))
                 {
-                    if (currentBool != desired) property.Value.TrySetValue(desired);
+                    if (currentBool != desired) _PostWrite(desired);
                 }
                 else
                 {
@@ -134,7 +138,7 @@ namespace Lilium.LiveStudio
                 float mapped = context.MappedValue;
                 if (property.Value.TryGetValue<float>(out var currentFloat))
                 {
-                    if (currentFloat != mapped) property.Value.TrySetValue(mapped);
+                    if (currentFloat != mapped) _PostWrite(mapped);
                 }
                 else
                 {
@@ -149,14 +153,50 @@ namespace Lilium.LiveStudio
                 {
                     case bool currentBool:
                         bool desired = context.active;
-                        if (currentBool != desired) property.Value.SetValue(desired);
+                        if (currentBool != desired) _PostWrite(desired);
                         break;
                     case float currentFloat:
                         float mapped = context.MappedValue;
-                        if (currentFloat != mapped) property.Value.SetValue(mapped);
+                        if (currentFloat != mapped) _PostWrite(mapped);
                         break;
                 }
             }
         }
+
+        /// <summary>
+        /// Sends the write through the frame gate instead of applying it here.
+        ///
+        /// The operator's input is an input like any other, so it takes its place in the order and
+        /// lands at a frame head with everything else that arrived. Applied straight from this
+        /// method it would land wherever the operation loop happens to run, and a recording would
+        /// not have it at all -- which is the difference between a replay that reproduces a show
+        /// and one that reproduces only the parts that came over the network.
+        ///
+        /// Costs one frame: what a key does now lands at the head of the next frame. Only reached
+        /// when the value actually changed, so a held fader posts on movement rather than per frame.
+        /// </summary>
+        private void _PostWrite(object value)
+        {
+            var target = LivePath();
+
+            FrameGate.Post(InputKind.PropertyWrite, _source, "PUT", target, () =>
+            {
+                // Re-resolved at the frame head rather than captured: a frame can pass between the
+                // post and the apply, and the object it addressed may be gone by then.
+                var property = _ResolveProperty();
+                if (property == null) return;
+
+                property.Value.SetValue(value);
+
+                FrameGate.StampAppliedPayload(
+                    target, property.Value.type?.resolvedValueType, property.Value.GetValue());
+            });
+        }
+
+        /// <summary>
+        /// The property's address in the same form a remote write uses, so a recorded operation
+        /// replays through exactly the path a recorded request does.
+        /// </summary>
+        internal string LivePath() => $"/live/object/{targetId}/{propertyPath}";
     }
 }

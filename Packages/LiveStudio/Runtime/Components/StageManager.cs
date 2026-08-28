@@ -373,6 +373,7 @@ namespace Lilium.LiveStudio
         /// no set matches. Distinct from <see cref="SetActiveSet"/>, which only re-flags the active set
         /// among already-loaded sets and never unloads (the Stage page's selection).
         /// </summary>
+        [LiveFunction]
         public void SwitchToSetByName(string setName)
         {
             if (string.IsNullOrEmpty(setName)) return;

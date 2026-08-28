@@ -44,6 +44,7 @@ namespace Lilium.RemoteControl.Frames
         private static volatile bool _gateClosed;
         private static long _bypassedCount;
         private static long _truncatedPayloadCount;
+        private static long _omittedRecordCount;
         private static long _repeatedWriteCount;
         private static int _lastRepeatedTargetId = InputSymbolTable.kNone;
 
@@ -157,6 +158,31 @@ namespace Lilium.RemoteControl.Frames
         private static PendingInput _applyingInput;
 
         /// <summary>
+        /// Says the input being applied does not need keeping, because the state lane carries what
+        /// it wrote.
+        ///
+        /// Called from inside the apply, by the code that resolved the target and can see which
+        /// lane it belongs to. The write still took its place in the order -- that is the half of
+        /// the gate this does not touch -- it simply leaves no record, because a record saying what
+        /// the state lane already says is the same value written twice at 548 bytes a frame.
+        /// </summary>
+        public static void OmitAppliedRecord(string target)
+        {
+            var input = _applyingInput;
+            if (input == null || string.IsNullOrEmpty(target)) return;
+
+            var targetId = _symbols.Intern(target);
+
+            for (int i = 0; i < input.recordCount; i++)
+            {
+                if (input.records[i].targetId != targetId) continue;
+
+                input.records[i].flags |= InputFlags.NotRecorded;
+                return;
+            }
+        }
+
+        /// <summary>
         /// Says what value an input actually wrote, so the record keeps the value rather than the
         /// request that asked for it.
         ///
@@ -238,6 +264,12 @@ namespace Lilium.RemoteControl.Frames
         /// but what was kept of them cannot be replayed faithfully.
         /// </summary>
         public static long truncatedPayloadCount => Interlocked.Read(ref _truncatedPayloadCount);
+
+        /// <summary>
+        /// Writes applied but left out of the frame because the state lane carries them. Counted so
+        /// "the recording has no input for this" can be told from "the input went missing".
+        /// </summary>
+        public static long omittedRecordCount => Interlocked.Read(ref _omittedRecordCount);
 
         /// <summary>Supplies the frame number stamped on each committed frame.</summary>
         public static IFrameClock clock => _clock;
@@ -504,6 +536,7 @@ namespace Lilium.RemoteControl.Frames
             lock (_sourceLock) _warnedUndeclaredSources.Clear();
 
             Interlocked.Exchange(ref _bypassedCount, 0);
+            Interlocked.Exchange(ref _omittedRecordCount, 0);
             Interlocked.Exchange(ref _truncatedPayloadCount, 0);
             Interlocked.Exchange(ref _repeatedWriteCount, 0);
 
@@ -689,6 +722,14 @@ namespace Lilium.RemoteControl.Frames
 
                 for (int r = 0; r < input.recordCount; r++)
                 {
+                    // Applied above, but the state lane is already carrying what it did. See
+                    // InputFlags.NotRecorded.
+                    if ((input.records[r].flags & InputFlags.NotRecorded) != 0)
+                    {
+                        Interlocked.Increment(ref _omittedRecordCount);
+                        continue;
+                    }
+
                     _CountIfRepeatedWrite(in input.records[r]);
                     inputs.Add(input.records[r]);
                 }
@@ -1002,6 +1043,87 @@ namespace Lilium.RemoteControl.Frames
 
             _sequencer.Submit(input);
             return completion.Task;
+        }
+
+        /// <summary>
+        /// Queues an input to be applied at the next frame head and returns immediately.
+        ///
+        /// For a producer that is already inside the frame -- a deck button, a gamepad axis, a
+        /// script -- rather than a request waiting on an answer. Those cannot use
+        /// <see cref="SubmitAsync{T}(InputKind, FrameSource, string, string, string, Func{T})"/>:
+        /// it is called from a worker thread that then blocks on the frame head, and blocking the
+        /// main thread on a frame head the main thread is supposed to run would deadlock. Nothing
+        /// waits here, so there is nothing to deadlock.
+        ///
+        /// The cost is one frame of latency: what fires during this frame lands at the head of the
+        /// next one. That is what buys the ordering -- an operation and a remote write racing
+        /// within a frame would otherwise land in whichever order the two happened to run in.
+        ///
+        /// <paramref name="apply"/> does the work and is expected to say what it wrote, with
+        /// <see cref="StampAppliedPayload"/>, so the record keeps the value rather than nothing.
+        /// </summary>
+        public static void Post(InputKind kind, FrameSource source, string verb, string target,
+            Action apply, string requestText = null)
+        {
+            if (apply == null) throw new ArgumentNullException(nameof(apply));
+
+            if (!source.isValid)
+            {
+                throw new ArgumentException(
+                    "[RemoteControl] Input source was never resolved. Use FrameGate.ResolveSource.",
+                    nameof(source));
+            }
+
+            // Nothing is coming to apply it, and nobody is waiting to be told. Dropped silently
+            // would be a write that vanished, so it is applied here and counted as a hole.
+            if (_gateClosed || !_pumpInstalled)
+            {
+                Interlocked.Increment(ref _bypassedCount);
+                apply();
+                return;
+            }
+
+            _Post(kind, source, verb, target, apply, requestText);
+        }
+
+        /// <summary>
+        /// Queues a posted input without the bypass check, so tests can drive the real queue whether
+        /// or not a pump happens to be installed. See <see cref="Post"/>.
+        /// </summary>
+        internal static void _Post(InputKind kind, FrameSource source, string verb, string target,
+            Action apply, string requestText = null)
+        {
+            var record = new InputRecord(0, kind, source.id, _symbols.Intern(target),
+                InputFlags.None, _symbols.Intern(verb));
+
+            if (!string.IsNullOrEmpty(requestText))
+            {
+                Span<byte> scratch = stackalloc byte[InputRecord.kPayloadCapacity];
+                var fits = InputPayload.TryWriteString(requestText, scratch, out var kept);
+
+                record.SetPayload(scratch.Slice(0, kept), _symbols.Intern(InputPayload.kRequestTypeName));
+
+                if (!fits)
+                {
+                    record.flags |= InputFlags.PayloadTruncated;
+                    Interlocked.Increment(ref _truncatedPayloadCount);
+                }
+            }
+
+            var input = new PendingInput
+            {
+                records = new[] { record },
+                recordCount = 1,
+                apply = apply,
+
+                // Nobody is waiting, so a reset has nothing to hand the failure to. Logged instead
+                // of dropped: an operation that silently stopped landing is the kind of quiet this
+                // whole layer exists to prevent.
+                fault = reason => Debug.LogWarning(
+                    $"[RemoteControl] Posted input ({verb} {target}) never reached a frame: {reason.Message}"),
+            };
+
+            _sequencer.Submit(input);
         }
 
         private static string _DescribeFirst(PendingInput input)

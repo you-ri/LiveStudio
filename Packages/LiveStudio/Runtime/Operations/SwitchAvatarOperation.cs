@@ -3,6 +3,7 @@
 using System;
 using UnityEngine.Scripting.APIUpdating;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Frames;
 
 namespace Lilium.LiveStudio
 {
@@ -25,10 +26,20 @@ namespace Lilium.LiveStudio
         public string[] avatarNames
             => AvatarSelection.GetNames(ExternalAssetManager.current);
 
+        /// <summary>The operator's own controls, as a producer. See the assembly declaration.</summary>
+        private static readonly FrameSource _source = FrameGate.ResolveSource("operation");
+
         public override void Apply(in OperationContext context)
         {
             if (!context.triggered) return;
-            AvatarSelection.SelectByName(ExternalAssetManager.current, avatar);
+
+            var manager = ExternalAssetManager.current;
+            if (manager == null) return;
+
+            FrameGate.Post(InputKind.FunctionCall, _source, "POST",
+                $"/live/function/{manager.id}/selectavatarbyname",
+                () => AvatarSelection.SelectByName(ExternalAssetManager.current, avatar),
+                OperationRequest.FromArguments(avatar));
         }
     }
 }

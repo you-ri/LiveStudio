@@ -55,6 +55,15 @@ namespace Lilium.RemoteControl
         /// read-only (no setter, readonly/const field) stays read-only regardless of this flag.
         /// </summary>
         public bool isReadOnly;
+
+        /// <summary>
+        /// Which lane of the live data carries this member.
+        ///
+        /// Read at runtime, unlike the generator's use of the same declaration: a write to a member
+        /// the state lane already carries does not need recording as an input as well, and the only
+        /// place that can tell is where the write resolves.
+        /// </summary>
+        public FrameLane lane;
     }
 
     /// <summary>
@@ -337,7 +346,7 @@ namespace Lilium.RemoteControl
 
             // shadowField マップ: Property のメンバー名 (path) -> Shadow Field のメンバー名 (path)
             // および Field 側の persistable / persistScope 値 (Property に継承)
-            var shadowFieldByPropertyPath = new Dictionary<string, (string fieldPath, bool fieldPersistable, PersistScope fieldScope)>(StringComparer.Ordinal);
+            var shadowFieldByPropertyPath = new Dictionary<string, (string fieldPath, bool fieldPersistable, PersistScope fieldScope, FrameLane fieldLane)>(StringComparer.Ordinal);
             var shadowFieldMembers = new HashSet<MemberInfo>();
             for (int i = 0; i < allMembers.Count; i++)
             {
@@ -363,7 +372,8 @@ namespace Lilium.RemoteControl
                 }
                 if (targetPropertyPath == null) continue;
 
-                shadowFieldByPropertyPath[targetPropertyPath] = (fi.Name, fieldAttr.persistable, fieldAttr.persistScope);
+                shadowFieldByPropertyPath[targetPropertyPath] =
+                    (fi.Name, fieldAttr.persistable, fieldAttr.persistScope, fieldAttr.lane);
                 shadowFieldMembers.Add(fi);
             }
 
@@ -384,20 +394,24 @@ namespace Lilium.RemoteControl
                     // LivePropertyAttribute または LiveFieldAttribute から name / persistScope を取得
                     string propName;
                     PersistScope persistScope;
+                    FrameLane lane;
                     if (attr is LivePropertyAttribute propAttr)
                     {
                         propName = propAttr.name ?? member.Name;
                         persistScope = propAttr.persistScope;
+                        lane = propAttr.lane;
                     }
                     else if (attr is LiveFieldAttribute fieldAttr)
                     {
                         propName = fieldAttr.name ?? member.Name;
                         persistScope = fieldAttr.persistScope;
+                        lane = fieldAttr.lane;
                     }
                     else
                     {
                         propName = member.Name;
                         persistScope = PersistScope.Scene;
+                        lane = FrameLane.Input;
                     }
 
                     string shadowFieldPath = null;
@@ -405,9 +419,12 @@ namespace Lilium.RemoteControl
                         && shadowFieldByPropertyPath.TryGetValue(member.Name, out var shadowInfo))
                     {
                         shadowFieldPath = shadowInfo.fieldPath;
-                        // Shadow Field 側の persistable / persistScope を Property に継承
+                        // Shadow Field 側の persistable / persistScope / lane を Property に継承。
+                        // lane を継承するのは、両者が同じ値の別の顔だから: フィールドが状態レーンに
+                        // 載っているのにプロパティが入力レーンだと、同じ値が両方に記録される。
                         isPersistable = shadowInfo.fieldPersistable;
                         persistScope = shadowInfo.fieldScope;
+                        lane = shadowInfo.fieldLane;
                     }
 
                     properties.Add(new LivePropertyDefine
@@ -416,7 +433,8 @@ namespace Lilium.RemoteControl
                         path = member.Name,
                         isPersistable = isPersistable,
                         persistScope = persistScope,
-                        shadowFieldPath = shadowFieldPath
+                        shadowFieldPath = shadowFieldPath,
+                        lane = lane
                     });
                     propertyOrderMap[member.Name] = i;
                 }
@@ -1020,6 +1038,15 @@ namespace Lilium.RemoteControl
         public readonly FieldInfo shadowField;
 
         /// <summary>
+        /// Which lane of the live data carries this member. See <see cref="FrameLane"/>.
+        ///
+        /// <see cref="FrameLane.State"/> means the value is copied every frame regardless, so a
+        /// write to it does not also need to be kept as an input -- the same value in both lanes is
+        /// the input record paying 548 bytes to say what the state lane already said.
+        /// </summary>
+        public readonly FrameLane lane;
+
+        /// <summary>
         /// Source Generator が生成した高速 get/set アクセサ。non-null の場合、
         /// <see cref="LivePropertyUtility.GetValueRaw"/> / <see cref="LivePropertyUtility.SetValueRaw"/>
         /// は reflection の代わりにこれを呼ぶ。未登録 (struct 型 / 非アクセスメンバー等) では null で、
@@ -1246,8 +1273,9 @@ namespace Lilium.RemoteControl
 
         public LivePropertyType(string name, MemberInfo info, bool isPersistable = true, FieldInfo shadowField = null, PersistScope persistScope = PersistScope.Scene,
             ControlAttribute controlOverride = null, string labelOverride = null, string helpOverride = null, SectionAttribute sectionOverride = null,
-            bool readOnlyOverride = false)
+            bool readOnlyOverride = false, FrameLane lane = FrameLane.Input)
         {
+            this.lane = lane;
             Debug.Assert(info != null, "PropertyInfo cannot be null");
 
             this.properyInfo = info as PropertyInfo;
@@ -1516,6 +1544,7 @@ namespace Lilium.RemoteControl
             this.controlType = "default";
             this.isPersistable = true;
             this.persistScope = PersistScope.Scene;
+            this.lane = FrameLane.Input;
             this.isRawJson = false; // 配列要素自体は RawJson 対象外 (要素内の string メンバーが個別に判定される)
             this.isReadOnly = false; // 配列要素は通常書き込み可能
             this.isStatic = false; // 配列要素はstaticではない

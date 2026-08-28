@@ -12,6 +12,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Frames;
 
 namespace Lilium.LiveStudio
 {
@@ -139,6 +140,11 @@ namespace Lilium.LiveStudio
         {
             if (!_initialized) return;
             if (!Application.isPlaying) return;
+
+            // Something is supplying the frames -- a recording is playing, or another machine is
+            // being followed -- so the operator's controls stand down. The recorded operations are
+            // already arriving as inputs; firing live ones too would put two hands on the desk.
+            if (FrameGate.source != null) return;
 
             for (int i = 0; i < operationSets.Count; i++)
             {

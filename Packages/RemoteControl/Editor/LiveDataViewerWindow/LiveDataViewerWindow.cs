@@ -5,6 +5,7 @@ using System.Text;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
+using UnityEngine.TextCore.Text;
 using Lilium.RemoteControl.Frames;
 using Lilium.RemoteControl.Frames.Recording;
 
@@ -31,7 +32,16 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         // Frames arrive at sixty a second and nothing here is worth drawing that often.
         private const double kRedrawInterval = 0.1;
 
-        private enum DetailKind { None, StateElement, Input }
+        private enum DetailKind { None, StateElement, Input, StructureEntry }
+
+        /// <summary>
+        /// Which of the two views shares the top pane.
+        ///
+        /// Tabbed rather than a third strip: the inventory changes when the world does, which is
+        /// rarely, while the state lane moves every frame. Giving both a permanent slice would take
+        /// room from the one that is actually being watched.
+        /// </summary>
+        private enum TopTab { State, Structure }
 
         /// <summary>A state row, kept so the parts that move can be written without rebuilding it.</summary>
         private sealed class StateRowView
@@ -44,6 +54,14 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             public int ownerId;
         }
 
+        /// <summary>One inventory row, kept so its parent can be written without rebuilding it.</summary>
+        private sealed class StructureRowView
+        {
+            public VisualElement root;
+            public Label parent;
+            public int objectId;
+        }
+
         private sealed class DetailRowView
         {
             public VisualElement root;
@@ -51,8 +69,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             public Label value;
         }
 
-        private Label _frameLabel;
-        private Label _timecodeLabel;
+        private Label _positionLabel;
         private Label _rateLabel;
         private Label _sourcePill;
         private Label _sinkPill;
@@ -62,6 +79,11 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
         private VisualElement _banners;
         private VisualElement _stateList;
+        private VisualElement _structureList;
+        private VisualElement _statePage;
+        private VisualElement _structurePage;
+        private Button _stateTab;
+        private Button _structureTab;
         private VisualElement _inputList;
         private VisualElement _detailList;
         private Label _stateCount;
@@ -69,24 +91,40 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         private Label _detailTitle;
 
         private DetailKind _detailKind;
+        private TopTab _topTab = TopTab.State;
         private string _selectedType;
         private int _selectedOwnerId = InputSymbolTable.kNone;
-        private long _selectedInputSequence = -1;
+        private long _selectedInputRowId = -1;
+        private int _selectedObjectId = InputSymbolTable.kNone;
+
+        /// <summary>
+        /// Whether the position reads as a timecode rather than a frame number.
+        ///
+        /// One or the other, not both: they are the same number twice, and the pair took the width
+        /// that the rest of the bar wanted. Kept in EditorPrefs because a preference that resets on
+        /// every recompile is worse than not having one.
+        /// </summary>
+        private bool _showTimecode;
+
+        private const string kTimecodePref = "Lilium.RemoteControl.LiveDataViewer.showTimecode";
 
         private double _nextRedraw;
         private long _drawnVersion = -1;
 
         private string _stateShape;
+        private string _structureShape;
         private string _inputShape;
         private string _bannerShape;
 
         private readonly List<string> _bannerText = new List<string>();
         private readonly List<LiveDataValueRow> _rows = new List<LiveDataValueRow>();
         private readonly List<StateRowView> _stateRows = new List<StateRowView>();
+        private readonly List<StructureRowView> _structureRows = new List<StructureRowView>();
         private readonly List<DetailRowView> _detailRows = new List<DetailRowView>();
         private readonly StringBuilder _shape = new StringBuilder();
 
-        private static Font _monoFont;
+        private static FontAsset _monoFont;
+        private static int _monoGeneration;
 
         [MenuItem("Window/Lilium Remote Control/LiveData Viewer")]
         public static void ShowWindow()
@@ -123,6 +161,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
             _DrawBanners();
             _DrawState();
+            _DrawStructure();
             _DrawInputs();
             _DrawDetail();
         }
@@ -142,7 +181,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             // and whatever is selected gets a column of its own rather than a tooltip.
             var lanes = new TwoPaneSplitView(0, 240, TwoPaneSplitViewOrientation.Vertical);
             lanes.style.flexGrow = 1;
-            lanes.Add(_BuildLane("State", out _stateList, out _stateCount, false));
+            lanes.Add(_BuildTopLane());
             lanes.Add(_BuildLane("Input", out _inputList, out _inputCount, true));
 
             var body = new TwoPaneSplitView(1, 360, TwoPaneSplitViewOrientation.Horizontal);
@@ -155,6 +194,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _DrawStatus();
             _DrawBanners();
             _DrawState();
+            _DrawStructure();
             _DrawInputs();
             _DrawDetail();
         }
@@ -164,6 +204,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         {
             _drawnVersion = -1;
             _stateShape = null;
+            _structureShape = null;
             _inputShape = null;
             _bannerShape = null;
         }
@@ -175,12 +216,14 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             var bar = new VisualElement();
             bar.AddToClassList("ldv-status");
 
-            // Both count up every frame, so they are set in a fixed-width face and a fixed width of
-            // digits -- otherwise the whole row shuffles sideways as the numbers grow.
-            _frameLabel = _AddStatus(bar, "ldv-num");
-            _timecodeLabel = _AddStatus(bar, "ldv-num");
-            _ApplyMonospace(_frameLabel);
-            _ApplyMonospace(_timecodeLabel);
+            // Counts up every frame, so it is set in a fixed-width face at a fixed width -- the row
+            // would otherwise shuffle sideways as the digits grow.
+            _showTimecode = EditorPrefs.GetBool(kTimecodePref, false);
+
+            _positionLabel = _AddStatus(bar, "ldv-num");
+            _positionLabel.tooltip = "クリックでフレーム番号とタイムコードを切り替えます";
+            _ApplyMonospace(_positionLabel);
+            _positionLabel.RegisterCallback<MouseDownEvent>(_ => _TogglePosition());
 
             _rateLabel = _AddStatus(bar, "ldv-status-item");
 
@@ -216,31 +259,153 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         /// column is sized for it. An empty font definition must never be assigned: that is not
         /// "inherit", it is "no font", and the label draws nothing at all.
         /// </summary>
+        private void _TogglePosition()
+        {
+            _showTimecode = !_showTimecode;
+            EditorPrefs.SetBool(kTimecodePref, _showTimecode);
+            _DrawStatus();
+        }
+
+        /// <summary>
+        /// Sets the fixed-width face, if one could be built.
+        ///
+        /// As a font asset, not a plain Font: UI Toolkit draws a legacy Font through its old path,
+        /// which renders at the size the font was created with and ignores the one the style asks
+        /// for. That is what made this read smaller than everything beside it and sit high in its
+        /// line, and no amount of font-size moved it.
+        /// </summary>
         private static void _ApplyMonospace(Label label)
         {
             var font = _MonoFont();
             if (font == null) return;
 
-            label.style.unityFontDefinition = FontDefinition.FromFont(font);
+            label.style.unityFontDefinition = FontDefinition.FromSDFFont(font);
         }
 
-        private static Font _MonoFont()
+        private static FontAsset _MonoFont()
         {
             // Checked rather than cached blindly: a font built this way belongs to nobody, so an
             // asset unload takes it away and leaves a reference that is not null in C# but is dead in
             // Unity. Labels holding it then render blank, which is how this was found.
-            if (_monoFont != null) return _monoFont;
+            // The atlas material has to be alive too, not just the asset: the renderer reads its
+            // main texture every time it draws a label, and a swept material throws from inside the
+            // paint. Checked here rather than trusted, because that throw is not catchable at the
+            // call site -- it happens during the repaint, once per frame, forever.
+            if (_monoFont != null && _monoFont.material != null) return _monoFont;
 
             string[] candidates = { "Consolas", "Courier New", "Menlo", "DejaVu Sans Mono", "monospace" };
+
             for (int i = 0; i < candidates.Length && _monoFont == null; i++)
             {
-                _monoFont = Font.CreateDynamicFontFromOSFont(candidates[i], 12);
+                var os = Font.CreateDynamicFontFromOSFont(candidates[i], 16);
+                if (os == null) continue;
+
+                os.hideFlags = HideFlags.HideAndDontSave;
+                _monoFont = FontAsset.CreateFontAsset(os);
             }
 
-            // Kept out of the unload sweep, so the labels that took it keep drawing.
-            if (_monoFont != null) _monoFont.hideFlags = HideFlags.HideAndDontSave;
-
+            // Rows take the face when they are built and never look again, so a rebuilt face has to
+            // reach them somehow. The generation goes in the shape string, which is what already
+            // decides whether a list is rebuilt.
+            _monoGeneration++;
+            _KeepAlive(_monoFont);
             return _monoFont;
+        }
+
+        /// <summary>
+        /// Marks a font asset and everything it brought with it as not-to-be-swept.
+        ///
+        /// CreateFontAsset makes three separate objects -- the asset, an atlas material and the
+        /// atlas textures -- and an unload takes any of them that nobody owns. Flagging only the
+        /// asset leaves the material to be collected, and the label then throws from inside the
+        /// repaint rather than anywhere a caller could see.
+        /// </summary>
+        private static void _KeepAlive(FontAsset font)
+        {
+            if (font == null) return;
+
+            font.hideFlags = HideFlags.HideAndDontSave;
+
+            if (font.material != null) font.material.hideFlags = HideFlags.HideAndDontSave;
+
+            var textures = font.atlasTextures;
+            if (textures == null) return;
+
+            for (int i = 0; i < textures.Length; i++)
+            {
+                if (textures[i] != null) textures[i].hideFlags = HideFlags.HideAndDontSave;
+            }
+        }
+
+        /// <summary>
+        /// The top pane: the state lane and the inventory, sharing one slice through tabs.
+        ///
+        /// The counts sit on the tabs rather than only on the active one, so an empty inventory is
+        /// visible without switching to it -- which is the case worth noticing, since "nothing is
+        /// registered" and "nothing is being written" look the same from the state lane alone.
+        /// </summary>
+        private VisualElement _BuildTopLane()
+        {
+            var lane = new VisualElement();
+            lane.AddToClassList("ldv-lane");
+
+            var header = new VisualElement();
+            header.AddToClassList("ldv-lane-header");
+
+            _stateTab = _BuildTab("State", TopTab.State);
+            _structureTab = _BuildTab("Structure", TopTab.Structure);
+            header.Add(_stateTab);
+            header.Add(_structureTab);
+
+            _stateCount = new Label();
+            _stateCount.AddToClassList(RemoteControlEditorStyles.kSubtle);
+            _stateCount.style.marginLeft = 8;
+            header.Add(_stateCount);
+
+            var spacer = new VisualElement();
+            spacer.AddToClassList(RemoteControlEditorStyles.kSpacer);
+            header.Add(spacer);
+
+            lane.Add(header);
+
+            _statePage = _BuildScrollPage(out _stateList);
+            _structurePage = _BuildScrollPage(out _structureList);
+            lane.Add(_statePage);
+            lane.Add(_structurePage);
+
+            _ShowTab(_topTab);
+            return lane;
+        }
+
+        private Button _BuildTab(string title, TopTab tab)
+        {
+            var button = new Button(() => _ShowTab(tab)) { text = title };
+            button.AddToClassList("ldv-tab");
+            return button;
+        }
+
+        private void _ShowTab(TopTab tab)
+        {
+            _topTab = tab;
+
+            _statePage.style.display = tab == TopTab.State ? DisplayStyle.Flex : DisplayStyle.None;
+            _structurePage.style.display = tab == TopTab.Structure ? DisplayStyle.Flex : DisplayStyle.None;
+
+            _stateTab?.EnableInClassList("ldv-tab-active", tab == TopTab.State);
+            _structureTab?.EnableInClassList("ldv-tab-active", tab == TopTab.Structure);
+
+            _DrawState();
+            _DrawStructure();
+        }
+
+        private static VisualElement _BuildScrollPage(out VisualElement list)
+        {
+            var scroll = new ScrollView();
+            scroll.AddToClassList(RemoteControlEditorStyles.kScroll);
+            scroll.AddToClassList("ldv-page");
+
+            list = scroll.contentContainer;
+            return scroll;
         }
 
         private VisualElement _BuildLane(string title, out VisualElement list, out Label count,
@@ -279,7 +444,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
             var scroll = new ScrollView();
             scroll.AddToClassList(RemoteControlEditorStyles.kScroll);
-            scroll.style.flexGrow = 1;
+            scroll.AddToClassList("ldv-page");
             lane.Add(scroll);
 
             list = scroll.contentContainer;
@@ -308,7 +473,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
             var scroll = new ScrollView();
             scroll.AddToClassList(RemoteControlEditorStyles.kScroll);
-            scroll.style.flexGrow = 1;
+            scroll.AddToClassList("ldv-page");
             pane.Add(scroll);
 
             _detailList = scroll.contentContainer;
@@ -319,7 +484,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
         private void _DrawStatus()
         {
-            if (_frameLabel == null) return;
+            if (_positionLabel == null) return;
 
             var snapshot = LiveDataTap.snapshot;
 
@@ -327,16 +492,15 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             // by it.
             if (!LiveDataTap.hasFrame)
             {
-                _frameLabel.text = "--------";
-                _timecodeLabel.text = "--:--:--:--.---";
+                _positionLabel.text = _showTimecode ? "--:--:--:--.---" : "--------";
                 _rateLabel.text = LiveDataTap.isAttached ? "待機中" : "未接続";
             }
             else
             {
-                _ApplyMonospace(_frameLabel);
-                _ApplyMonospace(_timecodeLabel);
-                _frameLabel.text = snapshot.frameNumber.ToString("D8");
-                _timecodeLabel.text = new Timecode(snapshot.frameNumber, snapshot.frameRate).ToString();
+                _ApplyMonospace(_positionLabel);
+                _positionLabel.text = _showTimecode
+                    ? new Timecode(snapshot.frameNumber, snapshot.frameRate).ToString()
+                    : snapshot.frameNumber.ToString("D8");
                 _rateLabel.text = snapshot.frameRate.ToString();
             }
 
@@ -414,17 +578,23 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             // already exist is what keeps the list still under the pointer.
             _shape.Clear();
             var elementTotal = 0;
+            var byteTotal = 0L;
             for (int i = 0; i < snapshot.types.Count; i++)
             {
                 var row = snapshot.types[i];
                 _shape.Append(row.typeName).Append(':').Append(row.elements.Count).Append(';');
                 elementTotal += row.elements.Count;
+
+                // What this lane costs every frame, which is the number to watch when deciding
+                // whether a member belongs here: state is paid for whether it changes or not.
+                byteTotal += (long)row.elements.Count * row.elementSize;
                 for (int e = 0; e < row.elements.Count; e++)
                 {
                     _shape.Append(row.elements[e].ownerId).Append(',');
                 }
             }
             foreach (var name in StateTypeRegistry.knownTypeNames) _shape.Append('!').Append(name);
+            _shape.Append('#').Append(_monoGeneration);
 
             var shape = _shape.ToString();
             if (shape != _stateShape)
@@ -433,7 +603,13 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                 _RebuildState(snapshot);
             }
 
-            _stateCount.text = $"{snapshot.types.Count} types / {elementTotal} elements";
+            if (_topTab == TopTab.State)
+            {
+                _stateCount.text =
+                    $"{snapshot.types.Count} types / {elementTotal} elements / {_Bytes(byteTotal)} per frame";
+            }
+
+            _stateTab.text = $"State  {snapshot.types.Count}";
             _RefreshStateRows(snapshot);
         }
 
@@ -535,14 +711,9 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
             container.Add(head);
 
-            if (row.elements.Count == 0)
-            {
-                var note = new Label("要素なし — 誰もこの型を書いていません");
-                note.AddToClassList(RemoteControlEditorStyles.kWarning);
-                note.style.marginLeft = 14;
-                container.Add(note);
-                return container;
-            }
+            // No line for an empty block: the count beside the name already says it, and the bar
+            // says which state it is in.
+            if (row.elements.Count == 0) return container;
 
             for (int i = 0; i < row.elements.Count; i++)
             {
@@ -619,11 +790,194 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _Invalidate();
         }
 
-        private void _SelectInput(long sequence)
+        private void _SelectInput(long rowId)
         {
             _detailKind = DetailKind.Input;
-            _selectedInputSequence = sequence;
+            _selectedInputRowId = rowId;
             _Invalidate();
+        }
+
+        // --- structure lane -----------------------------------------------
+
+        private void _DrawStructure()
+        {
+            if (_structureList == null) return;
+
+            var snapshot = LiveDataTap.snapshot;
+
+            _structureTab.text = $"Structure  {snapshot.structure.Count}";
+
+            if (_topTab == TopTab.Structure)
+            {
+                _stateCount.text = $"{snapshot.structure.Count} objects / epoch {snapshot.structureEpoch}";
+            }
+
+            // Which objects exist and what they are. Reparenting is the one part that moves without
+            // the set changing, so it is written into the rows rather than counted as a new shape.
+            _shape.Clear();
+            for (int i = 0; i < snapshot.structure.Count; i++)
+            {
+                var row = snapshot.structure[i];
+                _shape.Append(row.objectId).Append(':').Append(row.typeId).Append(';');
+            }
+
+            var shape = _shape.ToString();
+            if (shape != _structureShape)
+            {
+                _structureShape = shape;
+                _RebuildStructure(snapshot);
+            }
+
+            _RefreshStructureRows(snapshot);
+        }
+
+        private void _RebuildStructure(LiveDataSnapshot snapshot)
+        {
+            _structureList.Clear();
+            _structureRows.Clear();
+
+            for (int i = 0; i < snapshot.structure.Count; i++)
+            {
+                _structureList.Add(_BuildStructureRow(snapshot.structure[i]));
+            }
+
+            if (_structureList.childCount == 0)
+            {
+                _structureList.Add(_Empty(
+                    "構造レーンは空です。フレームに載る対象がまだ 1 つも登録されていません。"));
+            }
+        }
+
+        private void _RefreshStructureRows(LiveDataSnapshot snapshot)
+        {
+            for (int i = 0; i < _structureRows.Count; i++)
+            {
+                var view = _structureRows[i];
+                if (!_TryFindObject(snapshot, view.objectId, out var entry)) continue;
+
+                view.parent.text = string.IsNullOrEmpty(entry.parentName)
+                    ? (entry.parentId == InputSymbolTable.kNone ? "-" : $"#{entry.parentId} (未解決)")
+                    : entry.parentName;
+
+                view.parent.EnableInClassList(RemoteControlEditorStyles.kWarning,
+                    entry.parentId != InputSymbolTable.kNone && string.IsNullOrEmpty(entry.parentName));
+
+                view.root.EnableInClassList("ldv-element-selected",
+                    _detailKind == DetailKind.StructureEntry && view.objectId == _selectedObjectId);
+            }
+        }
+
+        private static bool _TryFindObject(LiveDataSnapshot snapshot, int objectId, out StructureRow entry)
+        {
+            for (int i = 0; i < snapshot.structure.Count; i++)
+            {
+                if (snapshot.structure[i].objectId != objectId) continue;
+
+                entry = snapshot.structure[i];
+                return true;
+            }
+
+            entry = default;
+            return false;
+        }
+
+        private VisualElement _BuildStructureRow(StructureRow entry)
+        {
+            var line = new VisualElement();
+            line.AddToClassList("ldv-input");
+
+            var name = new Label(string.IsNullOrEmpty(entry.objectName)
+                ? $"#{entry.objectId}"
+                : entry.objectName);
+            name.AddToClassList(RemoteControlEditorStyles.kGrow);
+            name.AddToClassList(RemoteControlEditorStyles.kEllipsis);
+            name.tooltip = entry.objectName;
+            line.Add(name);
+
+            var type = new Label(_ShortTypeName(entry.typeName));
+            type.AddToClassList("ldv-col-mid");
+            type.AddToClassList(RemoteControlEditorStyles.kSubtle);
+            type.tooltip = entry.typeName;
+            line.Add(type);
+
+            var parent = new Label();
+            parent.AddToClassList("ldv-col-mid");
+            parent.AddToClassList(RemoteControlEditorStyles.kSubtle);
+            line.Add(parent);
+
+            var objectId = entry.objectId;
+            line.RegisterCallback<MouseDownEvent>(_ => _SelectObject(objectId));
+
+            _structureRows.Add(new StructureRowView
+            {
+                root = line,
+                parent = parent,
+                objectId = objectId,
+            });
+
+            return line;
+        }
+
+        private void _SelectObject(int objectId)
+        {
+            _detailKind = DetailKind.StructureEntry;
+            _selectedObjectId = objectId;
+            _Invalidate();
+        }
+
+        private void _BuildStructureDetail()
+        {
+            var snapshot = LiveDataTap.snapshot;
+
+            if (!_TryFindObject(snapshot, _selectedObjectId, out var entry))
+            {
+                _detailTitle.text = $"#{_selectedObjectId}";
+                _rows.Add(new LiveDataValueRow(string.Empty, "この対象はもうフレームにありません。"));
+                return;
+            }
+
+            _detailTitle.text = string.IsNullOrEmpty(entry.objectName)
+                ? $"#{entry.objectId}"
+                : entry.objectName;
+
+            _rows.Add(new LiveDataValueRow("id", string.IsNullOrEmpty(entry.objectName)
+                ? $"#{entry.objectId} (シンボル表にありません)"
+                : entry.objectName));
+            _rows.Add(new LiveDataValueRow("type", string.IsNullOrEmpty(entry.typeName) ? "-" : entry.typeName));
+            _rows.Add(new LiveDataValueRow("parent",
+                entry.parentId == InputSymbolTable.kNone ? "(なし)" : entry.parentName));
+
+            // What the inventory says exists, against what the state lane is actually carrying for
+            // it. An object with no state is not an error -- most have none -- but an object that
+            // should have some and does not is exactly what this view is for.
+            _rows.Add(new LiveDataValueRow("state", string.Empty));
+
+            var carried = 0;
+            for (int i = 0; i < snapshot.types.Count; i++)
+            {
+                var type = snapshot.types[i];
+                for (int e = 0; e < type.elements.Count; e++)
+                {
+                    if (type.elements[e].ownerId != entry.objectId) continue;
+
+                    var element = type.elements[e];
+                    var fresh = element.lastChangedFrame == snapshot.frameNumber;
+
+                    _rows.Add(new LiveDataValueRow(
+                        _ShortTypeName(type.typeName),
+                        $"{(string.IsNullOrEmpty(element.source) ? "-" : element.source)}  " +
+                        (fresh ? "now" : $"{snapshot.frameNumber - element.lastChangedFrame}f 前"),
+                        depth: 1));
+
+                    carried++;
+                    break;
+                }
+            }
+
+            if (carried == 0)
+            {
+                _rows.Add(new LiveDataValueRow(string.Empty, "この対象を運ぶ状態はありません。", depth: 1));
+            }
         }
 
         // --- input lane ---------------------------------------------------
@@ -636,7 +990,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             var newest = count == 0 ? -1 : LiveDataTap.GetInput(count - 1).sequence;
 
             // Inputs only arrive, so the list is rebuilt when one does and left alone otherwise.
-            var shape = $"{count}:{newest}:{_selectedInputSequence}:{_detailKind}";
+            var shape = $"{count}:{newest}:{_selectedInputRowId}:{_detailKind}:{_monoGeneration}";
+
             if (shape == _inputShape) return;
             _inputShape = shape;
 
@@ -662,7 +1017,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             line.AddToClassList("ldv-input");
             line.EnableInClassList("ldv-input-faulted", input.faulted);
             line.EnableInClassList("ldv-element-selected",
-                _detailKind == DetailKind.Input && input.sequence == _selectedInputSequence);
+                _detailKind == DetailKind.Input && input.rowId == _selectedInputRowId);
 
             var frame = new Label(input.frameNumber.ToString("D8"));
             frame.AddToClassList("ldv-col-frame");
@@ -691,19 +1046,19 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                 line.Add(cut);
             }
 
-            var sequence = input.sequence;
-            line.RegisterCallback<MouseDownEvent>(_ => _SelectInput(sequence));
+            var rowId = input.rowId;
+            line.RegisterCallback<MouseDownEvent>(_ => _SelectInput(rowId));
 
             return line;
         }
 
-        private static bool _TryFindInput(long sequence, out InputRow input)
+        private static bool _TryFindInput(long rowId, out InputRow input)
         {
             var count = LiveDataTap.inputCount;
             for (int i = count - 1; i >= 0; i--)
             {
                 var candidate = LiveDataTap.GetInput(i);
-                if (candidate.sequence != sequence) continue;
+                if (candidate.rowId != rowId) continue;
 
                 input = candidate;
                 return true;
@@ -728,6 +1083,9 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                     break;
                 case DetailKind.Input:
                     _BuildInputDetail();
+                    break;
+                case DetailKind.StructureEntry:
+                    _BuildStructureDetail();
                     break;
                 default:
                     _detailTitle.text = string.Empty;
@@ -777,9 +1135,9 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
         private void _BuildInputDetail()
         {
-            if (!_TryFindInput(_selectedInputSequence, out var input))
+            if (!_TryFindInput(_selectedInputRowId, out var input))
             {
-                _detailTitle.text = $"#{_selectedInputSequence}";
+                _detailTitle.text = "選択中の入力";
                 _rows.Add(new LiveDataValueRow(string.Empty, "この入力はもう保持していません。"));
                 return;
             }
@@ -939,6 +1297,19 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             label.AddToClassList("ldv-empty");
             label.AddToClassList(RemoteControlEditorStyles.kSubtle);
             return label;
+        }
+
+        /// <summary>
+        /// Bytes, in the unit that reads at a glance. Two decimals from a kilobyte up: the number
+        /// worth watching is how it moves when a member joins the lane, and whole kilobytes hide
+        /// that until it is already large.
+        /// </summary>
+        private static string _Bytes(long count)
+        {
+            if (count < 1024) return $"{count} B";
+            if (count < 1024 * 1024) return $"{count / 1024.0:0.##} KB";
+
+            return $"{count / (1024.0 * 1024.0):0.##} MB";
         }
 
         private static string _ShortTypeName(string fullName)

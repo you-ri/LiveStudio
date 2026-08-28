@@ -789,10 +789,20 @@ namespace Lilium.RemoteControl
                 return PropertyResult.Error(400, "Failed to set property");
             }
 
-            // What the record keeps is the value that landed, not the request that asked for it.
-            // Read back rather than parsed again: a property is free to clamp or normalise what it
-            // was given, and the recording should hold what the property now says.
-            FrameGate.StampAppliedPayload(ctx.requestPath, prop.type?.resolvedValueType, prop.GetValue());
+            if (prop.type?.lane == FrameLane.State)
+            {
+                // The state lane copies this member every frame, so an input record for it would be
+                // the same value written twice -- and the input pays its full width to say what the
+                // state lane already said. The write still took its place in the order.
+                FrameGate.OmitAppliedRecord(ctx.requestPath);
+            }
+            else
+            {
+                // What the record keeps is the value that landed, not the request that asked for it.
+                // Read back rather than parsed again: a property is free to clamp or normalise what
+                // it was given, and the recording should hold what the property now says.
+                FrameGate.StampAppliedPayload(ctx.requestPath, prop.type?.resolvedValueType, prop.GetValue());
+            }
 
             var json = LivePropertySerializer.ToJson(property.Value, resolver);
 

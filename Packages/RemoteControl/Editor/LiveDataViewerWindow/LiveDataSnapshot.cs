@@ -56,6 +56,15 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
     /// <summary>One recorded input, kept in the viewer's own ring.</summary>
     internal struct InputRow
     {
+        /// <summary>
+        /// The viewer's own number for this row, unique for as long as it is kept.
+        ///
+        /// Not <see cref="sequence"/>: that is unique within a run, and the ring outlives runs --
+        /// a gate reset starts the numbering again, so the ring ends up holding several records
+        /// numbered 1. Keyed on that, selecting one row selected every row that shared its number.
+        /// </summary>
+        public long rowId;
+
         public long frameNumber;
         public long sequence;
         public InputKind kind;

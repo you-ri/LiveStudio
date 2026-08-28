@@ -4,6 +4,7 @@ using System;
 using UnityEngine;
 using UnityEngine.Scripting.APIUpdating;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Frames;
 
 namespace Lilium.LiveStudio
 {
@@ -21,11 +22,37 @@ namespace Lilium.LiveStudio
         [LiveField, ObjectSelector]
         public GameObject target;
 
+        /// <summary>The operator's own controls, as a producer. See the assembly declaration.</summary>
+        private static readonly FrameSource _source = FrameGate.ResolveSource("operation");
+
         public override void Apply(in OperationContext context)
         {
             if (target == null) return;
+
             bool desired = context.active;
-            if (target.activeSelf != desired) target.SetActive(desired);
+            if (target.activeSelf == desired) return;
+
+            // The GameObject's own proxy, not one of its components: they share a transform, so the
+            // reference is what tells them apart. No proxy means the object is not exposed, and an
+            // input with no address cannot be replayed -- applied directly and left out of the
+            // record rather than recorded under an address that resolves to nothing.
+            var proxyId = LiveObjectRegistry.FindProxyId(target);
+            if (string.IsNullOrEmpty(proxyId))
+            {
+                target.SetActive(desired);
+                return;
+            }
+
+            var path = $"/live/object/{proxyId}/active";
+            var captured = target;
+
+            FrameGate.Post(InputKind.PropertyWrite, _source, "PUT", path, () =>
+            {
+                if (captured == null) return;
+
+                captured.SetActive(desired);
+                FrameGate.StampAppliedPayload(path, typeof(bool), captured.activeSelf);
+            });
         }
     }
 }

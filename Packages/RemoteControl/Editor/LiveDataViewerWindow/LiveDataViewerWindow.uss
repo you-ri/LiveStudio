@@ -7,6 +7,7 @@
 /* --- status bar ------------------------------------------------------- */
 
 .ldv-status {
+    flex-shrink: 0;
     flex-direction: row;
     align-items: center;
     padding: 3px 6px;
@@ -22,9 +23,27 @@
 
 /* Numbers that tick every frame, so they must not shift the row as they grow. */
 .ldv-num {
-    min-width: 74px;
+    /* Wide enough for the longer of the two readings, so switching between them does not move the
+       rest of the bar. */
+    min-width: 136px;
+    flex-shrink: 0;
+
+    /* A point over the rest of the bar: a monospace face carries a smaller x-height at the same
+       nominal size, so matching the number makes it read smaller than what sits beside it. */
+    font-size: 14px;
+
+    /* Nudged down to sit on the same line as the rest of the bar. The face is built at runtime and
+       brings its own ascent, so centring the line box still leaves the glyphs riding high -- the
+       alignment property centres the box, not what is drawn inside it. */
+    padding-top: 3px;
+
     -unity-text-align: middle-right;
     margin-right: 10px;
+}
+
+.ldv-num:hover {
+    background-color: rgba(255, 255, 255, 0.07);
+    border-radius: 3px;
 }
 
 .ldv-pill {
@@ -82,6 +101,7 @@
 }
 
 .ldv-lane-header {
+    flex-shrink: 0;
     flex-direction: row;
     align-items: center;
     padding: 3px 6px;
@@ -91,16 +111,22 @@
 /* --- state lane ------------------------------------------------------- */
 
 .ldv-type {
+    flex-shrink: 0;
     margin: 3px 4px 0 4px;
     padding: 3px 5px;
     border-left-width: 3px;
-    border-left-color: rgba(255, 255, 255, 0.14);
+
+    /* Carrying something. Green rather than a neutral grey: the bar is the first thing read down
+       the list, and grey beside an amber one reads as the off state of the same signal -- which is
+       the opposite of what this one means. */
+    border-left-color: rgb(110, 180, 120);
     background-color: rgba(255, 255, 255, 0.03);
 }
 
-/* A type that announced itself but has no block, or a block with nothing in it. */
+/* A type that announced itself but has no block, or a block with nothing in it. Grey against the
+   green above: carrying something or not, read off one bar. */
 .ldv-type-empty {
-    border-left-color: rgba(200, 165, 60, 0.9);
+    border-left-color: rgba(255, 255, 255, 0.14);
 }
 
 .ldv-type-head {
@@ -109,6 +135,7 @@
 }
 
 .ldv-element {
+    flex-shrink: 0;
     flex-direction: row;
     align-items: center;
     padding: 1px 4px 1px 14px;
@@ -135,6 +162,7 @@
 /* --- input lane ------------------------------------------------------- */
 
 .ldv-input {
+    flex-shrink: 0;
     flex-direction: row;
     align-items: center;
     padding: 1px 4px;
@@ -148,17 +176,29 @@
     color: rgb(230, 130, 120);
 }
 
+/* Fixed columns clip rather than spill: the verb falls back to the kind when an input has none,
+   and "PropertyWrite" is wider than the column it lands in -- which drew straight over the target
+   beside it. */
 .ldv-col-narrow {
     min-width: 58px;
     max-width: 58px;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .ldv-col-mid {
     min-width: 96px;
     max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ldv-col-frame {
+    overflow: hidden;
 }
 
 .ldv-empty {
+    flex-shrink: 0;
     padding: 10px;
     white-space: normal;
 }
@@ -166,6 +206,7 @@
 /* --- detail ----------------------------------------------------------- */
 
 .ldv-detail-row {
+    flex-shrink: 0;
     flex-direction: row;
     align-items: center;
     padding: 1px 4px;
@@ -190,4 +231,41 @@
 /* Long payloads wrap rather than running off the pane. */
 .ldv-detail-value {
     white-space: normal;
+}
+
+/* Tabs sharing the top pane. Flat until selected: a tab strip that looks like buttons reads as
+   three actions rather than one choice. */
+.ldv-tab {
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 0;
+    border-bottom-width: 2px;
+    border-bottom-color: rgba(0, 0, 0, 0);
+    margin: 0;
+    padding: 2px 8px;
+    -unity-font-style: bold;
+    opacity: 0.55;
+}
+
+.ldv-tab:hover {
+    opacity: 0.85;
+}
+
+.ldv-tab-active {
+    opacity: 1;
+    border-bottom-color: rgb(88, 150, 220);
+}
+
+/* The scrolling half of a pane.
+
+   flex-basis 0 rather than auto is the point: with auto, a tall list makes the pane ask for its
+   whole content height, and the space has to come from somewhere -- which, with the default
+   flex-shrink of 1 on the header, meant the header. The header holds its size (flex-shrink 0
+   above) and this absorbs the difference instead.
+
+   min-height 0 lets it go below its content, which is what a scroll view is for. */
+.ldv-page {
+    flex-grow: 1;
+    flex-shrink: 1;
+    flex-basis: 0;
+    min-height: 0;
 }

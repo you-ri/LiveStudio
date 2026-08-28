@@ -3,6 +3,7 @@
 using System;
 using UnityEngine.Scripting.APIUpdating;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Frames;
 
 namespace Lilium.LiveStudio
 {
@@ -25,10 +26,22 @@ namespace Lilium.LiveStudio
         public string[] stageNames
             => StageManager.current?.GetSetNames() ?? Array.Empty<string>();
 
+        /// <summary>The operator's own controls, as a producer. See the assembly declaration.</summary>
+        private static readonly FrameSource _source = FrameGate.ResolveSource("operation");
+
         public override void Apply(in OperationContext context)
         {
             if (!context.triggered) return;
-            StageManager.current?.SwitchToSetByName(stage);
+
+            var manager = StageManager.current;
+            if (manager == null) return;
+
+            // Sent through the gate under the same address a remote call would use, so the recorded
+            // operation replays through exactly that path.
+            FrameGate.Post(InputKind.FunctionCall, _source, "POST",
+                $"/live/function/{manager.id}/switchtosetbyname",
+                () => StageManager.current?.SwitchToSetByName(stage),
+                OperationRequest.FromArguments(stage));
         }
     }
 }

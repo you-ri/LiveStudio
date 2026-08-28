@@ -512,6 +512,18 @@ namespace Lilium.LiveStudio
             }
         }
 
+        /// <summary>
+        /// Raises the avatar with the given display name, dropping to the default one when empty.
+        ///
+        /// Exposed so the operation that does this from a deck tile has a remote address to be
+        /// recorded under: an operation with no address can be applied but not replayed. Selection
+        /// by name rather than by id because that is what the operator bound the key to, and ids
+        /// change when a project is rebuilt.
+        /// </summary>
+        [LiveFunction]
+        public void SelectAvatarByName(string avatarName)
+            => AvatarSelection.SelectByName(this, avatarName);
+
         /// <summary>Unloads (if loaded) and removes the entry with the given id.</summary>
         [LiveFunction]
         public void RemoveAsset(string assetId)

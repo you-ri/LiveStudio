@@ -41,6 +41,10 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
         private static int _attachCount;
         private static int _inputHead;
+
+        // Never reset: it only has to be unique across what the ring is holding, and starting over
+        // is exactly what makes the run's own sequence unusable as a key here.
+        private static long _nextRowId = 1;
         private static int _inputCount;
 
         /// <summary>Bumped every time a frame is taken. A reader redraws when it moves.</summary>
@@ -76,6 +80,12 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             if (_attachCount != 1) return;
 
             FrameGate.AddFrameObserver(_observer);
+
+            // Watching the frame is not enough to see anything: the lanes are filled by producers,
+            // and outside a recording nobody had asked for them. So the window asks -- otherwise it
+            // opens on an empty list and "nothing is being produced" looks like "nothing exists".
+            LiveStateSystem.Retain();
+            LiveStructureSystem.Retain();
         }
 
         /// <summary>Stops watching once the last window is done.</summary>
@@ -87,6 +97,10 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             if (_attachCount != 0) return;
 
             FrameGate.RemoveFrameObserver(_observer);
+
+            // Counted on the systems' side, so a recording that is still running keeps them.
+            LiveStructureSystem.Release();
+            LiveStateSystem.Release();
         }
 
         /// <summary>
@@ -257,6 +271,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
                 _inputs[_inputHead] = new InputRow
                 {
+                    rowId = _nextRowId++,
                     frameNumber = frame.frameNumber,
                     sequence = record.sequence,
                     kind = record.kind,

@@ -84,6 +84,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             try
             {
                 _Walk(type, "", 0, 0, fields);
+                _SortByOffset(fields);
             }
             catch (Exception e)
             {
@@ -103,6 +104,33 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         /// <summary>True for a type this can read a single value out of.</summary>
         public static bool IsReadable(Type type)
             => type != null && (type.IsPrimitive || type.IsEnum || _inlineTypes.Contains(type));
+
+        /// <summary>
+        /// Puts the lines in the order the bytes are in.
+        ///
+        /// The walk follows reflection, which reports fields in declaration order -- usually the
+        /// same thing, but not promised, and this list is read against a hex dump of the very bytes
+        /// it describes. A row out of order there is a row that quietly points at the wrong number.
+        ///
+        /// Stable, so a heading keeps its children: a nested value and its first member share an
+        /// offset, and the heading was walked first.
+        /// </summary>
+        private static void _SortByOffset(List<ValueField> fields)
+        {
+            for (int i = 1; i < fields.Count; i++)
+            {
+                var item = fields[i];
+                int j = i - 1;
+
+                while (j >= 0 && fields[j].offset > item.offset)
+                {
+                    fields[j + 1] = fields[j];
+                    j--;
+                }
+
+                fields[j + 1] = item;
+            }
+        }
 
         private static void _Walk(Type type, string prefix, int depth, int offset, List<ValueField> into)
         {
