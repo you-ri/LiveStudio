@@ -80,6 +80,7 @@ namespace Lilium.RemoteControl.Tests
         public void StartClean()
         {
             FrameGate.ResetState("[test] cleared");
+            FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
             _otherObservers = FrameGate.observerCount;
         }
 
@@ -90,6 +91,7 @@ namespace Lilium.RemoteControl.Tests
             _attached.Clear();
             FrameGate.sink = null;
             FrameGate.ResetState("[test] cleared");
+            FrameGate.RestoreDefaultClock();
         }
 
         [Test]
@@ -203,6 +205,7 @@ namespace Lilium.RemoteControl.Tests
             var observer = Attach(new RecordingObserver());
 
             FrameGate.ResetState("[test] cleared");
+            FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
             FrameGate.Pump();
 
             Assert.AreEqual(1, observer.frames.Count);

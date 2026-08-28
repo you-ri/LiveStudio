@@ -31,6 +31,7 @@ namespace Lilium.RemoteControl.Tests
             for (int i = 0; i < _created.Count; i++) _created[i].Dispose();
 
             _created.Clear();
+            FrameGate.RestoreDefaultClock();
         }
 
         private StateBlockSet WithBeams(params (int owner, float intensity)[] beams)
@@ -181,6 +182,7 @@ namespace Lilium.RemoteControl.Tests
             // number the whole design is judged on.
             FrameGate.sink = null;
             FrameGate.ResetState("[test] cleared");
+            FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
 
             var live = NewState();
             var liveBlock = live.GetOrCreate<Beam>();
@@ -223,6 +225,7 @@ namespace Lilium.RemoteControl.Tests
             }
 
             FrameGate.ResetState("[test] cleared");
+            FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
         }
     }
 }

@@ -276,12 +276,26 @@ namespace Lilium.RemoteControl.Tests
     public class FrameGateTests
     {
         [SetUp]
-        [TearDown]
         public void ClearGate()
         {
             // The editor heartbeat pumps this gate continuously, so each test starts and ends from
             // a known state instead of inheriting whatever the editor left behind.
             FrameGate.ResetState("[test] cleared");
+            FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
+        }
+
+        /// <summary>
+        /// Puts the live clock back. The gate is process-wide, so a counter clock left behind
+        /// here counts pumps for whoever runs next -- and for the editor session after the run,
+        /// where it makes the timecode advance at whatever rate the editor happens to tick at.
+        /// </summary>
+        [TearDown]
+        public void ReleaseClearGate()
+        {
+            // The editor heartbeat pumps this gate continuously, so each test starts and ends from
+            // a known state instead of inheriting whatever the editor left behind.
+            FrameGate.ResetState("[test] cleared");
+            FrameGate.RestoreDefaultClock();
         }
 
         [Test]
@@ -501,10 +515,22 @@ namespace Lilium.RemoteControl.Tests
     public class FrameSourceTests
     {
         [SetUp]
-        [TearDown]
         public void ClearGate()
         {
             FrameGate.ResetState("[test] cleared");
+            FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
+        }
+
+        /// <summary>
+        /// Puts the live clock back. The gate is process-wide, so a counter clock left behind
+        /// here counts pumps for whoever runs next -- and for the editor session after the run,
+        /// where it makes the timecode advance at whatever rate the editor happens to tick at.
+        /// </summary>
+        [TearDown]
+        public void ReleaseClearGate()
+        {
+            FrameGate.ResetState("[test] cleared");
+            FrameGate.RestoreDefaultClock();
         }
 
         [Test]
@@ -540,6 +566,7 @@ namespace Lilium.RemoteControl.Tests
             var otherBefore = FrameGate.ResolveSource("unit-test");
 
             FrameGate.ResetState("[test] cleared");
+            FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
 
             Assert.AreEqual(before, FrameGate.ResolveSource("test"));
             Assert.AreEqual(otherBefore, FrameGate.ResolveSource("unit-test"));
@@ -578,10 +605,22 @@ namespace Lilium.RemoteControl.Tests
     public class FrameHeadHandlerTests
     {
         [SetUp]
-        [TearDown]
         public void ClearGate()
         {
             FrameGate.ResetState("[test] cleared");
+            FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
+        }
+
+        /// <summary>
+        /// Puts the live clock back. The gate is process-wide, so a counter clock left behind
+        /// here counts pumps for whoever runs next -- and for the editor session after the run,
+        /// where it makes the timecode advance at whatever rate the editor happens to tick at.
+        /// </summary>
+        [TearDown]
+        public void ReleaseClearGate()
+        {
+            FrameGate.ResetState("[test] cleared");
+            FrameGate.RestoreDefaultClock();
         }
 
         [Test]
@@ -690,10 +729,22 @@ namespace Lilium.RemoteControl.Tests
     public class RepeatedWriteDiagnosticTests
     {
         [SetUp]
-        [TearDown]
         public void ClearGate()
         {
             FrameGate.ResetState("[test] cleared");
+            FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
+        }
+
+        /// <summary>
+        /// Puts the live clock back. The gate is process-wide, so a counter clock left behind
+        /// here counts pumps for whoever runs next -- and for the editor session after the run,
+        /// where it makes the timecode advance at whatever rate the editor happens to tick at.
+        /// </summary>
+        [TearDown]
+        public void ReleaseClearGate()
+        {
+            FrameGate.ResetState("[test] cleared");
+            FrameGate.RestoreDefaultClock();
         }
 
         [Test]

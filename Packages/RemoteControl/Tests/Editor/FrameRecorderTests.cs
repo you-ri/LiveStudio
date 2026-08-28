@@ -19,6 +19,7 @@ namespace Lilium.RemoteControl.Tests
         public void StartClean()
         {
             FrameGate.ResetState("[test] cleared");
+            FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
             _stream = new MemoryStream();
             _recorder = new FrameRecorder();
         }
@@ -30,6 +31,7 @@ namespace Lilium.RemoteControl.Tests
             _recorder?.Dispose();
             _stream?.Dispose();
             FrameGate.ResetState("[test] cleared");
+            FrameGate.RestoreDefaultClock();
         }
 
         private byte[] RecordFrames(int count, Action beforeEachPump = null)
@@ -267,6 +269,7 @@ namespace Lilium.RemoteControl.Tests
             // Otherwise a recording would quietly span two runs, whose frame numbers both start over.
             FrameGate.sink = _recorder;
             FrameGate.ResetState("[test] cleared");
+            FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
 
             Assert.IsNull(FrameGate.sink);
         }

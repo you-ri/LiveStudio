@@ -44,6 +44,27 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
+        /// Frames per second rounded to a whole number, which is what a timecode counts in.
+        ///
+        /// A timecode's frame field runs 0..n-1 at the nominal rate -- 0..29 at 29.97, not 0..28.97
+        /// -- so a rate that is not a whole number still counts in whole frames and the timecode
+        /// drifts from the clock instead. Correcting that drift is what drop-frame is for; this is
+        /// the count either way.
+        ///
+        /// Never zero: a rate slower than one frame a second would otherwise divide by it.
+        /// </summary>
+        public long framesPerSecondNominal
+        {
+            get
+            {
+                if (numerator == 0) return 1;
+
+                var rounded = (denominator + (numerator / 2)) / numerator;
+                return rounded < 1 ? 1 : rounded;
+            }
+        }
+
+        /// <summary>
         /// Convert seconds to a frame number, truncating toward zero.
         /// </summary>
         /// <remarks>

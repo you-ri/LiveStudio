@@ -25,7 +25,7 @@
 .ldv-num {
     /* Wide enough for the longer of the two readings, so switching between them does not move the
        rest of the bar. */
-    min-width: 136px;
+    min-width: 104px;
     flex-shrink: 0;
 
     /* A point over the rest of the bar: a monospace face carries a smaller x-height at the same

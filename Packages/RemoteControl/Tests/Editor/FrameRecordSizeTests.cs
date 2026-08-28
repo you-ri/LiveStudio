@@ -30,11 +30,24 @@ namespace Lilium.RemoteControl.Tests
         private const int kFrames = 120;
 
         [SetUp]
-        [TearDown]
         public void ClearGate()
         {
             FrameGate.sink = null;
             FrameGate.ResetState("[test] cleared");
+            FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
+        }
+
+        /// <summary>
+        /// Puts the live clock back. The gate is process-wide, so a counter clock left behind
+        /// here counts pumps for whoever runs next -- and for the editor session after the run,
+        /// where it makes the timecode advance at whatever rate the editor happens to tick at.
+        /// </summary>
+        [TearDown]
+        public void ReleaseClearGate()
+        {
+            FrameGate.sink = null;
+            FrameGate.ResetState("[test] cleared");
+            FrameGate.RestoreDefaultClock();
         }
 
         private static double BytesPerFrame(int writesPerFrame, bool withPose)

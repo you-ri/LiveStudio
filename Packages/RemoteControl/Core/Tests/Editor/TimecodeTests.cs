@@ -85,6 +85,58 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
+        public void FrameCount_CountsEveryFrame_NotEveryOtherOneAtTheSecondBoundary()
+        {
+            // Worked out through seconds, 61 frames at 60fps came back as frame 0 of second 1 --
+            // the same timecode as frame 60 -- because the fraction left after subtracting the
+            // whole second multiplies back out to 0.9999999999999964.
+            Assert.AreEqual("00:00:01:00", new Timecode(60L, frameRate60).ToSmpteString());
+            Assert.AreEqual("00:00:01:01", new Timecode(61L, frameRate60).ToSmpteString());
+            Assert.AreEqual("00:00:01:02", new Timecode(62L, frameRate60).ToSmpteString());
+        }
+
+        [Test]
+        public void FrameCount_IsExactAcrossEveryFrameOfASecond()
+        {
+            // Every frame of a second maps to its own timecode and back, with nothing landing twice.
+            for (long frame = 0; frame < 600; frame++)
+            {
+                var timecode = new Timecode(frame, frameRate60);
+
+                Assert.AreEqual(frame % 60, timecode.frames, $"frame {frame}");
+                Assert.AreEqual(frame / 60, timecode.seconds, $"frame {frame}");
+            }
+        }
+
+        [Test]
+        public void FrameCount_RollsOverIntoMinutesAndHours()
+        {
+            Assert.AreEqual("00:01:00:00", new Timecode(3600L, frameRate60).ToSmpteString());
+            Assert.AreEqual("01:00:00:00", new Timecode(216000L, frameRate60).ToSmpteString());
+            Assert.AreEqual("01:23:08:09", new Timecode(299289L, frameRate60).ToSmpteString());
+        }
+
+        [Test]
+        public void TheStandardForm_LeavesOutTheSubFrame()
+        {
+            // Derived from a whole frame number the sub-frame is always zero, and printing ".000"
+            // every time says nothing while looking like a format nobody uses.
+            var timecode = new Timecode(93969L, frameRate60);
+
+            Assert.AreEqual("00:26:06:09", timecode.ToSmpteString());
+            Assert.AreEqual("00:26:06:09.000", timecode.ToString());
+        }
+
+        [Test]
+        public void DropFrame_IsWrittenWithASemicolon()
+        {
+            // The convention that tells the two apart on sight.
+            var timecode = new Timecode(1, 2, 3, 4, 0, dropFrameFormat: true);
+
+            Assert.AreEqual("01:02:03;04", timecode.ToSmpteString());
+        }
+
+        [Test]
         public void Constructor_WithFrameCount_CalculatesCorrectTimecode()
         {
             // 30fps * 60 seconds = 1 minute.

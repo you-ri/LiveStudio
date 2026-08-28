@@ -48,14 +48,23 @@ namespace Lilium.RemoteControl
             this.dropFrameFormat = dropFrameFormat;
         }
 
+        /// <summary>
+        /// From a whole frame count.
+        ///
+        /// Worked out in integers rather than through seconds. Going via a double loses the frame:
+        /// 61 frames at 60fps is 1.0166666666666666s, and subtracting the whole second leaves
+        /// 0.016666666666666607 -- which multiplied back out is 0.9999999999999964 and truncates to
+        /// frame 0, so frames 60 and 61 read as the same timecode.
+        /// </summary>
         public Timecode(long frameCount, FrameRate frameRate, bool dropFrameFormat = false)
         {
-            double time = frameRate.AsSecounds(frameCount);
-            int itime = (int)time;
-            hours = (itime / 60 / 60);
-            minutes = (itime / 60) % 60;
-            seconds = itime % 60;
-            frames = (int)(frameRate.AsFrameNumber(time - itime) % frameRate.denominator);
+            var perSecond = frameRate.framesPerSecondNominal;
+
+            var totalSeconds = frameCount / perSecond;
+            frames = (int)(frameCount % perSecond);
+            seconds = (int)(totalSeconds % 60);
+            minutes = (int)((totalSeconds / 60) % 60);
+            hours = (int)(totalSeconds / 3600);
             decimalFrames = 0;
             this.dropFrameFormat = dropFrameFormat;
         }
@@ -79,6 +88,19 @@ namespace Lilium.RemoteControl
         public override string ToString()
         {
             return $"{hours:00}:{minutes:00}:{seconds:00}:{frames:00}.{decimalFrames:000}";
+        }
+
+        /// <summary>
+        /// The standard SMPTE form, <c>HH:MM:SS:FF</c>, without the sub-frame part.
+        ///
+        /// For anything derived from a whole frame number, where the sub-frame is structurally zero
+        /// and printing it says nothing. Drop-frame is written with a semicolon before the frames,
+        /// which is how the two are told apart on sight.
+        /// </summary>
+        public string ToSmpteString()
+        {
+            var separator = dropFrameFormat ? ';' : ':';
+            return $"{hours:00}:{minutes:00}:{seconds:00}{separator}{frames:00}";
         }
 
         public bool Equals(Timecode other)

@@ -41,6 +41,7 @@ namespace Lilium.RemoteControl.Tests
             LiveObjectRegistry.ClearAll();
             LiveClass.RegisterFromAttributes<Fixture>();
             FrameGate.ResetState("[test] cleared");
+            FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
         }
 
         [TearDown]
@@ -48,6 +49,7 @@ namespace Lilium.RemoteControl.Tests
         {
             LiveObjectRegistry.ClearAll();
             FrameGate.ResetState("[test] cleared");
+            FrameGate.RestoreDefaultClock();
         }
 
         private static LivePropertyType Member(string name)

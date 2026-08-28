@@ -492,14 +492,14 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             // by it.
             if (!LiveDataTap.hasFrame)
             {
-                _positionLabel.text = _showTimecode ? "--:--:--:--.---" : "--------";
+                _positionLabel.text = _showTimecode ? "--:--:--:--" : "--------";
                 _rateLabel.text = LiveDataTap.isAttached ? "待機中" : "未接続";
             }
             else
             {
                 _ApplyMonospace(_positionLabel);
                 _positionLabel.text = _showTimecode
-                    ? new Timecode(snapshot.frameNumber, snapshot.frameRate).ToString()
+                    ? new Timecode(snapshot.frameNumber, snapshot.frameRate).ToSmpteString()
                     : snapshot.frameNumber.ToString("D8");
                 _rateLabel.text = snapshot.frameRate.ToString();
             }

@@ -24,11 +24,16 @@ namespace Lilium.RemoteControl.Tests
         public void StartClean()
         {
             FrameGate.ResetState("[test] cleared");
+            FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
             _source = FrameGate.ResolveSource("test-producer");
         }
 
         [TearDown]
-        public void Finish() => FrameGate.ResetState("[test] cleared");
+        public void Finish()
+        {
+            FrameGate.ResetState("[test] cleared");
+            FrameGate.RestoreDefaultClock();
+        }
 
         [Test]
         public void APostedInput_AppliesAtTheNextFrameHead_NotWhereItWasPosted()

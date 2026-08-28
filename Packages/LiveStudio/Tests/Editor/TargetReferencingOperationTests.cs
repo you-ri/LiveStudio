@@ -61,6 +61,13 @@ namespace Lilium.LiveStudio.EditorTests
         [SetUp]
         public void SetUp()
         {
+            // A step here is a step, not an interval of wall time: these tests fire an operation and
+            // run the frame head it posted to, twice in a row inside a millisecond. The live clock
+            // would put both at the same position on the time axis and skip the second frame.
+            Lilium.RemoteControl.Frames.FrameGate.SetClock(
+                new Lilium.RemoteControl.Frames.FrameCounterClock(
+                    Lilium.RemoteControl.FrameRate.FPS60));
+
             LiveObjectRegistry.ClearAll();
             LiveClass.RegisterFromAttributes<WeightedEntry>();
             LiveClass.RegisterFromAttributes<FakeTarget>();
@@ -75,6 +82,7 @@ namespace Lilium.LiveStudio.EditorTests
         public void TearDown()
         {
             LiveObjectRegistry.ClearAll();
+            Lilium.RemoteControl.Frames.FrameGate.RestoreDefaultClock();
         }
 
         /// <summary>

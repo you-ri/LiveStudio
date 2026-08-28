@@ -37,7 +37,13 @@ namespace Lilium.RemoteControl.Frames
         private static readonly InputSymbolTable _symbols = new InputSymbolTable();
 
         private static InputFrameBuffer _buffer = new InputFrameBuffer(kDefaultBufferFrames);
-        private static IFrameClock _clock = new FrameCounterClock(FrameRate.FPS60);
+        private static IFrameClock _clock = _NewDefaultClock();
+
+        /// <summary>
+        /// Number of the frame last committed, so a clock that reports the same position twice does
+        /// not get a second frame there. Negative until the first pump.
+        /// </summary>
+        private static long _lastPumpedFrameNumber = -1;
         private static SynchronizationContext _mainThreadContext;
         private static int _mainThreadId;
         private static bool _pumpInstalled;
@@ -314,8 +320,25 @@ namespace Lilium.RemoteControl.Frames
         {
             _clock = value ?? throw new ArgumentNullException(nameof(value));
             _clock.Reset();
+            _lastPumpedFrameNumber = -1;
             _buffer.Reset();
         }
+
+        /// <summary>
+        /// Puts the clock back to the one a live run uses.
+        ///
+        /// The clock is process-wide, so anything that installs one for its own purposes -- a test
+        /// driving the pump by hand, a tool stepping through a recording -- hands the rest of the
+        /// editor session whatever it left behind. A counter clock left in place makes the timecode
+        /// read as fast as the editor happens to tick, which is how it once ran ten times fast.
+        ///
+        /// Deliberately not done by <see cref="ResetState"/>: a restart must not throw away an
+        /// external sync source someone installed on purpose.
+        /// </summary>
+        public static void RestoreDefaultClock() => SetClock(_NewDefaultClock());
+
+        /// <summary>The clock a live run is driven by, unless something replaced it.</summary>
+        private static IFrameClock _NewDefaultClock() => new RealtimeFrameClock(FrameRate.FPS60);
 
         /// <summary>
         /// Resizes the retained window. Drops what is currently held. Main thread only, and not
@@ -522,6 +545,7 @@ namespace Lilium.RemoteControl.Frames
 
             _buffer.Reset();
             _clock.Reset();
+            _lastPumpedFrameNumber = -1;
             _structure.Reset();
             _state.Reset();
 
@@ -591,12 +615,18 @@ namespace Lilium.RemoteControl.Frames
             UnityEditor.AssemblyReloadEvents.beforeAssemblyReload += _ReleaseNativeStorage;
         }
 
+
         private static void _EditorTick()
         {
             // During play the player loop hook drives the pump; ticking here too would double it.
             if (Application.isPlaying) return;
 
             _pumpInstalled = true;
+
+            // No throttle here. The editor updates at its own pace -- measured at nearly 600 a
+            // second with a window repainting -- and the clock is what decides which of those are
+            // frames: it reports the same position for every update inside one interval, and Pump
+            // skips a position it has already committed.
             Pump();
         }
 #endif
@@ -679,6 +709,14 @@ namespace Lilium.RemoteControl.Frames
         public static void Pump()
         {
             var frameNumber = _clock.Advance();
+
+            // The same number again means no new frame is due: the rate is the resolution of the
+            // time axis, and two pumps inside one interval are two moments at one position.
+            // Committing a second frame there would overwrite the first -- the inputs it carried
+            // included -- so the pump is skipped and whatever arrived waits for the next interval.
+            if (frameNumber == _lastPumpedFrameNumber) return;
+            _lastPumpedFrameNumber = frameNumber;
+
             var inputs = _buffer.BeginFrame(frameNumber, _clock.frameRate);
 
             _frame.frameNumber = frameNumber;

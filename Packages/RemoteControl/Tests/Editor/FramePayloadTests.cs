@@ -21,10 +21,18 @@ namespace Lilium.RemoteControl.Tests
     public class FramePayloadTests
     {
         [SetUp]
-        public void StartClean() => FrameGate.ResetState("[test] cleared");
+        public void StartClean()
+        {
+            FrameGate.ResetState("[test] cleared");
+            FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
+        }
 
         [TearDown]
-        public void Finish() => FrameGate.ResetState("[test] cleared");
+        public void Finish()
+        {
+            FrameGate.ResetState("[test] cleared");
+            FrameGate.RestoreDefaultClock();
+        }
 
         private enum Facing
         {

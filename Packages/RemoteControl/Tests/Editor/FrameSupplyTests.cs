@@ -38,13 +38,18 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [SetUp]
-        public void StartClean() => FrameGate.ResetState("[test] cleared");
+        public void StartClean()
+        {
+            FrameGate.ResetState("[test] cleared");
+            FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
+        }
 
         [TearDown]
         public void Detach()
         {
             FrameGate.source = null;
             FrameGate.ResetState("[test] cleared");
+            FrameGate.RestoreDefaultClock();
         }
 
         [Test]
@@ -169,6 +174,7 @@ namespace Lilium.RemoteControl.Tests
             FrameGate.source = new CountingSource(10);
 
             FrameGate.ResetState("[test] cleared");
+            FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
 
             Assert.IsNull(FrameGate.source,
                 "a source left attached across a reset would supply frames into the next run");
