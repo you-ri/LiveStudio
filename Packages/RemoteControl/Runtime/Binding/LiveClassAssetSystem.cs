@@ -174,7 +174,7 @@ namespace Lilium.RemoteControl
                 if (!seen.Add((member.isFunction ? "f:" : "p:") + member.path)) continue;
 
                 if (member.isFunction) functionDefines.Add(member.ToFunctionDefine());
-                else propertyDefines.Add(member.ToPropertyDefine());
+                else propertyDefines.Add(member.ToPropertyDefine(type));
                 member.AppendSignature(sb);
             }
 
@@ -195,6 +195,7 @@ namespace Lilium.RemoteControl
                     category: string.IsNullOrEmpty(definition.category) ? "Binding" : definition.category,
                     icon: string.IsNullOrEmpty(definition.icon) ? null : definition.icon);
                 _signatureByType[type] = signature;
+                _RegisterStateBridge(liveClass);
             }
 
             // Handles created against the previous LiveClass hold stale propertyTypes.
@@ -202,6 +203,28 @@ namespace Lilium.RemoteControl
             {
                 foreach (var b in active) b.RefreshHandle(liveClass);
             }
+        }
+
+        /// <summary>
+        /// Gives the type a way onto the state lane, if it declared anything for it.
+        ///
+        /// Built here rather than by the generator because there is nothing to generate from: the
+        /// declaration is data in an asset, read at load. Only rebuilt alongside the LiveClass
+        /// itself, so a bridge cannot outlive the member list it was built from.
+        /// </summary>
+        private static void _RegisterStateBridge(LiveClass liveClass)
+        {
+            var bridge = Frames.DeclaredStateBridge.Build(liveClass);
+
+            // Nothing asked for the lane. Any bridge left from a previous definition has to go, or
+            // the type keeps being read every frame for members it no longer declares.
+            if (bridge == null)
+            {
+                Frames.StateBridgeRegistry.Unregister(liveClass.type);
+                return;
+            }
+
+            Frames.StateBridgeRegistry.Register(bridge);
         }
 
         private static void _UnregisterType(LiveClassAsset asset, Type type)

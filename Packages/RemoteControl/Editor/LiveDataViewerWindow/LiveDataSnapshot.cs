@@ -51,6 +51,14 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         public string typeName;
         public int parentId;
         public string parentName;
+
+        /// <summary>
+        /// Key of whatever made this object, or empty for one a replay does not stand up.
+        ///
+        /// Worth showing: an object with no recipe is one that scrubbing back past its spawn will
+        /// not remove, and that is not visible any other way.
+        /// </summary>
+        public string recipe;
     }
 
     /// <summary>One recorded input, kept in the viewer's own ring.</summary>

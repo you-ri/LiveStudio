@@ -87,6 +87,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         private VisualElement _inputList;
         private VisualElement _detailList;
         private Label _stateCount;
+        private Button _emptyToggle;
         private Label _inputCount;
         private Label _detailTitle;
 
@@ -107,6 +108,21 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         private bool _showTimecode;
 
         private const string kTimecodePref = "Lilium.RemoteControl.LiveDataViewer.showTimecode";
+
+        /// <summary>
+        /// Whether types carrying nothing are listed: a declared type with no block, and a block
+        /// with no elements.
+        ///
+        /// On by default, and deliberately so -- an empty lane is the case this window exists to
+        /// make visible, and a filter that hides it by default would put the silence back. But once
+        /// a project declares more types than any one run uses, the empties outnumber the live rows
+        /// and push them off the screen, so it has to be possible to fold them away while watching
+        /// something specific. The choice is per-user rather than per-window: it is a way of
+        /// looking, not a property of what is being looked at.
+        /// </summary>
+        private bool _showEmptyTypes = true;
+
+        private const string kEmptyTypesPref = "Lilium.RemoteControl.LiveDataViewer.showEmptyTypes";
 
         /// <summary>
         /// Where frames are read from: the running gate, or a file. The window draws whichever is
@@ -138,6 +154,9 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         private readonly List<StructureRowView> _structureRows = new List<StructureRowView>();
         private readonly List<DetailRowView> _detailRows = new List<DetailRowView>();
         private readonly StringBuilder _shape = new StringBuilder();
+
+        /// <summary>Which type names the snapshot carries a block for. Reused: this is walked on every redraw.</summary>
+        private readonly HashSet<string> _blocked = new HashSet<string>();
 
         private static FontAsset _monoFont;
         private static int _monoGeneration;
@@ -289,6 +308,17 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _DrawStatus();
         }
 
+        private void _ToggleEmptyTypes()
+        {
+            _showEmptyTypes = !_showEmptyTypes;
+            EditorPrefs.SetBool(kEmptyTypesPref, _showEmptyTypes);
+
+            // The set of rows changes, not their contents, so this is one of the few times the list
+            // has to be built again rather than written into.
+            _stateShape = null;
+            _DrawState();
+        }
+
         /// <summary>
         /// Sets the fixed-width face, if one could be built.
         ///
@@ -389,6 +419,11 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             spacer.AddToClassList(RemoteControlEditorStyles.kSpacer);
             header.Add(spacer);
 
+            _showEmptyTypes = EditorPrefs.GetBool(kEmptyTypesPref, true);
+            _emptyToggle = new Button(_ToggleEmptyTypes);
+            _emptyToggle.AddToClassList("ldv-toggle");
+            header.Add(_emptyToggle);
+
             lane.Add(header);
 
             _statePage = _BuildScrollPage(out _stateList);
@@ -416,6 +451,10 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
             _stateTab?.EnableInClassList("ldv-tab-active", tab == TopTab.State);
             _structureTab?.EnableInClassList("ldv-tab-active", tab == TopTab.Structure);
+
+            // The filter belongs to the state lane alone; leaving it up over the inventory would
+            // read as applying to whatever is on screen.
+            _Show(_emptyToggle, tab == TopTab.State);
 
             _DrawState();
             _DrawStructure();
@@ -760,13 +799,17 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             // is rarely; the numbers beside them change every frame, and writing those into rows that
             // already exist is what keeps the list still under the pointer.
             _shape.Clear();
+            _blocked.Clear();
             var elementTotal = 0;
             var byteTotal = 0L;
+            var emptyTotal = 0;
             for (int i = 0; i < snapshot.types.Count; i++)
             {
                 var row = snapshot.types[i];
                 _shape.Append(row.typeName).Append(':').Append(row.elements.Count).Append(';');
                 elementTotal += row.elements.Count;
+                _blocked.Add(row.typeName);
+                if (row.elements.Count == 0) emptyTotal++;
 
                 // What this lane costs every frame, which is the number to watch when deciding
                 // whether a member belongs here: state is paid for whether it changes or not.
@@ -776,8 +819,12 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                     _shape.Append(row.elements[e].ownerId).Append(',');
                 }
             }
-            foreach (var name in StateTypeRegistry.knownTypeNames) _shape.Append('!').Append(name);
-            _shape.Append('#').Append(_monoGeneration);
+            foreach (var name in StateTypeRegistry.knownTypeNames)
+            {
+                _shape.Append('!').Append(name);
+                if (!_blocked.Contains(name)) emptyTotal++;
+            }
+            _shape.Append('#').Append(_monoGeneration).Append(_showEmptyTypes ? '+' : '-');
 
             var shape = _shape.ToString();
             if (shape != _stateShape)
@@ -793,6 +840,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             }
 
             _stateTab.text = $"State  {snapshot.types.Count}";
+            _UpdateEmptyToggle(emptyTotal);
             _RefreshStateRows(snapshot);
         }
 
@@ -801,12 +849,18 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _stateList.Clear();
             _stateRows.Clear();
 
-            var drawn = new HashSet<string>();
+            var hidden = 0;
 
             for (int i = 0; i < snapshot.types.Count; i++)
             {
                 var row = snapshot.types[i];
-                drawn.Add(row.typeName);
+
+                if (row.elements.Count == 0 && !_showEmptyTypes)
+                {
+                    hidden++;
+                    continue;
+                }
+
                 _stateList.Add(_BuildTypeRow(row));
             }
 
@@ -815,15 +869,43 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             // recording", which is how it went unnoticed twice.
             foreach (var name in StateTypeRegistry.knownTypeNames)
             {
-                if (drawn.Contains(name)) continue;
+                if (_blocked.Contains(name)) continue;
+
+                if (!_showEmptyTypes)
+                {
+                    hidden++;
+                    continue;
+                }
+
                 _stateList.Add(_BuildMissingTypeRow(name));
             }
 
             if (_stateList.childCount == 0)
             {
-                _stateList.Add(_Empty(
-                    "状態レーンには何もありません。状態を運ぶ型がまだ 1 つも宣言されていない可能性があります。"));
+                // Filtered down to nothing is not the same as having nothing, and it must not be
+                // reported as such -- that is the exact confusion this window was built against.
+                _stateList.Add(_Empty(hidden > 0
+                    ? $"表示できる項目がありません。空の型 {hidden} 件がフィルターで隠れています。"
+                    : "状態レーンには何もありません。状態を運ぶ型がまだ 1 つも宣言されていない可能性があります。"));
             }
+        }
+
+        /// <summary>
+        /// Keeps the button saying what it will do and how much it is holding back.
+        ///
+        /// The count is on the button whether the empties are shown or hidden: hidden with no
+        /// number would be a filter that silently swallows an unknown amount, which is the one
+        /// thing this window must never do.
+        /// </summary>
+        private void _UpdateEmptyToggle(int empty)
+        {
+            if (_emptyToggle == null) return;
+
+            _emptyToggle.text = _showEmptyTypes ? $"空を隠す  {empty}" : $"空を表示  {empty}";
+            _emptyToggle.tooltip = _showEmptyTypes
+                ? "要素 0 の型と、登録済みでブロックの無い型を一覧から隠します。"
+                : $"空の型 {empty} 件が隠れています。クリックで再表示します。";
+            _emptyToggle.EnableInClassList("ldv-toggle-active", !_showEmptyTypes);
         }
 
         private void _RefreshStateRows(LiveDataSnapshot snapshot)
@@ -1129,6 +1211,13 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _rows.Add(new LiveDataValueRow("type", string.IsNullOrEmpty(entry.typeName) ? "-" : entry.typeName));
             _rows.Add(new LiveDataValueRow("parent",
                 entry.parentId == InputSymbolTable.kNone ? "(なし)" : entry.parentName));
+
+            // Whether a replay can stand this back up. Empty is common and not an error -- an object
+            // that was in the scene from the start is listed so its values have an owner -- but it
+            // also means scrubbing back past this object's spawn will not remove it, and that is not
+            // visible anywhere else.
+            _rows.Add(new LiveDataValueRow("recipe",
+                string.IsNullOrEmpty(entry.recipe) ? "(なし・再生では作り直されません)" : entry.recipe));
 
             // What the inventory says exists, against what the state lane is actually carrying for
             // it. An object with no state is not an error -- most have none -- but an object that

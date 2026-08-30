@@ -58,14 +58,15 @@ namespace Lilium.RemoteControl.Frames.Recording
 
         /// <summary>
         /// 2 added the keyframe list to the tail; 3 added the verb to an input entry; 4 made an
-        /// input payload typed bytes rather than text. Refused rather than guessed at: an older
-        /// layout read at the newer offsets produces values that look plausible, which is worse
-        /// than a file that will not open.
+        /// input payload typed bytes rather than text; 5 added the recipe to an inventory entry, so
+        /// a replay can build back what it lists rather than only recognise it. Refused rather than
+        /// guessed at: an older layout read at the newer offsets produces values that look
+        /// plausible, which is worse than a file that will not open.
         ///
         /// The marks above changed with the rename to live data, which is a clean break: a file
         /// written before it is refused at the first four bytes rather than at the version.
         /// </summary>
-        public const int kVersion = 4;
+        public const int kVersion = 5;
 
         /// <summary>
         /// Bytes the footer occupies: the three tail offsets and the marker. Read from the end.

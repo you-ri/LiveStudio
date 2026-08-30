@@ -130,6 +130,20 @@ namespace Lilium.RemoteControl.Frames
         }
 
         /// <summary>
+        /// Takes a type off the lane.
+        ///
+        /// For a declaration that can change while running: an asset that stops declaring state has
+        /// to stop being read every frame for members it no longer has.
+        /// </summary>
+        public static void Unregister(Type ownerType)
+        {
+            if (ownerType == null || !_byOwner.TryGetValue(ownerType, out var existing)) return;
+
+            _byOwner.Remove(ownerType);
+            _ordered.Remove(existing);
+        }
+
+        /// <summary>
         /// The bridge for a type, or null.
         ///
         /// Exact type only. A derived type gets its own bridge from the generator, carrying the

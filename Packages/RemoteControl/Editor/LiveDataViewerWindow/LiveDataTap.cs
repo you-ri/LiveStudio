@@ -253,6 +253,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                     parentName = entry.parentId == InputSymbolTable.kNone
                         ? string.Empty
                         : resolve(entry.parentId),
+                    recipe = resolve(entry.recipeId),
                 });
             }
         }

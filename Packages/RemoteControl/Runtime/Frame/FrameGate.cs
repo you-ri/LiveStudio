@@ -708,6 +708,14 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         public static void Pump()
         {
+            // Whoever calls this is the pump. The flag decides whether a posted input is queued for
+            // a frame head or applied on the spot as a hole in the ordering, and the question it
+            // answers is "will anything come along and apply this" -- a caller of Pump demonstrably
+            // will. Set here as well as at install time so a host driving the gate from its own loop
+            // does not have to say so twice, and so a reset does not leave the gate looking dead
+            // while something is still pumping it.
+            _pumpInstalled = true;
+
             var frameNumber = _clock.Advance();
 
             // The same number again means no new frame is due: the rate is the resolution of the

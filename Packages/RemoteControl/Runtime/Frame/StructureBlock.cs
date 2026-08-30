@@ -17,6 +17,21 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>Interned id of the parent, or <see cref="InputSymbolTable.kNone"/>.</summary>
         public int parentId;
 
+        /// <summary>
+        /// Interned key naming how to make this object again, or
+        /// <see cref="InputSymbolTable.kNone"/> for one that cannot be.
+        ///
+        /// The type name is not enough to build from. Two makers can both produce the same type from
+        /// different prefabs, so a replay given only the type would pick one of them and be right by
+        /// luck. What is recorded is the key of the maker itself -- see <see cref="ILiveRecipe"/>.
+        ///
+        /// None is a legitimate value and means the object is not something a replay stands up: it
+        /// was in the scene from the start, or nothing has said how to make it. Such an object is
+        /// still in the inventory, still addressed by the state lane, and still removed when the
+        /// recording stops listing it.
+        /// </summary>
+        public int recipeId;
+
         public override string ToString() => $"#{id} type:{typeId} parent:{parentId}";
     }
 
@@ -86,7 +101,8 @@ namespace Lilium.RemoteControl.Frames
         /// something actually changed, which is also when <see cref="epoch"/> advances -- a
         /// re-declaration of what is already known must not invalidate the state written against it.
         /// </summary>
-        public bool AddOrUpdate(int id, int typeId, int parentId)
+        public bool AddOrUpdate(int id, int typeId, int parentId,
+            int recipeId = InputSymbolTable.kNone)
         {
             var index = IndexOf(id);
             if (index >= 0)
@@ -94,10 +110,15 @@ namespace Lilium.RemoteControl.Frames
                 ref var existing = ref UnsafeUtility.ArrayElementAsRef<ObjectEntry>(
                     _objects.GetUnsafePtr(), index);
 
-                if (existing.typeId == typeId && existing.parentId == parentId) return false;
+                if (existing.typeId == typeId && existing.parentId == parentId
+                    && existing.recipeId == recipeId)
+                {
+                    return false;
+                }
 
                 existing.typeId = typeId;
                 existing.parentId = parentId;
+                existing.recipeId = recipeId;
                 _epoch++;
                 return true;
             }
@@ -110,6 +131,7 @@ namespace Lilium.RemoteControl.Frames
             created.id = id;
             created.typeId = typeId;
             created.parentId = parentId;
+            created.recipeId = recipeId;
 
             _count++;
             _epoch++;

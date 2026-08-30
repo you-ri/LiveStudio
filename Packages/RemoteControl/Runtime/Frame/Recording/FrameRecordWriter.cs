@@ -112,7 +112,7 @@ namespace Lilium.RemoteControl.Frames.Recording
             _keyframes.Add(_currentFrameNumber);
 
             var count = structure.count;
-            _BeginEntry(FrameEntryKind.Structure, 8 + 4 + count * (4 + 4 + 4));
+            _BeginEntry(FrameEntryKind.Structure, 8 + 4 + count * (4 + 4 + 4 + 4));
             _writer.Write(structure.epoch);
             _writer.Write(count);
 
@@ -122,6 +122,7 @@ namespace Lilium.RemoteControl.Frames.Recording
                 _writer.Write(entry.id);
                 _writer.Write(entry.typeId);
                 _writer.Write(entry.parentId);
+                _writer.Write(entry.recipeId);
             }
         }
 

@@ -287,9 +287,10 @@ namespace Lilium.RemoteControl.Frames.Recording
                 var id = BitConverter.ToInt32(payload.Slice(offset, 4));
                 var typeId = BitConverter.ToInt32(payload.Slice(offset + 4, 4));
                 var parentId = BitConverter.ToInt32(payload.Slice(offset + 8, 4));
-                offset += 12;
+                var recipeId = BitConverter.ToInt32(payload.Slice(offset + 12, 4));
+                offset += 16;
 
-                structure.AddOrUpdate(id, typeId, parentId);
+                structure.AddOrUpdate(id, typeId, parentId, recipeId);
                 seen.Add(id);
             }
 

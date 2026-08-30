@@ -75,6 +75,13 @@ namespace Lilium.LiveStudio.EditorTests
                 new Lilium.RemoteControl.Frames.FrameCounterClock(
                     Lilium.RemoteControl.FrameRate.FPS60));
 
+            // One pump before anything is posted, so the gate counts as running.
+            //
+            // A posted input is applied on the spot when nothing is going to pump, and whether that
+            // was true depended on whether some earlier fixture had reset the gate -- which made
+            // these tests pass alone and fail in a suite.
+            Lilium.RemoteControl.Frames.FrameGate.Pump();
+
             LiveObjectRegistry.ClearAll();
             LiveClass.RegisterFromAttributes<WeightedEntry>();
             LiveClass.RegisterFromAttributes<FakeTarget>();

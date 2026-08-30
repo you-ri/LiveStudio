@@ -245,6 +245,12 @@ namespace Lilium.LiveStudio
             // system writes the recorded values back onto the objects instead of reading them off.
             _StartStateSystem();
 
+            // The same reversal for the inventory: it is acted on rather than taken. This is off by
+            // default because a viewer watching a replay must not have the recording rearrange the
+            // scene it is being watched in -- but a replay is exactly the case that wants it, and
+            // without it scrubbing back past a spawn leaves the spawn standing.
+            LiveStructureSystem.applyOnSuppliedFrames = true;
+
             // The replay is where the frame comes from now, not something that runs during one. That
             // is what puts it ahead of the producers -- they read the frame it filled rather than
             // racing it in an order nobody declared.
@@ -265,6 +271,12 @@ namespace Lilium.LiveStudio
 
             FrameGate.onSourceEnded -= _OnReplayEnded;
             if (ReferenceEquals(FrameGate.source, replayer)) FrameGate.source = null;
+
+            LiveStructureSystem.applyOnSuppliedFrames = false;
+
+            // What the replay stood up stays, but stops being the replay's to take away: the next
+            // take must not be able to destroy these by not listing them.
+            LiveStructureSystem.ForgetMade();
 
             var applied = replayer.appliedInputCount;
             var failed = replayer.failedInputCount;

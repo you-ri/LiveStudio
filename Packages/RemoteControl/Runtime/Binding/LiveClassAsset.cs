@@ -141,16 +141,48 @@ namespace Lilium.RemoteControl
         [Tooltip("Explicit display order. Negative moves earlier, positive later, 0 keeps list order")]
         public int order;
 
+        [Tooltip("Which lane of the live data carries this member. Auto puts fields on the state lane and properties on the input lane")]
+        public LiveClassAssetLane lane = LiveClassAssetLane.Auto;
+
         [Tooltip("Controller used to render the member in RemoteApp. None = default for the value type")]
         [SerializeReference, Select]
         public LiveBindingControl control;
 
-        internal LivePropertyDefine ToPropertyDefine()
+        /// <summary>
+        /// The lane this member asks for, resolving <see cref="LiveClassAssetLane.Auto"/> against
+        /// what the member actually is.
+        ///
+        /// A field defaults to the state lane and a property to the input lane, because that is what
+        /// the two usually are: a field holds a value that something else drives every frame, and a
+        /// property is written from outside. Either can be said explicitly when it is not.
+        /// </summary>
+        internal FrameLane ResolveLane(Type ownerType)
+        {
+            switch (lane)
+            {
+                case LiveClassAssetLane.Input: return FrameLane.Input;
+                case LiveClassAssetLane.State: return FrameLane.State;
+                case LiveClassAssetLane.None: return FrameLane.None;
+            }
+
+            if (ownerType == null || string.IsNullOrEmpty(path)) return FrameLane.Input;
+
+            const System.Reflection.BindingFlags flags =
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.Instance;
+
+            return ownerType.GetField(path, flags) != null
+                ? FrameLane.State
+                : FrameLane.Input;
+        }
+
+        internal LivePropertyDefine ToPropertyDefine(Type ownerType = null)
         {
             return new LivePropertyDefine
             {
                 name = path,
                 path = path,
+                lane = ResolveLane(ownerType),
                 isPersistable = persistable,
                 isReadOnly = readOnly,
                 persistScope = PersistScope.Scene,
