@@ -269,3 +269,34 @@
     flex-basis: 0;
     min-height: 0;
 }
+
+/* The transport. Fixed height like the status bar above it: it must not give up room as the
+   lists below it fill, or the control that moves through a recording shrinks out of reach. */
+.ldv-transport {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    padding: 2px 6px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(0, 0, 0, 0.25);
+}
+
+.ldv-transport > Button {
+    flex-shrink: 0;
+    margin: 0 2px;
+    min-width: 26px;
+}
+
+.ldv-file {
+    flex-shrink: 1;
+    max-width: 220px;
+    margin: 0 6px;
+    -unity-font-style: bold;
+}
+
+.ldv-frame-index {
+    flex-shrink: 0;
+    min-width: 96px;
+    -unity-text-align: middle-right;
+    margin: 0 6px;
+}

@@ -107,6 +107,31 @@ namespace Lilium.RemoteControl.Frames.Recording
         public void Rewind() => _stream.Position = _entriesOffset;
 
         /// <summary>
+        /// Where the next entry starts.
+        ///
+        /// For building an index over a file that has none. A recording cut short has no tail, and a
+        /// reader that can only walk forward makes browsing it quadratic: noting each frame's offset
+        /// on one pass turns every later jump into a seek.
+        /// </summary>
+        public long position => _stream.Position;
+
+        /// <summary>
+        /// Goes back to an offset a previous <see cref="position"/> reported.
+        ///
+        /// Refuses anything outside the entries rather than trusting the caller: an offset landing
+        /// in the header or the tail would be read as an entry, and the length it found there would
+        /// send the next read somewhere arbitrary.
+        /// </summary>
+        public bool TrySeekTo(long offset)
+        {
+            if (offset < _entriesOffset || offset >= _stream.Length) return false;
+            if (_frameOffsets != null && offset >= _tailOffset) return false;
+
+            _stream.Position = offset;
+            return true;
+        }
+
+        /// <summary>
         /// Jumps to the start of a frame. Needs the tail index; without one, walk from
         /// <see cref="Rewind"/> instead.
         /// </summary>

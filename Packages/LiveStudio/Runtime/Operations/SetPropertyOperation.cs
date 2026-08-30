@@ -188,8 +188,21 @@ namespace Lilium.LiveStudio
 
                 property.Value.SetValue(value);
 
-                FrameGate.StampAppliedPayload(
-                    target, property.Value.type?.resolvedValueType, property.Value.GetValue());
+                if (property.Value.type?.lane == FrameLane.State)
+                {
+                    // The state lane copies this member every frame, so an input record for it would
+                    // be the same value written twice -- and the input pays its full width to say
+                    // what the state lane already said. The write still took its place in the order.
+                    // Same rule the REST path applies; a deck key and a remote write are the same
+                    // write, and only one of them honouring it would record a value once or twice
+                    // depending on which control was used.
+                    FrameGate.OmitAppliedRecord(target);
+                }
+                else
+                {
+                    FrameGate.StampAppliedPayload(
+                        target, property.Value.type?.resolvedValueType, property.Value.GetValue());
+                }
             });
         }
 

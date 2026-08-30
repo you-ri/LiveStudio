@@ -5,3 +5,7 @@ using System.Runtime.CompilerServices;
 // and USS vocabulary (RemoteControlEditorStyles), which stays internal to keep the package's
 // public API to what consumers actually script against.
 [assembly: InternalsVisibleTo("Lilium.RemoteControl.UI.Editor")]
+
+// The LiveData Viewer's file reader is internal but has to be tested: it parses the recording
+// format by hand, which is exactly the kind of thing that drifts from the writer silently.
+[assembly: InternalsVisibleTo("Lilium.RemoteControl.Editor.Tests")]

@@ -18,6 +18,13 @@ namespace Lilium.LiveStudio.EditorTests
         public class FakeTarget
         {
             [LiveField] public bool flag;
+
+            // A member the state lane carries, to check that a deck key writing it is treated the
+            // same way a remote write to it is.
+            [LiveField(lane = FrameLane.State)] public float carried;
+
+            // Its counterpart in the input lane, so the two can be told apart in the same fixture.
+            [LiveField] public float requested;
             public int invokeCount;
 
             // Records the last argument received by SetValue so an argument-bearing invoke can be asserted.
@@ -245,6 +252,44 @@ namespace Lilium.LiveStudio.EditorTests
 
             Assert.AreEqual(0.5f, _target.weights[1].weight, "the float weight is written from context.value via the key path");
             Assert.AreEqual(0f, _target.weights[0].weight, "the other entry is untouched");
+        }
+
+        [Test]
+        public void SetPropertyOperation_OnAStateLaneMember_LeavesNoInputRecord()
+        {
+            // The deck key and the remote write are the same write. Only the REST path honoured the
+            // lane, so the same value recorded once or twice depending on which control was used.
+            var action = new SetPropertyOperation { targetId = kTargetId, propertyPath = "carried" };
+            var omitted = Lilium.RemoteControl.Frames.FrameGate.omittedRecordCount;
+
+            Fire(action, Value(0.5f));
+
+            Assert.AreEqual(0.5f, _target.carried, 1e-5f, "the write still lands");
+
+            using var frame = new Lilium.RemoteControl.Frames.InputFrame();
+            Assert.AreEqual(Lilium.RemoteControl.Frames.FrameLookup.Found,
+                Lilium.RemoteControl.Frames.FrameGate.buffer.TryReadLatest(frame));
+
+            Assert.AreEqual(0, frame.inputCount, "the state lane already carries it");
+            Assert.AreEqual(omitted + 1, Lilium.RemoteControl.Frames.FrameGate.omittedRecordCount,
+                "counted, so 'no input for this' can be told from 'the input went missing'");
+        }
+
+        [Test]
+        public void SetPropertyOperation_OnAnInputLaneMember_IsStillRecorded()
+        {
+            var action = new SetPropertyOperation { targetId = kTargetId, propertyPath = "requested" };
+
+            Fire(action, Value(0.5f));
+
+            using var frame = new Lilium.RemoteControl.Frames.InputFrame();
+            Assert.AreEqual(Lilium.RemoteControl.Frames.FrameLookup.Found,
+                Lilium.RemoteControl.Frames.FrameGate.buffer.TryReadLatest(frame));
+
+            Assert.AreEqual(1, frame.inputCount);
+            Assert.AreEqual("operation",
+                Lilium.RemoteControl.Frames.FrameGate.symbols.Resolve(frame[0].sourceId),
+                "recorded as coming from the operator's own controls");
         }
 
         [Test]

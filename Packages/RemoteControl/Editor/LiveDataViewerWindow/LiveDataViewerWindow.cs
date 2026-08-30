@@ -108,6 +108,22 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
         private const string kTimecodePref = "Lilium.RemoteControl.LiveDataViewer.showTimecode";
 
+        /// <summary>
+        /// Where frames are read from: the running gate, or a file. The window draws whichever is
+        /// active without knowing which it is -- a recording has to be readable with the same eyes
+        /// that watched it being made.
+        /// </summary>
+        private ILiveDataFeed _feed = LiveDataTapFeed.instance;
+
+        private LiveDataFileFeed _file;
+
+        private VisualElement _transport;
+        private Label _fileLabel;
+        private Label _frameLabel;
+        private Button _openButton;
+        private Button _closeButton;
+        private SliderInt _frameSlider;
+
         private double _nextRedraw;
         private long _drawnVersion = -1;
 
@@ -144,6 +160,10 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         {
             EditorApplication.update -= _OnUpdate;
             LiveDataTap.Release();
+
+            // The file holds an open handle. Left behind, it keeps the recording locked against the
+            // recorder that would overwrite it.
+            _CloseFile();
         }
 
         private void _OnUpdate()
@@ -155,9 +175,10 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             // The gate's own counters move without a frame going by (a bypassed write, a detached
             // observer), so the header is refreshed on the clock rather than on the version.
             _DrawStatus();
+            _DrawTransport();
 
-            if (_drawnVersion == LiveDataTap.version) return;
-            _drawnVersion = LiveDataTap.version;
+            if (_drawnVersion == _feed.version) return;
+            _drawnVersion = _feed.version;
 
             _DrawBanners();
             _DrawState();
@@ -173,6 +194,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             root.AddToClassList("ldv-root");
 
             root.Add(_BuildStatusBar());
+            root.Add(_BuildTransport());
 
             _banners = new VisualElement();
             root.Add(_banners);
@@ -192,6 +214,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
             _Invalidate();
             _DrawStatus();
+            _DrawTransport();
             _DrawBanners();
             _DrawState();
             _DrawStructure();
@@ -434,7 +457,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             {
                 header.Add(new Button(() =>
                 {
-                    LiveDataTap.ClearInputs();
+                    _feed.ClearInputs();
                     _Invalidate();
                 })
                 { text = "Clear" });
@@ -480,20 +503,180 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             return pane;
         }
 
+        // --- transport ----------------------------------------------------
+
+        /// <summary>
+        /// The row that opens a recording and moves through it.
+        ///
+        /// Always present, even with no file open: the button that opens one has to be somewhere,
+        /// and a row that appears only once you already know the feature exists is a row nobody
+        /// finds. The parts that only mean something for a file are hidden until there is one.
+        /// </summary>
+        private VisualElement _BuildTransport()
+        {
+            _transport = new VisualElement();
+            _transport.AddToClassList("ldv-transport");
+
+            _openButton = new Button(_OpenFile) { text = "開く…" };
+            _transport.Add(_openButton);
+
+            _fileLabel = new Label();
+            _fileLabel.AddToClassList(RemoteControlEditorStyles.kEllipsis);
+            _fileLabel.AddToClassList("ldv-file");
+            _transport.Add(_fileLabel);
+
+            _transport.Add(new Button(() => _StepFrame(-1)) { text = "◀" });
+            _transport.Add(new Button(() => _StepFrame(1)) { text = "▶" });
+
+            _frameSlider = new SliderInt(0, 0);
+            _frameSlider.AddToClassList(RemoteControlEditorStyles.kGrow);
+
+            // Only a drag the user made moves the position. Writing the slider's value while drawing
+            // would otherwise feed straight back in as a seek and fight whatever is being dragged.
+            _frameSlider.RegisterValueChangedCallback(e =>
+            {
+                if (_file == null) return;
+                if (e.newValue == _file.frameIndex) return;
+
+                _file.Seek(e.newValue);
+                _Invalidate();
+            });
+            _transport.Add(_frameSlider);
+
+            _frameLabel = new Label();
+            _frameLabel.AddToClassList("ldv-num");
+            _frameLabel.AddToClassList("ldv-frame-index");
+            _ApplyMonospace(_frameLabel);
+            _transport.Add(_frameLabel);
+
+            _closeButton = new Button(_CloseFile) { text = "閉じる" };
+            _transport.Add(_closeButton);
+
+            return _transport;
+        }
+
+        private void _DrawTransport()
+        {
+            if (_transport == null) return;
+
+            var open = _file != null;
+
+            _Show(_fileLabel, open);
+            _Show(_frameSlider, open);
+            _Show(_frameLabel, open);
+            _Show(_closeButton, open);
+
+            for (int i = 0; i < _transport.childCount; i++)
+            {
+                var child = _transport[i];
+                if (child is Button button && (button.text == "◀" || button.text == "▶")) _Show(button, open);
+            }
+
+            if (!open) return;
+
+            var count = _file.frameCount;
+            var index = _file.frameIndex;
+
+            _fileLabel.text = _file.label;
+            _fileLabel.tooltip = _file.path;
+
+            // A file cut short is still readable, and saying so is the difference between "the
+            // recording is short" and "the recorder never closed it".
+            if (!_file.isComplete) _fileLabel.text += "  (未完了)";
+
+            _frameLabel.text = count == 0 ? "0 / 0" : $"{index + 1} / {count}";
+
+            if (_frameSlider.highValue != Mathf.Max(count - 1, 0))
+            {
+                _frameSlider.highValue = Mathf.Max(count - 1, 0);
+            }
+
+            if (_frameSlider.value != index && index >= 0) _frameSlider.SetValueWithoutNotify(index);
+        }
+
+        private static void _Show(VisualElement element, bool visible)
+        {
+            if (element == null) return;
+
+            element.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        private void _StepFrame(int delta)
+        {
+            if (_file == null) return;
+
+            _file.Seek(_file.frameIndex + delta);
+            _Invalidate();
+        }
+
+        private void _OpenFile()
+        {
+            var path = EditorUtility.OpenFilePanel("LiveData を開く", string.Empty, "livedata");
+            if (string.IsNullOrEmpty(path)) return;
+
+            var feed = new LiveDataFileFeed();
+            try
+            {
+                feed.Open(path);
+            }
+            catch (System.Exception exception)
+            {
+                // Shown rather than logged: the user asked for this file by name, so the answer
+                // belongs where they asked. A recording from another format says so here.
+                feed.Dispose();
+                EditorUtility.DisplayDialog("LiveData Viewer", exception.Message, "OK");
+                return;
+            }
+
+            _CloseFile();
+
+            _file = feed;
+            _feed = feed;
+            _ResetSelection();
+            _Invalidate();
+        }
+
+        private void _CloseFile()
+        {
+            if (_file == null) return;
+
+            _file.Dispose();
+            _file = null;
+            _feed = LiveDataTapFeed.instance;
+            _ResetSelection();
+            _Invalidate();
+        }
+
+        /// <summary>
+        /// Drops what was selected when the feed changes.
+        ///
+        /// Ids belong to whoever supplied the frame, so a selection carried across from a recording
+        /// into the live gate would name whatever happens to hold that number now.
+        /// </summary>
+        private void _ResetSelection()
+        {
+            _detailKind = DetailKind.None;
+            _selectedType = null;
+            _selectedOwnerId = InputSymbolTable.kNone;
+            _selectedInputRowId = -1;
+            _selectedObjectId = InputSymbolTable.kNone;
+            _feed.Select(null, InputSymbolTable.kNone);
+        }
+
         // --- status -------------------------------------------------------
 
         private void _DrawStatus()
         {
             if (_positionLabel == null) return;
 
-            var snapshot = LiveDataTap.snapshot;
+            var snapshot = _feed.snapshot;
 
             // Nothing has come through yet: the rate is still zero, and a timecode wants to divide
             // by it.
-            if (!LiveDataTap.hasFrame)
+            if (!_feed.hasFrame)
             {
                 _positionLabel.text = _showTimecode ? "--:--:--:--" : "--------";
-                _rateLabel.text = LiveDataTap.isAttached ? "待機中" : "未接続";
+                _rateLabel.text = _feed.isAttached ? "待機中" : "未接続";
             }
             else
             {
@@ -571,7 +754,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         {
             if (_stateList == null) return;
 
-            var snapshot = LiveDataTap.snapshot;
+            var snapshot = _feed.snapshot;
 
             // The shape is which types and owners are present. It changes when the world does, which
             // is rarely; the numbers beside them change every frame, and writing those into rows that
@@ -786,7 +969,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _detailKind = DetailKind.StateElement;
             _selectedType = typeName;
             _selectedOwnerId = ownerId;
-            LiveDataTap.Select(typeName, ownerId);
+            _feed.Select(typeName, ownerId);
             _Invalidate();
         }
 
@@ -803,7 +986,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         {
             if (_structureList == null) return;
 
-            var snapshot = LiveDataTap.snapshot;
+            var snapshot = _feed.snapshot;
 
             _structureTab.text = $"Structure  {snapshot.structure.Count}";
 
@@ -927,7 +1110,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
         private void _BuildStructureDetail()
         {
-            var snapshot = LiveDataTap.snapshot;
+            var snapshot = _feed.snapshot;
 
             if (!_TryFindObject(snapshot, _selectedObjectId, out var entry))
             {
@@ -986,8 +1169,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         {
             if (_inputList == null) return;
 
-            var count = LiveDataTap.inputCount;
-            var newest = count == 0 ? -1 : LiveDataTap.GetInput(count - 1).sequence;
+            var count = _feed.inputCount;
+            var newest = count == 0 ? -1 : _feed.GetInput(count - 1).sequence;
 
             // Inputs only arrive, so the list is rebuilt when one does and left alone otherwise.
             var shape = $"{count}:{newest}:{_selectedInputRowId}:{_detailKind}:{_monoGeneration}";
@@ -1007,7 +1190,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             // Newest first: what just happened is what is being looked for.
             for (int i = count - 1; i >= 0; i--)
             {
-                _inputList.Add(_BuildInputRow(LiveDataTap.GetInput(i)));
+                _inputList.Add(_BuildInputRow(_feed.GetInput(i)));
             }
         }
 
@@ -1052,12 +1235,12 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             return line;
         }
 
-        private static bool _TryFindInput(long rowId, out InputRow input)
+        private bool _TryFindInput(long rowId, out InputRow input)
         {
-            var count = LiveDataTap.inputCount;
+            var count = _feed.inputCount;
             for (int i = count - 1; i >= 0; i--)
             {
-                var candidate = LiveDataTap.GetInput(i);
+                var candidate = _feed.GetInput(i);
                 if (candidate.rowId != rowId) continue;
 
                 input = candidate;
@@ -1098,7 +1281,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
         private void _BuildStateDetail()
         {
-            var snapshot = LiveDataTap.snapshot;
+            var snapshot = _feed.snapshot;
             _detailTitle.text = $"{_ShortTypeName(_selectedType)}  ({snapshot.selectedValueLength} B)";
 
             if (snapshot.selectedType != _selectedType ||
