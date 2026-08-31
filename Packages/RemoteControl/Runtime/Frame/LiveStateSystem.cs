@@ -1,5 +1,6 @@
 // Copyright (c) You-Ri, 2026
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -69,6 +70,10 @@ namespace Lilium.RemoteControl.Frames
         {
             if (_users++ > 0) return;
 
+            // The scene as it is now is the scene this is about to start carrying. Resolving it here
+            // rather than per frame keeps a scene walk out of the frame head.
+            LiveObjectRoster.Refresh();
+
             _source = FrameGate.ResolveSource(kSourceName);
             FrameGate.AddFrameHeadHandler(_OnFrameHead);
         }
@@ -112,6 +117,28 @@ namespace Lilium.RemoteControl.Frames
                 captured += _Capture(target, handle.id, state, time, depth: 0);
             }
 
+            // Then the exposed scene components, which are not registered but are addressable by
+            // their type name. Without them a recording says nothing changed about the screen
+            // rather than saying nothing about it.
+            var scene = LiveObjectRoster.sceneComponents;
+            for (int i = 0; i < scene.Count; i++)
+            {
+                var entry = scene[i];
+                if (!entry.isAlive)
+                {
+                    _staleRoster = true;
+                    continue;
+                }
+
+                // Registered since the roster was resolved: the walk above carried it already, and
+                // carrying it here as well would write the same address twice.
+                if (LiveObjectRegistry.FindByTarget(entry.target) != null) continue;
+
+                captured += _Capture(entry.target, entry.id, state, time, depth: 0);
+            }
+
+            _RefreshRosterIfStale();
+
             return captured;
         }
 
@@ -135,7 +162,37 @@ namespace Lilium.RemoteControl.Frames
                 applied += _Apply(target, handle.id, state, depth: 0);
             }
 
+            var scene = LiveObjectRoster.sceneComponents;
+            for (int i = 0; i < scene.Count; i++)
+            {
+                var entry = scene[i];
+                if (!entry.isAlive)
+                {
+                    _staleRoster = true;
+                    continue;
+                }
+
+                if (LiveObjectRegistry.FindByTarget(entry.target) != null) continue;
+
+                applied += _Apply(entry.target, entry.id, state, depth: 0);
+            }
+
+            _RefreshRosterIfStale();
+
             return applied;
+        }
+
+        // Set when the walk finds an entry whose object has gone, which means a scene changed under
+        // the roster. Acted on after the walk rather than during it, because refreshing rebuilds the
+        // list being walked.
+        private static bool _staleRoster;
+
+        private static void _RefreshRosterIfStale()
+        {
+            if (!_staleRoster) return;
+
+            _staleRoster = false;
+            LiveObjectRoster.Refresh();
         }
 
         /// <summary>
@@ -174,11 +231,66 @@ namespace Lilium.RemoteControl.Frames
             return composed;
         }
 
+        /// <summary>
+        /// The address one element of a collection is carried under: the owner, the member holding
+        /// the collection, and which element -- written the way this codebase already addresses one
+        /// (<c>expressions[Joy]</c>).
+        ///
+        /// By key when the element type declares one, because that is the address that survives the
+        /// collection being reordered: a recording keyed by position would, after an insert, put
+        /// every value on the element next door. By position only when there is nothing else to go
+        /// on.
+        /// </summary>
+        public static string ComposeElementId(string ownerId, string memberName, object element, int index)
+        {
+            var key = _KeyOf(element) ?? _IndexKey(index);
+            var slot = (memberName, key);
+
+            if (!_elementSlots.TryGetValue(slot, out var composed))
+            {
+                composed = memberName + "[" + key + "]";
+                _elementSlots[slot] = composed;
+            }
+
+            return ComposeNestedId(ownerId, composed);
+        }
+
+        /// <summary>The element's own key, when its type declares one. Null otherwise.</summary>
+        private static string _KeyOf(object element)
+        {
+            var liveClass = LiveClass.Find(element.GetType());
+            var key = liveClass?.keyProperty;
+            if (key == null) return null;
+
+            var value = LivePropertyUtility.GetValueRaw(element, in key);
+            var text = value as string ?? value?.ToString();
+            return string.IsNullOrEmpty(text) ? null : text;
+        }
+
+        /// <summary>
+        /// The position as a string, from a table rather than built each time: this runs per element
+        /// per frame, and a fresh string for every index would allocate through the whole take.
+        /// </summary>
+        private static string _IndexKey(int index)
+        {
+            if (index < 0) return "0";
+
+            if (index >= _indexKeys.Length)
+            {
+                var grown = new string[Math.Max(index + 1, _indexKeys.Length * 2)];
+                Array.Copy(_indexKeys, grown, _indexKeys.Length);
+                _indexKeys = grown;
+            }
+
+            return _indexKeys[index] ?? (_indexKeys[index] = index.ToString());
+        }
+
         /// <summary>Forgets the cached class layouts, composed ids and reports. For tests.</summary>
         internal static void ClearCaches()
         {
             _classInfo.Clear();
             _composedIds.Clear();
+            _elementSlots.Clear();
             _reported.Clear();
         }
 
@@ -200,11 +312,21 @@ namespace Lilium.RemoteControl.Frames
 
         private static readonly int[] _noNested = Array.Empty<int>();
 
+        // "member[key]" by the pair it was built from, for the same reason the composed ids are
+        // cached: the walk asks for the same handful of them sixty times a second.
+        private static readonly Dictionary<(string, string), string> _elementSlots =
+            new Dictionary<(string, string), string>();
+
+        private static string[] _indexKeys = new string[16];
+
         /// <summary>What the walk needs to know about one exposed class.</summary>
         private sealed class ClassInfo
         {
             /// <summary>Indices of the members holding a nested live object.</summary>
             public int[] nested;
+
+            /// <summary>Indices of the members holding a collection of live objects.</summary>
+            public int[] collections;
 
             /// <summary>True when the class asks for the state lane at all.</summary>
             public bool declaresState;
@@ -259,6 +381,22 @@ namespace Lilium.RemoteControl.Frames
                 captured += _Capture(value, ComposeNestedId(id, member.name), state, time, depth + 1);
             }
 
+            var collections = info.collections;
+            for (int i = 0; i < collections.Length; i++)
+            {
+                var member = liveClass.propertyTypes[collections[i]];
+                if (!(LivePropertyUtility.GetValueRaw(target, in member) is IList list)) continue;
+
+                for (int e = 0; e < list.Count; e++)
+                {
+                    var element = list[e];
+                    if (element == null) continue;
+
+                    captured += _Capture(element, ComposeElementId(id, member.name, element, e),
+                        state, time, depth + 1);
+                }
+            }
+
             return captured;
         }
 
@@ -284,6 +422,22 @@ namespace Lilium.RemoteControl.Frames
                 applied += _Apply(value, ComposeNestedId(id, member.name), state, depth + 1);
             }
 
+            var collections = info.collections;
+            for (int i = 0; i < collections.Length; i++)
+            {
+                var member = liveClass.propertyTypes[collections[i]];
+                if (!(LivePropertyUtility.GetValueRaw(target, in member) is IList list)) continue;
+
+                for (int e = 0; e < list.Count; e++)
+                {
+                    var element = list[e];
+                    if (element == null) continue;
+
+                    applied += _Apply(element, ComposeElementId(id, member.name, element, e),
+                        state, depth + 1);
+                }
+            }
+
             return applied;
         }
 
@@ -299,6 +453,7 @@ namespace Lilium.RemoteControl.Frames
 
             var members = liveClass.propertyTypes;
             List<int> nested = null;
+            List<int> collections = null;
             var declaresState = false;
 
             for (int i = 0; i < members.Length; i++)
@@ -307,15 +462,25 @@ namespace Lilium.RemoteControl.Frames
                 if (member == null) continue;
 
                 if (member.lane == FrameLane.State) declaresState = true;
-                if (!_HoldsNestedLiveObject(member)) continue;
 
-                if (nested == null) nested = new List<int>();
-                nested.Add(i);
+                if (_HoldsNestedLiveObject(member))
+                {
+                    if (nested == null) nested = new List<int>();
+                    nested.Add(i);
+                    continue;
+                }
+
+                if (_HoldsLiveObjectCollection(member))
+                {
+                    if (collections == null) collections = new List<int>();
+                    collections.Add(i);
+                }
             }
 
             info = new ClassInfo
             {
                 nested = nested != null ? nested.ToArray() : _noNested,
+                collections = collections != null ? collections.ToArray() : _noNested,
                 declaresState = declaresState,
             };
 
@@ -331,6 +496,35 @@ namespace Lilium.RemoteControl.Frames
         /// that object is carried under its own id, and following it here would put the same state
         /// in the frame twice, under two different addresses.
         /// </summary>
+        /// <summary>
+        /// Whether a member holds a collection of live objects the frame should carry each of.
+        ///
+        /// Elements are addressed individually rather than being packed as a run, which is what lets
+        /// them be keyed: an expression keeps its address when the list is reordered. The cost is
+        /// the per-element address, which is why this is for collections of objects (an operation, a
+        /// deck tile, an expression) and not for a curve of floats.
+        /// </summary>
+        private static bool _HoldsLiveObjectCollection(LivePropertyType member)
+        {
+            if (member.isArrayElement || member.isStatic) return false;
+
+            var valueType = member.valueType;
+            if (valueType == null) return false;
+            if (!typeof(IList).IsAssignableFrom(valueType)) return false;
+
+            var elementType = valueType.IsArray
+                ? valueType.GetElementType()
+                : (valueType.IsGenericType ? valueType.GetGenericArguments()[0] : null);
+
+            if (elementType == null || !elementType.IsClass) return false;
+            if (elementType == typeof(string)) return false;
+            if (typeof(UnityEngine.Object).IsAssignableFrom(elementType)) return false;
+
+            // Exposed in its own right, asked the way the nested case asks it -- so a type first met
+            // here is registered rather than looking like a type with nothing exposed.
+            return LiveClass.Find(elementType) != null;
+        }
+
         private static bool _HoldsNestedLiveObject(LivePropertyType member)
         {
             if (member.isArrayElement || member.isStatic) return false;

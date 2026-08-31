@@ -243,6 +243,12 @@ namespace Lilium.RemoteControl.Frames
                     _ParentId(handle, symbols), _RecipeId(handle, symbols));
             }
 
+            // Exposed scene components (see LiveObjectRoster) are deliberately not here. The
+            // inventory is what a replay stands up or takes away, and one of those comes with the
+            // scene: it is neither made nor destroyed by a recording, so listing it would put an
+            // entry in every keyframe that nothing ever acts on. The state lane still addresses it,
+            // by the type name it answers to -- an address that says what it is on its own.
+
             _RemoveMissing(structure);
 
             _owned.Clear();

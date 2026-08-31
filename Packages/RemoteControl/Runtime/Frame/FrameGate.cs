@@ -39,6 +39,18 @@ namespace Lilium.RemoteControl.Frames
         private static EventFrameBuffer _buffer = new EventFrameBuffer(kDefaultBufferFrames);
         private static IFrameClock _clock = _NewDefaultClock();
 
+        // Frame number the tick was last worked out for, and the width it came to. long.MinValue
+        // rather than -1: a frame number is a position on a time axis and negative ones are legal.
+        private static long _tickFrameNumber = long.MinValue;
+        private static double _deltaTime;
+
+        private static bool _driveEngineTime;
+        private static bool _engineTimeDriven;
+
+        private static int _supplyHolds;
+        private static long _heldFrameCount;
+        private static volatile string _supplyHoldReason;
+
         /// <summary>
         /// Number of the frame last committed, so a clock that reports the same position twice does
         /// not get a second frame there. Negative until the first pump.
@@ -279,6 +291,85 @@ namespace Lilium.RemoteControl.Frames
 
         /// <summary>Supplies the frame number stamped on each committed frame.</summary>
         public static IFrameClock clock => _clock;
+
+        /// <summary>
+        /// Holds a replay where it is until something it needs has finished.
+        ///
+        /// A recording carries the write that asked for an avatar, not the avatar: replaying it
+        /// starts a load that takes as long as this machine takes, and the frames behind it address
+        /// an object that is not there yet. Waiting is what keeps the take honest -- the alternative
+        /// is a replay whose fidelity depends on disk speed.
+        ///
+        /// Only supplied frames are held. A live run has nothing to wait for, so a holder may take
+        /// one out whenever it starts loading without asking whether a replay is running.
+        ///
+        /// Balanced by <see cref="ReleaseSupply"/>, and counted: two loads at once are two holds,
+        /// and the replay goes on when the last of them is done.
+        /// </summary>
+        public static void HoldSupply(string reason)
+        {
+            Interlocked.Increment(ref _supplyHolds);
+            _supplyHoldReason = reason;
+        }
+
+        /// <summary>Gives back a hold taken by <see cref="HoldSupply"/>.</summary>
+        public static void ReleaseSupply(string reason)
+        {
+            if (Interlocked.Decrement(ref _supplyHolds) >= 0) return;
+
+            // Never below zero: an unbalanced release would let the next hold be cancelled by it,
+            // and a replay would then run past the load it was told to wait for.
+            Interlocked.Exchange(ref _supplyHolds, 0);
+            Debug.LogWarning($"[RemoteControl] Frame supply released more times than held ('{reason}').");
+        }
+
+        /// <summary>How many things a replay is currently waiting on.</summary>
+        public static int supplyHoldCount => Interlocked.CompareExchange(ref _supplyHolds, 0, 0);
+
+        /// <summary>What was most recently waited on, for a viewer to show while a replay stalls.</summary>
+        public static string supplyHoldReason => _supplyHoldReason;
+
+        /// <summary>
+        /// Frames a replay stood still for, waiting. Not an error -- but a replay that spends most
+        /// of its frames here is one whose timing no longer resembles the take.
+        /// </summary>
+        public static long heldFrameCount => Interlocked.Read(ref _heldFrameCount);
+
+        /// <summary>
+        /// Seconds the frame just committed covers: the distance from the previous one, worked out
+        /// from the frame numbers and the rate.
+        ///
+        /// **Anything that advances with time reads this rather than <c>Time.deltaTime</c>.** The
+        /// engine's tick is whatever this machine managed to render, so two machines fed the same
+        /// events integrate different amounts and drift apart -- which is the single largest source
+        /// of that drift. This is the recorded width of the step, identical on every machine
+        /// replaying the same take.
+        ///
+        /// A skipped frame number widens it rather than being hidden: the pump missed an interval,
+        /// and time really did pass. A step to somewhere else in a take (a scrub) is one interval,
+        /// because a seek is not a duration anything should integrate over.
+        /// </summary>
+        public static float deltaTime => (float)_deltaTime;
+
+        /// <summary>
+        /// Whether a supplied frame also drives the engine's clock (<c>Time.captureDeltaTime</c>).
+        ///
+        /// Off by default, and turned on by whoever is actually replaying. With it on, code that
+        /// still reads <c>Time.deltaTime</c> follows the recording without being touched -- which is
+        /// what makes a replay of existing code reproducible, and what a faster-than-real or a
+        /// slower-than-real redraw runs on. A viewer merely watching frames go by leaves it off:
+        /// stepping the engine's clock would stop the application it is being watched in from
+        /// running at its own speed.
+        /// </summary>
+        public static bool driveEngineTimeOnSuppliedFrames
+        {
+            get => _driveEngineTime;
+            set
+            {
+                _driveEngineTime = value;
+                if (!value) _ReleaseEngineTime();
+            }
+        }
 
         /// <summary>True once a frame-head pump is running and events are being ordered.</summary>
         public static bool isGateRunning => _pumpInstalled;
@@ -546,6 +637,14 @@ namespace Lilium.RemoteControl.Frames
             _buffer.Reset();
             _clock.Reset();
             _lastPumpedFrameNumber = -1;
+            _tickFrameNumber = long.MinValue;
+            _ReleaseEngineTime();
+
+            // Holds belong to the run that took them. Carried across a reset they would stall the
+            // next replay against a load that finished long ago.
+            Interlocked.Exchange(ref _supplyHolds, 0);
+            Interlocked.Exchange(ref _heldFrameCount, 0);
+            _supplyHoldReason = null;
             _structure.Reset();
             _state.Reset();
 
@@ -740,6 +839,10 @@ namespace Lilium.RemoteControl.Frames
             // acting right now lands on top of it rather than under it.
             _FillFromSource();
 
+            // After the source, because a supplied frame brings its own number and rate: the tick a
+            // replay hands out is the recorded one, not this machine's.
+            _UpdateTick();
+
             var drained = _sequencer.Drain();
             for (int i = 0; i < drained.Count; i++)
             {
@@ -825,6 +928,15 @@ namespace Lilium.RemoteControl.Frames
             var source = _source;
             if (source == null) return;
 
+            // Something the take needs is still loading. The source is not asked for a frame, so it
+            // stays where it is and the replay resumes from the same place -- rather than playing
+            // frames into a world that has not finished being built.
+            if (supplyHoldCount > 0)
+            {
+                Interlocked.Increment(ref _heldFrameCount);
+                return;
+            }
+
             try
             {
                 if (source.FillFrame(ref _frame))
@@ -846,6 +958,47 @@ namespace Lilium.RemoteControl.Frames
             // Ran out. The frame falls back to the live lanes it was already pointing at.
             _source = null;
             _RaiseSourceEnded();
+        }
+
+        /// <summary>
+        /// Works out how much time the frame just filled covers, and lets a replay drive the engine
+        /// with it.
+        /// </summary>
+        private static void _UpdateTick()
+        {
+            var advanced = _tickFrameNumber == long.MinValue ? 1 : _frame.frameNumber - _tickFrameNumber;
+
+            // A scrub, or the first frame of a run: one interval. A seek covers no time -- nothing
+            // integrating over it moved through those frames -- and a backwards one would otherwise
+            // hand out a negative tick.
+            if (advanced <= 0) advanced = 1;
+
+            _deltaTime = _frame.frameRate.AsSecounds(advanced);
+            _tickFrameNumber = _frame.frameNumber;
+
+            if (_frame.isSupplied && _driveEngineTime)
+            {
+                _engineTimeDriven = true;
+                Time.captureDeltaTime = (float)_deltaTime;
+            }
+            else if (_engineTimeDriven)
+            {
+                _ReleaseEngineTime();
+            }
+        }
+
+        /// <summary>
+        /// Gives the engine's clock back to real time.
+        ///
+        /// Only when this is what took it: <c>Time.captureDeltaTime</c> is process-wide and a screen
+        /// recorder is entitled to be holding it for its own reasons.
+        /// </summary>
+        private static void _ReleaseEngineTime()
+        {
+            if (!_engineTimeDriven) return;
+
+            _engineTimeDriven = false;
+            Time.captureDeltaTime = 0f;
         }
 
         private static void _RaiseSourceEnded()

@@ -20,7 +20,7 @@ namespace Lilium.LiveStudio
     // Renamed from ActionSet: MovedFrom restores old [SerializeReference] YAML, FormerlyNamedAs the @type.
     [MovedFrom(false, null, null, "ActionSet")]
     [FormerlyNamedAs("ActionSet")]
-    public class OperationSet
+    public partial class OperationSet
     {
         /// <summary>Stable id, assigned by <see cref="OperationManager"/> on creation. Used to address the
         /// set from the remote app's add/remove functions. Hidden from the generic UI.</summary>
@@ -107,7 +107,11 @@ namespace Lilium.LiveStudio
         // sentinel rather than NaN because NaN has no JSON representation and breaks value-based dirty
         // comparison; SetOperationSetValue clamps to 0..1, so -1 is always out of band. A private field with
         // no [SerializeField], so it lives only in the live-scene json.
-        [LiveField, Hide]
+        // On the state lane: the remote app's slider writes this many times a second while it is
+        // being dragged, and an event record for each would pay 548 bytes a frame to say what a
+        // four-byte value in the state lane says. Carried per operation set, addressed the way the
+        // rest of the codebase addresses an element of an exposed collection.
+        [LiveField(lane = FrameLane.State), Hide]
         private float _manualValue = -1f;
 
         /// <summary>Manual value override (0..1), or negative when none (see <see cref="hasManualValue"/>).

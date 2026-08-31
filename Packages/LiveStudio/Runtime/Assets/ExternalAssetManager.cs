@@ -913,6 +913,11 @@ namespace Lilium.LiveStudio
         private async Task _LoadAdditiveAsync(AssetBase asset)
         {
             asset.busy = true;
+
+            // A replay waits here. The recording carries the write that asked for this asset, not
+            // the asset, so the frames behind it address an object that only exists once the load
+            // is done -- and how long that takes is a property of this machine, not of the take.
+            Lilium.RemoteControl.Frames.FrameGate.HoldSupply(kLoadHold);
             try
             {
                 await asset.LoadAsync(_MakeContext());
@@ -920,8 +925,39 @@ namespace Lilium.LiveStudio
             }
             finally
             {
+                Lilium.RemoteControl.Frames.FrameGate.ReleaseSupply(kLoadHold);
                 asset.busy = false;
                 _Broadcast();
+            }
+        }
+
+        /// <summary>What a stalled replay is waiting on, for a viewer to show.</summary>
+        private const string kLoadHold = "asset load";
+
+        /// <summary>
+        /// Runs an exclusive (avatar) load, holding a replay until it finishes.
+        ///
+        /// The task is not awaited by the caller -- the swap is requested and the reconcile carries
+        /// on -- but a replay still must not run past it, so the hold is taken here and given back
+        /// when the load settles either way.
+        /// </summary>
+        private async void _LoadExclusiveHeld(Task load)
+        {
+            Lilium.RemoteControl.Frames.FrameGate.HoldSupply(kLoadHold);
+            try
+            {
+                await load;
+            }
+            catch (Exception e)
+            {
+                // Reported rather than swallowed: nothing else is awaiting this task, so a failure
+                // here would otherwise be invisible -- and the asset itself has already marked
+                // whatever it needed to.
+                Debug.LogError($"[LiveStudio] Avatar load failed: {e}");
+            }
+            finally
+            {
+                Lilium.RemoteControl.Frames.FrameGate.ReleaseSupply(kLoadHold);
             }
         }
 
@@ -937,7 +973,7 @@ namespace Lilium.LiveStudio
             {
                 // LoadAsync is synchronous for avatars (delegates to AvatarService), so the swap is
                 // requested immediately; the previous avatar is replaced in place — no reset needed.
-                _ = desired.LoadAsync(_MakeContext());
+                _LoadExclusiveHeld(desired.LoadAsync(_MakeContext()));
             }
             else
             {

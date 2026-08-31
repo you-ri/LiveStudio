@@ -355,6 +355,11 @@ namespace Lilium.RemoteControl
             // without it scrubbing back past a spawn leaves the spawn standing.
             LiveStructureSystem.applyOnSuppliedFrames = true;
 
+            // And the same for time: with this on, the engine's clock steps by the recorded tick, so
+            // everything that advances with time -- including code that still reads Time.deltaTime --
+            // follows the take rather than whatever this machine managed to render.
+            FrameGate.driveEngineTimeOnSuppliedFrames = true;
+
             // The replay is where the frame comes from now, not something that runs during one. That
             // is what puts it ahead of the producers -- they read the frame it filled rather than
             // racing it in an order nobody declared.
@@ -377,6 +382,7 @@ namespace Lilium.RemoteControl
             if (ReferenceEquals(FrameGate.source, replayer)) FrameGate.source = null;
 
             LiveStructureSystem.applyOnSuppliedFrames = false;
+            FrameGate.driveEngineTimeOnSuppliedFrames = false;
 
             // What the replay stood up stays, but stops being the replay's to take away: the next
             // take must not be able to destroy these by not listing them.
