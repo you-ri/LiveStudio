@@ -26,11 +26,16 @@ namespace Lilium.RemoteControl.Frames
         /// and the state lane addresses it by that id. An implementation that names it something
         /// else produces an object no recorded value can reach.
         ///
+        /// <paramref name="typeName"/> is the exposed type the inventory recorded, for a maker that
+        /// can produce more than one: one prefab is wrapped as a camera or as a plain object with a
+        /// transform depending on what it was. The key says how to make it, the type says as what.
+        /// Empty when the recording did not name one.
+        ///
         /// Null is allowed and means it could not be made -- an asset that is not loaded, a prefab
         /// that has been removed. The reconcile counts it rather than throwing: one object that
         /// cannot be rebuilt should not stop the rest of the world from being.
         /// </summary>
-        ILiveObject Create(string id);
+        ILiveObject Create(string id, string typeName);
 
         /// <summary>
         /// Takes one away. Called with an object this recipe made, once the recording stops listing
@@ -83,14 +88,38 @@ namespace Lilium.RemoteControl.Frames
             _recipes.Remove(key);
         }
 
+        /// <summary>
+        /// Registers a fallback asked for a key nothing was registered under.
+        ///
+        /// For makers whose set is open and known elsewhere: every prefab is one a replay could be
+        /// asked to stand up, and pre-registering each one would mean walking a catalogue that grows
+        /// while running (an external bundle brings its own). The same shape
+        /// <see cref="PrefabRegistry.RegisterResolver"/> uses, for the same reason.
+        /// </summary>
+        public static void RegisterResolver(System.Func<string, ILiveRecipe> resolver)
+        {
+            _resolver = resolver;
+        }
+
         public static bool TryGet(string key, out ILiveRecipe recipe)
         {
             recipe = null;
-            return !string.IsNullOrEmpty(key) && _recipes.TryGetValue(key, out recipe);
+            if (string.IsNullOrEmpty(key)) return false;
+            if (_recipes.TryGetValue(key, out recipe)) return true;
+
+            if (_resolver != null) recipe = _resolver(key);
+            return recipe != null;
         }
 
-        /// <summary>Forgets every maker. For tests, and for tearing a session down.</summary>
+        /// <summary>
+        /// Forgets every maker registered by key. For tests, and for tearing a session down.
+        ///
+        /// The resolver is kept: the table is per-run, but a resolver is a standing answer to
+        /// "what could this key be" that its owner registers once.
+        /// </summary>
         public static void Clear() => _recipes.Clear();
+
+        private static System.Func<string, ILiveRecipe> _resolver;
     }
 
     /// <summary>

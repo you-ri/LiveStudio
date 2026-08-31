@@ -7,22 +7,25 @@ namespace Lilium.LiveStudio
 {
     [Serializable]
     [LiveClass]
-    public class OrbitalFollowCameraController : CameraControllerBase, ILiveSerializeCallback, ILiveDeserializeCallback
+    public partial class OrbitalFollowCameraController : CameraControllerBase, ILiveSerializeCallback, ILiveDeserializeCallback
     {
         [SerializeField, LiveField]
         TransformRef _target = new TransformRef("Main Avatar", "S_Head", TransformRef.SearchType.Name);
 
         public TransformRef target => _target;
 
-        [SerializeField, LiveField, Hide]
+        [SerializeField, LiveField(lane = FrameLane.State), Hide]
         [FormerlyNamedAs("yaw")]
         private float _yaw = 0f;
 
+        // Read from the orbit rather than the field. The orbit is what the camera is actually
+        // flying by -- input moves it without anything writing this property -- and the field is
+        // only refreshed at save time. On the state lane a stale getter records a still camera.
         [LiveProperty, Slider(-180f, 180f, 1f)]
         [FormerlyNamedAs("roll")]
         public float yaw
         {
-            get => _yaw;
+            get => _orbit != null ? _orbit.yaw : _yaw;
             set
             {
                 _yaw = value;
@@ -33,14 +36,14 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [SerializeField, LiveField, Hide]
+        [SerializeField, LiveField(lane = FrameLane.State), Hide]
         [FormerlyNamedAs("pitch")]
         private float _pitch = 0f;
 
         [LiveProperty, Slider(-180f, 180f, 1f)]
         public float pitch
         {
-            get => _pitch;
+            get => _orbit != null ? _orbit.pitch : _pitch;
             set
             {
                 _pitch = value;
@@ -51,14 +54,14 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [SerializeField, LiveField, Hide]
+        [SerializeField, LiveField(lane = FrameLane.State), Hide]
         [FormerlyNamedAs("distance")]
         private float _distance = 1f;
 
         [LiveProperty, Slider(0.2f, 10f, 0.2f)]
         public float distance
         {
-            get => _distance;
+            get => _orbit != null ? _orbit.distance : _distance;
             set
             {
                 _distance = value;
@@ -69,14 +72,14 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [SerializeField, LiveField, Hide]
+        [SerializeField, LiveField(lane = FrameLane.State), Hide]
         [FormerlyNamedAs("fov")]
         private float _fov = 40f;
 
         [LiveProperty, Slider(1f, 80f, 1f)]
         public float fov
         {
-            get => _fov;
+            get => _camera != null ? _camera.Lens.FieldOfView : _fov;
             set
             {
                 _fov = value;
@@ -87,14 +90,16 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [SerializeField, LiveField, Hide]
+        [SerializeField, LiveField(lane = FrameLane.State), Hide]
         [FormerlyNamedAs("screenPosition")]
         private Vector2 _screenPosition = Vector2.zero;
 
         [LiveProperty]
         public Vector2 screenPosition
         {
-            get => _screenPosition;
+            get => _rotationComposer != null
+                ? _rotationComposer.Composition.ScreenPosition
+                : _screenPosition;
             set
             {
                 _screenPosition = value;

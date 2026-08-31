@@ -8,14 +8,14 @@ namespace Lilium.LiveStudio
 {
     [Serializable]
     [LiveClass]
-    public class FreeCameraController : CameraControllerBase, ILiveSerializeCallback, ILiveDeserializeCallback
+    public partial class FreeCameraController : CameraControllerBase, ILiveSerializeCallback, ILiveDeserializeCallback
     {
         [SerializeField, LiveField]
         TransformRef _target = new TransformRef("", "");
 
         public TransformRef target => _target;
 
-        [SerializeField, LiveField, Hide]
+        [SerializeField, LiveField(lane = FrameLane.State), Hide]
         [FormerlyNamedAs("yaw")]
         float _yaw;
 
@@ -26,7 +26,7 @@ namespace Lilium.LiveStudio
             set => _yaw = value;
         }
 
-        [SerializeField, LiveField, Hide]
+        [SerializeField, LiveField(lane = FrameLane.State), Hide]
         [FormerlyNamedAs("pitch")]
         float _pitch;
 
@@ -37,7 +37,7 @@ namespace Lilium.LiveStudio
             set => _pitch = Mathf.Clamp(value, -89f, 89f);
         }
 
-        [SerializeField, LiveField, Hide]
+        [SerializeField, LiveField(lane = FrameLane.State), Hide]
         [FormerlyNamedAs("position")]
         Vector3 _position;
 
@@ -48,14 +48,18 @@ namespace Lilium.LiveStudio
             set => _position = value;
         }
 
-        [SerializeField, LiveField, Hide]
+        [SerializeField, LiveField(lane = FrameLane.State), Hide]
         [FormerlyNamedAs("fov")]
         private float _fov = 40f;
 
+        // Read from the lens rather than the field: the lens is where the value actually is
+        // (the Inspector and Cinemachine itself write it), and the field is only refreshed at
+        // save time. The state lane carries what the getter says, so a stale getter would record
+        // a camera that never changes its angle.
         [LiveProperty, Slider(1f, 80f, 1f)]
         public float fov
         {
-            get => _fov;
+            get => _camera != null ? _camera.Lens.FieldOfView : _fov;
             set
             {
                 _fov = value;
@@ -66,14 +70,16 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [SerializeField, LiveField, Hide]
+        [SerializeField, LiveField(lane = FrameLane.State), Hide]
         [FormerlyNamedAs("screenPosition")]
         private Vector2 _screenPosition = Vector2.zero;
 
         [LiveProperty]
         public Vector2 screenPosition
         {
-            get => _screenPosition;
+            get => _rotationComposer != null
+                ? _rotationComposer.Composition.ScreenPosition
+                : _screenPosition;
             set
             {
                 _screenPosition = value;

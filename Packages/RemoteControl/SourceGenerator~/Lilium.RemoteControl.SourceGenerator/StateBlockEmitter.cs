@@ -130,17 +130,45 @@ namespace Lilium.RemoteControl.SourceGenerator
         public static StateInfo Collect(INamedTypeSymbol typeSymbol, TypeDeclarationSyntax node,
             IEnumerable<INamedTypeSymbol> chain)
         {
+            var levels = chain as IList<INamedTypeSymbol> ?? chain.ToList();
             var members = ImmutableArray.CreateBuilder<StateMemberInfo>();
             var problems = ImmutableArray.CreateBuilder<string>();
             var seen = new HashSet<string>();
             var any = false;
 
-            foreach (var level in chain)
+            // The convention in this codebase is a hidden field holding the value and a property
+            // giving it its behaviour. Both faces of such a pair are moved through the property:
+            // the getter is what knows the current value (it may read something else entirely, as a
+            // transform proxy reads the real Transform) and the setter is what makes a write land.
+            // Taking the field instead would capture whatever was last stored and apply without the
+            // effect, which for a proxy means a replay that writes values nothing acts on.
+            var propertiesByLiveName = _LivePropertiesByLiveName(levels);
+            var shadowedProperties = _ShadowedPropertyNames(levels, propertiesByLiveName);
+
+            foreach (var level in levels)
             {
                 foreach (var member in level.OriginalDefinition.GetMembers())
                 {
                     if (!_TryReadStateMember(member, out var memberType)) continue;
-                    if (!seen.Add(member.Name)) continue;
+
+                    var name = member.Name;
+
+                    if (member is IFieldSymbol field
+                        && _TryFindShadowedProperty(field, propertiesByLiveName, out var behind)
+                        && _IsReachableFrom(behind, typeSymbol))
+                    {
+                        name = behind.Name;
+                        memberType = behind.Type;
+                    }
+                    else if (member is IPropertySymbol && shadowedProperties.Contains(member.Name))
+                    {
+                        // Its field declares the lane -- the runtime reads it from there, and the
+                        // two faces of one value must not end up in different lanes. Carrying the
+                        // property as well would put the same value in the block twice.
+                        continue;
+                    }
+
+                    if (!seen.Add(name)) continue;
 
                     any = true;
 
@@ -150,12 +178,12 @@ namespace Lilium.RemoteControl.SourceGenerator
                     // the same reason -- they are not something a block can hold.
                     if (!memberType.IsUnmanagedType)
                     {
-                        problems.Add($"{level.Name}.{member.Name}|{memberType.ToDisplayString()}");
+                        problems.Add($"{level.Name}.{name}|{memberType.ToDisplayString()}");
                         continue;
                     }
 
                     members.Add(new StateMemberInfo(
-                        member.Name,
+                        name,
                         memberType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
                 }
             }
@@ -190,12 +218,12 @@ namespace Lilium.RemoteControl.SourceGenerator
             switch (member)
             {
                 case IPropertySymbol property when !property.IsIndexer:
-                    attribute = _FindLaneAttribute(property, "Lilium.RemoteControl.LivePropertyAttribute");
+                    attribute = _FindAttribute(property, kLivePropertyAttribute);
                     memberType = property.Type;
                     break;
 
                 case IFieldSymbol field when !field.IsConst:
-                    attribute = _FindLaneAttribute(field, "Lilium.RemoteControl.LiveFieldAttribute");
+                    attribute = _FindAttribute(field, kLiveFieldAttribute);
                     memberType = field.Type;
                     break;
             }
@@ -217,7 +245,7 @@ namespace Lilium.RemoteControl.SourceGenerator
             return false;
         }
 
-        static AttributeData _FindLaneAttribute(ISymbol member, string attributeName)
+        static AttributeData _FindAttribute(ISymbol member, string attributeName)
         {
             foreach (var attr in member.GetAttributes())
             {
@@ -225,6 +253,125 @@ namespace Lilium.RemoteControl.SourceGenerator
             }
 
             return null;
+        }
+
+        const string kLivePropertyAttribute = "Lilium.RemoteControl.LivePropertyAttribute";
+        const string kLiveFieldAttribute = "Lilium.RemoteControl.LiveFieldAttribute";
+        const string kHideAttribute = "Lilium.RemoteControl.HideAttribute";
+        const string kFormerlyNamedAsAttribute = "Lilium.RemoteControl.FormerlyNamedAsAttribute";
+
+        /// <summary>
+        /// Exposed properties of the whole chain, by the name they are exposed under.
+        ///
+        /// The exposed name rather than the member name, because that is what a shadow field names
+        /// in its <c>[FormerlyNamedAs]</c> -- the same pairing rule the runtime applies when it
+        /// decides which field stands behind which property.
+        /// </summary>
+        static Dictionary<string, IPropertySymbol> _LivePropertiesByLiveName(IList<INamedTypeSymbol> levels)
+        {
+            var result = new Dictionary<string, IPropertySymbol>();
+
+            foreach (var level in levels)
+            {
+                foreach (var member in level.OriginalDefinition.GetMembers())
+                {
+                    if (!(member is IPropertySymbol property) || property.IsIndexer) continue;
+
+                    var attribute = _FindAttribute(property, kLivePropertyAttribute);
+                    if (attribute == null) continue;
+
+                    result[_ExposedName(attribute, property.Name)] = property;
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>Names of the properties some hidden field stands behind.</summary>
+        static HashSet<string> _ShadowedPropertyNames(
+            IList<INamedTypeSymbol> levels, Dictionary<string, IPropertySymbol> propertiesByLiveName)
+        {
+            var result = new HashSet<string>();
+
+            foreach (var level in levels)
+            {
+                foreach (var member in level.OriginalDefinition.GetMembers())
+                {
+                    if (!(member is IFieldSymbol field) || field.IsConst) continue;
+                    if (!_TryFindShadowedProperty(field, propertiesByLiveName, out var behind)) continue;
+
+                    result.Add(behind.Name);
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// The property a field is the hidden storage for, if it is one.
+        ///
+        /// Three things make a shadow field, all of them the runtime's rules: it is exposed, it is
+        /// hidden from the UI, and it names an exposed property in <c>[FormerlyNamedAs]</c>.
+        /// </summary>
+        static bool _TryFindShadowedProperty(IFieldSymbol field,
+            Dictionary<string, IPropertySymbol> propertiesByLiveName, out IPropertySymbol behind)
+        {
+            behind = null;
+
+            if (_FindAttribute(field, kLiveFieldAttribute) == null) return false;
+            if (_FindAttribute(field, kHideAttribute) == null) return false;
+
+            foreach (var attribute in field.GetAttributes())
+            {
+                if (attribute.AttributeClass?.ToDisplayString() != kFormerlyNamedAsAttribute) continue;
+                if (attribute.ConstructorArguments.Length == 0) continue;
+                if (!(attribute.ConstructorArguments[0].Value is string alias)) continue;
+
+                if (propertiesByLiveName.TryGetValue(alias, out behind)) return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>The name a member is exposed under: the one it was given, or its own.</summary>
+        static string _ExposedName(AttributeData attribute, string memberName)
+        {
+            foreach (var named in attribute.NamedArguments)
+            {
+                if (named.Key == "name" && named.Value.Value is string given) return given;
+            }
+
+            foreach (var argument in attribute.ConstructorArguments)
+            {
+                if (argument.Value is string given) return given;
+            }
+
+            return memberName;
+        }
+
+        /// <summary>
+        /// Whether the generated half of <paramref name="owner"/> can name this property.
+        ///
+        /// The half is emitted inside the owner, so a private member of the owner itself is
+        /// reachable but a private member of a base class is not. Getting this wrong shows up as a
+        /// compile error inside code the author never wrote, so a property that cannot be reached
+        /// is left to its field instead.
+        /// </summary>
+        static bool _IsReachableFrom(IPropertySymbol property, INamedTypeSymbol owner)
+        {
+            if (property.GetMethod == null || property.SetMethod == null) return false;
+
+            return _IsAccessible(property, owner)
+                   && _IsAccessible(property.GetMethod, owner)
+                   && _IsAccessible(property.SetMethod, owner);
+        }
+
+        static bool _IsAccessible(ISymbol symbol, INamedTypeSymbol owner)
+        {
+            if (symbol.DeclaredAccessibility != Accessibility.Private) return true;
+
+            return SymbolEqualityComparer.Default.Equals(
+                symbol.ContainingType?.OriginalDefinition, owner.OriginalDefinition);
         }
 
         /// <summary>Reports what stopped a type from carrying its state.</summary>

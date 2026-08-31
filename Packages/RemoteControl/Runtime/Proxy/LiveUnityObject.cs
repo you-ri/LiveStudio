@@ -28,7 +28,7 @@ namespace Lilium.RemoteControl
     }
 
     [Serializable]
-    public class LiveUnityObjectBase : ILiveObject
+    public class LiveUnityObjectBase : ILiveObject, Frames.ILiveMadeFromRecipe
     {
         public virtual string name { get; set; }
 
@@ -54,6 +54,16 @@ namespace Lilium.RemoteControl
             get => _prefabSourceKey;
             set => _prefabSourceKey = value;
         }
+
+        /// <summary>
+        /// How a replay makes this again: the prefab it came from, or null for something that was in
+        /// the scene to begin with.
+        ///
+        /// The same key a saved scene writes as <c>@prefab</c>, deliberately. An object that a scene
+        /// file can rebuild is one a recording can rebuild, and giving the two different answers
+        /// would mean a replay standing up a world the save could not.
+        /// </summary>
+        public string recipeKey => _prefabSourceKey;
 
         /// <summary>
         /// 親 LiveObjectHandle の id。Unity hierarchy を真実として派生する。
@@ -476,7 +486,7 @@ namespace Lilium.RemoteControl
     [System.Serializable]
     [LiveClass("GameObjectWithTransform", Icon = "deployed_code")]
     [MovedFrom(false, null, null, "ExposedGameObjectWithTransform")]
-    public class LiveGameObjectWithTransform : LiveGameObject
+    public partial class LiveGameObjectWithTransform : LiveGameObject
     {
         // LiveUnityObjectFactory.Register は呼ばない。
         // GameObject 型のデフォルト自動ラップ先は LiveGameObject のまま維持する。
@@ -499,14 +509,22 @@ namespace Lilium.RemoteControl
         [NonSerialized]
         Transform _attachedTransform;
 
-        [LiveField, Hide]
+        // Shadow Field for transform, and the value persistence reads and writes. The Property
+        // getter returns the live Transform instead, the same way name does: what a frame carries
+        // and what RemoteApp shows have to be where the object actually is, not where it was last
+        // written to. OnBeforeLiveSerialize refreshes this from the live state before save.
+        //
+        // On the state lane: a gizmo drag writes this many times a second, and animation and
+        // parenting move it without any write at all -- neither of which the event lane can carry
+        // (the first would cost a record per frame, the second leaves no event to record).
+        [LiveField(lane = FrameLane.State), Hide]
         [FormerlyNamedAs("transform")]
         private TransformValue _transform = TransformValue.identity;
 
         [LiveProperty(order = -10)]
         public TransformValue transform
         {
-            get => _transform;
+            get => _reference != null ? TransformValue.FromTransform(_reference.transform) : _transform;
             set
             {
                 _transform = value;

@@ -11,7 +11,8 @@
         "Lilium.RemoteControl.LiveScene",
         "Unity.InputSystem",
         "Lilium.RemoteControl.Core",
-        "Lilium.RemoteControl.Simulation"
+        "Lilium.RemoteControl.Simulation",
+        "Unity.Cinemachine"
     ],
     "includePlatforms": [
         "Editor"

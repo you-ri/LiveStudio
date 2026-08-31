@@ -142,13 +142,13 @@ namespace Lilium.RemoteControl.Frames
                 if (string.IsNullOrEmpty(id)) continue;
                 if (LiveObjectRegistry.TryFindById(id, out _)) continue;
 
-                _Create(id, symbols.Resolve(entry.recipeId), symbols);
+                _Create(id, symbols.Resolve(entry.recipeId), symbols.Resolve(entry.typeId));
             }
 
             _DestroyUnlisted(symbols);
         }
 
-        private static void _Create(string id, string recipeKey, FrameSymbolTable symbols)
+        private static void _Create(string id, string recipeKey, string typeName)
         {
             if (string.IsNullOrEmpty(recipeKey))
             {
@@ -164,7 +164,7 @@ namespace Lilium.RemoteControl.Frames
                 return;
             }
 
-            var instance = recipe.Create(id);
+            var instance = recipe.Create(id, typeName);
             if (instance == null)
             {
                 unresolvedCount++;
@@ -173,9 +173,9 @@ namespace Lilium.RemoteControl.Frames
 
             // Registered under the recorded id rather than one of its own choosing: the state lane
             // addresses it by that id, and an object under any other name is one no recorded value
-            // can reach.
-            instance.name = id;
-
+            // can reach. The maker was handed the id for this reason, so nothing is renamed here --
+            // a wrapper's name is the name of the object in the scene, and stamping an id over it
+            // would rename what other things resolve by name (a transform reference, a bone path).
             var handle = LiveObjectRegistry.Create(instance.GetType(), instance, id);
             if (handle == null)
             {

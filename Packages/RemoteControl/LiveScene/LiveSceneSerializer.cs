@@ -843,6 +843,71 @@ namespace Lilium.RemoteControl.LiveScene
         /// <param name="claimedTarget">このエントリで「消費」したUnityObject（Component または GameObject）。Pass 1での重複検出に使用。</param>
         /// <returns>コンテナに追加すべきLiveUnityObjectBase。Component型の場合はnull。</returns>
         /// <summary>
+        /// Stands up one prefab instance as a registered live object: instantiate, put it in the base
+        /// scene, wrap it as <paramref name="typeName"/> under <paramref name="id"/>, and put the
+        /// wrapper in the container that owns such objects.
+        ///
+        /// Shared by the two things that rebuild a prefab-made object from a key: a saved scene whose
+        /// prefab only became resolvable later, and a recording being replayed. Both have to produce
+        /// the same object, and doing it twice would be two answers to one question.
+        ///
+        /// Returns null when it could not be built, having destroyed whatever it had made so far.
+        /// </summary>
+        internal static LiveUnityObjectBase InstantiatePrefabInstance(
+            GameObject prefab, string prefabKey, string id, string typeName, string instanceName = null)
+        {
+            if (prefab == null || string.IsNullOrEmpty(id) || string.IsNullOrEmpty(typeName)) return null;
+
+            var resolver = LiveObjectContainer.main;
+            if (resolver == null) return null;
+
+            var go = UnityEngine.Object.Instantiate(prefab);
+            if (!string.IsNullOrEmpty(instanceName)) go.name = instanceName;
+
+            // Place the instance in the base scene (its RemoteControlContainer's scene), not the active scene
+            // which may be an additively-loaded set-bundle scene that would take the instance on unload.
+            var sceneContainer = _ResolveSceneContainer();
+            if (sceneContainer != null)
+                UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(go, sceneContainer.gameObject.scene);
+
+            var wrapper = _RegisterComponentLiveObject(go, typeName, id, prefabKey, out _);
+            if (wrapper == null)
+            {
+                GameObjectUtility.Destroy(go);
+                return null;
+            }
+            wrapper.OnEnable();
+
+            if (sceneContainer != null)
+            {
+                if (!sceneContainer._objects.Contains(wrapper)) sceneContainer._objects.Add(wrapper);
+            }
+            else if (!resolver._objects.Contains(wrapper))
+            {
+                resolver._objects.Add(wrapper);
+            }
+
+            return wrapper;
+        }
+
+        /// <summary>
+        /// Takes a prefab instance's wrapper out of whichever container
+        /// <see cref="InstantiatePrefabInstance"/> put it in.
+        ///
+        /// The mirror of that step, and it has to be the mirror: an entry left pointing at a
+        /// destroyed object reads as a live object that answers nothing.
+        /// </summary>
+        internal static void ForgetPrefabInstance(ILiveObject instance)
+        {
+            if (instance == null) return;
+
+            var sceneContainer = _ResolveSceneContainer();
+            sceneContainer?._objects.Remove(instance);
+
+            LiveObjectContainer.main?.RemoveLiveObject(instance);
+        }
+
+        /// <summary>
         /// Instantiates one deferred @prefab entry (queued by Pass 1 because its prefab was not resolvable
         /// then) now that <paramref name="prefab"/> is available: registers a fresh instance under the saved
         /// <paramref name="id"/>, moves it into the base scene, and applies the entry's own plus its child
@@ -859,32 +924,9 @@ namespace Lilium.RemoteControl.LiveScene
             if (resolver == null) return false;
             if (resolver.FindById(id) != null) return true; // already restored (e.g. a raced drain)
 
-            var go = UnityEngine.Object.Instantiate(prefab);
             var savedName = jObject["@name"]?.Value<string>();
-            if (!string.IsNullOrEmpty(savedName)) go.name = savedName;
-
-            // Place the instance in the base scene (its RemoteControlContainer's scene), not the active scene
-            // which may be an additively-loaded set-bundle scene that would take the instance on unload.
-            var sceneContainer = _ResolveSceneContainer();
-            if (sceneContainer != null)
-                UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(go, sceneContainer.gameObject.scene);
-
-            var wrapper = _RegisterComponentLiveObject(go, typeName, id, prefabKey, out _);
-            if (wrapper == null)
-            {
-                UnityEngine.Object.Destroy(go);
-                return false;
-            }
-            wrapper.OnEnable();
-
-            if (sceneContainer != null)
-            {
-                if (!sceneContainer._objects.Contains(wrapper)) sceneContainer._objects.Add(wrapper);
-            }
-            else if (!resolver._objects.Contains(wrapper))
-            {
-                resolver._objects.Add(wrapper);
-            }
+            var wrapper = InstantiatePrefabInstance(prefab, prefabKey, id, typeName, savedName);
+            if (wrapper == null) return false;
 
             // Apply this entry's own saved properties, then its deferred child (component) overrides, then
             // re-baseline so the restored values are not reported as unsaved changes at quit time.

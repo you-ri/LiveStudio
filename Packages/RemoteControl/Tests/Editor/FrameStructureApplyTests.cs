@@ -52,7 +52,7 @@ namespace Lilium.RemoteControl.Tests
             /// <summary>When true, stands for an asset that is not loaded: it cannot make one now.</summary>
             public bool unavailable;
 
-            public ILiveObject Create(string id)
+            public ILiveObject Create(string id, string typeName)
             {
                 if (unavailable) return null;
 
