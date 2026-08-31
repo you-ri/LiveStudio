@@ -5,7 +5,7 @@ using System.Collections.Concurrent;
 namespace Lilium.RemoteControl.Frames
 {
     /// <summary>
-    /// Maps the strings an input refers to -- property paths, source names -- onto small integer
+    /// Maps the strings an event refers to -- property paths, source names -- onto small integer
     /// ids, so a record can stay a fixed-size unmanaged struct.
     ///
     /// This is the mapping a recording carries in its header: resolving a record needs the
@@ -16,7 +16,7 @@ namespace Lilium.RemoteControl.Frames
     /// Ids are handed out in order from zero and never reused within a run, so a table can be
     /// appended to while it is being read.
     /// </summary>
-    public sealed class InputSymbolTable
+    public sealed class FrameSymbolTable
     {
         /// <summary>Id standing for no string at all. Never appears in the table.</summary>
         public const int kNone = -1;

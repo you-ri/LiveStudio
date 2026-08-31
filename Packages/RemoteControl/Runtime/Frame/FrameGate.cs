@@ -11,21 +11,21 @@ using UnityEngine.PlayerLoop;
 namespace Lilium.RemoteControl.Frames
 {
     /// <summary>
-    /// The gate every state-changing input passes through before it reaches the application.
+    /// The gate every state-changing event passes through before it reaches the application.
     ///
     /// Two things are added on top of what already happened (hand the work to the main thread and
     /// wait for it):
     ///
     /// - a sequence number, assigned once, so order is settled here rather than by whichever worker
     ///   thread arrived first. Order used to be well-defined on one machine but different on the
-    ///   next, which is why two machines fed the same inputs could not stay together.
+    ///   next, which is why two machines fed the same events could not stay together.
     /// - a single application point at the head of a frame, so "the state at frame N" means
     ///   something. Callbacks posted to the synchronisation context run wherever the engine happens
     ///   to pump it, which is not a position anything can be pinned to.
     ///
     /// Both are worth having on their own, before anything is recorded or mirrored.
     ///
-    /// A caller still gets its result back, and still gets it only once the input has actually been
+    /// A caller still gets its result back, and still gets it only once the event has actually been
     /// applied -- success responses have to stay byte for byte what they were.
     /// </summary>
     public static class FrameGate
@@ -33,10 +33,10 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>Frames retained for read-back. A few frames is enough to absorb jitter.</summary>
         private const int kDefaultBufferFrames = 16;
 
-        private static readonly InputSequencer _sequencer = new InputSequencer();
-        private static readonly InputSymbolTable _symbols = new InputSymbolTable();
+        private static readonly EventSequencer _sequencer = new EventSequencer();
+        private static readonly FrameSymbolTable _symbols = new FrameSymbolTable();
 
-        private static InputFrameBuffer _buffer = new InputFrameBuffer(kDefaultBufferFrames);
+        private static EventFrameBuffer _buffer = new EventFrameBuffer(kDefaultBufferFrames);
         private static IFrameClock _clock = _NewDefaultClock();
 
         /// <summary>
@@ -52,7 +52,7 @@ namespace Lilium.RemoteControl.Frames
         private static long _truncatedPayloadCount;
         private static long _omittedRecordCount;
         private static long _repeatedWriteCount;
-        private static int _lastRepeatedTargetId = InputSymbolTable.kNone;
+        private static int _lastRepeatedTargetId = FrameSymbolTable.kNone;
 
         // Declared source names, sorted, so interning them assigns the same ids on every reset.
         private static string[] _declaredSources;
@@ -86,7 +86,7 @@ namespace Lilium.RemoteControl.Frames
         private static IFrameSource _source;
 
         /// <summary>Frames retained for read-back, indexed by frame number.</summary>
-        public static InputFrameBuffer buffer => _buffer;
+        public static EventFrameBuffer buffer => _buffer;
 
         /// <summary>
         /// Shape of the world: what exists and how many. Carried across frames, and handed to
@@ -158,13 +158,13 @@ namespace Lilium.RemoteControl.Frames
         }
 
         /// <summary>
-        /// The input currently being applied at a frame head, or null outside one. Main thread only,
+        /// The event currently being applied at a frame head, or null outside one. Main thread only,
         /// because that is the only thread a frame head runs on.
         /// </summary>
-        private static PendingInput _applyingInput;
+        private static PendingEvent _applyingEvent;
 
         /// <summary>
-        /// Says the input being applied does not need keeping, because the state lane carries what
+        /// Says the event being applied does not need keeping, because the state lane carries what
         /// it wrote.
         ///
         /// Called from inside the apply, by the code that resolved the target and can see which
@@ -174,25 +174,25 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         public static void OmitAppliedRecord(string target)
         {
-            var input = _applyingInput;
-            if (input == null || string.IsNullOrEmpty(target)) return;
+            var evt = _applyingEvent;
+            if (evt == null || string.IsNullOrEmpty(target)) return;
 
             var targetId = _symbols.Intern(target);
 
-            for (int i = 0; i < input.recordCount; i++)
+            for (int i = 0; i < evt.recordCount; i++)
             {
-                if (input.records[i].targetId != targetId) continue;
+                if (evt.records[i].targetId != targetId) continue;
 
-                input.records[i].flags |= InputFlags.NotRecorded;
+                evt.records[i].flags |= EventFlags.NotRecorded;
                 return;
             }
         }
 
         /// <summary>
-        /// Says what value an input actually wrote, so the record keeps the value rather than the
+        /// Says what value an event actually wrote, so the record keeps the value rather than the
         /// request that asked for it.
         ///
-        /// Called from inside the apply of an input, by the code that resolved the target and knows
+        /// Called from inside the apply of an event, by the code that resolved the target and knows
         /// its type. That is the earliest the type is knowable: at submit time the target is still
         /// a path. Outside a frame head this does nothing, which is what makes it safe to call from
         /// a write path that is also reachable without the gate.
@@ -204,10 +204,10 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         public static void StampAppliedPayload(string target, Type type, object value)
         {
-            var input = _applyingInput;
-            if (input == null || type == null || value == null || string.IsNullOrEmpty(target)) return;
+            var evt = _applyingEvent;
+            if (evt == null || type == null || value == null || string.IsNullOrEmpty(target)) return;
 
-            Span<byte> packed = stackalloc byte[InputRecord.kPayloadCapacity];
+            Span<byte> packed = stackalloc byte[EventRecord.kPayloadCapacity];
             int written;
             string typeName;
 
@@ -215,34 +215,34 @@ namespace Lilium.RemoteControl.Frames
 
             if (type == typeof(string))
             {
-                fitted = InputPayload.TryWriteString((string)value, packed, out written);
-                typeName = InputPayload.kStringTypeName;
+                fitted = EventPayload.TryWriteString((string)value, packed, out written);
+                typeName = EventPayload.kStringTypeName;
             }
             else
             {
-                if (!InputPayload.TryPack(type, value, packed, out written)) return;
-                typeName = InputPayload.NameOf(type);
+                if (!EventPayload.TryPack(type, value, packed, out written)) return;
+                typeName = EventPayload.NameOf(type);
             }
 
             var targetId = _symbols.Intern(target);
             var typeId = _symbols.Intern(typeName);
 
-            for (int i = 0; i < input.recordCount; i++)
+            for (int i = 0; i < evt.recordCount; i++)
             {
-                if (input.records[i].targetId != targetId) continue;
+                if (evt.records[i].targetId != targetId) continue;
 
-                input.records[i].SetPayload(packed.Slice(0, written), typeId);
+                evt.records[i].SetPayload(packed.Slice(0, written), typeId);
 
                 // The mark belongs to what is in the record now, not to the request text this
                 // replaced. A laid-out value is written at its own width and always fits; only a
                 // string long enough to overrun the record can still be short.
                 if (fitted)
                 {
-                    input.records[i].flags &= ~InputFlags.PayloadTruncated;
+                    evt.records[i].flags &= ~EventFlags.PayloadTruncated;
                 }
                 else
                 {
-                    input.records[i].flags |= InputFlags.PayloadTruncated;
+                    evt.records[i].flags |= EventFlags.PayloadTruncated;
                     Interlocked.Increment(ref _truncatedPayloadCount);
                 }
 
@@ -263,34 +263,34 @@ namespace Lilium.RemoteControl.Frames
         /// The strings behind the ids in the records. A recording writes this into its
         /// header, and nothing can be read back out of a frame without it.
         /// </summary>
-        public static InputSymbolTable symbols => _symbols;
+        public static FrameSymbolTable symbols => _symbols;
 
         /// <summary>
-        /// Inputs whose payload did not fit in a record and was cut short. They applied correctly,
+        /// Events whose payload did not fit in a record and was cut short. They applied correctly,
         /// but what was kept of them cannot be replayed faithfully.
         /// </summary>
         public static long truncatedPayloadCount => Interlocked.Read(ref _truncatedPayloadCount);
 
         /// <summary>
         /// Writes applied but left out of the frame because the state lane carries them. Counted so
-        /// "the recording has no input for this" can be told from "the input went missing".
+        /// "the recording has no event for this" can be told from "the event went missing".
         /// </summary>
         public static long omittedRecordCount => Interlocked.Read(ref _omittedRecordCount);
 
         /// <summary>Supplies the frame number stamped on each committed frame.</summary>
         public static IFrameClock clock => _clock;
 
-        /// <summary>True once a frame-head pump is running and inputs are being ordered.</summary>
+        /// <summary>True once a frame-head pump is running and events are being ordered.</summary>
         public static bool isGateRunning => _pumpInstalled;
 
         /// <summary>
-        /// Inputs that had to be applied without passing through a frame head, because no pump was
+        /// Events that had to be applied without passing through a frame head, because no pump was
         /// running or the caller was already on the main thread. Exposed rather than silent: each
         /// one is a hole in the ordering, and a run with holes cannot be replayed faithfully.
         /// </summary>
         public static long bypassedCount => Interlocked.Read(ref _bypassedCount);
 
-        /// <summary>Sequence number the next accepted input will get.</summary>
+        /// <summary>Sequence number the next accepted event will get.</summary>
         public static long nextSequence => _sequencer.nextSequence;
 
         /// <summary>
@@ -348,7 +348,7 @@ namespace Lilium.RemoteControl.Frames
         public static void SetBufferFrames(int frameCapacity)
         {
             var replaced = _buffer;
-            _buffer = new InputFrameBuffer(frameCapacity);
+            _buffer = new EventFrameBuffer(frameCapacity);
 
             // Released after the swap, so nothing is reading the old one through the property while
             // its storage goes away.
@@ -401,13 +401,13 @@ namespace Lilium.RemoteControl.Frames
         }
 
         /// <summary>
-        /// Runs at the head of every frame, after that frame's inputs have been applied and before
+        /// Runs at the head of every frame, after that frame's events have been applied and before
         /// the frame is committed. This is where state-lane producers write their block: the order
-        /// is input then state, because an input can change the structure and the container has to
+        /// is event then state, because an event can change the structure and the container has to
         /// exist before values go into it.
         ///
         /// Main thread only. A handler that throws is logged and the rest still run -- one
-        /// misbehaving producer must not stop inputs from being applied.
+        /// misbehaving producer must not stop events from being applied.
         /// </summary>
         public static void AddFrameHeadHandler(FrameHeadDelegate handler)
         {
@@ -481,7 +481,7 @@ namespace Lilium.RemoteControl.Frames
         }
 
         /// <summary>
-        /// Resolves the source of an input submitted by name. An undeclared name is filed under
+        /// Resolves the source of an event submitted by name. An undeclared name is filed under
         /// <see cref="FrameSource.kUnknown"/> and reported once, so a caller not yet migrated keeps
         /// working instead of failing, but does not disappear quietly either.
         /// </summary>
@@ -511,7 +511,7 @@ namespace Lilium.RemoteControl.Frames
         private static void _InitializeOnPlay()
         {
             // Domain-reload-disabled safe: every static carrying run state is reset here.
-            ResetState("[RemoteControl] Frame gate restarted before this input reached a frame.");
+            ResetState("[RemoteControl] Frame gate restarted before this evt reached a frame.");
 
             _CaptureMainThread();
             _InstallPlayerLoopHook();
@@ -526,8 +526,8 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>
         /// Clears everything the gate carries between runs. Main thread only.
         ///
-        /// Queued inputs are handed their failure rather than dropped. A caller is blocked on the
-        /// frame head its input was going to reach, so discarding one silently leaves that caller
+        /// Queued events are handed their failure rather than dropped. A caller is blocked on the
+        /// frame head its event was going to reach, so discarding one silently leaves that caller
         /// waiting forever -- for an HTTP request that means hanging until the client gives up, and
         /// with write coalescing upstream, everything queued behind it stalls too.
         /// </summary>
@@ -568,11 +568,11 @@ namespace Lilium.RemoteControl.Frames
             // the count says how much went quiet during this run, and carrying it over would report
             // a previous run's losses against a run that has not lost anything.
             _detachedObserverCount = 0;
-            Volatile.Write(ref _lastRepeatedTargetId, InputSymbolTable.kNone);
+            Volatile.Write(ref _lastRepeatedTargetId, FrameSymbolTable.kNone);
         }
 
         /// <summary>
-        /// Stops accepting inputs and fails the ones already queued.
+        /// Stops accepting events and fails the ones already queued.
         ///
         /// Once the application is going down no frame head is coming, so anything still waiting
         /// would wait forever and hold the shutdown open with it.
@@ -589,9 +589,9 @@ namespace Lilium.RemoteControl.Frames
 
             for (int i = 0; i < drained.Count; i++)
             {
-                var input = drained[i];
-                input.fault?.Invoke(new OperationCanceledException(reason));
-                input.Clear();
+                var evt = drained[i];
+                evt.fault?.Invoke(new OperationCanceledException(reason));
+                evt.Clear();
             }
 
             drained.Clear();
@@ -604,7 +604,7 @@ namespace Lilium.RemoteControl.Frames
             _CaptureMainThread();
 
             // The player loop hook does not tick while the editor is not playing, but RemoteControl
-            // is expected to work there. Without this heartbeat a submitted input would never reach
+            // is expected to work there. Without this heartbeat a submitted event would never reach
             // a frame head and its caller would wait forever.
             UnityEditor.EditorApplication.update -= _EditorTick;
             UnityEditor.EditorApplication.update += _EditorTick;
@@ -673,7 +673,7 @@ namespace Lilium.RemoteControl.Frames
                     }
                 }
 
-                // Prepended, not appended: the point is that inputs land before anything else in
+                // Prepended, not appended: the point is that events land before anything else in
                 // the frame has looked at the state.
                 var inserted = new PlayerLoopSystem[children.Length + 1];
                 inserted[0] = new PlayerLoopSystem
@@ -708,7 +708,7 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         public static void Pump()
         {
-            // Whoever calls this is the pump. The flag decides whether a posted input is queued for
+            // Whoever calls this is the pump. The flag decides whether a posted event is queued for
             // a frame head or applied on the spot as a hole in the ordering, and the question it
             // answers is "will anything come along and apply this" -- a caller of Pump demonstrably
             // will. Set here as well as at install time so a host driving the gate from its own loop
@@ -720,72 +720,72 @@ namespace Lilium.RemoteControl.Frames
 
             // The same number again means no new frame is due: the rate is the resolution of the
             // time axis, and two pumps inside one interval are two moments at one position.
-            // Committing a second frame there would overwrite the first -- the inputs it carried
+            // Committing a second frame there would overwrite the first -- the events it carried
             // included -- so the pump is skipped and whatever arrived waits for the next interval.
             if (frameNumber == _lastPumpedFrameNumber) return;
             _lastPumpedFrameNumber = frameNumber;
 
-            var inputs = _buffer.BeginFrame(frameNumber, _clock.frameRate);
+            var events = _buffer.BeginFrame(frameNumber, _clock.frameRate);
 
             _frame.frameNumber = frameNumber;
             _frame.frameRate = _clock.frameRate;
             _frame.structure = _structure;
             _frame.state = _state;
-            _frame.inputs = inputs;
+            _frame.events = events;
             _frame.isSupplied = false;
 
             _writeKeysThisFrame.Clear();
 
-            // Before the queued inputs, so what the recording asked for lands first and an operator
+            // Before the queued events, so what the recording asked for lands first and an operator
             // acting right now lands on top of it rather than under it.
             _FillFromSource();
 
             var drained = _sequencer.Drain();
             for (int i = 0; i < drained.Count; i++)
             {
-                var input = drained[i];
+                var evt = drained[i];
 
                 try
                 {
-                    // Published while the input runs so the code that applies it can say what value
+                    // Published while the event runs so the code that applies it can say what value
                     // it wrote. Records are added to the lane below, after this, so a stamp made
                     // here is part of what gets recorded.
-                    _applyingInput = input;
-                    input.apply?.Invoke();
+                    _applyingEvent = evt;
+                    evt.apply?.Invoke();
                 }
                 catch (Exception e)
                 {
                     // The caller was handed this through its own completion; log it here as well so
                     // a failure nobody awaited is still visible. A group applies as one unit, so
                     // every record it carries is marked.
-                    input.SetFlags(InputFlags.Faulted);
-                    Debug.LogError($"[RemoteControl] Frame input #{input.firstSequence} ({_DescribeFirst(input)}) failed: {e}");
+                    evt.SetFlags(EventFlags.Faulted);
+                    Debug.LogError($"[RemoteControl] Frame evt #{evt.firstSequence} ({_DescribeFirst(evt)}) failed: {e}");
                 }
                 finally
                 {
-                    _applyingInput = null;
+                    _applyingEvent = null;
                 }
 
-                for (int r = 0; r < input.recordCount; r++)
+                for (int r = 0; r < evt.recordCount; r++)
                 {
                     // Applied above, but the state lane is already carrying what it did. See
-                    // InputFlags.NotRecorded.
-                    if ((input.records[r].flags & InputFlags.NotRecorded) != 0)
+                    // EventFlags.NotRecorded.
+                    if ((evt.records[r].flags & EventFlags.NotRecorded) != 0)
                     {
                         Interlocked.Increment(ref _omittedRecordCount);
                         continue;
                     }
 
-                    _CountIfRepeatedWrite(in input.records[r]);
-                    inputs.Add(input.records[r]);
+                    _CountIfRepeatedWrite(in evt.records[r]);
+                    events.Add(evt.records[r]);
                 }
 
-                input.Clear();
+                evt.Clear();
             }
 
             drained.Clear();
 
-            // State after input: an input can change the structure, and a state block is only
+            // State after event: an event can change the structure, and a state block is only
             // meaningful against the structure it belongs to.
             _RunFrameHeadHandlers();
 
@@ -799,7 +799,7 @@ namespace Lilium.RemoteControl.Frames
 
             // Dropped so a handler that stashed the frame cannot reach a slot that is about to be
             // handed to a later frame.
-            _frame.inputs = null;
+            _frame.events = null;
 
             _buffer.Commit(frameNumber);
         }
@@ -808,10 +808,10 @@ namespace Lilium.RemoteControl.Frames
         /// Notes a write that follows an earlier write to the same target in this frame. The record
         /// is kept either way; the count is a signal that the target belongs in the state lane.
         /// </summary>
-        private static void _CountIfRepeatedWrite(in InputRecord record)
+        private static void _CountIfRepeatedWrite(in EventRecord record)
         {
-            if (record.kind != InputKind.PropertyWrite) return;
-            if (record.targetId == InputSymbolTable.kNone) return;
+            if (record.kind != EventKind.PropertyWrite) return;
+            if (record.targetId == FrameSymbolTable.kNone) return;
 
             var key = ((long)record.sourceId << 32) | (uint)record.targetId;
             if (_writeKeysThisFrame.Add(key)) return;
@@ -932,23 +932,23 @@ namespace Lilium.RemoteControl.Frames
         }
 
         /// <summary>
-        /// Puts an input in the queue and completes once it has been applied at a frame head.
+        /// Puts an event in the queue and completes once it has been applied at a frame head.
         /// </summary>
-        public static Task<T> SubmitAsync<T>(InputKind kind, string sourceId, string verb,
+        public static Task<T> SubmitAsync<T>(EventKind kind, string sourceId, string verb,
             string target, string requestText, Func<T> action)
-            => SubmitGroupAsync(new[] { new InputDescriptor(kind, verb, target, requestText) }, sourceId, action);
+            => SubmitGroupAsync(new[] { new EventDescriptor(kind, verb, target, requestText) }, sourceId, action);
 
         /// <summary>
-        /// Puts an input in the queue on behalf of a source resolved once with
+        /// Puts an event in the queue on behalf of a source resolved once with
         /// <see cref="ResolveSource"/>. Preferred over the string form: the name has already been
         /// checked against a declaration and interned, so nothing is hashed per call.
         /// </summary>
-        public static Task<T> SubmitAsync<T>(InputKind kind, FrameSource source, string verb,
+        public static Task<T> SubmitAsync<T>(EventKind kind, FrameSource source, string verb,
             string target, string requestText, Func<T> action)
-            => SubmitGroupAsync(new[] { new InputDescriptor(kind, verb, target, requestText) }, source, action);
+            => SubmitGroupAsync(new[] { new EventDescriptor(kind, verb, target, requestText) }, source, action);
 
-        /// <summary>Group form of <see cref="SubmitAsync{T}(InputKind, FrameSource, string, string, Func{T})"/>.</summary>
-        public static Task<T> SubmitGroupAsync<T>(IReadOnlyList<InputDescriptor> operations,
+        /// <summary>Group form of <see cref="SubmitAsync{T}(EventKind, FrameSource, string, string, Func{T})"/>.</summary>
+        public static Task<T> SubmitGroupAsync<T>(IReadOnlyList<EventDescriptor> operations,
             FrameSource source, Func<T> action)
         {
             if (!source.isValid)
@@ -969,15 +969,15 @@ namespace Lilium.RemoteControl.Frames
         /// numbered as one run so they cannot be split, but recorded separately so each stays small
         /// enough to be kept faithfully.
         /// </summary>
-        public static Task<T> SubmitGroupAsync<T>(IReadOnlyList<InputDescriptor> operations,
+        public static Task<T> SubmitGroupAsync<T>(IReadOnlyList<EventDescriptor> operations,
             string sourceId, Func<T> action)
         {
             // Resolved before the bypass checks so that an undeclared name is reported even when the
-            // input never reaches the queue.
+            // event never reaches the queue.
             return _SubmitGroup(operations, _ResolveSourceId(sourceId), action);
         }
 
-        private static Task<T> _SubmitGroup<T>(IReadOnlyList<InputDescriptor> operations,
+        private static Task<T> _SubmitGroup<T>(IReadOnlyList<EventDescriptor> operations,
             int sourceId, Func<T> action)
         {
             if (action == null) throw new ArgumentNullException(nameof(action));
@@ -985,7 +985,7 @@ namespace Lilium.RemoteControl.Frames
             if (operations.Count == 0) throw new ArgumentException("No operations.", nameof(operations));
 
             // Refused rather than queued: after shutdown begins no frame head is coming, so a
-            // queued input would keep its caller -- and the shutdown -- waiting indefinitely.
+            // queued event would keep its caller -- and the shutdown -- waiting indefinitely.
             if (_gateClosed)
             {
                 return Task.FromException<T>(new OperationCanceledException(
@@ -1004,45 +1004,45 @@ namespace Lilium.RemoteControl.Frames
         }
 
         /// <summary>Single-operation convenience for tests. See <see cref="_Enqueue{T}"/>.</summary>
-        internal static Task<T> _Enqueue<T>(InputKind kind, string sourceId, string target,
+        internal static Task<T> _Enqueue<T>(EventKind kind, string sourceId, string target,
             string requestText, Func<T> action, string verb = null)
-            => _Enqueue(new[] { new InputDescriptor(kind, verb, target, requestText) },
+            => _Enqueue(new[] { new EventDescriptor(kind, verb, target, requestText) },
                 _ResolveSourceId(sourceId), action);
 
         /// <summary>Group convenience for tests, resolving the source by name.</summary>
-        internal static Task<T> _Enqueue<T>(IReadOnlyList<InputDescriptor> operations,
+        internal static Task<T> _Enqueue<T>(IReadOnlyList<EventDescriptor> operations,
             string sourceId, Func<T> action)
             => _Enqueue(operations, _ResolveSourceId(sourceId), action);
 
         /// <summary>
-        /// Queues an input without the bypass checks. Split out so tests can drive the real queue
+        /// Queues an event without the bypass checks. Split out so tests can drive the real queue
         /// and <see cref="Pump"/> from the main thread, where <see cref="SubmitGroupAsync"/> would
         /// deliberately refuse to wait.
         /// </summary>
-        internal static Task<T> _Enqueue<T>(IReadOnlyList<InputDescriptor> operations,
+        internal static Task<T> _Enqueue<T>(IReadOnlyList<EventDescriptor> operations,
             int source, Func<T> action)
         {
             // Continuations run asynchronously so that whatever the caller does after its await --
             // building a response, writing it out -- does not run inside the pump on the main
-            // thread. Every input funnels through one point, so inline continuations would pile
+            // thread. Every event funnels through one point, so inline continuations would pile
             // the whole cost of a frame's callers onto the frame head.
             var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             // Targets are interned here rather than at the frame head: this runs on the worker
             // thread that is going to wait anyway, and the main thread should not pay for it.
-            var records = new InputRecord[operations.Count];
+            var records = new EventRecord[operations.Count];
 
             // One buffer for the whole group. Payloads are copied into the records, so nothing
             // outlives this frame's stack.
-            Span<byte> scratch = stackalloc byte[InputRecord.kPayloadCapacity];
+            Span<byte> scratch = stackalloc byte[EventRecord.kPayloadCapacity];
 
             for (int i = 0; i < operations.Count; i++)
             {
                 var operation = operations[i];
 
                 // The sequence is stamped by the sequencer, which is where order is decided.
-                var record = new InputRecord(0, operation.kind, source,
-                    _symbols.Intern(operation.target), InputFlags.None,
+                var record = new EventRecord(0, operation.kind, source,
+                    _symbols.Intern(operation.target), EventFlags.None,
                     _symbols.Intern(operation.verb));
 
                 // The request text, until whoever applies it says what value it really wrote.
@@ -1052,13 +1052,13 @@ namespace Lilium.RemoteControl.Frames
                 {
                     // Held inline, length first: this is one request body, not a value that
                     // recurs, and a table entry per distinct body would grow without bound.
-                    var fits = InputPayload.TryWriteString(operation.requestText, scratch, out var kept);
+                    var fits = EventPayload.TryWriteString(operation.requestText, scratch, out var kept);
 
-                    record.SetPayload(scratch.Slice(0, kept), _symbols.Intern(InputPayload.kRequestTypeName));
+                    record.SetPayload(scratch.Slice(0, kept), _symbols.Intern(EventPayload.kRequestTypeName));
 
                     if (!fits)
                     {
-                        record.flags |= InputFlags.PayloadTruncated;
+                        record.flags |= EventFlags.PayloadTruncated;
                         Interlocked.Increment(ref _truncatedPayloadCount);
                     }
                 }
@@ -1066,13 +1066,13 @@ namespace Lilium.RemoteControl.Frames
                 records[i] = record;
             }
 
-            var input = new PendingInput
+            var evt = new PendingEvent
             {
                 records = records,
                 recordCount = records.Length,
             };
 
-            input.apply = () =>
+            evt.apply = () =>
             {
                 try
                 {
@@ -1085,18 +1085,18 @@ namespace Lilium.RemoteControl.Frames
                 }
             };
 
-            input.fault = reason => completion.TrySetException(reason);
+            evt.fault = reason => completion.TrySetException(reason);
 
-            _sequencer.Submit(input);
+            _sequencer.Submit(evt);
             return completion.Task;
         }
 
         /// <summary>
-        /// Queues an input to be applied at the next frame head and returns immediately.
+        /// Queues an event to be applied at the next frame head and returns immediately.
         ///
         /// For a producer that is already inside the frame -- a deck button, a gamepad axis, a
         /// script -- rather than a request waiting on an answer. Those cannot use
-        /// <see cref="SubmitAsync{T}(InputKind, FrameSource, string, string, string, Func{T})"/>:
+        /// <see cref="SubmitAsync{T}(EventKind, FrameSource, string, string, string, Func{T})"/>:
         /// it is called from a worker thread that then blocks on the frame head, and blocking the
         /// main thread on a frame head the main thread is supposed to run would deadlock. Nothing
         /// waits here, so there is nothing to deadlock.
@@ -1108,7 +1108,7 @@ namespace Lilium.RemoteControl.Frames
         /// <paramref name="apply"/> does the work and is expected to say what it wrote, with
         /// <see cref="StampAppliedPayload"/>, so the record keeps the value rather than nothing.
         /// </summary>
-        public static void Post(InputKind kind, FrameSource source, string verb, string target,
+        public static void Post(EventKind kind, FrameSource source, string verb, string target,
             Action apply, string requestText = null)
         {
             if (apply == null) throw new ArgumentNullException(nameof(apply));
@@ -1133,30 +1133,30 @@ namespace Lilium.RemoteControl.Frames
         }
 
         /// <summary>
-        /// Queues a posted input without the bypass check, so tests can drive the real queue whether
+        /// Queues a posted event without the bypass check, so tests can drive the real queue whether
         /// or not a pump happens to be installed. See <see cref="Post"/>.
         /// </summary>
-        internal static void _Post(InputKind kind, FrameSource source, string verb, string target,
+        internal static void _Post(EventKind kind, FrameSource source, string verb, string target,
             Action apply, string requestText = null)
         {
-            var record = new InputRecord(0, kind, source.id, _symbols.Intern(target),
-                InputFlags.None, _symbols.Intern(verb));
+            var record = new EventRecord(0, kind, source.id, _symbols.Intern(target),
+                EventFlags.None, _symbols.Intern(verb));
 
             if (!string.IsNullOrEmpty(requestText))
             {
-                Span<byte> scratch = stackalloc byte[InputRecord.kPayloadCapacity];
-                var fits = InputPayload.TryWriteString(requestText, scratch, out var kept);
+                Span<byte> scratch = stackalloc byte[EventRecord.kPayloadCapacity];
+                var fits = EventPayload.TryWriteString(requestText, scratch, out var kept);
 
-                record.SetPayload(scratch.Slice(0, kept), _symbols.Intern(InputPayload.kRequestTypeName));
+                record.SetPayload(scratch.Slice(0, kept), _symbols.Intern(EventPayload.kRequestTypeName));
 
                 if (!fits)
                 {
-                    record.flags |= InputFlags.PayloadTruncated;
+                    record.flags |= EventFlags.PayloadTruncated;
                     Interlocked.Increment(ref _truncatedPayloadCount);
                 }
             }
 
-            var input = new PendingInput
+            var evt = new PendingEvent
             {
                 records = new[] { record },
                 recordCount = 1,
@@ -1166,18 +1166,18 @@ namespace Lilium.RemoteControl.Frames
                 // of dropped: an operation that silently stopped landing is the kind of quiet this
                 // whole layer exists to prevent.
                 fault = reason => Debug.LogWarning(
-                    $"[RemoteControl] Posted input ({verb} {target}) never reached a frame: {reason.Message}"),
+                    $"[RemoteControl] Posted evt ({verb} {target}) never reached a frame: {reason.Message}"),
             };
 
-            _sequencer.Submit(input);
+            _sequencer.Submit(evt);
         }
 
-        private static string _DescribeFirst(PendingInput input)
+        private static string _DescribeFirst(PendingEvent evt)
         {
-            if (input.recordCount == 0) return "no records";
+            if (evt.recordCount == 0) return "no records";
 
-            var first = input.records[0];
-            var suffix = input.recordCount > 1 ? $" (+{input.recordCount - 1} more)" : string.Empty;
+            var first = evt.records[0];
+            var suffix = evt.recordCount > 1 ? $" (+{evt.recordCount - 1} more)" : string.Empty;
             return $"{first.kind} {_symbols.Resolve(first.targetId)}{suffix}";
         }
 

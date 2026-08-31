@@ -145,20 +145,20 @@ namespace Lilium.RemoteControl.Tests
         public void Structure_MustAgreeOnContentsAndOrder()
         {
             var a = NewStructure();
-            a.AddOrUpdate(1, 10, InputSymbolTable.kNone);
-            a.AddOrUpdate(2, 10, InputSymbolTable.kNone);
+            a.AddOrUpdate(1, 10, FrameSymbolTable.kNone);
+            a.AddOrUpdate(2, 10, FrameSymbolTable.kNone);
 
             var same = NewStructure();
-            same.AddOrUpdate(1, 10, InputSymbolTable.kNone);
-            same.AddOrUpdate(2, 10, InputSymbolTable.kNone);
+            same.AddOrUpdate(1, 10, FrameSymbolTable.kNone);
+            same.AddOrUpdate(2, 10, FrameSymbolTable.kNone);
 
             Assert.IsTrue(_comparer.Compare(a, null, same, null).structureMatches);
 
             // The order is part of the recording, so the same objects in a different order have
             // already come apart.
             var reordered = NewStructure();
-            reordered.AddOrUpdate(2, 10, InputSymbolTable.kNone);
-            reordered.AddOrUpdate(1, 10, InputSymbolTable.kNone);
+            reordered.AddOrUpdate(2, 10, FrameSymbolTable.kNone);
+            reordered.AddOrUpdate(1, 10, FrameSymbolTable.kNone);
 
             Assert.IsFalse(_comparer.Compare(a, null, reordered, null).structureMatches);
         }
@@ -167,7 +167,7 @@ namespace Lilium.RemoteControl.Tests
         public void Structure_DifferingByParent_IsNotAMatch()
         {
             var a = NewStructure();
-            a.AddOrUpdate(1, 10, InputSymbolTable.kNone);
+            a.AddOrUpdate(1, 10, FrameSymbolTable.kNone);
 
             var reparented = NewStructure();
             reparented.AddOrUpdate(1, 10, 7);

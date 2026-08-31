@@ -35,26 +35,26 @@ namespace Lilium.RemoteControl
     /// <summary>
     /// A resolved input source: the interned id of a declared source name.
     ///
-    /// Held rather than the string so submitting an input costs no hashing, and so the id in a
+    /// Held rather than the string so submitting an event costs no hashing, and so the id in a
     /// record can be traced back to something that was declared. Ids of declared sources are
     /// assigned in a fixed order every time the gate resets, which is what makes it safe to resolve
     /// one into a static field and keep it across a domain reload.
     /// </summary>
     public readonly struct FrameSource : IEquatable<FrameSource>
     {
-        /// <summary>Where an input whose source was never declared is filed.</summary>
+        /// <summary>Where an event whose source was never declared is filed.</summary>
         public const string kUnknown = "unknown";
 
         /// <summary>
         /// The interned id, offset by one. Stored offset so that <c>default(FrameSource)</c> is
         /// distinguishable: a plain id of zero is a real source (unknown is interned first), so an
-        /// unresolved handle would otherwise look valid and file its inputs under it.
+        /// unresolved handle would otherwise look valid and file its events under it.
         /// </summary>
         private readonly int _idPlusOne;
 
         internal FrameSource(int id)
         {
-            _idPlusOne = id == InputSymbolTable.kNone ? 0 : id + 1;
+            _idPlusOne = id == FrameSymbolTable.kNone ? 0 : id + 1;
         }
 
         internal int id => _idPlusOne - 1;

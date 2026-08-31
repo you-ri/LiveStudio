@@ -9,7 +9,7 @@ using UnityEngine.TestTools;
 using Lilium.RemoteControl;
 using Lilium.RemoteControl.Frames;
 
-// Sources these tests submit inputs as. Declared like any other source, so the tests exercise the
+// Sources these tests submit events as. Declared like any other source, so the tests exercise the
 // same resolution path production code takes rather than a special case for tests.
 [assembly: FrameSource("test")]
 [assembly: FrameSource("unit-test")]
@@ -22,7 +22,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Intern_SameString_ReturnsSameId()
         {
-            var table = new InputSymbolTable();
+            var table = new FrameSymbolTable();
 
             var first = table.Intern("/live/objects/camera/fieldOfView");
             var second = table.Intern("/live/objects/camera/fieldOfView");
@@ -34,7 +34,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Intern_DifferentStrings_HandsOutAscendingIds()
         {
-            var table = new InputSymbolTable();
+            var table = new FrameSymbolTable();
 
             Assert.AreEqual(0, table.Intern("a"));
             Assert.AreEqual(1, table.Intern("b"));
@@ -44,17 +44,17 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Intern_NullOrEmpty_ReturnsNoneAndAddsNothing()
         {
-            var table = new InputSymbolTable();
+            var table = new FrameSymbolTable();
 
-            Assert.AreEqual(InputSymbolTable.kNone, table.Intern(null));
-            Assert.AreEqual(InputSymbolTable.kNone, table.Intern(string.Empty));
+            Assert.AreEqual(FrameSymbolTable.kNone, table.Intern(null));
+            Assert.AreEqual(FrameSymbolTable.kNone, table.Intern(string.Empty));
             Assert.AreEqual(0, table.count);
         }
 
         [Test]
         public void Resolve_RoundTripsPastTheInitialCapacity()
         {
-            var table = new InputSymbolTable();
+            var table = new FrameSymbolTable();
 
             // The backing array starts at 64, so this forces it to grow at least twice.
             const int kCount = 300;
@@ -70,18 +70,18 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void TryResolve_UnknownId_Fails()
         {
-            var table = new InputSymbolTable();
+            var table = new FrameSymbolTable();
             table.Intern("only");
 
             Assert.IsFalse(table.TryResolve(1, out _));
-            Assert.IsFalse(table.TryResolve(InputSymbolTable.kNone, out _));
+            Assert.IsFalse(table.TryResolve(FrameSymbolTable.kNone, out _));
             Assert.IsFalse(table.TryResolve(-42, out _));
         }
 
         [Test]
         public void Reset_EmptiesTheTable()
         {
-            var table = new InputSymbolTable();
+            var table = new FrameSymbolTable();
             table.Intern("a");
             table.Reset();
 
@@ -92,16 +92,16 @@ namespace Lilium.RemoteControl.Tests
 
     public class InputSequencerTests
     {
-        private static PendingInput _Input(int recordCount = 1) => new PendingInput
+        private static PendingEvent _Input(int recordCount = 1) => new PendingEvent
         {
-            records = new InputRecord[recordCount],
+            records = new EventRecord[recordCount],
             recordCount = recordCount,
         };
 
         [Test]
         public void Submit_StampsInAcceptanceOrder()
         {
-            var sequencer = new InputSequencer();
+            var sequencer = new EventSequencer();
 
             var first = sequencer.Submit(_Input());
             var second = sequencer.Submit(_Input());
@@ -114,7 +114,7 @@ namespace Lilium.RemoteControl.Tests
         {
             // A group has to be numbered as one run: that is what lets a frame head take all of it
             // or none of it, so a bundled request cannot be split across two frames.
-            var sequencer = new InputSequencer();
+            var sequencer = new EventSequencer();
 
             var first = sequencer.Submit(_Input(3));
             var next = sequencer.Submit(_Input());
@@ -131,7 +131,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Drain_ReturnsEverythingInOrderThenComesBackEmpty()
         {
-            var sequencer = new InputSequencer();
+            var sequencer = new EventSequencer();
             for (int i = 0; i < 5; i++) sequencer.Submit(_Input());
 
             var drained = sequencer.Drain();
@@ -150,7 +150,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Drain_ReusesItsListWithoutLosingWhatArrivedSince()
         {
-            var sequencer = new InputSequencer();
+            var sequencer = new EventSequencer();
             sequencer.Submit(_Input());
 
             var first = sequencer.Drain();
@@ -159,7 +159,7 @@ namespace Lilium.RemoteControl.Tests
             sequencer.Submit(_Input());
             var second = sequencer.Drain();
 
-            Assert.AreEqual(1, second.Count, "an input submitted between drains must not be dropped");
+            Assert.AreEqual(1, second.Count, "an evt submitted between drains must not be dropped");
         }
     }
 
@@ -167,12 +167,12 @@ namespace Lilium.RemoteControl.Tests
     {
         private static readonly FrameRate kRate60 = new FrameRate(1, 60);
 
-        private static void _Commit(InputFrameBuffer buffer, long frameNumber, int inputCount = 0)
+        private static void _Commit(EventFrameBuffer buffer, long frameNumber, int eventCount = 0)
         {
             var frame = buffer.BeginFrame(frameNumber, kRate60);
-            for (int i = 0; i < inputCount; i++)
+            for (int i = 0; i < eventCount; i++)
             {
-                frame.Add(new InputRecord(i, InputKind.PropertyWrite, 0, 0, InputFlags.None));
+                frame.Add(new EventRecord(i, EventKind.PropertyWrite, 0, 0, EventFlags.None));
             }
             buffer.Commit(frameNumber);
         }
@@ -180,32 +180,32 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void TryRead_BeforeAnythingIsCommitted_SaysNotYet()
         {
-            using var buffer = new InputFrameBuffer(4);
+            using var buffer = new EventFrameBuffer(4);
 
-            Assert.AreEqual(FrameLookup.NotYetCommitted, buffer.TryRead(0, new InputFrame()));
+            Assert.AreEqual(FrameLookup.NotYetCommitted, buffer.TryRead(0, new EventFrame()));
         }
 
         [Test]
         public void TryRead_CommittedFrame_IsFoundWithItsInputs()
         {
-            using var buffer = new InputFrameBuffer(4);
-            _Commit(buffer, 0, inputCount: 3);
+            using var buffer = new EventFrameBuffer(4);
+            _Commit(buffer, 0, eventCount: 3);
 
-            using var destination = new InputFrame();
+            using var destination = new EventFrame();
 
             Assert.AreEqual(FrameLookup.Found, buffer.TryRead(0, destination));
             Assert.AreEqual(0, destination.frameNumber);
-            Assert.AreEqual(3, destination.inputCount);
+            Assert.AreEqual(3, destination.eventCount);
             Assert.AreEqual(kRate60, destination.frameRate);
         }
 
         [Test]
         public void TryRead_AheadOfTheProducer_SaysNotYet()
         {
-            using var buffer = new InputFrameBuffer(4);
+            using var buffer = new EventFrameBuffer(4);
             _Commit(buffer, 0);
 
-            Assert.AreEqual(FrameLookup.NotYetCommitted, buffer.TryRead(1, new InputFrame()));
+            Assert.AreEqual(FrameLookup.NotYetCommitted, buffer.TryRead(1, new EventFrame()));
         }
 
         [Test]
@@ -213,25 +213,25 @@ namespace Lilium.RemoteControl.Tests
         {
             // Evicted and NotYetCommitted have to stay apart: one means wait, the other means the
             // reader can never catch up and has to resynchronise.
-            using var buffer = new InputFrameBuffer(4);
+            using var buffer = new EventFrameBuffer(4);
             for (long i = 0; i <= 4; i++) _Commit(buffer, i);
 
-            Assert.AreEqual(FrameLookup.Evicted, buffer.TryRead(0, new InputFrame()));
-            Assert.AreEqual(FrameLookup.Found, buffer.TryRead(4, new InputFrame()));
+            Assert.AreEqual(FrameLookup.Evicted, buffer.TryRead(0, new EventFrame()));
+            Assert.AreEqual(FrameLookup.Found, buffer.TryRead(4, new EventFrame()));
         }
 
         [Test]
         public void TryReadLatest_ReturnsTheNewestCommittedFrame()
         {
-            using var buffer = new InputFrameBuffer(4);
-            using var empty = new InputFrame();
+            using var buffer = new EventFrameBuffer(4);
+            using var empty = new EventFrame();
 
             Assert.AreEqual(FrameLookup.NotYetCommitted, buffer.TryReadLatest(empty));
 
             _Commit(buffer, 0);
             _Commit(buffer, 1);
 
-            using var destination = new InputFrame();
+            using var destination = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, buffer.TryReadLatest(destination));
             Assert.AreEqual(1, destination.frameNumber);
         }
@@ -239,37 +239,37 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void TryRead_TimecodeAtAnotherRate_IsRefusedRatherThanAnswered()
         {
-            using var buffer = new InputFrameBuffer(4);
+            using var buffer = new EventFrameBuffer(4);
             _Commit(buffer, 0);
 
             var otherRate = new FrameRate(1, 30);
             var timecode = new Timecode(0, otherRate);
 
             Assert.AreEqual(FrameLookup.RateMismatch,
-                buffer.TryRead(timecode, otherRate, new InputFrame()));
+                buffer.TryRead(timecode, otherRate, new EventFrame()));
         }
 
         [Test]
         public void TryRead_TimecodeAtTheSameRate_FindsTheFrame()
         {
-            using var buffer = new InputFrameBuffer(4);
+            using var buffer = new EventFrameBuffer(4);
             _Commit(buffer, 90);
 
             var timecode = new Timecode(90, kRate60);
 
             Assert.AreEqual(FrameLookup.Found,
-                buffer.TryRead(timecode, kRate60, new InputFrame()));
+                buffer.TryRead(timecode, kRate60, new EventFrame()));
         }
 
         [Test]
         public void Reset_DropsEverythingHeld()
         {
-            using var buffer = new InputFrameBuffer(4);
+            using var buffer = new EventFrameBuffer(4);
             _Commit(buffer, 0);
             buffer.Reset();
 
             Assert.AreEqual(0, buffer.frameCount);
-            Assert.AreEqual(FrameLookup.NotYetCommitted, buffer.TryRead(0, new InputFrame()));
+            Assert.AreEqual(FrameLookup.NotYetCommitted, buffer.TryRead(0, new EventFrame()));
         }
     }
 
@@ -302,7 +302,7 @@ namespace Lilium.RemoteControl.Tests
         public void Enqueue_CompletesOnceThePumpAppliesIt()
         {
             var applied = false;
-            var task = FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/a", "1",
+            var task = FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/a", "1",
                 () => { applied = true; return 42; });
 
             Assert.IsFalse(task.IsCompleted, "nothing should be applied before a frame head");
@@ -321,7 +321,7 @@ namespace Lilium.RemoteControl.Tests
             for (int i = 0; i < 5; i++)
             {
                 var captured = i;
-                FrameGate._Enqueue(InputKind.PropertyWrite, "test", $"/live/{i}", null,
+                FrameGate._Enqueue(EventKind.PropertyWrite, "test", $"/live/{i}", null,
                     () => { order.Add(captured); return true; });
             }
 
@@ -333,17 +333,17 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Pump_RecordsWhatItApplied()
         {
-            FrameGate._Enqueue(InputKind.FunctionCall, "unit-test", "/live/camera/reset", "{}",
+            FrameGate._Enqueue(EventKind.FunctionCall, "unit-test", "/live/camera/reset", "{}",
                 () => true);
 
             FrameGate.Pump();
 
-            using var frame = new InputFrame();
+            using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
-            Assert.AreEqual(1, frame.inputCount);
+            Assert.AreEqual(1, frame.eventCount);
 
             var record = frame[0];
-            Assert.AreEqual(InputKind.FunctionCall, record.kind);
+            Assert.AreEqual(EventKind.FunctionCall, record.kind);
             Assert.AreEqual("/live/camera/reset", FrameGate.symbols.Resolve(record.targetId));
             Assert.AreEqual("unit-test", FrameGate.symbols.Resolve(record.sourceId));
             Assert.IsFalse(record.faulted);
@@ -352,16 +352,16 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Pump_FailedInput_FaultsTheCallerAndMarksTheRecord()
         {
-            var task = FrameGate._Enqueue<bool>(InputKind.PropertyWrite, "test", "/live/boom", null,
+            var task = FrameGate._Enqueue<bool>(EventKind.PropertyWrite, "test", "/live/boom", null,
                 () => throw new InvalidOperationException("boom"));
 
-            LogAssert.Expect(LogType.Error, new Regex("Frame input #.*failed"));
+            LogAssert.Expect(LogType.Error, new Regex("Frame evt #.*failed"));
             FrameGate.Pump();
 
             Assert.IsTrue(task.IsFaulted);
             Assert.IsInstanceOf<InvalidOperationException>(task.Exception.InnerException);
 
-            using var frame = new InputFrame();
+            using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
             Assert.IsTrue(frame[0].faulted, "a failure has to be distinguishable from a no-op");
         }
@@ -371,12 +371,12 @@ namespace Lilium.RemoteControl.Tests
         {
             // Dropping them silently left the caller waiting for a frame head that would never
             // arrive, which hung the HTTP request behind it until the client gave up.
-            var task = FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/a", "1",
+            var task = FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/a", "1",
                 () => true);
 
             FrameGate.ResetState("[test] restarted");
 
-            Assert.IsTrue(task.IsFaulted, "a queued input must not be abandoned in silence");
+            Assert.IsTrue(task.IsFaulted, "a queued evt must not be abandoned in silence");
             Assert.IsInstanceOf<OperationCanceledException>(task.Exception.InnerException);
         }
 
@@ -385,13 +385,13 @@ namespace Lilium.RemoteControl.Tests
         {
             var before = FrameGate.truncatedPayloadCount;
 
-            FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/long", new string('x', 4000),
+            FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/long", new string('x', 4000),
                 () => true);
             FrameGate.Pump();
 
             Assert.AreEqual(before + 1, FrameGate.truncatedPayloadCount);
 
-            using var frame = new InputFrame();
+            using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
             Assert.IsTrue(frame[0].payloadTruncated);
         }
@@ -403,7 +403,7 @@ namespace Lilium.RemoteControl.Tests
             // gate applies it immediately -- and says so, because it is a gap in the ordering.
             var before = FrameGate.bypassedCount;
 
-            var task = FrameGate.SubmitAsync(InputKind.PropertyWrite, "test", "PUT", "/live/a", null,
+            var task = FrameGate.SubmitAsync(EventKind.PropertyWrite, "test", "PUT", "/live/a", null,
                 () => 7);
 
             Assert.IsTrue(task.IsCompleted);
@@ -417,9 +417,9 @@ namespace Lilium.RemoteControl.Tests
             var applied = 0;
             var operations = new[]
             {
-                new InputDescriptor(InputKind.PropertyWrite, "PUT", "/live/object/cam/fov", "35"),
-                new InputDescriptor(InputKind.PropertyWrite, "PUT", "/live/object/cam/near", "0.1"),
-                new InputDescriptor(InputKind.FunctionCall, "POST", "/live/function/reset", "{}"),
+                new EventDescriptor(EventKind.PropertyWrite, "PUT", "/live/object/cam/fov", "35"),
+                new EventDescriptor(EventKind.PropertyWrite, "PUT", "/live/object/cam/near", "0.1"),
+                new EventDescriptor(EventKind.FunctionCall, "POST", "/live/function/reset", "{}"),
             };
 
             var task = FrameGate._Enqueue(operations, "batch", () => { applied++; return true; });
@@ -429,14 +429,14 @@ namespace Lilium.RemoteControl.Tests
             Assert.IsTrue(task.IsCompleted);
             Assert.AreEqual(1, applied, "a group applies as one unit, not once per operation");
 
-            using var frame = new InputFrame();
+            using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
-            Assert.AreEqual(3, frame.inputCount, "each operation is recorded on its own");
+            Assert.AreEqual(3, frame.eventCount, "each operation is recorded on its own");
 
             Assert.AreEqual(frame[0].sequence + 1, frame[1].sequence);
             Assert.AreEqual(frame[1].sequence + 1, frame[2].sequence);
             Assert.AreEqual("/live/object/cam/fov", FrameGate.symbols.Resolve(frame[0].targetId));
-            Assert.AreEqual(InputKind.FunctionCall, frame[2].kind);
+            Assert.AreEqual(EventKind.FunctionCall, frame[2].kind);
         }
 
         [Test]
@@ -444,19 +444,19 @@ namespace Lilium.RemoteControl.Tests
         {
             var operations = new[]
             {
-                new InputDescriptor(InputKind.PropertyWrite, "PUT", "/live/a", "1"),
-                new InputDescriptor(InputKind.PropertyWrite, "PUT", "/live/b", "2"),
+                new EventDescriptor(EventKind.PropertyWrite, "PUT", "/live/a", "1"),
+                new EventDescriptor(EventKind.PropertyWrite, "PUT", "/live/b", "2"),
             };
 
             var task = FrameGate._Enqueue<bool>(operations, "batch",
                 () => throw new InvalidOperationException("boom"));
 
-            LogAssert.Expect(LogType.Error, new Regex("Frame input #.*failed"));
+            LogAssert.Expect(LogType.Error, new Regex("Frame evt #.*failed"));
             FrameGate.Pump();
 
             Assert.IsTrue(task.IsFaulted);
 
-            using var frame = new InputFrame();
+            using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
             Assert.IsTrue(frame[0].faulted);
             Assert.IsTrue(frame[1].faulted, "the group applied as one unit, so it failed as one");
@@ -470,7 +470,7 @@ namespace Lilium.RemoteControl.Tests
             FrameGate.Pump();
 
             Assert.AreEqual(startCount + 1, FrameGate.buffer.frameCount,
-                "frames have to advance even with no input, or frame numbers stop meaning time");
+                "frames have to advance even with no evt, or frame numbers stop meaning time");
         }
     }
 
@@ -483,19 +483,19 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Record_IsUnmanaged()
         {
-            Assert.DoesNotThrow(() => _RequireUnmanaged<InputRecord>());
+            Assert.DoesNotThrow(() => _RequireUnmanaged<EventRecord>());
         }
 
         [Test]
         public void Flags_ReadBackThroughTheirProperties()
         {
-            var record = new InputRecord(1, InputKind.FunctionCall, 0, 1,
-                InputFlags.Faulted | InputFlags.PayloadTruncated);
+            var record = new EventRecord(1, EventKind.FunctionCall, 0, 1,
+                EventFlags.Faulted | EventFlags.PayloadTruncated);
 
             Assert.IsTrue(record.faulted);
             Assert.IsTrue(record.payloadTruncated);
 
-            var clean = new InputRecord(2, InputKind.PropertyWrite, 0, 1, InputFlags.None);
+            var clean = new EventRecord(2, EventKind.PropertyWrite, 0, 1, EventFlags.None);
 
             Assert.IsFalse(clean.faulted);
             Assert.IsFalse(clean.payloadTruncated);
@@ -578,24 +578,24 @@ namespace Lilium.RemoteControl.Tests
         {
             LogAssert.Expect(LogType.Warning, new Regex("not declared"));
 
-            FrameGate._Enqueue(InputKind.PropertyWrite, "stray", "/live/a", "1", () => true);
+            FrameGate._Enqueue(EventKind.PropertyWrite, "stray", "/live/a", "1", () => true);
 
-            // Reported once, not per input: a caller that has not been migrated would otherwise
+            // Reported once, not per event: a caller that has not been migrated would otherwise
             // fill the console at its own request rate.
-            FrameGate._Enqueue(InputKind.PropertyWrite, "stray", "/live/b", "2", () => true);
+            FrameGate._Enqueue(EventKind.PropertyWrite, "stray", "/live/b", "2", () => true);
 
             FrameGate.Pump();
 
-            using var frame = new InputFrame();
+            using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
-            Assert.AreEqual(2, frame.inputCount);
+            Assert.AreEqual(2, frame.eventCount);
             Assert.AreEqual(FrameSource.kUnknown, FrameGate.symbols.Resolve(frame[0].sourceId));
         }
 
         [Test]
         public void SubmitGroup_WithAnUnresolvedHandle_Throws()
         {
-            var operations = new[] { new InputDescriptor(InputKind.PropertyWrite, "PUT", "/live/a", "1") };
+            var operations = new[] { new EventDescriptor(EventKind.PropertyWrite, "PUT", "/live/a", "1") };
 
             Assert.Throws<ArgumentException>(
                 () => FrameGate.SubmitGroupAsync(operations, default(FrameSource), () => true));
@@ -626,7 +626,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void FrameHeadHandler_RunsAfterTheFrameInputsAreApplied()
         {
-            // Input then state: an input can change the structure, and a state block only means
+            // Event then state: an event can change the structure, and a state block only means
             // something against the structure it belongs to.
             var order = new List<string>();
 
@@ -635,8 +635,8 @@ namespace Lilium.RemoteControl.Tests
 
             try
             {
-                FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/a", "1",
-                    () => { order.Add("input"); return true; });
+                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/a", "1",
+                    () => { order.Add("evt"); return true; });
 
                 FrameGate.Pump();
             }
@@ -645,7 +645,7 @@ namespace Lilium.RemoteControl.Tests
                 FrameGate.RemoveFrameHeadHandler(Handler);
             }
 
-            CollectionAssert.AreEqual(new[] { "input", "state" }, order);
+            CollectionAssert.AreEqual(new[] { "evt", "state" }, order);
         }
 
         [Test]
@@ -669,13 +669,13 @@ namespace Lilium.RemoteControl.Tests
         public void FrameHeadHandler_ReceivesThisFramesPositionAndInputs()
         {
             long seenNumber = -1;
-            var seenInputs = -1;
+            var seenEvents = -1;
             Timecode seenTimecode = default;
 
             void Handler(ref Frame frame)
             {
                 seenNumber = frame.frameNumber;
-                seenInputs = frame.inputs != null ? frame.inputs.inputCount : -1;
+                seenEvents = frame.events != null ? frame.events.eventCount : -1;
                 seenTimecode = frame.timecode;
             }
 
@@ -683,7 +683,7 @@ namespace Lilium.RemoteControl.Tests
 
             try
             {
-                FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/a", "1", () => true);
+                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/a", "1", () => true);
                 FrameGate.Pump();
             }
             finally
@@ -692,7 +692,7 @@ namespace Lilium.RemoteControl.Tests
             }
 
             Assert.GreaterOrEqual(seenNumber, 0);
-            Assert.AreEqual(1, seenInputs, "the handler sees the inputs already applied this frame");
+            Assert.AreEqual(1, seenEvents, "the handler sees the events already applied this frame");
             Assert.AreEqual(new Timecode(seenNumber, FrameGate.clock.frameRate), seenTimecode);
         }
 
@@ -721,7 +721,7 @@ namespace Lilium.RemoteControl.Tests
             Assert.IsTrue(reached, "one failing producer must not stop the others");
 
             // The frame still commits, or every caller waiting on it would be stranded.
-            using var frame = new InputFrame();
+            using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
         }
     }
@@ -753,7 +753,7 @@ namespace Lilium.RemoteControl.Tests
             for (int i = 0; i < 3; i++)
             {
                 var value = i.ToString();
-                FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/object/cam/fov", value,
+                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", value,
                     () => true);
             }
 
@@ -761,9 +761,9 @@ namespace Lilium.RemoteControl.Tests
 
             // The record stays exact: folding these away would make a replay fire one callback
             // where the live run fired three.
-            using var frame = new InputFrame();
+            using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
-            Assert.AreEqual(3, frame.inputCount);
+            Assert.AreEqual(3, frame.eventCount);
 
             Assert.AreEqual(2, FrameGate.repeatedWriteCount, "first write is not a repeat");
             Assert.AreEqual("/live/object/cam/fov", FrameGate.lastRepeatedTarget);
@@ -772,8 +772,8 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void WritesToDifferentTargets_AreNotCountedAsRepeats()
         {
-            FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/a", "1", () => true);
-            FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/b", "2", () => true);
+            FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/a", "1", () => true);
+            FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/b", "2", () => true);
 
             FrameGate.Pump();
 
@@ -783,10 +783,10 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void TheSameTargetInSeparateFrames_IsNotARepeat()
         {
-            FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/a", "1", () => true);
+            FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/a", "1", () => true);
             FrameGate.Pump();
 
-            FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/a", "2", () => true);
+            FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/a", "2", () => true);
             FrameGate.Pump();
 
             Assert.AreEqual(0, FrameGate.repeatedWriteCount,
@@ -796,8 +796,8 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void FunctionCalls_AreNotCountedAsRepeatedWrites()
         {
-            FrameGate._Enqueue(InputKind.FunctionCall, "test", "/live/camera/reset", "{}", () => true);
-            FrameGate._Enqueue(InputKind.FunctionCall, "test", "/live/camera/reset", "{}", () => true);
+            FrameGate._Enqueue(EventKind.FunctionCall, "test", "/live/camera/reset", "{}", () => true);
+            FrameGate._Enqueue(EventKind.FunctionCall, "test", "/live/camera/reset", "{}", () => true);
 
             FrameGate.Pump();
 
@@ -829,7 +829,7 @@ namespace Lilium.RemoteControl.Tests
             var field = typeof(Declared).GetField(nameof(Declared.untagged));
             var attribute = (LiveFieldAttribute)Attribute.GetCustomAttribute(field, typeof(LiveFieldAttribute));
 
-            Assert.AreEqual(FrameLane.Input, attribute.lane);
+            Assert.AreEqual(FrameLane.Event, attribute.lane);
         }
 
         [Test]

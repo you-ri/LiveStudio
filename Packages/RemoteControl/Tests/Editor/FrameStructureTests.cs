@@ -20,7 +20,7 @@ namespace Lilium.RemoteControl.Tests
         }
 
         private StructureBlock _structure;
-        private InputSymbolTable _symbols;
+        private FrameSymbolTable _symbols;
 
         [SetUp]
         public void StartClean()
@@ -29,7 +29,7 @@ namespace Lilium.RemoteControl.Tests
             LiveClass.RegisterFromAttributes<Thing>();
 
             _structure = new StructureBlock();
-            _symbols = new InputSymbolTable();
+            _symbols = new FrameSymbolTable();
         }
 
         [TearDown]
@@ -127,7 +127,7 @@ namespace Lilium.RemoteControl.Tests
             LiveStructureSystem.CaptureInto(_structure, _symbols);
 
             _structure.AddOrUpdate(_symbols.Intern("someone-else"), _symbols.Intern("Other"),
-                InputSymbolTable.kNone);
+                FrameSymbolTable.kNone);
             var epoch = _structure.epoch;
 
             LiveStructureSystem.CaptureInto(_structure, _symbols);

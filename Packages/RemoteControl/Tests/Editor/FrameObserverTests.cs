@@ -19,13 +19,13 @@ namespace Lilium.RemoteControl.Tests
         private sealed class RecordingObserver : IFrameObserver
         {
             public readonly List<long> frames = new List<long>();
-            public readonly List<bool> hadInputs = new List<bool>();
-            public InputSymbolTable lastSymbols;
+            public readonly List<bool> hadEvents = new List<bool>();
+            public FrameSymbolTable lastSymbols;
 
-            public void OnFrameCompleted(in Frame frame, InputSymbolTable symbols)
+            public void OnFrameCompleted(in Frame frame, FrameSymbolTable symbols)
             {
                 frames.Add(frame.frameNumber);
-                hadInputs.Add(frame.inputs != null);
+                hadEvents.Add(frame.events != null);
                 lastSymbols = symbols;
             }
         }
@@ -34,7 +34,7 @@ namespace Lilium.RemoteControl.Tests
         {
             public int calls;
 
-            public void OnFrameCompleted(in Frame frame, InputSymbolTable symbols)
+            public void OnFrameCompleted(in Frame frame, FrameSymbolTable symbols)
             {
                 calls++;
                 throw new System.InvalidOperationException("no");
@@ -46,7 +46,7 @@ namespace Lilium.RemoteControl.Tests
         {
             public int calls;
 
-            public void OnFrameCompleted(in Frame frame, InputSymbolTable symbols)
+            public void OnFrameCompleted(in Frame frame, FrameSymbolTable symbols)
             {
                 calls++;
                 FrameGate.RemoveFrameObserver(this);
@@ -57,7 +57,7 @@ namespace Lilium.RemoteControl.Tests
         {
             public int frames;
 
-            public void OnFrameCompleted(in Frame frame, InputSymbolTable symbols) => frames++;
+            public void OnFrameCompleted(in Frame frame, FrameSymbolTable symbols) => frames++;
         }
 
         private readonly List<IFrameObserver> _attached = new List<IFrameObserver>();
@@ -109,14 +109,14 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void TheInputsAreStillAttachedWhenAnObserverIsCalled()
         {
-            // The gate drops the input slot right after this point, so an observer that wants the
-            // inputs has only this window. Watching from the frame head instead would see them, but
+            // The gate drops the event slot right after this point, so an observer that wants the
+            // events has only this window. Watching from the frame head instead would see them, but
             // beside the previous frame's state values.
             var observer = Attach(new RecordingObserver());
 
             FrameGate.Pump();
 
-            CollectionAssert.AreEqual(new[] { true }, observer.hadInputs);
+            CollectionAssert.AreEqual(new[] { true }, observer.hadEvents);
         }
 
         [Test]

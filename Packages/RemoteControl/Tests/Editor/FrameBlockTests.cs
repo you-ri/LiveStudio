@@ -14,7 +14,7 @@ namespace Lilium.RemoteControl.Tests
         {
             using var structure = new StructureBlock();
 
-            Assert.IsTrue(structure.AddOrUpdate(1, 10, InputSymbolTable.kNone));
+            Assert.IsTrue(structure.AddOrUpdate(1, 10, FrameSymbolTable.kNone));
             Assert.IsTrue(structure.AddOrUpdate(2, 10, 1));
 
             Assert.AreEqual(2, structure.count);
@@ -28,10 +28,10 @@ namespace Lilium.RemoteControl.Tests
             // State is written against an epoch, so re-declaring what is already known must not
             // invalidate it.
             using var structure = new StructureBlock();
-            structure.AddOrUpdate(1, 10, InputSymbolTable.kNone);
+            structure.AddOrUpdate(1, 10, FrameSymbolTable.kNone);
             var epoch = structure.epoch;
 
-            Assert.IsFalse(structure.AddOrUpdate(1, 10, InputSymbolTable.kNone));
+            Assert.IsFalse(structure.AddOrUpdate(1, 10, FrameSymbolTable.kNone));
             Assert.AreEqual(epoch, structure.epoch);
         }
 
@@ -39,7 +39,7 @@ namespace Lilium.RemoteControl.Tests
         public void AddOrUpdate_WithADifferentParent_IsAChange()
         {
             using var structure = new StructureBlock();
-            structure.AddOrUpdate(1, 10, InputSymbolTable.kNone);
+            structure.AddOrUpdate(1, 10, FrameSymbolTable.kNone);
             var epoch = structure.epoch;
 
             Assert.IsTrue(structure.AddOrUpdate(1, 10, 7));
@@ -51,11 +51,11 @@ namespace Lilium.RemoteControl.Tests
         public void Remove_KeepsTheRelativeOrderOfWhatIsLeft()
         {
             // The array is the order of record. Filling the hole with the last entry would reorder
-            // the inventory, and two machines fed the same inputs would lay state out differently.
+            // the inventory, and two machines fed the same events would lay state out differently.
             using var structure = new StructureBlock();
-            structure.AddOrUpdate(1, 10, InputSymbolTable.kNone);
-            structure.AddOrUpdate(2, 10, InputSymbolTable.kNone);
-            structure.AddOrUpdate(3, 10, InputSymbolTable.kNone);
+            structure.AddOrUpdate(1, 10, FrameSymbolTable.kNone);
+            structure.AddOrUpdate(2, 10, FrameSymbolTable.kNone);
+            structure.AddOrUpdate(3, 10, FrameSymbolTable.kNone);
 
             Assert.IsTrue(structure.Remove(2));
 
@@ -68,7 +68,7 @@ namespace Lilium.RemoteControl.Tests
         public void Remove_OfSomethingAbsent_ChangesNothing()
         {
             using var structure = new StructureBlock();
-            structure.AddOrUpdate(1, 10, InputSymbolTable.kNone);
+            structure.AddOrUpdate(1, 10, FrameSymbolTable.kNone);
             var epoch = structure.epoch;
 
             Assert.IsFalse(structure.Remove(99));

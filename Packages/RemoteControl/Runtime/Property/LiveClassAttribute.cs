@@ -181,14 +181,14 @@ namespace Lilium.RemoteControl
 
         /// <summary>
         /// Which lane of the live data carries this member. Default
-        /// <see cref="FrameLane.Input"/>, which records it only when it changes.
+        /// <see cref="FrameLane.Event"/>, which records it only when it changes.
         ///
         /// Set <see cref="FrameLane.State"/> for a member that changes many times a second, or one
         /// that is also written from inside the application without passing through the frame gate
         /// -- such writes are not inputs and leave no trace in the input lane.
         /// Set <see cref="FrameLane.None"/> to keep it out of the frame entirely.
         /// </summary>
-        public FrameLane lane { get; set; } = FrameLane.Input;
+        public FrameLane lane { get; set; } = FrameLane.Event;
 
         public LivePropertyAttribute()
         {
@@ -234,14 +234,14 @@ namespace Lilium.RemoteControl
 
         /// <summary>
         /// Which lane of the live data carries this member. Default
-        /// <see cref="FrameLane.Input"/>, which records it only when it changes.
+        /// <see cref="FrameLane.Event"/>, which records it only when it changes.
         ///
         /// Set <see cref="FrameLane.State"/> for a member that changes many times a second, or one
         /// that is also written from inside the application without passing through the frame gate
         /// -- such writes are not inputs and leave no trace in the input lane.
         /// Set <see cref="FrameLane.None"/> to keep it out of the frame entirely.
         /// </summary>
-        public FrameLane lane { get; set; } = FrameLane.Input;
+        public FrameLane lane { get; set; } = FrameLane.Event;
 
         public LiveFieldAttribute()
         {

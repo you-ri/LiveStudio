@@ -28,9 +28,9 @@ namespace Lilium.RemoteControl.Tests
         };
 
         /// <summary>Writes a short recording and hands back the bytes.</summary>
-        private static byte[] Write(Action<FrameRecordWriter, InputSymbolTable> body, bool close = true)
+        private static byte[] Write(Action<FrameRecordWriter, FrameSymbolTable> body, bool close = true)
         {
-            var symbols = new InputSymbolTable();
+            var symbols = new FrameSymbolTable();
             using (var stream = new MemoryStream())
             {
                 using (var writer = new FrameRecordWriter(stream, Header(), leaveOpen: true))
@@ -76,18 +76,18 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Frames_AreWrittenAsOneTimeOrderedStream()
         {
-            using var inputs = new InputFrame();
+            using var events = new EventFrame();
             var bytes = Write((writer, symbols) =>
             {
                 for (long f = 0; f < 3; f++)
                 {
-                    inputs.Reset(f, FrameRate.FPS60);
-                    inputs.Add(new InputRecord(f, InputKind.PropertyWrite, symbols.Intern("rest"),
-                        symbols.Intern("/live/a"), InputFlags.None));
+                    events.Reset(f, FrameRate.FPS60);
+                    events.Add(new EventRecord(f, EventKind.PropertyWrite, symbols.Intern("rest"),
+                        symbols.Intern("/live/a"), EventFlags.None));
 
-                    var frame = new Frame { frameNumber = f, frameRate = FrameRate.FPS60, inputs = inputs };
+                    var frame = new Frame { frameNumber = f, frameRate = FrameRate.FPS60, events = events };
                     writer.BeginFrame(in frame, symbols);
-                    writer.WriteInputs(inputs, symbols);
+                    writer.WriteEvents(events, symbols);
                     writer.EndFrame();
                 }
             });
@@ -102,7 +102,7 @@ namespace Lilium.RemoteControl.Tests
                 Assert.AreEqual(FrameEntryKind.Symbol, seen[0].kind);
                 Assert.AreEqual(FrameEntryKind.Symbol, seen[1].kind);
                 Assert.AreEqual(FrameEntryKind.FrameBoundary, seen[2].kind);
-                Assert.AreEqual(FrameEntryKind.Input, seen[3].kind);
+                Assert.AreEqual(FrameEntryKind.Event, seen[3].kind);
 
                 // Frame numbers only ever move forward.
                 long previous = -1;
@@ -117,23 +117,23 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Input_ComesBackWithEveryFieldIntact()
         {
-            using var inputs = new InputFrame();
+            using var events = new EventFrame();
             var bytes = Write((writer, symbols) =>
             {
-                inputs.Reset(0, FrameRate.FPS60);
+                events.Reset(0, FrameRate.FPS60);
 
-                var record = new InputRecord(7, InputKind.FunctionCall, symbols.Intern("rest"),
-                    symbols.Intern("/live/camera/reset"), InputFlags.PayloadTruncated);
-                Span<byte> text = stackalloc byte[InputRecord.kPayloadCapacity];
-                InputPayload.TryWriteString("35.0", text, out var textLength);
+                var record = new EventRecord(7, EventKind.FunctionCall, symbols.Intern("rest"),
+                    symbols.Intern("/live/camera/reset"), EventFlags.PayloadTruncated);
+                Span<byte> text = stackalloc byte[EventRecord.kPayloadCapacity];
+                EventPayload.TryWriteString("35.0", text, out var textLength);
                 record.SetPayload(text.Slice(0, textLength),
-                    symbols.Intern(InputPayload.kRequestTypeName));
+                    symbols.Intern(EventPayload.kRequestTypeName));
 
-                inputs.Add(record);
+                events.Add(record);
 
-                var frame = new Frame { frameNumber = 0, frameRate = FrameRate.FPS60, inputs = inputs };
+                var frame = new Frame { frameNumber = 0, frameRate = FrameRate.FPS60, events = events };
                 writer.BeginFrame(in frame, symbols);
-                writer.WriteInputs(inputs, symbols);
+                writer.WriteEvents(events, symbols);
                 writer.EndFrame();
             });
 
@@ -141,19 +141,19 @@ namespace Lilium.RemoteControl.Tests
             {
                 while (reader.TryReadEntry(out var entry))
                 {
-                    if (entry.kind != FrameEntryKind.Input) continue;
+                    if (entry.kind != FrameEntryKind.Event) continue;
 
                     Assert.AreEqual(7L, BitConverter.ToInt64(entry.payload.Slice(0, 8).ToArray(), 0));
-                    Assert.AreEqual((int)InputKind.FunctionCall, BitConverter.ToInt32(entry.payload.Slice(8, 4).ToArray(), 0));
+                    Assert.AreEqual((int)EventKind.FunctionCall, BitConverter.ToInt32(entry.payload.Slice(8, 4).ToArray(), 0));
                     // 8 sequence, 4 kind, 4 source, 4 target, 4 verb, 4 payload type, 1 flags,
                     // 4 length, payload.
-                    Assert.AreEqual((byte)InputFlags.PayloadTruncated, entry.payload[28]);
+                    Assert.AreEqual((byte)EventFlags.PayloadTruncated, entry.payload[28]);
 
                     var payloadLength = BitConverter.ToInt32(entry.payload.Slice(29, 4).ToArray(), 0);
-                    Assert.AreEqual("35.0", InputPayload.ReadString(entry.payload.Slice(33, payloadLength)));
+                    Assert.AreEqual("35.0", EventPayload.ReadString(entry.payload.Slice(33, payloadLength)));
 
                     var payloadTypeId = BitConverter.ToInt32(entry.payload.Slice(24, 4).ToArray(), 0);
-                    Assert.AreEqual(InputPayload.kRequestTypeName, reader.symbols[payloadTypeId]);
+                    Assert.AreEqual(EventPayload.kRequestTypeName, reader.symbols[payloadTypeId]);
 
                     // The target resolves through the table the file carries.
                     var targetId = BitConverter.ToInt32(entry.payload.Slice(16, 4).ToArray(), 0);
@@ -161,7 +161,7 @@ namespace Lilium.RemoteControl.Tests
                     return;
                 }
 
-                Assert.Fail("no input entry was written");
+                Assert.Fail("no evt entry was written");
             }
         }
 
@@ -215,12 +215,12 @@ namespace Lilium.RemoteControl.Tests
 
             var bytes = Write((writer, symbols) =>
             {
-                structure.AddOrUpdate(symbols.Intern("cam"), symbols.Intern("Camera"), InputSymbolTable.kNone);
+                structure.AddOrUpdate(symbols.Intern("cam"), symbols.Intern("Camera"), FrameSymbolTable.kNone);
 
                 for (long f = 0; f < 3; f++)
                 {
                     // Only the second frame changes anything.
-                    if (f == 1) structure.AddOrUpdate(symbols.Intern("light"), symbols.Intern("Light"), InputSymbolTable.kNone);
+                    if (f == 1) structure.AddOrUpdate(symbols.Intern("light"), symbols.Intern("Light"), FrameSymbolTable.kNone);
 
                     var frame = new Frame { frameNumber = f, frameRate = FrameRate.FPS60, structure = structure };
                     writer.BeginFrame(in frame, symbols);
@@ -261,6 +261,49 @@ namespace Lilium.RemoteControl.Tests
                 Assert.AreEqual(3, entry.frameNumber);
 
                 Assert.IsFalse(reader.TrySeekFrame(99));
+            }
+        }
+
+        [Test]
+        public void SeekingAFrame_FindsItEvenWhenTheClockSkippedNumbers()
+        {
+            // What a real take looks like: the frame number comes from the clock, so a run that
+            // drops below rate leaves gaps. Positions and frame numbers then part company, and a
+            // seek that counted on from the first landed tens of frames away -- silently, because
+            // the frame it landed on is a perfectly good frame.
+            var numbers = new long[] { 100, 101, 105, 106, 140, 141, 142, 200 };
+
+            var bytes = Write((writer, symbols) =>
+            {
+                foreach (var f in numbers)
+                {
+                    var frame = new Frame { frameNumber = f, frameRate = FrameRate.FPS60 };
+                    writer.BeginFrame(in frame, symbols);
+                    writer.EndFrame();
+                }
+            });
+
+            using (var reader = new FrameRecordReader(new MemoryStream(bytes)))
+            {
+                Assert.AreEqual(numbers.Length, reader.indexedFrameCount);
+
+                for (int i = 0; i < numbers.Length; i++)
+                {
+                    Assert.AreEqual(numbers[i], reader.FrameNumberAt(i), $"position {i}");
+                    Assert.AreEqual(i, reader.IndexOfFrame(numbers[i]), $"frame {numbers[i]}");
+
+                    Assert.IsTrue(reader.TrySeekFrame(numbers[i]));
+                    Assert.IsTrue(reader.TryReadEntry(out var entry));
+                    Assert.AreEqual(FrameEntryKind.FrameBoundary, entry.kind);
+                    Assert.AreEqual(numbers[i], entry.frameNumber);
+                }
+
+                // A number inside a gap was never recorded, so there is nothing to land on.
+                Assert.AreEqual(-1, reader.IndexOfFrame(120));
+                Assert.IsFalse(reader.TrySeekFrame(120));
+
+                Assert.AreEqual(-1, reader.FrameNumberAt(-1));
+                Assert.AreEqual(-1, reader.FrameNumberAt(numbers.Length));
             }
         }
 
@@ -327,19 +370,19 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Symbols_AreWrittenOnceHoweverManyFramesUseThem()
         {
-            using var inputs = new InputFrame();
+            using var events = new EventFrame();
 
             var bytes = Write((writer, symbols) =>
             {
                 for (long f = 0; f < 10; f++)
                 {
-                    inputs.Reset(f, FrameRate.FPS60);
-                    inputs.Add(new InputRecord(f, InputKind.PropertyWrite, symbols.Intern("rest"),
-                        symbols.Intern("/live/object/cam/fov"), InputFlags.None));
+                    events.Reset(f, FrameRate.FPS60);
+                    events.Add(new EventRecord(f, EventKind.PropertyWrite, symbols.Intern("rest"),
+                        symbols.Intern("/live/object/cam/fov"), EventFlags.None));
 
-                    var frame = new Frame { frameNumber = f, frameRate = FrameRate.FPS60, inputs = inputs };
+                    var frame = new Frame { frameNumber = f, frameRate = FrameRate.FPS60, events = events };
                     writer.BeginFrame(in frame, symbols);
-                    writer.WriteInputs(inputs, symbols);
+                    writer.WriteEvents(events, symbols);
                     writer.EndFrame();
                 }
             });
@@ -350,7 +393,7 @@ namespace Lilium.RemoteControl.Tests
                 // This is the whole point of the mapping table: a path arriving sixty times a second
                 // costs its characters once.
                 Assert.AreEqual(2, kinds.FindAll(k => k == FrameEntryKind.Symbol).Count);
-                Assert.AreEqual(10, kinds.FindAll(k => k == FrameEntryKind.Input).Count);
+                Assert.AreEqual(10, kinds.FindAll(k => k == FrameEntryKind.Event).Count);
             }
         }
     }

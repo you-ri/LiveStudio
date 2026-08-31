@@ -273,11 +273,11 @@ namespace Lilium.LiveStudio.EditorTests
 
             Assert.AreEqual(0.5f, _target.carried, 1e-5f, "the write still lands");
 
-            using var frame = new Lilium.RemoteControl.Frames.InputFrame();
+            using var frame = new Lilium.RemoteControl.Frames.EventFrame();
             Assert.AreEqual(Lilium.RemoteControl.Frames.FrameLookup.Found,
                 Lilium.RemoteControl.Frames.FrameGate.buffer.TryReadLatest(frame));
 
-            Assert.AreEqual(0, frame.inputCount, "the state lane already carries it");
+            Assert.AreEqual(0, frame.eventCount, "the state lane already carries it");
             Assert.AreEqual(omitted + 1, Lilium.RemoteControl.Frames.FrameGate.omittedRecordCount,
                 "counted, so 'no input for this' can be told from 'the input went missing'");
         }
@@ -289,11 +289,11 @@ namespace Lilium.LiveStudio.EditorTests
 
             Fire(action, Value(0.5f));
 
-            using var frame = new Lilium.RemoteControl.Frames.InputFrame();
+            using var frame = new Lilium.RemoteControl.Frames.EventFrame();
             Assert.AreEqual(Lilium.RemoteControl.Frames.FrameLookup.Found,
                 Lilium.RemoteControl.Frames.FrameGate.buffer.TryReadLatest(frame));
 
-            Assert.AreEqual(1, frame.inputCount);
+            Assert.AreEqual(1, frame.eventCount);
             Assert.AreEqual("operation",
                 Lilium.RemoteControl.Frames.FrameGate.symbols.Resolve(frame[0].sourceId),
                 "recorded as coming from the operator's own controls");

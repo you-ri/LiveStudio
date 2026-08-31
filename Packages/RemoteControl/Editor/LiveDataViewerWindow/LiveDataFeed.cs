@@ -28,13 +28,13 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         /// <summary>The frame being shown.</summary>
         LiveDataSnapshot snapshot { get; }
 
-        /// <summary>Inputs available to list, oldest first.</summary>
-        int inputCount { get; }
+        /// <summary>Events available to list, oldest first.</summary>
+        int eventCount { get; }
 
-        InputRow GetInput(int index);
+        EventRow GetEvent(int index);
 
-        /// <summary>Forgets the inputs listed so far, where that means anything.</summary>
-        void ClearInputs();
+        /// <summary>Forgets the events listed so far, where that means anything.</summary>
+        void ClearEvents();
 
         /// <summary>
         /// Names the one element whose value bytes are worth taking. Everything else is kept as
@@ -79,11 +79,11 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
         public LiveDataSnapshot snapshot => LiveDataTap.snapshot;
 
-        public int inputCount => LiveDataTap.inputCount;
+        public int eventCount => LiveDataTap.eventCount;
 
-        public InputRow GetInput(int index) => LiveDataTap.GetInput(index);
+        public EventRow GetEvent(int index) => LiveDataTap.GetEvent(index);
 
-        public void ClearInputs() => LiveDataTap.ClearInputs();
+        public void ClearEvents() => LiveDataTap.ClearEvents();
 
         public void Select(string typeName, int ownerId) => LiveDataTap.Select(typeName, ownerId);
 

@@ -12,12 +12,12 @@ namespace Lilium.RemoteControl.Frames
     /// Kept apart for a plain reason: if watching went through the sink, opening a viewer would stop
     /// a recording. Chaining sinks instead leaves nobody owning the chain.
     ///
-    /// Called at the same point as the sink -- the frame complete, its inputs still attached. Not at
+    /// Called at the same point as the sink -- the frame complete, its events still attached. Not at
     /// the frame head: there the state lane has not been written yet, and an observer would see this
-    /// frame's inputs beside last frame's values, which is worse than useless when the thing being
+    /// frame's events beside last frame's values, which is worse than useless when the thing being
     /// diagnosed is which of the two went wrong.
     ///
-    /// ⚠ This runs inside the point every input is waiting on. Copy what you need and leave; do the
+    /// ⚠ This runs inside the point every event is waiting on. Copy what you need and leave; do the
     /// work on your own clock. Nothing reachable from the frame outlives the call, and a supplied
     /// frame's blocks are overwritten as soon as the recording advances.
     ///
@@ -32,8 +32,8 @@ namespace Lilium.RemoteControl.Frames
         /// Hands over a completed frame, with the symbol table needed to read the ids in it.
         ///
         /// Throwing detaches the observer rather than repeating the failure every frame. Whoever
-        /// attached it can see that happened through <see cref="FrameGate.detachedObserverCount"/>.
+        /// attached it can see that happened through <c>FrameGate.detachedObserverCount</c> on the host side.
         /// </summary>
-        void OnFrameCompleted(in Frame frame, InputSymbolTable symbols);
+        void OnFrameCompleted(in Frame frame, FrameSymbolTable symbols);
     }
 }

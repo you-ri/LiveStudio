@@ -178,7 +178,7 @@ namespace Lilium.RemoteControl.Tests
             var bytes = Record(3, beforePump: () =>
             {
                 var value = (pending++).ToString();
-                FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/object/cam/fov", value,
+                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", value,
                     () => true);
             });
 
@@ -187,10 +187,10 @@ namespace Lilium.RemoteControl.Tests
                 var total = 0;
                 while (player.Advance())
                 {
-                    for (int i = 0; i < player.inputs.Count; i++)
+                    for (int i = 0; i < player.events.Count; i++)
                     {
-                        var record = player.inputs[i];
-                        Assert.AreEqual(InputKind.PropertyWrite, record.kind);
+                        var record = player.events[i];
+                        Assert.AreEqual(EventKind.PropertyWrite, record.kind);
                         Assert.AreEqual("/live/object/cam/fov", player.Resolve(record.targetId));
                         Assert.AreEqual("test", player.Resolve(record.sourceId));
                         total++;
@@ -210,16 +210,16 @@ namespace Lilium.RemoteControl.Tests
                 if (written) return;
 
                 written = true;
-                FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/a", "1", () => true);
+                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/a", "1", () => true);
             });
 
             using (var player = new FrameRecordPlayer(new MemoryStream(bytes)))
             {
                 Assert.IsTrue(player.Advance());
-                Assert.AreEqual(1, player.inputs.Count);
+                Assert.AreEqual(1, player.events.Count);
 
                 Assert.IsTrue(player.Advance());
-                Assert.AreEqual(0, player.inputs.Count, "a frame with no inputs has none");
+                Assert.AreEqual(0, player.events.Count, "a frame with no events has none");
             }
         }
 
@@ -286,10 +286,10 @@ namespace Lilium.RemoteControl.Tests
 
             void Producer(ref Frame frame)
             {
-                frame.structure.AddOrUpdate(1, 10, InputSymbolTable.kNone);
+                frame.structure.AddOrUpdate(1, 10, FrameSymbolTable.kNone);
 
                 // Something is spawned partway through the run.
-                if (frames >= 2) frame.structure.AddOrUpdate(2, 10, InputSymbolTable.kNone);
+                if (frames >= 2) frame.structure.AddOrUpdate(2, 10, FrameSymbolTable.kNone);
                 frames++;
             }
 
@@ -313,7 +313,7 @@ namespace Lilium.RemoteControl.Tests
         {
             void Producer(ref Frame frame)
             {
-                frame.structure.AddOrUpdate(1, 10, InputSymbolTable.kNone);
+                frame.structure.AddOrUpdate(1, 10, FrameSymbolTable.kNone);
                 frame.state.GetOrCreate<Beam>().GetOrCreate(1).value.intensity = 5f;
             }
 

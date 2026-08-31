@@ -114,6 +114,15 @@ namespace Lilium.RemoteControl.SourceGenerator
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
 
+        public static readonly DiagnosticDescriptor kMissingSimulationReference = new DiagnosticDescriptor(
+            "LRC004",
+            "State lane needs a reference to Lilium.RemoteControl.Simulation",
+            "'{0}' declares members in the state lane, but this assembly does not reference 'Lilium.RemoteControl.Simulation'. The generated state block names types that live there. Add the reference to the assembly definition (.asmdef) and rebuild.",
+            "Lilium.RemoteControl",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true,
+            description: "Without this diagnostic the failure surfaces as CS0246 inside generated code the author never wrote.");
+
         /// <summary>
         /// Collects what a type puts in the state lane. Null when it puts nothing there, which is
         /// the common case and costs nothing downstream.

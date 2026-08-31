@@ -389,12 +389,12 @@ namespace Lilium.RemoteControl.RestApi
         /// not the same as changing state, and sending reads through the gate would bury the record
         /// under lookups that change nothing.
         /// </summary>
-        protected Task<T> ExecuteAsInput<T>(InputKind kind, string method, string target,
+        protected Task<T> ExecuteAsEvent<T>(EventKind kind, string method, string target,
             string body, Func<T> action)
             => FrameGate.SubmitAsync(kind, _restSource, method, target, body, action);
 
-        /// <summary>Void form of <see cref="ExecuteAsInput{T}"/>.</summary>
-        protected Task ExecuteAsInput(InputKind kind, string method, string target, string body,
+        /// <summary>Void form of <see cref="ExecuteAsEvent{T}"/>.</summary>
+        protected Task ExecuteAsEvent(EventKind kind, string method, string target, string body,
             Action action)
             => FrameGate.SubmitAsync(kind, _restSource, method, target, body,
                 () => { action(); return true; });
@@ -403,7 +403,7 @@ namespace Lilium.RemoteControl.RestApi
         /// Applies several operations as one unit, for a bundled request whose parts have to take
         /// effect in the same frame.
         /// </summary>
-        protected Task<T> ExecuteGroupAsInput<T>(IReadOnlyList<InputDescriptor> operations, Func<T> action)
+        protected Task<T> ExecuteGroupAsInput<T>(IReadOnlyList<EventDescriptor> operations, Func<T> action)
             => FrameGate.SubmitGroupAsync(operations, _restSource, action);
 
         /// <summary>

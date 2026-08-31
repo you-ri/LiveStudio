@@ -4,56 +4,56 @@ using System.Collections.Generic;
 namespace Lilium.RemoteControl.Frames
 {
     /// <summary>
-    /// Decides the order of inputs arriving from several paths and threads.
+    /// Decides the order of events arriving from several paths and threads.
     ///
-    /// Numbering and hand-off happen under one lock so that sequence order is the order inputs were
+    /// Numbering and hand-off happen under one lock so that sequence order is the order events were
     /// accepted. Without that, order is settled by whichever worker thread reached the queue first,
     /// which is well-defined on one machine but different on the next -- so two machines fed the
-    /// same inputs would drift apart permanently.
+    /// same events would drift apart permanently.
     ///
     /// Draining swaps the pending list for a spare instead of copying, so a frame with no new
-    /// inputs costs nothing.
+    /// events costs nothing.
     /// </summary>
-    internal sealed class InputSequencer
+    internal sealed class EventSequencer
     {
         private readonly object _lock = new object();
-        private List<PendingInput> _pending = new List<PendingInput>(32);
-        private List<PendingInput> _spare = new List<PendingInput>(32);
+        private List<PendingEvent> _pending = new List<PendingEvent>(32);
+        private List<PendingEvent> _spare = new List<PendingEvent>(32);
         private long _nextSequence = 1;
 
-        /// <summary>Sequence number the next accepted input will get.</summary>
+        /// <summary>Sequence number the next accepted event will get.</summary>
         public long nextSequence
         {
             get { lock (_lock) { return _nextSequence; } }
         }
 
-        /// <summary>Number of inputs waiting for the next frame head.</summary>
+        /// <summary>Number of events waiting for the next frame head.</summary>
         public int pendingCount
         {
             get { lock (_lock) { return _pending.Count; } }
         }
 
         /// <summary>
-        /// Accepts an input and stamps its records with their place in the order.
+        /// Accepts an event and stamps its records with their place in the order.
         ///
         /// A group is numbered and handed over inside the one lock, so its records get a run of
         /// consecutive numbers and reach the same drain together. That is what keeps a bundled
         /// request from being split across two frames: the frame head takes the whole pending list
         /// at once, so a group is either entirely in a frame or entirely in the next one.
         /// </summary>
-        public long Submit(PendingInput input)
+        public long Submit(PendingEvent evt)
         {
             lock (_lock)
             {
                 var first = _nextSequence;
 
-                for (int i = 0; i < input.recordCount; i++)
+                for (int i = 0; i < evt.recordCount; i++)
                 {
-                    input.records[i].sequence = first + i;
+                    evt.records[i].sequence = first + i;
                 }
 
-                _nextSequence = first + input.recordCount;
-                _pending.Add(input);
+                _nextSequence = first + evt.recordCount;
+                _pending.Add(evt);
                 return first;
             }
         }
@@ -62,7 +62,7 @@ namespace Lilium.RemoteControl.Frames
         /// Hands over everything accepted so far. The returned list belongs to the caller until the
         /// next drain, at which point it is taken back and reused.
         /// </summary>
-        public List<PendingInput> Drain()
+        public List<PendingEvent> Drain()
         {
             lock (_lock)
             {

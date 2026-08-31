@@ -166,7 +166,7 @@ namespace Lilium.RemoteControl.Frames
                     if (expectedBlock.count == 0) continue;
 
                     _report.comparedElements += expectedBlock.count;
-                    _report.Add(new FrameMismatch(typeName, InputSymbolTable.kNone, MismatchReason.BlockMissing));
+                    _report.Add(new FrameMismatch(typeName, FrameSymbolTable.kNone, MismatchReason.BlockMissing));
                     continue;
                 }
 
@@ -184,7 +184,7 @@ namespace Lilium.RemoteControl.Frames
                 if (expected.FindByTypeName(typeName) != null) continue;
 
                 _report.comparedElements += actualBlock.count;
-                _report.Add(new FrameMismatch(typeName, InputSymbolTable.kNone, MismatchReason.BlockMissing));
+                _report.Add(new FrameMismatch(typeName, FrameSymbolTable.kNone, MismatchReason.BlockMissing));
             }
         }
 

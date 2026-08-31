@@ -8,7 +8,7 @@ namespace Lilium.RemoteControl.Frames.Recording
     /// <summary>
     /// Writes every completed frame to a recording.
     ///
-    /// Attaches as the gate's sink, so it sees frames at the head with the inputs already applied
+    /// Attaches as the gate's sink, so it sees frames at the head with the events already applied
     /// and the state blocks already written. Each frame is flushed as it happens rather than
     /// buffered, so a crash costs the frame in progress and nothing else.
     /// </summary>
@@ -24,7 +24,7 @@ namespace Lilium.RemoteControl.Frames.Recording
         public const int kDefaultKeyframeInterval = 60;
 
         private FrameRecordWriter _writer;
-        private InputSymbolTable _symbols;
+        private FrameSymbolTable _symbols;
         private Stream _stream;
         private string _path;
         // Frame the last keyframe was written at, or -1 before the first. A frame number rather
@@ -54,7 +54,7 @@ namespace Lilium.RemoteControl.Frames.Recording
         public int keyframeCount => _writer?.keyframes.Count ?? 0;
 
         /// <summary>
-        /// Exposed objects whose inputs are left out of the recording. Set this to whatever is
+        /// Exposed objects whose events are left out of the recording. Set this to whatever is
         /// driving the recording -- both the page holding the controls and the component behind it.
         ///
         /// Their buttons are not part of the world being recorded, and keeping them means the replay
@@ -128,7 +128,7 @@ namespace Lilium.RemoteControl.Frames.Recording
             _path = null;
         }
 
-        public void OnFrameCompleted(in Frame frame, InputSymbolTable symbols)
+        public void OnFrameCompleted(in Frame frame, FrameSymbolTable symbols)
         {
             if (_writer == null) return;
 
@@ -148,7 +148,7 @@ namespace Lilium.RemoteControl.Frames.Recording
             if (_writer.keyframes.Count != before) _lastKeyframeFrame = frame.frameNumber;
 
             _writer.WriteState(frame.state, symbols);
-            _writer.WriteInputs(frame.inputs, symbols, excludeObjectIds);
+            _writer.WriteEvents(frame.events, symbols, excludeObjectIds);
             _writer.EndFrame();
         }
 

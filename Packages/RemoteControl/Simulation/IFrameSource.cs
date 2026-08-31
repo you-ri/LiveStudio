@@ -10,7 +10,7 @@ namespace Lilium.RemoteControl.Frames
     /// become the same two questions asked in opposite directions -- which is why they share the
     /// shape rather than each reaching into the pump their own way.
     ///
-    /// Called at the frame head before the queued live inputs are applied, so what the recording
+    /// Called at the frame head before the queued live events are applied, so what the recording
     /// asked for lands first and an operator acting right now lands on top of it.
     ///
     /// While a source is set, the frame is marked <see cref="Frame.isSupplied"/> and the producers
@@ -20,7 +20,7 @@ namespace Lilium.RemoteControl.Frames
     public interface IFrameSource
     {
         /// <summary>
-        /// Fills this frame's structure, state and inputs. False when there is nothing left to
+        /// Fills this frame's structure, state and events. False when there is nothing left to
         /// supply, which retires the source and lets the frame fall back to the live lanes.
         ///
         /// The frame is valid for the duration of this call. A source may point the frame's lanes at

@@ -179,7 +179,7 @@ namespace Lilium.LiveStudio
         {
             var target = LivePath();
 
-            FrameGate.Post(InputKind.PropertyWrite, _source, "PUT", target, () =>
+            FrameGate.Post(EventKind.PropertyWrite, _source, "PUT", target, () =>
             {
                 // Re-resolved at the frame head rather than captured: a frame can pass between the
                 // post and the apply, and the object it addressed may be gone by then.

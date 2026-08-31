@@ -600,7 +600,7 @@ namespace Lilium.RemoteControl
             // (object 未解決時に InputStream を読むかどうかは応答内容に影響しない)。
             var body = readBody ? await ReadRequestBody(context.Request) : null;
 
-            var result = await ExecuteAsInput(InputKind.PropertyWrite, context.Request.HttpMethod, path, body, () =>
+            var result = await ExecuteAsEvent(EventKind.PropertyWrite, context.Request.HttpMethod, path, body, () =>
             {
                 if (!TryBuildPropertyContext(GetObjectContainer(), path, stripResetSuffix, body,
                         out var ctx, out var errStatus, out var errMessage))
@@ -1018,9 +1018,9 @@ namespace Lilium.RemoteControl
         /// how the remote app sends most of its writes -- recording it as one truncated blob would
         /// leave the main path unreplayable.
         /// </summary>
-        private static List<InputDescriptor> _DescribeBatchWrites(List<BatchItem> items)
+        private static List<EventDescriptor> _DescribeBatchWrites(List<BatchItem> items)
         {
-            List<InputDescriptor> writes = null;
+            List<EventDescriptor> writes = null;
 
             for (int i = 0; i < items.Count; i++)
             {
@@ -1029,11 +1029,11 @@ namespace Lilium.RemoteControl
 
                 var kind = string.Equals(item.method, "POST", StringComparison.OrdinalIgnoreCase) &&
                            item.path != null && item.path.StartsWith("/live/function/", StringComparison.OrdinalIgnoreCase)
-                    ? InputKind.FunctionCall
-                    : InputKind.PropertyWrite;
+                    ? EventKind.FunctionCall
+                    : EventKind.PropertyWrite;
 
-                writes ??= new List<InputDescriptor>(items.Count);
-                writes.Add(new InputDescriptor(kind, item.method, item.path, item.body));
+                writes ??= new List<EventDescriptor>(items.Count);
+                writes.Add(new EventDescriptor(kind, item.method, item.path, item.body));
             }
 
             return writes;
@@ -1549,7 +1549,7 @@ namespace Lilium.RemoteControl
             // 関数の解決・パラメータ準備・実行・結果 JSON 化をすべてメインスレッドで行う。
             // A call is an input in its own right: a trigger or a scene change never shows up as a
             // property value changing, so recording only writes would lose it.
-            var result = await ExecuteAsInput(InputKind.FunctionCall, context.Request.HttpMethod,
+            var result = await ExecuteAsEvent(EventKind.FunctionCall, context.Request.HttpMethod,
                 context.Request.Url.AbsolutePath, body,
                 () => InvokeFunctionCore(GetObjectContainer(), GetResolver(), id, functionPath, body));
 
@@ -1787,7 +1787,7 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            var result = await ExecuteAsInput(InputKind.StructureChange, context.Request.HttpMethod,
+            var result = await ExecuteAsEvent(EventKind.StructureChange, context.Request.HttpMethod,
                 context.Request.Url.AbsolutePath, body, () =>
             {
                 var ok = LiveObjectRegistry.SetParent(id, parentId, out var err);

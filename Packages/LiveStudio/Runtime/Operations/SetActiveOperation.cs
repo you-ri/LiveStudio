@@ -46,7 +46,7 @@ namespace Lilium.LiveStudio
             var path = $"/live/object/{proxyId}/active";
             var captured = target;
 
-            FrameGate.Post(InputKind.PropertyWrite, _source, "PUT", path, () =>
+            FrameGate.Post(EventKind.PropertyWrite, _source, "PUT", path, () =>
             {
                 if (captured == null) return;
 

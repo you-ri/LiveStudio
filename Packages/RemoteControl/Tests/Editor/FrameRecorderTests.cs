@@ -66,18 +66,18 @@ namespace Lilium.RemoteControl.Tests
         public void InputsApplied_AtAFrameHead_AreInTheRecording()
         {
             var bytes = RecordFrames(1, () =>
-                FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/object/cam/fov", "35.0",
+                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", "35.0",
                     () => true));
 
             using (var reader = new FrameRecordReader(new MemoryStream(bytes)))
             {
-                var inputs = 0;
+                var events = 0;
                 while (reader.TryReadEntry(out var entry))
                 {
-                    if (entry.kind == FrameEntryKind.Input) inputs++;
+                    if (entry.kind == FrameEntryKind.Event) events++;
                 }
 
-                Assert.AreEqual(1, inputs);
+                Assert.AreEqual(1, events);
                 CollectionAssert.Contains(reader.symbols, "/live/object/cam/fov");
                 CollectionAssert.Contains(reader.symbols, "test");
             }
@@ -124,7 +124,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Sink_SeesTheFrameAfterTheProducersHaveWritten()
         {
-            // The order the whole thing rests on: inputs, then state, then whoever is recording it.
+            // The order the whole thing rests on: events, then state, then whoever is recording it.
             var order = new System.Collections.Generic.List<string>();
 
             void Producer(ref Frame frame) => order.Add("state");
@@ -135,8 +135,8 @@ namespace Lilium.RemoteControl.Tests
 
             try
             {
-                FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/a", "1",
-                    () => { order.Add("input"); return true; });
+                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/a", "1",
+                    () => { order.Add("evt"); return true; });
 
                 FrameGate.Pump();
             }
@@ -146,7 +146,7 @@ namespace Lilium.RemoteControl.Tests
                 FrameGate.sink = null;
             }
 
-            CollectionAssert.AreEqual(new[] { "input", "state", "sink" }, order);
+            CollectionAssert.AreEqual(new[] { "evt", "state", "sink" }, order);
         }
 
         [Test]
@@ -160,7 +160,7 @@ namespace Lilium.RemoteControl.Tests
             Assert.IsNull(FrameGate.sink, "a sink that failed should not be asked again");
 
             // The run carries on: the frame still commits and callers waiting on it are not stranded.
-            using var frame = new InputFrame();
+            using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
 
             FrameGate.Pump();
@@ -205,13 +205,13 @@ namespace Lilium.RemoteControl.Tests
             _recorder.Start(_stream, leaveOpen: true);
             FrameGate.sink = _recorder;
 
-            FrameGate._Enqueue(InputKind.FunctionCall, "test", "/live/function/recorder-page/Record",
+            FrameGate._Enqueue(EventKind.FunctionCall, "test", "/live/function/recorder-page/Record",
                 "{}", () => true);
-            FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/object/recorder-page/take",
+            FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/recorder-page/take",
                 "2", () => true);
-            FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/object/recorder-id/_take",
+            FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/recorder-id/_take",
                 "2", () => true);
-            FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/object/cam/fov",
+            FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov",
                 "35", () => true);
 
             FrameGate.Pump();
@@ -224,7 +224,7 @@ namespace Lilium.RemoteControl.Tests
                 var targets = new System.Collections.Generic.List<string>();
                 while (reader.TryReadEntry(out var entry))
                 {
-                    if (entry.kind != FrameEntryKind.Input) continue;
+                    if (entry.kind != FrameEntryKind.Event) continue;
 
                     var targetId = System.BitConverter.ToInt32(entry.payload.Slice(16, 4).ToArray(), 0);
                     targets.Add(reader.symbols[targetId]);
@@ -241,9 +241,9 @@ namespace Lilium.RemoteControl.Tests
             _recorder.Start(_stream, leaveOpen: true);
             FrameGate.sink = _recorder;
 
-            FrameGate._Enqueue(InputKind.FunctionCall, "test", "/live/function/recorder-id/Record",
+            FrameGate._Enqueue(EventKind.FunctionCall, "test", "/live/function/recorder-id/Record",
                 "{}", () => true);
-            FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/object/cam/fov", "35",
+            FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", "35",
                 () => true);
 
             FrameGate.Pump();
@@ -253,13 +253,13 @@ namespace Lilium.RemoteControl.Tests
 
             using (var reader = new FrameRecordReader(new MemoryStream(_stream.ToArray())))
             {
-                var inputs = 0;
+                var events = 0;
                 while (reader.TryReadEntry(out var entry))
                 {
-                    if (entry.kind == FrameEntryKind.Input) inputs++;
+                    if (entry.kind == FrameEntryKind.Event) events++;
                 }
 
-                Assert.AreEqual(2, inputs, "nothing is left out unless it was asked for");
+                Assert.AreEqual(2, events, "nothing is left out unless it was asked for");
             }
         }
 
@@ -293,12 +293,12 @@ namespace Lilium.RemoteControl.Tests
 
             public OrderProbe(System.Collections.Generic.List<string> order) => _order = order;
 
-            public void OnFrameCompleted(in Frame frame, InputSymbolTable symbols) => _order.Add("sink");
+            public void OnFrameCompleted(in Frame frame, FrameSymbolTable symbols) => _order.Add("sink");
         }
 
         private sealed class ThrowingSink : IFrameSink
         {
-            public void OnFrameCompleted(in Frame frame, InputSymbolTable symbols)
+            public void OnFrameCompleted(in Frame frame, FrameSymbolTable symbols)
                 => throw new InvalidOperationException("no disk");
         }
     }

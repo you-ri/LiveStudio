@@ -160,12 +160,12 @@ namespace Lilium.RemoteControl
         {
             switch (lane)
             {
-                case LiveClassAssetLane.Input: return FrameLane.Input;
+                case LiveClassAssetLane.Event: return FrameLane.Event;
                 case LiveClassAssetLane.State: return FrameLane.State;
                 case LiveClassAssetLane.None: return FrameLane.None;
             }
 
-            if (ownerType == null || string.IsNullOrEmpty(path)) return FrameLane.Input;
+            if (ownerType == null || string.IsNullOrEmpty(path)) return FrameLane.Event;
 
             const System.Reflection.BindingFlags flags =
                 System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
@@ -173,7 +173,7 @@ namespace Lilium.RemoteControl
 
             return ownerType.GetField(path, flags) != null
                 ? FrameLane.State
-                : FrameLane.Input;
+                : FrameLane.Event;
         }
 
         internal LivePropertyDefine ToPropertyDefine(Type ownerType = null)

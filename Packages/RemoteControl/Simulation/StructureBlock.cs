@@ -8,18 +8,18 @@ namespace Lilium.RemoteControl.Frames
     /// <summary>One object in the inventory: what exists, of what type, under whom.</summary>
     public struct ObjectEntry
     {
-        /// <summary>Interned object id. See <see cref="InputSymbolTable"/>.</summary>
+        /// <summary>Interned object id. See <see cref="FrameSymbolTable"/>.</summary>
         public int id;
 
         /// <summary>Interned type name.</summary>
         public int typeId;
 
-        /// <summary>Interned id of the parent, or <see cref="InputSymbolTable.kNone"/>.</summary>
+        /// <summary>Interned id of the parent, or <see cref="FrameSymbolTable.kNone"/>.</summary>
         public int parentId;
 
         /// <summary>
         /// Interned key naming how to make this object again, or
-        /// <see cref="InputSymbolTable.kNone"/> for one that cannot be.
+        /// <see cref="FrameSymbolTable.kNone"/> for one that cannot be.
         ///
         /// The type name is not enough to build from. Two makers can both produce the same type from
         /// different prefabs, so a replay given only the type would pick one of them and be right by
@@ -40,7 +40,7 @@ namespace Lilium.RemoteControl.Frames
     ///
     /// The inventory is a dense array rather than a map because **the order is part of the
     /// recording**. A hash map would iterate in whatever order it felt like, and two machines fed
-    /// the same inputs would lay their state out differently. Lookup by id walks the array; the
+    /// the same events would lay their state out differently. Lookup by id walks the array; the
     /// counts involved (a few avatars, tens of lights) do not justify a side index yet.
     ///
     /// Applying this is not assignment but a reconcile against reality: in the inventory and not in
@@ -102,7 +102,7 @@ namespace Lilium.RemoteControl.Frames
         /// re-declaration of what is already known must not invalidate the state written against it.
         /// </summary>
         public bool AddOrUpdate(int id, int typeId, int parentId,
-            int recipeId = InputSymbolTable.kNone)
+            int recipeId = FrameSymbolTable.kNone)
         {
             var index = IndexOf(id);
             if (index >= 0)

@@ -51,7 +51,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
         private readonly List<FrameMark> _frames = new List<FrameMark>();
         private readonly List<string> _symbols = new List<string>();
-        private readonly List<InputRow> _inputs = new List<InputRow>();
+        private readonly List<EventRow> _events = new List<EventRow>();
         private readonly LiveDataSnapshot _snapshot = new LiveDataSnapshot();
         private readonly Dictionary<string, Type> _elementTypes = new Dictionary<string, Type>();
 
@@ -75,16 +75,16 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
         public LiveDataSnapshot snapshot => _snapshot;
 
-        public int inputCount => _inputs.Count;
+        public int eventCount => _events.Count;
 
-        public InputRow GetInput(int index) => _inputs[index];
+        public EventRow GetEvent(int index) => _events[index];
 
-        /// <summary>A file's inputs are the frame's. Clearing them would only hide what it holds.</summary>
-        public void ClearInputs() { }
+        /// <summary>A file's events are the frame's. Clearing them would only hide what it holds.</summary>
+        public void ClearEvents() { }
 
         public string selectedType { get; private set; }
 
-        public int selectedOwnerId { get; private set; } = InputSymbolTable.kNone;
+        public int selectedOwnerId { get; private set; } = FrameSymbolTable.kNone;
 
         public void Select(string typeName, int ownerId)
         {
@@ -149,7 +149,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
             _frames.Clear();
             _symbols.Clear();
-            _inputs.Clear();
+            _events.Clear();
             _elementTypes.Clear();
             _snapshot.TrimTypes(0);
             _snapshot.structure.Clear();
@@ -217,7 +217,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         /// <summary>Reads the frame at the current position into the snapshot.</summary>
         private void _Load()
         {
-            _inputs.Clear();
+            _events.Clear();
             _snapshot.TrimTypes(0);
             _snapshot.structure.Clear();
             _snapshot.selectedType = null;
@@ -281,8 +281,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                         _ReadState(entry.payload, typeIndex++);
                         break;
 
-                    case FrameEntryKind.Input:
-                        _ReadInput(entry.payload, mark.frameNumber);
+                    case FrameEntryKind.Event:
+                        _ReadEvent(entry.payload, mark.frameNumber);
                         break;
 
                     case FrameEntryKind.Structure:
@@ -310,7 +310,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
         private string _Resolve(int id)
         {
-            if (id == InputSymbolTable.kNone) return string.Empty;
+            if (id == FrameSymbolTable.kNone) return string.Empty;
             if (id < 0 || id >= _symbols.Count) return $"#{id}";
 
             return _symbols[id] ?? $"#{id}";
@@ -339,7 +339,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                     typeId = typeId,
                     typeName = _Resolve(typeId),
                     parentId = parentId,
-                    parentName = parentId == InputSymbolTable.kNone ? string.Empty : _Resolve(parentId),
+                    parentName = parentId == FrameSymbolTable.kNone ? string.Empty : _Resolve(parentId),
                     recipe = _Resolve(recipeId),
                 });
             }
@@ -401,7 +401,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             }
         }
 
-        private void _ReadInput(ReadOnlySpan<byte> payload, long frameNumber)
+        private void _ReadEvent(ReadOnlySpan<byte> payload, long frameNumber)
         {
             var payloadLength = BitConverter.ToInt32(payload.Slice(29, 4));
 
@@ -411,21 +411,21 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                 bytes = payload.Slice(33, payloadLength).ToArray();
             }
 
-            var flags = (InputFlags)payload[28];
+            var flags = (EventFlags)payload[28];
 
-            _inputs.Add(new InputRow
+            _events.Add(new EventRow
             {
                 rowId = _nextRowId++,
                 frameNumber = frameNumber,
                 sequence = BitConverter.ToInt64(payload.Slice(0, 8)),
-                kind = (InputKind)BitConverter.ToInt32(payload.Slice(8, 4)),
+                kind = (EventKind)BitConverter.ToInt32(payload.Slice(8, 4)),
                 source = _Resolve(BitConverter.ToInt32(payload.Slice(12, 4))),
                 target = _Resolve(BitConverter.ToInt32(payload.Slice(16, 4))),
                 verb = _Resolve(BitConverter.ToInt32(payload.Slice(20, 4))),
                 payloadTypeName = _Resolve(BitConverter.ToInt32(payload.Slice(24, 4))),
                 payload = bytes,
-                faulted = (flags & InputFlags.Faulted) != 0,
-                truncated = (flags & InputFlags.PayloadTruncated) != 0,
+                faulted = (flags & EventFlags.Faulted) != 0,
+                truncated = (flags & EventFlags.PayloadTruncated) != 0,
             });
         }
 
@@ -436,7 +436,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
             // Null is an answer: the recording may name a type this build no longer has, and the
             // row is still worth drawing by name and size.
-            var found = InputPayload.Resolve(typeName);
+            var found = EventPayload.Resolve(typeName);
             _elementTypes[typeName] = found;
             return found;
         }

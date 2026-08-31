@@ -10,9 +10,9 @@ namespace Lilium.RemoteControl.Frames.Recording
     /// <summary>
     /// Plays a recording back into a structure and a set of state blocks.
     ///
-    /// What this restores is the state lane: the inventory and the values. The input lane is read
-    /// out too, but applying an input means writing to a property or calling a method, which is
-    /// somebody else's job -- <see cref="inputs"/> hands the records over for whoever owns that
+    /// What this restores is the state lane: the inventory and the values. The event lane is read
+    /// out too, but applying an event means writing to a property or calling a method, which is
+    /// somebody else's job -- <see cref="events"/> hands the records over for whoever owns that
     /// pipeline.
     ///
     /// Two ways to move: <see cref="Advance"/> walks forward and builds the mapping table from the
@@ -23,7 +23,7 @@ namespace Lilium.RemoteControl.Frames.Recording
     {
         private readonly FrameRecordReader _reader;
         private readonly List<string> _symbols = new List<string>();
-        private readonly List<InputRecord> _inputs = new List<InputRecord>();
+        private readonly List<EventRecord> _events = new List<EventRecord>();
         private readonly HashSet<string> _reportedUnknownTypes = new HashSet<string>();
 
         private long _frameNumber = -1;
@@ -56,8 +56,8 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// </summary>
         public StateBlockSet state { get; } = new StateBlockSet();
 
-        /// <summary>Inputs applied at the current frame's head, in the order they were applied.</summary>
-        public IReadOnlyList<InputRecord> inputs => _inputs;
+        /// <summary>Events applied at the current frame's head, in the order they were applied.</summary>
+        public IReadOnlyList<EventRecord> events => _events;
 
         /// <summary>
         /// Type names carried by the recording that nothing here knows how to hold. Not empty means
@@ -70,6 +70,30 @@ namespace Lilium.RemoteControl.Frames.Recording
 
         /// <summary>Frames that carry the inventory, in order.</summary>
         public IReadOnlyList<long> keyframes => _reader.keyframes;
+
+        /// <summary>
+        /// Frames the recording holds, or zero for one that was cut short and carries no index.
+        ///
+        /// The range a scrub moves through. What a position within it means is
+        /// <see cref="FrameNumberAt"/>'s to say -- a frame number is not a position, because a run
+        /// that drops below rate skips numbers.
+        /// </summary>
+        public int frameCount => _reader.indexedFrameCount;
+
+        /// <summary>Frame number the recording starts at. Zero when it carries no index.</summary>
+        public long firstFrameNumber => _reader.firstFrameNumber;
+
+        /// <summary>
+        /// The frame number at a position within <see cref="frameCount"/>, or -1. What to hand
+        /// <see cref="TrySeek"/> to land on the nth frame of a recording.
+        /// </summary>
+        public long FrameNumberAt(int index) => _reader.FrameNumberAt(index);
+
+        /// <summary>
+        /// Where a frame sits within <see cref="frameCount"/>, or -1. The other direction: what to
+        /// put a scrubber at for the frame being shown.
+        /// </summary>
+        public int IndexOfFrame(long frameNumber) => _reader.IndexOfFrame(frameNumber);
 
         public FrameRecordPlayer(Stream stream, bool leaveOpen = false)
         {
@@ -85,14 +109,14 @@ namespace Lilium.RemoteControl.Frames.Recording
         }
 
         /// <summary>
-        /// Plays the next frame: applies its structure and state, and collects its inputs. False at
+        /// Plays the next frame: applies its structure and state, and collects its events. False at
         /// the end of the recording.
         /// </summary>
         public bool Advance()
         {
             if (_atEnd) return false;
 
-            _inputs.Clear();
+            _events.Clear();
 
             if (!_pendingBoundary && !_AdvanceToNextBoundary())
             {
@@ -135,7 +159,7 @@ namespace Lilium.RemoteControl.Frames.Recording
             if (!_reader.TrySeekFrame(frame)) return false;
 
             _AdoptTailSymbols();
-            _inputs.Clear();
+            _events.Clear();
             _atEnd = false;
             _pendingBoundary = false;
 
@@ -194,7 +218,7 @@ namespace Lilium.RemoteControl.Frames.Recording
         {
             _reader.Rewind();
             _symbols.Clear();
-            _inputs.Clear();
+            _events.Clear();
             structure.Reset();
             state.Reset();
             _frameNumber = -1;
@@ -252,8 +276,8 @@ namespace Lilium.RemoteControl.Frames.Recording
                     _ApplyState(entry.payload);
                     break;
 
-                case FrameEntryKind.Input:
-                    _ApplyInput(entry.payload);
+                case FrameEntryKind.Event:
+                    _ApplyEvent(entry.payload);
                     break;
             }
         }
@@ -344,18 +368,18 @@ namespace Lilium.RemoteControl.Frames.Recording
             block.ReadFrom(payload.Slice(12), count);
         }
 
-        private void _ApplyInput(ReadOnlySpan<byte> payload)
+        private void _ApplyEvent(ReadOnlySpan<byte> payload)
         {
             var sequence = BitConverter.ToInt64(payload.Slice(0, 8));
-            var kind = (InputKind)BitConverter.ToInt32(payload.Slice(8, 4));
+            var kind = (EventKind)BitConverter.ToInt32(payload.Slice(8, 4));
             var sourceId = BitConverter.ToInt32(payload.Slice(12, 4));
             var targetId = BitConverter.ToInt32(payload.Slice(16, 4));
             var verbId = BitConverter.ToInt32(payload.Slice(20, 4));
             var payloadTypeId = BitConverter.ToInt32(payload.Slice(24, 4));
-            var flags = (InputFlags)payload[28];
+            var flags = (EventFlags)payload[28];
             var payloadLength = BitConverter.ToInt32(payload.Slice(29, 4));
 
-            var record = new InputRecord(sequence, kind, sourceId, targetId, flags, verbId);
+            var record = new EventRecord(sequence, kind, sourceId, targetId, flags, verbId);
 
             // Copied as bytes, not decoded: what the payload means is the reader's business, and
             // going through text on the way in would round-trip a value that never was one.
@@ -364,7 +388,7 @@ namespace Lilium.RemoteControl.Frames.Recording
                 record.SetPayload(payload.Slice(33, payloadLength), payloadTypeId);
             }
 
-            _inputs.Add(record);
+            _events.Add(record);
         }
     }
 }

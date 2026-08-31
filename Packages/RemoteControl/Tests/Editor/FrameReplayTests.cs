@@ -31,9 +31,9 @@ namespace Lilium.RemoteControl.Tests
         }
 
         /// <summary>What one call handed the applier, kept past the call.</summary>
-        private readonly struct AppliedInput
+        private readonly struct AppliedEvent
         {
-            public readonly InputKind kind;
+            public readonly EventKind kind;
             public readonly string verb;
             public readonly string target;
             public readonly string source;
@@ -41,41 +41,41 @@ namespace Lilium.RemoteControl.Tests
             public readonly byte[] payload;
             public readonly string text;
 
-            public AppliedInput(in ReplayInput input)
+            public AppliedEvent(in ReplayEvent evt)
             {
-                kind = input.kind;
-                verb = input.verb;
-                target = input.target;
-                source = input.source;
-                payloadTypeName = input.payloadTypeName;
-                payload = input.payload.ToArray();
-                text = input.text;
+                kind = evt.kind;
+                verb = evt.verb;
+                target = evt.target;
+                source = evt.source;
+                payloadTypeName = evt.payloadTypeName;
+                payload = evt.payload.ToArray();
+                text = evt.text;
             }
         }
 
         /// <summary>
         /// Collects what a replay hands it instead of applying anything.
         ///
-        /// Copies rather than keeping the ReplayInput: its payload is a window over the replayer's
-        /// one buffer, so a list of them would all read as whatever the last input happened to be.
+        /// Copies rather than keeping the ReplayEvent: its payload is a window over the replayer's
+        /// one buffer, so a list of them would all read as whatever the last event happened to be.
         /// </summary>
-        private sealed class RecordingApplier : IInputApplier
+        private sealed class RecordingApplier : IEventApplier
         {
-            public readonly List<AppliedInput> applied = new List<AppliedInput>();
+            public readonly List<AppliedEvent> applied = new List<AppliedEvent>();
 
             /// <summary>Targets to refuse, standing in for something that no longer exists.</summary>
             public readonly HashSet<string> refuse = new HashSet<string>();
 
-            public bool Apply(in ReplayInput input, out string error)
+            public bool Apply(in ReplayEvent evt, out string error)
             {
-                if (refuse.Contains(input.target))
+                if (refuse.Contains(evt.target))
                 {
                     error = "404 Not found";
                     return false;
                 }
 
                 error = null;
-                applied.Add(new AppliedInput(in input));
+                applied.Add(new AppliedEvent(in evt));
                 return true;
             }
         }
@@ -112,7 +112,7 @@ namespace Lilium.RemoteControl.Tests
             var bytes = Record(4, () =>
             {
                 var value = (next++).ToString();
-                FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/object/cam/fov", value,
+                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", value,
                     () => true);
             });
 
@@ -121,8 +121,8 @@ namespace Lilium.RemoteControl.Tests
             {
                 while (replayer.Advance()) { }
 
-                Assert.AreEqual(4, replayer.appliedInputCount);
-                Assert.AreEqual(0, replayer.failedInputCount);
+                Assert.AreEqual(4, replayer.appliedEventCount);
+                Assert.AreEqual(0, replayer.failedEventCount);
             }
 
             // In order, with the values they were applied with.
@@ -131,7 +131,7 @@ namespace Lilium.RemoteControl.Tests
             {
                 Assert.AreEqual(i.ToString(), applier.applied[i].text);
                 Assert.AreEqual("/live/object/cam/fov", applier.applied[i].target);
-                Assert.AreEqual(InputKind.PropertyWrite, applier.applied[i].kind);
+                Assert.AreEqual(EventKind.PropertyWrite, applier.applied[i].kind);
             }
         }
 
@@ -141,7 +141,7 @@ namespace Lilium.RemoteControl.Tests
             // The same path answers to more than one verb, so replaying a write as a reset would be
             // a plausible-looking wrong answer rather than a failure.
             var bytes = Record(1, () =>
-                FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/object/cam/fov", "35.0",
+                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", "35.0",
                     () => true, verb: "PUT"));
 
             var applier = new RecordingApplier();
@@ -157,7 +157,7 @@ namespace Lilium.RemoteControl.Tests
         public void TheSource_IsCarriedThroughSoATrackCanBeLeftOut()
         {
             var bytes = Record(1, () =>
-                FrameGate._Enqueue(InputKind.FunctionCall, "unit-test", "/live/function/reset", "{}",
+                FrameGate._Enqueue(EventKind.FunctionCall, "unit-test", "/live/function/reset", "{}",
                     () => true));
 
             var applier = new RecordingApplier();
@@ -167,7 +167,7 @@ namespace Lilium.RemoteControl.Tests
             }
 
             Assert.AreEqual("unit-test", applier.applied[0].source);
-            Assert.AreEqual(InputKind.FunctionCall, applier.applied[0].kind);
+            Assert.AreEqual(EventKind.FunctionCall, applier.applied[0].kind);
         }
 
         [Test]
@@ -178,7 +178,7 @@ namespace Lilium.RemoteControl.Tests
             {
                 toggle = !toggle;
                 var target = toggle ? "/live/object/gone/fov" : "/live/object/cam/fov";
-                FrameGate._Enqueue(InputKind.PropertyWrite, "test", target, "1", () => true);
+                FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, "1", () => true);
             });
 
             var applier = new RecordingApplier();
@@ -192,8 +192,8 @@ namespace Lilium.RemoteControl.Tests
                 while (replayer.Advance()) { }
                 UnityEngine.TestTools.LogAssert.ignoreFailingMessages = false;
 
-                Assert.AreEqual(2, replayer.appliedInputCount);
-                Assert.AreEqual(2, replayer.failedInputCount);
+                Assert.AreEqual(2, replayer.appliedEventCount);
+                Assert.AreEqual(2, replayer.failedEventCount);
             }
         }
 
@@ -203,7 +203,7 @@ namespace Lilium.RemoteControl.Tests
             // What was kept of it is not what was applied live, so putting it back would quietly
             // change the value instead of reproducing it.
             var bytes = Record(1, () =>
-                FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/object/cam/curve",
+                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/curve",
                     new string('x', 4000), () => true));
 
             var applier = new RecordingApplier();
@@ -212,7 +212,7 @@ namespace Lilium.RemoteControl.Tests
                 while (replayer.Advance()) { }
 
                 Assert.AreEqual(1, replayer.skippedTruncatedCount);
-                Assert.AreEqual(0, replayer.appliedInputCount);
+                Assert.AreEqual(0, replayer.appliedEventCount);
             }
 
             Assert.IsEmpty(applier.applied);
@@ -222,12 +222,12 @@ namespace Lilium.RemoteControl.Tests
         public void Seeking_AppliesOnlyThatFramesInputs()
         {
             // The frames walked through on the way are already accounted for in the state that was
-            // restored; applying their inputs again would be a second helping of the same change.
+            // restored; applying their events again would be a second helping of the same change.
             var next = 0;
             var bytes = Record(6, () =>
             {
                 var value = (next++).ToString();
-                FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/object/cam/fov", value,
+                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", value,
                     () => true);
             });
 
@@ -237,8 +237,101 @@ namespace Lilium.RemoteControl.Tests
                 Assert.IsTrue(replayer.TrySeek(4));
 
                 Assert.AreEqual(4, replayer.frameNumber);
-                Assert.AreEqual(1, replayer.appliedInputCount);
+                Assert.AreEqual(1, replayer.appliedEventCount);
                 Assert.AreEqual("4", applier.applied[0].text);
+            }
+        }
+
+        [Test]
+        public void TheRecording_SaysHowManyFramesItHoldsAndWhereTheyStart()
+        {
+            // What a scrubber moves through. Without it a position can only be turned into a frame
+            // number by walking the recording, which is the thing seeking exists to avoid.
+            var bytes = Record(6, null);
+
+            using (var player = new FrameRecordPlayer(new MemoryStream(bytes)))
+            {
+                Assert.AreEqual(6, player.frameCount);
+                Assert.IsTrue(player.TrySeek(player.firstFrameNumber));
+                Assert.AreEqual(player.firstFrameNumber, player.frameNumber);
+            }
+        }
+
+        [Test]
+        public void Holding_ReSuppliesTheSameFrameInsteadOfWalkingOn()
+        {
+            var next = 0;
+            var bytes = Record(6, () =>
+            {
+                var value = (next++).ToString();
+                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", value,
+                    () => true);
+            });
+
+            var applier = new RecordingApplier();
+            var frame = new Frame();
+
+            using (var replayer = new FrameReplayer(new MemoryStream(bytes), applier))
+            {
+                Assert.IsTrue(replayer.FillFrame(ref frame));
+                var held = replayer.frameNumber;
+
+                replayer.isPaused = true;
+
+                // Still supplying, so the gate keeps taking its frame from the recording rather than
+                // handing the world straight back to the live producers.
+                Assert.IsTrue(replayer.FillFrame(ref frame));
+                Assert.IsTrue(replayer.FillFrame(ref frame));
+
+                Assert.AreEqual(held, replayer.frameNumber);
+
+                // And the frame's own events are not applied again while it is held.
+                Assert.AreEqual(1, replayer.appliedEventCount);
+            }
+
+            Assert.AreEqual(1, applier.applied.Count);
+        }
+
+        [Test]
+        public void HoldingBeforeTheFirstFrame_StillPlaysOne()
+        {
+            // Paused from the start, the player's lanes are empty -- and supplying those would blank
+            // the world rather than hold it.
+            var bytes = Record(3, null);
+
+            var applier = new RecordingApplier();
+            var frame = new Frame();
+
+            using (var replayer = new FrameReplayer(new MemoryStream(bytes), applier))
+            {
+                replayer.isPaused = true;
+
+                Assert.IsTrue(replayer.FillFrame(ref frame));
+                Assert.GreaterOrEqual(replayer.frameNumber, 0);
+                Assert.IsNotNull(frame.state);
+            }
+        }
+
+        [Test]
+        public void SeekingWhileHeld_MovesTheFrameThatIsSupplied()
+        {
+            // What a scrub is: a hold, then a jump. The held frame has to follow the jump, or the
+            // slider moves and the world does not.
+            var bytes = Record(6, null);
+
+            var applier = new RecordingApplier();
+            var frame = new Frame();
+
+            using (var replayer = new FrameReplayer(new MemoryStream(bytes), applier))
+            {
+                Assert.IsTrue(replayer.FillFrame(ref frame));
+
+                replayer.isPaused = true;
+                Assert.IsTrue(replayer.TrySeek(4));
+                Assert.AreEqual(4, replayer.frameNumber);
+
+                Assert.IsTrue(replayer.FillFrame(ref frame));
+                Assert.AreEqual(4, replayer.frameNumber);
             }
         }
     }

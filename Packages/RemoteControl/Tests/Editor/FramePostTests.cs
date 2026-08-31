@@ -8,7 +8,7 @@ using Lilium.RemoteControl.Frames;
 namespace Lilium.RemoteControl.Tests
 {
     /// <summary>
-    /// A producer inside the frame -- a deck tile, a bound key, a gamepad axis -- is an input like
+    /// A producer inside the frame -- a deck tile, a bound key, a gamepad axis -- is an event like
     /// any other and has to take its place in the order.
     ///
     /// It cannot go in the way a request does: a request is submitted from a worker thread that
@@ -40,7 +40,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var applied = 0;
 
-            FrameGate._Post(InputKind.PropertyWrite, _source, "PUT", "/live/object/cam/fov",
+            FrameGate._Post(EventKind.PropertyWrite, _source, "PUT", "/live/object/cam/fov",
                 () => applied++);
 
             Assert.AreEqual(0, applied, "posting is not applying");
@@ -53,17 +53,17 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void APostedInput_IsRecordedLikeAnyOther()
         {
-            FrameGate._Post(InputKind.FunctionCall, _source, "POST", "/live/function/deck/Fire",
+            FrameGate._Post(EventKind.FunctionCall, _source, "POST", "/live/function/deck/Fire",
                 () => { });
 
             FrameGate.Pump();
 
-            using var frame = new InputFrame();
+            using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
-            Assert.AreEqual(1, frame.inputCount);
+            Assert.AreEqual(1, frame.eventCount);
 
             var record = frame[0];
-            Assert.AreEqual(InputKind.FunctionCall, record.kind);
+            Assert.AreEqual(EventKind.FunctionCall, record.kind);
             Assert.AreEqual("test-producer", FrameGate.symbols.Resolve(record.sourceId));
             Assert.AreEqual("POST", FrameGate.symbols.Resolve(record.verbId));
             Assert.AreEqual("/live/function/deck/Fire", FrameGate.symbols.Resolve(record.targetId));
@@ -74,12 +74,12 @@ namespace Lilium.RemoteControl.Tests
         {
             const string target = "/live/object/cam/fov";
 
-            FrameGate._Post(InputKind.PropertyWrite, _source, "PUT", target,
+            FrameGate._Post(EventKind.PropertyWrite, _source, "PUT", target,
                 () => FrameGate.StampAppliedPayload(target, typeof(float), 35f));
 
             FrameGate.Pump();
 
-            using var frame = new InputFrame();
+            using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
 
             var record = frame[0];
@@ -95,15 +95,15 @@ namespace Lilium.RemoteControl.Tests
         {
             var order = new System.Collections.Generic.List<int>();
 
-            FrameGate._Post(InputKind.PropertyWrite, _source, "PUT", "/live/a", () => order.Add(1));
-            FrameGate._Post(InputKind.PropertyWrite, _source, "PUT", "/live/b", () => order.Add(2));
-            FrameGate._Post(InputKind.PropertyWrite, _source, "PUT", "/live/c", () => order.Add(3));
+            FrameGate._Post(EventKind.PropertyWrite, _source, "PUT", "/live/a", () => order.Add(1));
+            FrameGate._Post(EventKind.PropertyWrite, _source, "PUT", "/live/b", () => order.Add(2));
+            FrameGate._Post(EventKind.PropertyWrite, _source, "PUT", "/live/c", () => order.Add(3));
 
             FrameGate.Pump();
 
             CollectionAssert.AreEqual(new[] { 1, 2, 3 }, order);
 
-            using var frame = new InputFrame();
+            using var frame = new EventFrame();
             FrameGate.buffer.TryReadLatest(frame);
             Assert.AreEqual(frame[0].sequence + 1, frame[1].sequence, "no gaps in the numbering");
             Assert.AreEqual(frame[1].sequence + 1, frame[2].sequence);
@@ -116,10 +116,10 @@ namespace Lilium.RemoteControl.Tests
             // the same frame land in a decided order rather than in whichever ran first.
             var order = new System.Collections.Generic.List<string>();
 
-            FrameGate._Post(InputKind.PropertyWrite, _source, "PUT", "/live/a",
+            FrameGate._Post(EventKind.PropertyWrite, _source, "PUT", "/live/a",
                 () => order.Add("operation"));
 
-            FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/b", null,
+            FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/b", null,
                 () => { order.Add("request"); return true; });
 
             FrameGate.Pump();
@@ -131,7 +131,7 @@ namespace Lilium.RemoteControl.Tests
         public void PostingAnUndeclaredSource_IsRefusedRatherThanRecordedAsUnknown()
         {
             Assert.Throws<ArgumentException>(() => FrameGate.Post(
-                InputKind.PropertyWrite, default, "PUT", "/live/a", () => { }));
+                EventKind.PropertyWrite, default, "PUT", "/live/a", () => { }));
         }
     }
 }

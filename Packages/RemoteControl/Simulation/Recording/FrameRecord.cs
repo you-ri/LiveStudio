@@ -24,8 +24,8 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// </summary>
         Symbol = 1,
 
-        /// <summary>One input: what was written or called, by whom, with what payload.</summary>
-        Input = 2,
+        /// <summary>One event: what was written or called, by whom, with what payload.</summary>
+        Event = 2,
 
         /// <summary>Every element of one state block, verbatim.</summary>
         State = 3,
@@ -57,8 +57,8 @@ namespace Lilium.RemoteControl.Frames.Recording
         public static readonly byte[] kFooterMagic = { (byte)'L', (byte)'V', (byte)'D', (byte)'E' };
 
         /// <summary>
-        /// 2 added the keyframe list to the tail; 3 added the verb to an input entry; 4 made an
-        /// input payload typed bytes rather than text; 5 added the recipe to an inventory entry, so
+        /// 2 added the keyframe list to the tail; 3 added the verb to an event entry; 4 made an
+        /// event payload typed bytes rather than text; 5 added the recipe to an inventory entry, so
         /// a replay can build back what it lists rather than only recognise it. Refused rather than
         /// guessed at: an older layout read at the newer offsets produces values that look
         /// plausible, which is worse than a file that will not open.

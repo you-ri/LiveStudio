@@ -87,7 +87,7 @@ namespace Lilium.RemoteControl.LiveScene
 
             // Saving is not purely a read: it clears the unsaved-changes marks, and a replay that
             // did not clear them at the same point would disagree about what still needs saving.
-            var result = await ExecuteAsInput(InputKind.StructureChange, context.Request.HttpMethod,
+            var result = await ExecuteAsEvent(EventKind.StructureChange, context.Request.HttpMethod,
                 context.Request.Url.AbsolutePath, body, () =>
             {
                 var resolver = GetResolver();
@@ -142,7 +142,7 @@ namespace Lilium.RemoteControl.LiveScene
                 return;
             }
 
-            var result = await ExecuteAsInput(InputKind.StructureChange, context.Request.HttpMethod,
+            var result = await ExecuteAsEvent(EventKind.StructureChange, context.Request.HttpMethod,
                 context.Request.Url.AbsolutePath, body, () =>
             {
                 var resolver = GetResolver();
@@ -212,7 +212,7 @@ namespace Lilium.RemoteControl.LiveScene
                 return;
             }
 
-            var removed = await ExecuteAsInput(InputKind.StructureChange, context.Request.HttpMethod,
+            var removed = await ExecuteAsEvent(EventKind.StructureChange, context.Request.HttpMethod,
                 context.Request.Url.AbsolutePath, request.sourceKey,
                 () => LiveScenePendingStore.RemoveOrphan(request.sourceKey));
             await WriteResponse(200, context.Response, $"{{\"success\":true,\"removed\":{(removed ? "true" : "false")}}}");

@@ -87,7 +87,7 @@ namespace Lilium.LiveStudio
             // The arguments travel as the request text, which is the form the remote path uses too.
             var target = LivePath();
 
-            FrameGate.Post(InputKind.FunctionCall, _source, "POST", target, _Invoke,
+            FrameGate.Post(EventKind.FunctionCall, _source, "POST", target, _Invoke,
                 OperationRequest.FromArgsJson(argsJson));
         }
 

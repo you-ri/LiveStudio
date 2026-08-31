@@ -72,7 +72,7 @@ namespace Lilium.RemoteControl.Tests
                 {
                     for (int w = 0; w < writesPerFrame; w++)
                     {
-                        FrameGate._Enqueue(InputKind.PropertyWrite, "test",
+                        FrameGate._Enqueue(EventKind.PropertyWrite, "test",
                             "/live/object/cam" + w + "/fieldOfView", "35.5", () => true);
                     }
 

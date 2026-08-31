@@ -112,7 +112,7 @@ namespace Lilium.RemoteControl.Frames
                 {
                     Debug.LogWarning(
                         $"[RemoteControl] '{liveClass.typeName}.{member.name}' asks for the state lane " +
-                        $"but its type is not something a frame can carry as bytes. Left on the input lane.");
+                        $"but its type is not something a frame can carry as bytes. Left on the evt lane.");
                     continue;
                 }
 

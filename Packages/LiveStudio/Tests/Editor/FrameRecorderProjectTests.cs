@@ -2,6 +2,7 @@
 
 using System.IO;
 using NUnit.Framework;
+using Lilium.RemoteControl;
 
 namespace Lilium.LiveStudio.EditorTests
 {
@@ -10,7 +11,7 @@ namespace Lilium.LiveStudio.EditorTests
     /// only means anything in the project it came from -- it belongs to that project the same way
     /// scenes, decks and avatars do, and must not be shared across all of them.
     /// </summary>
-    public class FrameRecorderControllerTests
+    public class FrameRecorderProjectTests
     {
         private const string kOpen = "/projects/open";
         private const string kPersisted = "/projects/persisted";
@@ -21,7 +22,7 @@ namespace Lilium.LiveStudio.EditorTests
         {
             Assert.AreEqual(
                 Path.Combine(kOpen, FrameRecorderController.kFolderName),
-                FrameRecorderController.ResolveRecordingFolder(kOpen, kPersisted, kFallback));
+                FrameRecorderProject.ResolveRecordingFolder(kOpen, kPersisted, kFallback));
         }
 
         [Test]
@@ -31,7 +32,7 @@ namespace Lilium.LiveStudio.EditorTests
             // project in. The picker still has to list the right project's takes.
             Assert.AreEqual(
                 Path.Combine(kPersisted, FrameRecorderController.kFolderName),
-                FrameRecorderController.ResolveRecordingFolder("", kPersisted, kFallback));
+                FrameRecorderProject.ResolveRecordingFolder("", kPersisted, kFallback));
         }
 
         [Test]
@@ -41,7 +42,7 @@ namespace Lilium.LiveStudio.EditorTests
             // persisted value would drop takes somewhere else than everything else in that project.
             Assert.AreEqual(
                 Path.Combine(kOpen, FrameRecorderController.kFolderName),
-                FrameRecorderController.ResolveRecordingFolder(kOpen, "", kFallback));
+                FrameRecorderProject.ResolveRecordingFolder(kOpen, "", kFallback));
         }
 
         [Test]
@@ -51,7 +52,7 @@ namespace Lilium.LiveStudio.EditorTests
             // a project at all.
             Assert.AreEqual(
                 Path.Combine(kFallback, FrameRecorderController.kFolderName),
-                FrameRecorderController.ResolveRecordingFolder("", "", kFallback));
+                FrameRecorderProject.ResolveRecordingFolder("", "", kFallback));
         }
     }
 }

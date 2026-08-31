@@ -83,6 +83,12 @@ namespace Lilium.RemoteControl.Frames
     /// which is what actually happened -- the alternative, counting pumps, spends the same numbers
     /// over a longer wall time and quietly reports a run as slower or faster than it was.
     /// </summary>
+    // LRC011 is suppressed for this type on purpose. The rule says the simulation must not read a
+    // clock of its own -- but a clock has to enter somewhere, and this is that door. Real time is an
+    // input here, in the same sense a gamepad is: it is read once at the boundary, stamped onto the
+    // frame, and everything downstream reads it from the frame. Replacing this clock with a supplied
+    // one is exactly how replay works.
+#pragma warning disable LRC011
     public sealed class RealtimeFrameClock : IFrameClock
     {
         private readonly System.Diagnostics.Stopwatch _sinceAnchor = new System.Diagnostics.Stopwatch();
@@ -110,4 +116,5 @@ namespace Lilium.RemoteControl.Frames
             _sinceAnchor.Restart();
         }
     }
+#pragma warning restore LRC011
 }

@@ -61,8 +61,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         public string recipe;
     }
 
-    /// <summary>One recorded input, kept in the viewer's own ring.</summary>
-    internal struct InputRow
+    /// <summary>One recorded event, kept in the viewer's own ring.</summary>
+    internal struct EventRow
     {
         /// <summary>
         /// The viewer's own number for this row, unique for as long as it is kept.
@@ -75,7 +75,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
         public long frameNumber;
         public long sequence;
-        public InputKind kind;
+        public EventKind kind;
         public string source;
         public string verb;
         public string target;
@@ -96,7 +96,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
     /// <summary>
     /// What the viewer keeps of one frame.
     ///
-    /// Filled inside the gate's notification, which is the point every input is waiting on, so it
+    /// Filled inside the gate's notification, which is the point every event is waiting on, so it
     /// holds only what is cheap to take: the header, the shape of each block, and the metadata of
     /// each element. The values themselves stay where they are -- 1.4 KB per element per frame is
     /// not something to copy for a window that redraws twenty times a second -- and only the one

@@ -47,6 +47,15 @@ namespace Lilium.RemoteControl.Frames.Recording
         public int indexedFrameCount => _frameOffsets?.Length ?? 0;
 
         /// <summary>
+        /// Frame number the index starts at, or zero when there is no index.
+        ///
+        /// Frame numbers are the gate's, so a recording does not start at zero -- and the index is
+        /// contiguous from here, which is what lets a position within the recording be turned into
+        /// a frame number without walking it.
+        /// </summary>
+        public long firstFrameNumber => _firstFrameNumber;
+
+        /// <summary>
         /// Frames that carry the inventory, in order. These are the frames a seek can land on and
         /// know the shape of the world; everything between them restores its values but inherits
         /// its shape from whatever came before.
@@ -137,13 +146,106 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// </summary>
         public bool TrySeekFrame(long frameNumber)
         {
-            if (_frameOffsets == null) return false;
-
-            var index = frameNumber - _firstFrameNumber;
-            if (index < 0 || index >= _frameOffsets.Length) return false;
+            var index = IndexOfFrame(frameNumber);
+            if (index < 0) return false;
 
             _stream.Position = _frameOffsets[index];
             return true;
+        }
+
+        /// <summary>
+        /// Frame number the index's <paramref name="index"/>th frame carries, or -1 when there is no
+        /// index or the position is outside it.
+        ///
+        /// Read out of the file rather than counted on from the first. A frame number comes from the
+        /// clock, and a run that drops below rate skips numbers -- a 2628 frame take recorded at
+        /// sixty hertz was measured spanning 2805 numbers. So position n is not frame
+        /// <c>first + n</c>, and treating it as one lands a seek tens of frames from where it was
+        /// asked for.
+        /// </summary>
+        public long FrameNumberAt(int index)
+        {
+            if (_frameOffsets == null || index < 0 || index >= _frameOffsets.Length) return -1;
+
+            var restore = _stream.Position;
+            try
+            {
+                return _ReadFrameNumberAt(_frameOffsets[index]);
+            }
+            finally
+            {
+                _stream.Position = restore;
+            }
+        }
+
+        /// <summary>
+        /// Where a frame sits in the index, or -1 when the recording does not hold that frame.
+        ///
+        /// A binary search rather than a table built at open: frame numbers only ever increase down
+        /// the file, so finding one costs a dozen small reads instead of a walk over every frame --
+        /// which is the walk the index exists to avoid.
+        /// </summary>
+        public int IndexOfFrame(long frameNumber)
+        {
+            if (_frameOffsets == null) return -1;
+
+            var restore = _stream.Position;
+            try
+            {
+                var low = 0;
+                var high = _frameOffsets.Length - 1;
+
+                while (low <= high)
+                {
+                    var mid = low + ((high - low) >> 1);
+                    var value = _ReadFrameNumberAt(_frameOffsets[mid]);
+
+                    // A boundary that cannot be read means the file has been cut into rather than
+                    // that it is missing a frame, and guessing a direction from it would send the
+                    // search off into the part that is still intact.
+                    if (value < 0) return -1;
+
+                    if (value == frameNumber) return mid;
+
+                    if (value < frameNumber) low = mid + 1;
+                    else high = mid - 1;
+                }
+            }
+            finally
+            {
+                _stream.Position = restore;
+            }
+
+            return -1;
+        }
+
+        /// <summary>
+        /// The frame number of the frame that starts at an offset.
+        ///
+        /// Scans forward for the boundary rather than reading straight off the offset: an index entry
+        /// points at where the frame's writing began, and the mapping-table growth of that frame goes
+        /// out ahead of its boundary. Usually there is none and the boundary is the first entry.
+        /// </summary>
+        private long _ReadFrameNumberAt(long offset)
+        {
+            var limit = _frameOffsets != null ? _tailOffset : _stream.Length;
+            if (offset < _entriesOffset || offset >= limit) return -1;
+
+            _stream.Position = offset;
+
+            while (_stream.Position < limit)
+            {
+                var kind = (FrameEntryKind)_reader.ReadByte();
+                var length = _reader.ReadInt32();
+                var frameNumber = _reader.ReadInt64();
+
+                if (kind == FrameEntryKind.FrameBoundary) return frameNumber;
+                if (length < 0 || _stream.Position + length > limit) return -1;
+
+                _stream.Position += length;
+            }
+
+            return -1;
         }
 
         /// <summary>

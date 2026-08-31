@@ -67,7 +67,7 @@ namespace Lilium.RemoteControl.Tests
             var property = new LiveClassAssetMember { path = "driven" };
 
             Assert.AreEqual(FrameLane.State, member.ResolveLane(typeof(Fixture)));
-            Assert.AreEqual(FrameLane.Input, property.ResolveLane(typeof(Fixture)));
+            Assert.AreEqual(FrameLane.Event, property.ResolveLane(typeof(Fixture)));
         }
 
         [Test]
@@ -76,10 +76,10 @@ namespace Lilium.RemoteControl.Tests
             var member = new LiveClassAssetMember
             {
                 path = "intensity",
-                lane = LiveClassAssetLane.Input,
+                lane = LiveClassAssetLane.Event,
             };
 
-            Assert.AreEqual(FrameLane.Input, member.ResolveLane(typeof(Fixture)));
+            Assert.AreEqual(FrameLane.Event, member.ResolveLane(typeof(Fixture)));
         }
 
         [Test]
@@ -87,7 +87,7 @@ namespace Lilium.RemoteControl.Tests
         {
             // Making a block is how a type announces it belongs on the lane at all, so a type with
             // nothing on it must not make one.
-            var liveClass = Declare(Member("intensity", FrameLane.Input));
+            var liveClass = Declare(Member("intensity", FrameLane.Event));
 
             Assert.IsNull(DeclaredStateBridge.Build(liveClass));
         }

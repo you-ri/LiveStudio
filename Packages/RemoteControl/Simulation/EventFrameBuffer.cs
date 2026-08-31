@@ -32,7 +32,7 @@ namespace Lilium.RemoteControl.Frames
     ///
     /// Same shape and slot-identity trick as <see cref="FrameBuffer{T}"/>, which is what the
     /// capture receivers and <c>VirgoMotionSource</c> already use, but not that type: a ring stores
-    /// one fixed-size value per key, and a frame holds however many inputs arrived.
+    /// one fixed-size value per key, and a frame holds however many events arrived.
     ///
     /// Splitting it into two rings -- fixed-size headers keyed by frame number, records keyed by
     /// sequence number -- was tried and reverted. It would reuse the existing ring, but it lets the
@@ -44,22 +44,22 @@ namespace Lilium.RemoteControl.Frames
     /// standby machine kept a few frames back absorbs arrival jitter without a barrier, so a slow
     /// standby can never stall the machine actually on air.
     /// </summary>
-    public sealed class InputFrameBuffer : IDisposable
+    public sealed class EventFrameBuffer : IDisposable
     {
         private readonly object _lock = new object();
-        private readonly InputFrame[] _slots;
+        private readonly EventFrame[] _slots;
         private readonly long[] _slotFrameNumbers;
         private long _frameCount;
 
-        public InputFrameBuffer(int frameCapacity)
+        public EventFrameBuffer(int frameCapacity)
         {
             if (frameCapacity < 1) throw new ArgumentOutOfRangeException(nameof(frameCapacity));
 
-            _slots = new InputFrame[frameCapacity];
+            _slots = new EventFrame[frameCapacity];
             _slotFrameNumbers = new long[frameCapacity];
             for (int i = 0; i < frameCapacity; i++)
             {
-                _slots[i] = new InputFrame();
+                _slots[i] = new EventFrame();
                 _slotFrameNumbers[i] = -1;
             }
         }
@@ -96,7 +96,7 @@ namespace Lilium.RemoteControl.Frames
         /// slot being overwritten is one a reader can still reach, and it would otherwise watch it
         /// change mid-read.
         /// </summary>
-        internal InputFrame BeginFrame(long frameNumber, FrameRate frameRate)
+        internal EventFrame BeginFrame(long frameNumber, FrameRate frameRate)
         {
             var index = (int)(frameNumber % _slots.Length);
 
@@ -128,7 +128,7 @@ namespace Lilium.RemoteControl.Frames
         /// Copying rather than handing out the held instance: slots are reused as the ring wraps,
         /// so a reader on another thread holding a reference would see it change underneath.
         /// </summary>
-        public FrameLookup TryRead(long frameNumber, InputFrame destination)
+        public FrameLookup TryRead(long frameNumber, EventFrame destination)
         {
             if (destination == null) throw new ArgumentNullException(nameof(destination));
 
@@ -148,7 +148,7 @@ namespace Lilium.RemoteControl.Frames
         /// Copies the frame at the given timecode. The timecode is converted with its own rate, and
         /// the read is refused when that rate disagrees with what was committed.
         /// </summary>
-        public FrameLookup TryRead(Timecode timecode, FrameRate frameRate, InputFrame destination)
+        public FrameLookup TryRead(Timecode timecode, FrameRate frameRate, EventFrame destination)
         {
             if (destination == null) throw new ArgumentNullException(nameof(destination));
 
@@ -169,7 +169,7 @@ namespace Lilium.RemoteControl.Frames
         }
 
         /// <summary>Copies the most recently committed frame.</summary>
-        public FrameLookup TryReadLatest(InputFrame destination)
+        public FrameLookup TryReadLatest(EventFrame destination)
         {
             lock (_lock)
             {

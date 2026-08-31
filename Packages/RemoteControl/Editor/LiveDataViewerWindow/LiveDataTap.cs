@@ -7,7 +7,7 @@ using Lilium.RemoteControl.Frames.Recording;
 namespace Lilium.RemoteControl.Editor.LiveDataViewer
 {
     /// <summary>
-    /// Watches the gate and keeps the last frame, plus a ring of recent inputs, for whoever wants to
+    /// Watches the gate and keeps the last frame, plus a ring of recent events, for whoever wants to
     /// draw them.
     ///
     /// A plain static rather than the window itself. An EditorWindow that registers as an observer
@@ -21,18 +21,18 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
     /// </summary>
     internal static class LiveDataTap
     {
-        /// <summary>Recent inputs kept for the log pane. Sparse, so this is minutes of a normal run.</summary>
-        public const int kInputCapacity = 512;
+        /// <summary>Recent events kept for the log pane. Sparse, so this is minutes of a normal run.</summary>
+        public const int kEventCapacity = 512;
 
         private sealed class Observer : IFrameObserver
         {
-            public void OnFrameCompleted(in Frame frame, InputSymbolTable symbols)
+            public void OnFrameCompleted(in Frame frame, FrameSymbolTable symbols)
                 => _Capture(in frame, symbols);
         }
 
         private static readonly Observer _observer = new Observer();
         private static readonly LiveDataSnapshot _snapshot = new LiveDataSnapshot();
-        private static readonly InputRow[] _inputs = new InputRow[kInputCapacity];
+        private static readonly EventRow[] _events = new EventRow[kEventCapacity];
 
         // Session frame in which each (type, owner) last moved its stamp. Keyed by the pair so two
         // producers writing the same owner under different types do not shadow each other.
@@ -40,12 +40,12 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         private static readonly Dictionary<long, long> _lastChangedFrame = new Dictionary<long, long>();
 
         private static int _attachCount;
-        private static int _inputHead;
+        private static int _eventHead;
 
         // Never reset: it only has to be unique across what the ring is holding, and starting over
         // is exactly what makes the run's own sequence unusable as a key here.
         private static long _nextRowId = 1;
-        private static int _inputCount;
+        private static int _eventCount;
 
         /// <summary>Bumped every time a frame is taken. A reader redraws when it moves.</summary>
         public static long version { get; private set; }
@@ -62,13 +62,13 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         /// <summary>True while the tap is watching.</summary>
         public static bool isAttached => _attachCount > 0;
 
-        /// <summary>Inputs kept, up to <see cref="kInputCapacity"/>.</summary>
-        public static int inputCount => _inputCount;
+        /// <summary>Events kept, up to <see cref="kEventCapacity"/>.</summary>
+        public static int eventCount => _eventCount;
 
         /// <summary>Type and owner of the element whose bytes are taken each frame. Null for none.</summary>
         public static string selectedType { get; private set; }
 
-        public static int selectedOwnerId { get; private set; } = InputSymbolTable.kNone;
+        public static int selectedOwnerId { get; private set; } = FrameSymbolTable.kNone;
 
         /// <summary>
         /// Starts watching, if nothing was. Balanced by <see cref="Release"/> -- the tap keeps
@@ -114,21 +114,21 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         }
 
         /// <summary>Reads the ring oldest-first.</summary>
-        public static InputRow GetInput(int index)
+        public static EventRow GetEvent(int index)
         {
-            var start = _inputCount < kInputCapacity ? 0 : _inputHead;
-            return _inputs[(start + index) % kInputCapacity];
+            var start = _eventCount < kEventCapacity ? 0 : _eventHead;
+            return _events[(start + index) % kEventCapacity];
         }
 
-        /// <summary>Forgets the inputs kept so far. The state lane is per-frame and needs no clearing.</summary>
-        public static void ClearInputs()
+        /// <summary>Forgets the events kept so far. The state lane is per-frame and needs no clearing.</summary>
+        public static void ClearEvents()
         {
-            _inputHead = 0;
-            _inputCount = 0;
+            _eventHead = 0;
+            _eventCount = 0;
             version++;
         }
 
-        private static void _Capture(in Frame frame, InputSymbolTable symbols)
+        private static void _Capture(in Frame frame, FrameSymbolTable symbols)
         {
             // Ids in a supplied frame belong to the recording's table, not this run's. Resolving them
             // here would silently name whatever happens to hold that number now.
@@ -143,13 +143,13 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
             _CaptureState(in frame, resolve);
             _CaptureStructure(in frame, resolve);
-            _CaptureInputs(in frame, resolve);
+            _CaptureEvents(in frame, resolve);
 
             hasFrame = true;
             version++;
         }
 
-        private static Func<int, string> _ResolverFor(in Frame frame, InputSymbolTable symbols)
+        private static Func<int, string> _ResolverFor(in Frame frame, FrameSymbolTable symbols)
         {
             if (frame.isSupplied && FrameGate.source is FrameReplayer replayer)
             {
@@ -219,7 +219,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         private static string _SourceAt(StateBlock block, int index, Func<int, string> resolve)
         {
             var id = block.SourceIdAt(index);
-            return id == InputSymbolTable.kNone ? string.Empty : resolve(id);
+            return id == FrameSymbolTable.kNone ? string.Empty : resolve(id);
         }
 
         private static void _CaptureSelected(StateBlock block, int index, TypeRow row)
@@ -250,7 +250,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                     typeId = entry.typeId,
                     typeName = resolve(entry.typeId),
                     parentId = entry.parentId,
-                    parentName = entry.parentId == InputSymbolTable.kNone
+                    parentName = entry.parentId == FrameSymbolTable.kNone
                         ? string.Empty
                         : resolve(entry.parentId),
                     recipe = resolve(entry.recipeId),
@@ -258,19 +258,19 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             }
         }
 
-        private static void _CaptureInputs(in Frame frame, Func<int, string> resolve)
+        private static void _CaptureEvents(in Frame frame, Func<int, string> resolve)
         {
-            var inputs = frame.inputs;
-            if (inputs == null) return;
+            var events = frame.events;
+            if (events == null) return;
 
-            for (int i = 0; i < inputs.inputCount; i++)
+            for (int i = 0; i < events.eventCount; i++)
             {
-                var record = inputs[i];
+                var record = events[i];
 
                 var payload = record.payloadLength == 0 ? null : new byte[record.payloadLength];
                 if (payload != null) record.CopyPayloadTo(payload);
 
-                _inputs[_inputHead] = new InputRow
+                _events[_eventHead] = new EventRow
                 {
                     rowId = _nextRowId++,
                     frameNumber = frame.frameNumber,
@@ -285,8 +285,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                     truncated = record.payloadTruncated,
                 };
 
-                _inputHead = (_inputHead + 1) % kInputCapacity;
-                if (_inputCount < kInputCapacity) _inputCount++;
+                _eventHead = (_eventHead + 1) % kEventCapacity;
+                if (_eventCount < kEventCapacity) _eventCount++;
             }
         }
 

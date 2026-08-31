@@ -38,7 +38,7 @@ namespace Lilium.RemoteControl.Frames.Recording
         // Epoch of the inventory as last written, so an unchanged structure is not written again.
         private long _structureEpoch = -1;
 
-        // Prefixes an input's target must not start with to be written, two per excluded id
+        // Prefixes an event's target must not start with to be written, two per excluded id
         // (its properties and its functions). Rebuilt only when the caller's list changes.
         private string[] _excludePrefixes;
         private string[] _excludeIds;
@@ -78,7 +78,7 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// Opens a frame and writes its boundary entry. Any mapping-table growth since the last
         /// frame goes out first, so every id an entry refers to has already been named.
         /// </summary>
-        public void BeginFrame(in Frame frame, InputSymbolTable symbols)
+        public void BeginFrame(in Frame frame, FrameSymbolTable symbols)
         {
             _RequireOpen();
             if (_currentFrameNumber >= 0) throw new InvalidOperationException("A frame is already open.");
@@ -100,7 +100,7 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// which is how a keyframe is made: the same inventory written again so a seek landing here
         /// does not have to walk back for it.
         /// </summary>
-        public void WriteStructure(StructureBlock structure, InputSymbolTable symbols, bool force = false)
+        public void WriteStructure(StructureBlock structure, FrameSymbolTable symbols, bool force = false)
         {
             _RequireFrame();
             _WriteSymbolsSince(symbols);
@@ -131,7 +131,7 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// lists them, which is the order they were first created, so a run lays its types out the
         /// same way each time.
         /// </summary>
-        public void WriteState(StateBlockSet state, InputSymbolTable symbols)
+        public void WriteState(StateBlockSet state, FrameSymbolTable symbols)
         {
             _RequireFrame();
             if (state == null) return;
@@ -167,27 +167,27 @@ namespace Lilium.RemoteControl.Frames.Recording
         }
 
         /// <summary>
-        /// Writes the inputs applied at this frame's head, in the order they were applied.
+        /// Writes the events applied at this frame's head, in the order they were applied.
         ///
-        /// <paramref name="excludeObjectIds"/> names exposed objects whose inputs are left out.
+        /// <paramref name="excludeObjectIds"/> names exposed objects whose events are left out.
         /// This is for whatever drives the recording: its buttons are not part of the world being
         /// recorded, and keeping them means a replay presses them again -- starting a recording, or
         /// tearing down the replay that is running. It takes a list because the controls and the
         /// machinery behind them are usually two separate exposed objects.
         /// </summary>
-        public unsafe void WriteInputs(InputFrame inputs, InputSymbolTable symbols,
+        public unsafe void WriteEvents(EventFrame events, FrameSymbolTable symbols,
             string[] excludeObjectIds = null)
         {
             _RequireFrame();
             _WriteSymbolsSince(symbols);
 
-            if (inputs == null) return;
+            if (events == null) return;
 
             _UpdateExclusion(excludeObjectIds);
 
-            for (int i = 0; i < inputs.inputCount; i++)
+            for (int i = 0; i < events.eventCount; i++)
             {
-                var record = inputs[i];
+                var record = events[i];
 
                 if (_IsExcluded(record.targetId, symbols)) continue;
 
@@ -196,7 +196,7 @@ namespace Lilium.RemoteControl.Frames.Recording
                 // value is usually a handful of bytes, so most records cost almost nothing here.
                 var payloadLength = record.payloadLength;
 
-                _BeginEntry(FrameEntryKind.Input, 8 + 4 + 4 + 4 + 4 + 4 + 1 + 4 + payloadLength);
+                _BeginEntry(FrameEntryKind.Event, 8 + 4 + 4 + 4 + 4 + 4 + 1 + 4 + payloadLength);
                 _writer.Write(record.sequence);
                 _writer.Write((int)record.kind);
                 _writer.Write(record.sourceId);
@@ -226,7 +226,7 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// All of it can be rebuilt by walking the entries, which is the point -- a file that never
         /// got here is still readable, just without the shortcuts.
         /// </summary>
-        public void Close(InputSymbolTable symbols)
+        public void Close(FrameSymbolTable symbols)
         {
             if (_closed) return;
             if (_currentFrameNumber >= 0) EndFrame();
@@ -310,7 +310,7 @@ namespace Lilium.RemoteControl.Frames.Recording
             return true;
         }
 
-        private bool _IsExcluded(int targetId, InputSymbolTable symbols)
+        private bool _IsExcluded(int targetId, FrameSymbolTable symbols)
         {
             if (_excludePrefixes == null) return false;
             if (!symbols.TryResolve(targetId, out var target)) return false;
@@ -322,7 +322,7 @@ namespace Lilium.RemoteControl.Frames.Recording
             return false;
         }
 
-        private void _WriteSymbolsSince(InputSymbolTable symbols)
+        private void _WriteSymbolsSince(FrameSymbolTable symbols)
         {
             if (symbols == null) return;
 

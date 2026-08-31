@@ -12,7 +12,7 @@ namespace Lilium.RemoteControl
     /// The equivalence has one condition. A member that is also written from inside the application,
     /// bypassing the gate, leaves no trace in the input lane -- those writes are not inputs and are
     /// never recorded. Such a member has to be <see cref="State"/>, or the write has to be driven by
-    /// an input that is itself recorded. Declaring it <see cref="Input"/> and writing to it
+    /// an input that is itself recorded. Declaring it <see cref="Event"/> and writing to it
     /// internally records nothing and produces a recording that cannot be replayed.
     /// </summary>
     public enum FrameLane
@@ -23,7 +23,7 @@ namespace Lilium.RemoteControl
         /// <see cref="State"/> would mean reading every exposed member every frame by reflection,
         /// which does not hold up.
         /// </summary>
-        Input = 0,
+        Event = 0,
 
         /// <summary>
         /// Copied every frame at a fixed size. Opt-in, because it is paid for even when the value

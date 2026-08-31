@@ -8,7 +8,7 @@ namespace Lilium.RemoteControl.Tests
     /// A value belongs to one lane.
     ///
     /// The two lanes are of equal standing, so carrying the same value in both is not redundancy
-    /// that costs nothing: the state lane copies it every frame regardless, and the input record
+    /// that costs nothing: the state lane copies it every frame regardless, and the event record
     /// pays its full width to repeat what the state lane already said.
     /// </summary>
     [TestFixture]
@@ -68,15 +68,15 @@ namespace Lilium.RemoteControl.Tests
         public void TheLaneADeclarationAsksFor_IsReadableAtRuntime()
         {
             // The generator reads the same declaration at compile time. Nothing could act on it at
-            // runtime until now, which is why a state-lane write was also recorded as an input.
+            // runtime until now, which is why a state-lane write was also recorded as an event.
             Assert.AreEqual(FrameLane.State, Member("carried").lane);
-            Assert.AreEqual(FrameLane.Input, Member("requested").lane);
+            Assert.AreEqual(FrameLane.Event, Member("requested").lane);
         }
 
         [Test]
         public void APropertyOverAStateField_TakesTheFieldsLane()
         {
-            // They are two faces of one value. A property left in the input lane over a field in the
+            // They are two faces of one value. A property left in the event lane over a field in the
             // state lane records that value twice -- once per face.
             Assert.AreEqual(FrameLane.State, Member("shadowed").lane);
         }
@@ -94,7 +94,7 @@ namespace Lilium.RemoteControl.Tests
             const string target = "/live/object/fixture/carried";
             var before = FrameGate.omittedRecordCount;
 
-            FrameGate._Enqueue(InputKind.PropertyWrite, "test", target, "{\"value\":2.5}",
+            FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, "{\"value\":2.5}",
                 () =>
                 {
                     FrameGate.OmitAppliedRecord(target);
@@ -104,12 +104,12 @@ namespace Lilium.RemoteControl.Tests
 
             FrameGate.Pump();
 
-            using var frame = new InputFrame();
+            using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
 
-            Assert.AreEqual(0, frame.inputCount, "the state lane already carries it");
+            Assert.AreEqual(0, frame.eventCount, "the state lane already carries it");
             Assert.AreEqual(before + 1, FrameGate.omittedRecordCount,
-                "counted, so 'no input for this' can be told from 'the input went missing'");
+                "counted, so 'no evt for this' can be told from 'the evt went missing'");
         }
 
         [Test]
@@ -117,7 +117,7 @@ namespace Lilium.RemoteControl.Tests
         {
             const string target = "/live/object/fixture/requested";
 
-            FrameGate._Enqueue(InputKind.PropertyWrite, "test", target, "{\"value\":2.5}",
+            FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, "{\"value\":2.5}",
                 () =>
                 {
                     FrameGate.StampAppliedPayload(target, typeof(float), 2.5f);
@@ -127,10 +127,10 @@ namespace Lilium.RemoteControl.Tests
 
             FrameGate.Pump();
 
-            using var frame = new InputFrame();
+            using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
 
-            Assert.AreEqual(1, frame.inputCount);
+            Assert.AreEqual(1, frame.eventCount);
             Assert.AreEqual("System.Single", FrameGate.symbols.Resolve(frame[0].payloadTypeId));
         }
 
@@ -138,11 +138,11 @@ namespace Lilium.RemoteControl.Tests
         public void OmittingOneOfAGroup_LeavesTheRest()
         {
             // A bundle can touch both kinds at once. Dropping the whole group because one member of
-            // it is state would lose the writes that are only in the input lane.
+            // it is state would lose the writes that are only in the event lane.
             var operations = new[]
             {
-                new InputDescriptor(InputKind.PropertyWrite, "PUT", "/live/a", "1"),
-                new InputDescriptor(InputKind.PropertyWrite, "PUT", "/live/b", "2"),
+                new EventDescriptor(EventKind.PropertyWrite, "PUT", "/live/a", "1"),
+                new EventDescriptor(EventKind.PropertyWrite, "PUT", "/live/b", "2"),
             };
 
             FrameGate._Enqueue(operations, "test", () =>
@@ -153,10 +153,10 @@ namespace Lilium.RemoteControl.Tests
 
             FrameGate.Pump();
 
-            using var frame = new InputFrame();
+            using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
 
-            Assert.AreEqual(1, frame.inputCount);
+            Assert.AreEqual(1, frame.eventCount);
             Assert.AreEqual("/live/b", FrameGate.symbols.Resolve(frame[0].targetId));
         }
     }

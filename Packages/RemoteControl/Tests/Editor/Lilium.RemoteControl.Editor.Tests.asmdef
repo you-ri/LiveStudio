@@ -10,6 +10,7 @@
         "Lilium.RemoteControl.Editor",
         "Lilium.RemoteControl.LiveScene",
         "Lilium.RemoteControl.Server",
+        "Lilium.RemoteControl.Simulation",
         "Unity.Collections",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"

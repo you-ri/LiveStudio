@@ -6,7 +6,7 @@ using Unity.Collections.LowLevel.Unsafe;
 namespace Lilium.RemoteControl.Frames
 {
     /// <summary>
-    /// One committed frame: the inputs applied at its head, in the order they were applied,
+    /// One committed frame: the events applied at its head, in the order they were applied,
     /// stamped with the frame number they belong to.
     ///
     /// Position is held as a frame number plus a <see cref="FrameRate"/>, matching how the rest of
@@ -18,14 +18,14 @@ namespace Lilium.RemoteControl.Frames
     /// holding them where the address does not move keeps a copy between frames a block move and
     /// leaves the door open to reading them from a job.
     ///
-    /// Instances are owned and reused by <see cref="InputFrameBuffer"/>, so the storage is a
-    /// capacity buffer. Read <see cref="inputCount"/>, never the storage length. Whoever creates one
+    /// Instances are owned and reused by <see cref="EventFrameBuffer"/>, so the storage is a
+    /// capacity buffer. Read <see cref="eventCount"/>, never the storage length. Whoever creates one
     /// disposes it; a frame that never received a record never allocates and costs nothing to drop.
     /// </summary>
-    public sealed unsafe class InputFrame : IDisposable
+    public sealed unsafe class EventFrame : IDisposable
     {
-        private NativeArray<InputRecord> _inputs;
-        private int _inputCount;
+        private NativeArray<EventRecord> _events;
+        private int _eventCount;
 
         /// <summary>Monotonic frame number since the start of the run.</summary>
         public long frameNumber { get; private set; }
@@ -36,19 +36,19 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>Readable position, derived from the frame number and the rate.</summary>
         public Timecode timecode => new Timecode(frameNumber, frameRate);
 
-        /// <summary>Number of valid entries in <see cref="inputs"/>.</summary>
-        public int inputCount => _inputCount;
+        /// <summary>Number of valid entries in <see cref="events"/>.</summary>
+        public int eventCount => _eventCount;
 
-        /// <summary>Storage. Only the first <see cref="inputCount"/> entries are valid.</summary>
-        public NativeArray<InputRecord> inputs => _inputs;
+        /// <summary>Storage. Only the first <see cref="eventCount"/> entries are valid.</summary>
+        public NativeArray<EventRecord> events => _events;
 
-        public InputRecord this[int index]
+        public EventRecord this[int index]
         {
             get
             {
-                if ((uint)index >= (uint)_inputCount) throw new ArgumentOutOfRangeException(nameof(index));
+                if ((uint)index >= (uint)_eventCount) throw new ArgumentOutOfRangeException(nameof(index));
 
-                return _inputs[index];
+                return _events[index];
             }
         }
 
@@ -56,33 +56,33 @@ namespace Lilium.RemoteControl.Frames
         {
             frameNumber = number;
             frameRate = rate;
-            _inputCount = 0;
+            _eventCount = 0;
         }
 
-        internal void Add(in InputRecord record)
+        internal void Add(in EventRecord record)
         {
-            _EnsureCapacity(_inputCount + 1);
+            _EnsureCapacity(_eventCount + 1);
 
-            UnsafeUtility.WriteArrayElement(_inputs.GetUnsafePtr(), _inputCount, record);
-            _inputCount++;
+            UnsafeUtility.WriteArrayElement(_events.GetUnsafePtr(), _eventCount, record);
+            _eventCount++;
         }
 
         /// <summary>
         /// Copies this frame into <paramref name="destination"/>, growing its storage if needed. A
         /// reader that reuses one destination settles at the high-water mark and stops allocating.
         /// </summary>
-        internal void CopyTo(InputFrame destination)
+        internal void CopyTo(EventFrame destination)
         {
             destination.frameNumber = frameNumber;
             destination.frameRate = frameRate;
-            destination._inputCount = _inputCount;
+            destination._eventCount = _eventCount;
 
-            if (_inputCount == 0) return;
+            if (_eventCount == 0) return;
 
-            destination._EnsureCapacity(_inputCount);
+            destination._EnsureCapacity(_eventCount);
 
-            UnsafeUtility.MemCpy(destination._inputs.GetUnsafePtr(), _inputs.GetUnsafeReadOnlyPtr(),
-                (long)_inputCount * sizeof(InputRecord));
+            UnsafeUtility.MemCpy(destination._events.GetUnsafePtr(), _events.GetUnsafeReadOnlyPtr(),
+                (long)_eventCount * sizeof(EventRecord));
         }
 
         /// <summary>
@@ -91,33 +91,33 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         public void Dispose()
         {
-            if (_inputs.IsCreated) _inputs.Dispose();
+            if (_events.IsCreated) _events.Dispose();
 
-            _inputs = default;
-            _inputCount = 0;
+            _events = default;
+            _eventCount = 0;
         }
 
         private void _EnsureCapacity(int required)
         {
-            var capacity = _inputs.IsCreated ? _inputs.Length : 0;
+            var capacity = _events.IsCreated ? _events.Length : 0;
             if (capacity >= required) return;
 
             // Grow to the high-water mark and stay there; steady state does not reallocate.
             var grown = Math.Max(required, capacity == 0 ? 8 : capacity * 2);
-            var replacement = new NativeArray<InputRecord>(grown, Allocator.Persistent,
+            var replacement = new NativeArray<EventRecord>(grown, Allocator.Persistent,
                 NativeArrayOptions.ClearMemory);
 
-            if (_inputs.IsCreated)
+            if (_events.IsCreated)
             {
-                UnsafeUtility.MemCpy(replacement.GetUnsafePtr(), _inputs.GetUnsafeReadOnlyPtr(),
-                    (long)_inputCount * sizeof(InputRecord));
+                UnsafeUtility.MemCpy(replacement.GetUnsafePtr(), _events.GetUnsafeReadOnlyPtr(),
+                    (long)_eventCount * sizeof(EventRecord));
 
-                _inputs.Dispose();
+                _events.Dispose();
             }
 
-            _inputs = replacement;
+            _events = replacement;
         }
 
-        public override string ToString() => $"frame {frameNumber} @ {timecode} ({_inputCount} inputs)";
+        public override string ToString() => $"frame {frameNumber} @ {timecode} ({_eventCount} events)";
     }
 }

@@ -4,6 +4,7 @@
     "references": [
         "Lilium.RemoteControl.Reflection",
         "Lilium.RemoteControl.Core",
+        "Lilium.RemoteControl.Simulation",
         "Unity.Collections"
     ],
     "includePlatforms": [],

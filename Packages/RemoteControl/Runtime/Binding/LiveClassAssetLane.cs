@@ -11,11 +11,11 @@ namespace Lilium.RemoteControl
     /// </summary>
     public enum LiveClassAssetLane
     {
-        /// <summary>Field to the state lane, property to the input lane. See ResolveLane.</summary>
+        /// <summary>Field to the state lane, property to the event lane. See ResolveLane.</summary>
         Auto = 0,
 
         /// <summary>Recorded when it changes, one entry at a time.</summary>
-        Input = 1,
+        Event = 1,
 
         /// <summary>Copied every frame at a fixed size.</summary>
         State = 2,

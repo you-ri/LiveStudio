@@ -411,7 +411,7 @@ namespace Lilium.RemoteControl
                     {
                         propName = member.Name;
                         persistScope = PersistScope.Scene;
-                        lane = FrameLane.Input;
+                        lane = FrameLane.Event;
                     }
 
                     string shadowFieldPath = null;
@@ -1273,7 +1273,7 @@ namespace Lilium.RemoteControl
 
         public LivePropertyType(string name, MemberInfo info, bool isPersistable = true, FieldInfo shadowField = null, PersistScope persistScope = PersistScope.Scene,
             ControlAttribute controlOverride = null, string labelOverride = null, string helpOverride = null, SectionAttribute sectionOverride = null,
-            bool readOnlyOverride = false, FrameLane lane = FrameLane.Input)
+            bool readOnlyOverride = false, FrameLane lane = FrameLane.Event)
         {
             this.lane = lane;
             Debug.Assert(info != null, "PropertyInfo cannot be null");
@@ -1544,7 +1544,7 @@ namespace Lilium.RemoteControl
             this.controlType = "default";
             this.isPersistable = true;
             this.persistScope = PersistScope.Scene;
-            this.lane = FrameLane.Input;
+            this.lane = FrameLane.Event;
             this.isRawJson = false; // 配列要素自体は RawJson 対象外 (要素内の string メンバーが個別に判定される)
             this.isReadOnly = false; // 配列要素は通常書き込み可能
             this.isStatic = false; // 配列要素はstaticではない

@@ -11,7 +11,7 @@ using Lilium.RemoteControl.Frames.Recording;
 namespace Lilium.RemoteControl.Tests
 {
     /// <summary>
-    /// An input records the value it applied, not the request that asked for it.
+    /// An event records the value it applied, not the request that asked for it.
     ///
     /// A slider sends the same property sixty times a second. Kept as digits, every one of those
     /// costs a parse to read back and loses the last bits on the way; kept as bytes it is the same
@@ -40,7 +40,7 @@ namespace Lilium.RemoteControl.Tests
             Right = 7,
         }
 
-        // ---- InputPayload: laying values out ----
+        // ---- EventPayload: laying values out ----
 
         [Test]
         public void AFloat_SurvivesTheRoundTripExactly()
@@ -48,11 +48,11 @@ namespace Lilium.RemoteControl.Tests
             // 0.1f has no exact decimal form, which is the case digits get wrong and bytes do not.
             const float value = 0.1f;
 
-            Span<byte> bytes = stackalloc byte[InputRecord.kPayloadCapacity];
-            Assert.IsTrue(InputPayload.TryPack(typeof(float), value, bytes, out var written));
+            Span<byte> bytes = stackalloc byte[EventRecord.kPayloadCapacity];
+            Assert.IsTrue(EventPayload.TryPack(typeof(float), value, bytes, out var written));
             Assert.AreEqual(4, written, "a float is four bytes, not four characters");
 
-            Assert.IsTrue(InputPayload.TryUnpack(typeof(float), bytes.Slice(0, written), out var read));
+            Assert.IsTrue(EventPayload.TryUnpack(typeof(float), bytes.Slice(0, written), out var read));
             Assert.AreEqual(value, (float)read, 0f, "exactly, not nearly");
         }
 
@@ -61,11 +61,11 @@ namespace Lilium.RemoteControl.Tests
         {
             var value = new Vector3(1f, -2.5f, 3.25f);
 
-            Span<byte> bytes = stackalloc byte[InputRecord.kPayloadCapacity];
-            Assert.IsTrue(InputPayload.TryPack(typeof(Vector3), value, bytes, out var written));
+            Span<byte> bytes = stackalloc byte[EventRecord.kPayloadCapacity];
+            Assert.IsTrue(EventPayload.TryPack(typeof(Vector3), value, bytes, out var written));
             Assert.AreEqual(12, written);
 
-            Assert.IsTrue(InputPayload.TryUnpack(typeof(Vector3), bytes.Slice(0, written), out var read));
+            Assert.IsTrue(EventPayload.TryUnpack(typeof(Vector3), bytes.Slice(0, written), out var read));
             Assert.AreEqual(value, (Vector3)read);
         }
 
@@ -74,47 +74,47 @@ namespace Lilium.RemoteControl.Tests
         {
             // Marshal would say four. What is written is what the type occupies in memory, because
             // that is what the reader lays back out.
-            Assert.AreEqual(1, InputPayload.SizeOf(typeof(bool)));
+            Assert.AreEqual(1, EventPayload.SizeOf(typeof(bool)));
 
-            Span<byte> bytes = stackalloc byte[InputRecord.kPayloadCapacity];
-            Assert.IsTrue(InputPayload.TryPack(typeof(bool), true, bytes, out var written));
+            Span<byte> bytes = stackalloc byte[EventRecord.kPayloadCapacity];
+            Assert.IsTrue(EventPayload.TryPack(typeof(bool), true, bytes, out var written));
             Assert.AreEqual(1, written);
 
-            Assert.IsTrue(InputPayload.TryUnpack(typeof(bool), bytes.Slice(0, written), out var read));
+            Assert.IsTrue(EventPayload.TryUnpack(typeof(bool), bytes.Slice(0, written), out var read));
             Assert.IsTrue((bool)read);
         }
 
         [Test]
         public void AnEnum_KeepsItsValue_NotItsName()
         {
-            Span<byte> bytes = stackalloc byte[InputRecord.kPayloadCapacity];
-            Assert.IsTrue(InputPayload.TryPack(typeof(Facing), Facing.Right, bytes, out var written));
+            Span<byte> bytes = stackalloc byte[EventRecord.kPayloadCapacity];
+            Assert.IsTrue(EventPayload.TryPack(typeof(Facing), Facing.Right, bytes, out var written));
 
-            Assert.IsTrue(InputPayload.TryUnpack(typeof(Facing), bytes.Slice(0, written), out var read));
+            Assert.IsTrue(EventPayload.TryUnpack(typeof(Facing), bytes.Slice(0, written), out var read));
             Assert.AreEqual(Facing.Right, (Facing)read);
         }
 
         [Test]
         public void AString_SaysItsOwnLengthBeforeItsCharacters()
         {
-            Span<byte> bytes = stackalloc byte[InputRecord.kPayloadCapacity];
-            Assert.IsTrue(InputPayload.TryWriteString("あい", bytes, out var written));
+            Span<byte> bytes = stackalloc byte[EventRecord.kPayloadCapacity];
+            Assert.IsTrue(EventPayload.TryWriteString("あい", bytes, out var written));
 
             // Two bytes of length, then six of UTF-8: no terminator to scan for.
-            Assert.AreEqual(InputPayload.kLengthPrefixSize + 6, written);
+            Assert.AreEqual(EventPayload.kLengthPrefixSize + 6, written);
             Assert.AreEqual(6, BitConverter.ToUInt16(bytes.Slice(0, 2).ToArray(), 0));
 
-            Assert.AreEqual("あい", InputPayload.ReadString(bytes.Slice(0, written)));
+            Assert.AreEqual("あい", EventPayload.ReadString(bytes.Slice(0, written)));
         }
 
         [Test]
         public void AnEmptyString_IsStillAStringRatherThanNothing()
         {
-            Span<byte> bytes = stackalloc byte[InputRecord.kPayloadCapacity];
-            Assert.IsTrue(InputPayload.TryWriteString(string.Empty, bytes, out var written));
+            Span<byte> bytes = stackalloc byte[EventRecord.kPayloadCapacity];
+            Assert.IsTrue(EventPayload.TryWriteString(string.Empty, bytes, out var written));
 
-            Assert.AreEqual(InputPayload.kLengthPrefixSize, written);
-            Assert.AreEqual(string.Empty, InputPayload.ReadString(bytes.Slice(0, written)));
+            Assert.AreEqual(EventPayload.kLengthPrefixSize, written);
+            Assert.AreEqual(string.Empty, EventPayload.ReadString(bytes.Slice(0, written)));
         }
 
         [Test]
@@ -122,12 +122,12 @@ namespace Lilium.RemoteControl.Tests
         {
             // Kept readable rather than ending in half a rune: what survives is still the value,
             // just less of it.
-            var text = new string('あ', InputRecord.kPayloadCapacity);
+            var text = new string('あ', EventRecord.kPayloadCapacity);
 
-            Span<byte> bytes = stackalloc byte[InputRecord.kPayloadCapacity];
-            Assert.IsFalse(InputPayload.TryWriteString(text, bytes, out var written));
+            Span<byte> bytes = stackalloc byte[EventRecord.kPayloadCapacity];
+            Assert.IsFalse(EventPayload.TryWriteString(text, bytes, out var written));
 
-            var read = InputPayload.ReadString(bytes.Slice(0, written));
+            var read = EventPayload.ReadString(bytes.Slice(0, written));
             Assert.Less(read.Length, text.Length);
             StringAssert.StartsWith(read, text);
         }
@@ -136,10 +136,10 @@ namespace Lilium.RemoteControl.Tests
         public void APrefixLongerThanWhatIsThere_ReadsOnlyWhatIsThere()
         {
             // A file cut off mid-record would otherwise have its last string read past its own end.
-            Span<byte> bytes = stackalloc byte[InputRecord.kPayloadCapacity];
-            InputPayload.TryWriteString("abcdef", bytes, out var written);
+            Span<byte> bytes = stackalloc byte[EventRecord.kPayloadCapacity];
+            EventPayload.TryWriteString("abcdef", bytes, out var written);
 
-            Assert.AreEqual("abc", InputPayload.ReadString(bytes.Slice(0, written - 3)));
+            Assert.AreEqual("abc", EventPayload.ReadString(bytes.Slice(0, written - 3)));
         }
 
         [Test]
@@ -149,14 +149,14 @@ namespace Lilium.RemoteControl.Tests
             // characters stay in the record. That is what declaring a bound buys.
             var value = new Unity.Collections.FixedString32Bytes("ai");
 
-            Assert.AreEqual(32, InputPayload.SizeOf(typeof(Unity.Collections.FixedString32Bytes)));
+            Assert.AreEqual(32, EventPayload.SizeOf(typeof(Unity.Collections.FixedString32Bytes)));
 
-            Span<byte> bytes = stackalloc byte[InputRecord.kPayloadCapacity];
-            Assert.IsTrue(InputPayload.TryPack(
+            Span<byte> bytes = stackalloc byte[EventRecord.kPayloadCapacity];
+            Assert.IsTrue(EventPayload.TryPack(
                 typeof(Unity.Collections.FixedString32Bytes), value, bytes, out var written));
             Assert.AreEqual(32, written);
 
-            Assert.IsTrue(InputPayload.TryUnpack(
+            Assert.IsTrue(EventPayload.TryUnpack(
                 typeof(Unity.Collections.FixedString32Bytes), bytes.Slice(0, written), out var read));
             Assert.AreEqual(value, (Unity.Collections.FixedString32Bytes)read);
         }
@@ -166,7 +166,7 @@ namespace Lilium.RemoteControl.Tests
         {
             // A recording can name a type that has since been removed. Refusing to read the rest of
             // the file over that would be worse than saying which one is missing.
-            Assert.IsNull(InputPayload.Resolve("Nowhere.NoSuchType"));
+            Assert.IsNull(EventPayload.Resolve("Nowhere.NoSuchType"));
         }
 
         // ---- The record ----
@@ -176,7 +176,7 @@ namespace Lilium.RemoteControl.Tests
         {
             const string target = "/live/object/cam/fov";
 
-            var task = FrameGate._Enqueue(InputKind.PropertyWrite, "test", target, "35.0",
+            var task = FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, "35.0",
                 () =>
                 {
                     // Stands in for the property write: by this point the target has been resolved,
@@ -189,7 +189,7 @@ namespace Lilium.RemoteControl.Tests
             FrameGate.Pump();
             Assert.IsTrue(task.IsCompleted);
 
-            using var frame = new InputFrame();
+            using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
 
             var record = frame[0];
@@ -206,7 +206,7 @@ namespace Lilium.RemoteControl.Tests
         {
             const string target = "/live/object/avatar/name";
 
-            FrameGate._Enqueue(InputKind.PropertyWrite, "test", target, "{\"value\":\"ai\"}",
+            FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, "{\"value\":\"ai\"}",
                 () =>
                 {
                     FrameGate.StampAppliedPayload(target, typeof(string), "ai");
@@ -216,15 +216,15 @@ namespace Lilium.RemoteControl.Tests
 
             FrameGate.Pump();
 
-            using var frame = new InputFrame();
+            using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
 
             var record = frame[0];
-            Assert.AreEqual(InputPayload.kStringTypeName, FrameGate.symbols.Resolve(record.payloadTypeId));
+            Assert.AreEqual(EventPayload.kStringTypeName, FrameGate.symbols.Resolve(record.payloadTypeId));
 
             var bytes = new byte[record.payloadLength];
             record.CopyPayloadTo(bytes);
-            Assert.AreEqual("ai", InputPayload.ReadString(bytes), "the value, not its JSON form");
+            Assert.AreEqual("ai", EventPayload.ReadString(bytes), "the value, not its JSON form");
         }
 
         [Test]
@@ -234,18 +234,18 @@ namespace Lilium.RemoteControl.Tests
             // layout still records something a replay can use.
             const string target = "/live/object/avatar/name";
 
-            FrameGate._Enqueue(InputKind.PropertyWrite, "test", target, "\"ai\"", () => true);
+            FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, "\"ai\"", () => true);
             FrameGate.Pump();
 
-            using var frame = new InputFrame();
+            using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
 
             var record = frame[0];
-            Assert.AreEqual(InputPayload.kRequestTypeName, FrameGate.symbols.Resolve(record.payloadTypeId));
+            Assert.AreEqual(EventPayload.kRequestTypeName, FrameGate.symbols.Resolve(record.payloadTypeId));
 
             var bytes = new byte[record.payloadLength];
             record.CopyPayloadTo(bytes);
-            Assert.AreEqual("\"ai\"", InputPayload.ReadString(bytes));
+            Assert.AreEqual("\"ai\"", EventPayload.ReadString(bytes));
         }
 
         [Test]
@@ -261,7 +261,7 @@ namespace Lilium.RemoteControl.Tests
         {
             const string target = "/live/object/cam/fov";
 
-            FrameGate._Enqueue(InputKind.PropertyWrite, "test", target, new string('x', 4000),
+            FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, new string('x', 4000),
                 () =>
                 {
                     FrameGate.StampAppliedPayload(target, typeof(float), 12f);
@@ -270,7 +270,7 @@ namespace Lilium.RemoteControl.Tests
 
             FrameGate.Pump();
 
-            using var frame = new InputFrame();
+            using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
 
             Assert.IsFalse(frame[0].payloadTruncated,
@@ -285,7 +285,7 @@ namespace Lilium.RemoteControl.Tests
             // NativeArray<T> already refuses anything else at compile time, so this is here to say
             // it out loud: a managed field added to one of these would be caught as a build error
             // with no explanation of why it is not allowed.
-            Assert.IsTrue(UnsafeUtility.IsUnmanaged<InputRecord>(), "the input lane");
+            Assert.IsTrue(UnsafeUtility.IsUnmanaged<EventRecord>(), "the evt lane");
             Assert.IsTrue(UnsafeUtility.IsUnmanaged<ObjectEntry>(), "the structure lane");
             Assert.IsTrue(UnsafeUtility.IsUnmanaged<StateElement<float>>(), "the state lane");
             Assert.IsTrue(UnsafeUtility.IsUnmanaged<FrameSource>(), "carried by every state element");
@@ -298,10 +298,10 @@ namespace Lilium.RemoteControl.Tests
         {
             // Guards against a field creeping in beside the payload: the bookkeeping is a handful
             // of ids, and a record that grew past that would be carrying something it should not.
-            var size = UnsafeUtility.SizeOf<InputRecord>();
+            var size = UnsafeUtility.SizeOf<EventRecord>();
 
-            Assert.GreaterOrEqual(size, InputRecord.kPayloadCapacity);
-            Assert.LessOrEqual(size, InputRecord.kPayloadCapacity + 64,
+            Assert.GreaterOrEqual(size, EventRecord.kPayloadCapacity);
+            Assert.LessOrEqual(size, EventRecord.kPayloadCapacity + 64,
                 "the payload is what a record is for; everything else is ids");
         }
 
@@ -311,28 +311,28 @@ namespace Lilium.RemoteControl.Tests
         public void ATypedPayload_ComesBackOutOfARecordingAsTheSameBytes()
         {
             var stream = new MemoryStream();
-            var symbols = new InputSymbolTable();
+            var symbols = new FrameSymbolTable();
 
-            using (var inputs = new InputFrame())
+            using (var events = new EventFrame())
             using (var writer = new FrameRecordWriter(
                 stream,
                 new FrameRecordHeader { frameRate = FrameRate.FPS60, engineId = "unity", buildId = "test" },
                 leaveOpen: true))
             {
-                inputs.Reset(0, FrameRate.FPS60);
+                events.Reset(0, FrameRate.FPS60);
 
-                var record = new InputRecord(1, InputKind.PropertyWrite, symbols.Intern("rest"),
-                    symbols.Intern("/live/object/cam/fov"), InputFlags.None, symbols.Intern("PUT"));
+                var record = new EventRecord(1, EventKind.PropertyWrite, symbols.Intern("rest"),
+                    symbols.Intern("/live/object/cam/fov"), EventFlags.None, symbols.Intern("PUT"));
 
-                Span<byte> packed = stackalloc byte[InputRecord.kPayloadCapacity];
-                InputPayload.TryPack(typeof(float), 35f, packed, out var written);
+                Span<byte> packed = stackalloc byte[EventRecord.kPayloadCapacity];
+                EventPayload.TryPack(typeof(float), 35f, packed, out var written);
                 record.SetPayload(packed.Slice(0, written), symbols.Intern("System.Single"));
 
-                inputs.Add(record);
+                events.Add(record);
 
-                var frame = new Frame { frameNumber = 0, frameRate = FrameRate.FPS60, inputs = inputs };
+                var frame = new Frame { frameNumber = 0, frameRate = FrameRate.FPS60, events = events };
                 writer.BeginFrame(in frame, symbols);
-                writer.WriteInputs(inputs, symbols);
+                writer.WriteEvents(events, symbols);
                 writer.EndFrame();
                 writer.Close(symbols);
             }
@@ -342,9 +342,9 @@ namespace Lilium.RemoteControl.Tests
             using (var player = new FrameRecordPlayer(stream))
             {
                 Assert.IsTrue(player.Advance());
-                Assert.AreEqual(1, player.inputs.Count);
+                Assert.AreEqual(1, player.events.Count);
 
-                var record = player.inputs[0];
+                var record = player.events[0];
                 Assert.AreEqual("System.Single", player.Resolve(record.payloadTypeId));
 
                 var bytes = new byte[record.payloadLength];

@@ -289,7 +289,7 @@ namespace Lilium.LiveStudio.Virgo
             if (frame.state == null) return;
 
             var owner = _OwnerId();
-            if (owner == InputSymbolTable.kNone) return;
+            if (owner == FrameSymbolTable.kNone) return;
 
             ref var element = ref frame.state.GetOrCreate<AvatarAnimationData>().GetOrCreate(owner);
             element.source = _fusionSource;
@@ -338,7 +338,7 @@ namespace Lilium.LiveStudio.Virgo
             if (frame.state == null) return false;
 
             var owner = _OwnerId();
-            if (owner == InputSymbolTable.kNone) return false;
+            if (owner == FrameSymbolTable.kNone) return false;
 
             var block = frame.state.Find<AvatarAnimationData>();
             if (block == null) return false;
@@ -370,7 +370,7 @@ namespace Lilium.LiveStudio.Virgo
             if (_ownerLiveId == null)
             {
                 var id = LiveObjectRegistry.FindOwnLiveId(transform);
-                if (string.IsNullOrEmpty(id)) return InputSymbolTable.kNone;
+                if (string.IsNullOrEmpty(id)) return FrameSymbolTable.kNone;
 
                 _ownerLiveId = id;
             }

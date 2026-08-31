@@ -38,7 +38,7 @@ namespace Lilium.LiveStudio
 
             // Sent through the gate under the same address a remote call would use, so the recorded
             // operation replays through exactly that path.
-            FrameGate.Post(InputKind.FunctionCall, _source, "POST",
+            FrameGate.Post(EventKind.FunctionCall, _source, "POST",
                 $"/live/function/{manager.id}/switchtosetbyname",
                 () => StageManager.current?.SwitchToSetByName(stage),
                 OperationRequest.FromArguments(stage));

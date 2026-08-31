@@ -9,7 +9,7 @@ using Unity.Collections.LowLevel.Unsafe;
 namespace Lilium.RemoteControl.Frames
 {
     /// <summary>
-    /// Lays a value out as bytes and back, so an input can carry what it did rather than the text
+    /// Lays a value out as bytes and back, so an event can carry what it did rather than the text
     /// that asked for it.
     ///
     /// A property write arrives as a request body, but what it applies is a value of a known type:
@@ -22,7 +22,7 @@ namespace Lilium.RemoteControl.Frames
     /// as a length-prefixed string -- the byte count first, then the UTF-8 -- and is read back the
     /// same way. See <see cref="kStringTypeName"/>.
     /// </summary>
-    public static class InputPayload
+    public static class EventPayload
     {
         /// <summary>
         /// A string value, held inline as a length-prefixed string: a two-byte UTF-8 length
@@ -32,7 +32,7 @@ namespace Lilium.RemoteControl.Frames
         /// text ends without scanning for a terminator, and the same encoding nests -- a string
         /// inside a payload that holds more than one thing still says where it stops.
         ///
-        /// Inline, not interned: a payload is a value, and values change per input. Putting them
+        /// Inline, not interned: a payload is a value, and values change per event. Putting them
         /// in the symbol table would add an entry per distinct value, so a text field being typed
         /// into would grow the table for the length of the run.
         /// </summary>
@@ -42,7 +42,7 @@ namespace Lilium.RemoteControl.Frames
         /// The request as it arrived, before anything worked out what it meant. Encoded the same
         /// way as <see cref="kStringTypeName"/>.
         ///
-        /// Not a type: it is what a record holds when nothing said what the input applied. Kept
+        /// Not a type: it is what a record holds when nothing said what the event applied. Kept
         /// apart from a string value because a replay treats them differently -- one is a value to
         /// write, the other is a request body to dispatch.
         /// </summary>
@@ -238,7 +238,7 @@ namespace Lilium.RemoteControl.Frames
             var built = _Build(type);
 
             // Nulls are cached as a marker entry rather than left out, so a type that cannot be
-            // laid out is not re-examined on every input that mentions it.
+            // laid out is not re-examined on every event that mentions it.
             _layouts[type] = built;
             return built;
         }
@@ -247,11 +247,11 @@ namespace Lilium.RemoteControl.Frames
         {
             if (!_IsUnmanaged(type)) return null;
 
-            var packMethod = typeof(InputPayload)
+            var packMethod = typeof(EventPayload)
                 .GetMethod(nameof(_PackValue), BindingFlags.NonPublic | BindingFlags.Static)
                 .MakeGenericMethod(type);
 
-            var unpackMethod = typeof(InputPayload)
+            var unpackMethod = typeof(EventPayload)
                 .GetMethod(nameof(_UnpackValue), BindingFlags.NonPublic | BindingFlags.Static)
                 .MakeGenericMethod(type);
 

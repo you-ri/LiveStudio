@@ -4,7 +4,7 @@ using System;
 namespace Lilium.RemoteControl.Frames
 {
     /// <summary>What kind of outside event crossed the boundary into the application.</summary>
-    public enum InputKind : int
+    public enum EventKind : int
     {
         /// <summary>A write to an exposed, writable property.</summary>
         PropertyWrite = 0,
@@ -17,14 +17,14 @@ namespace Lilium.RemoteControl.Frames
 
         /// <summary>
         /// A source registered explicitly because determinism needs it even though there is no
-        /// reason to expose it -- capture pose, time, random seed, device input, load completion.
+        /// reason to expose it -- capture pose, time, random seed, device event, load completion.
         /// </summary>
         RegisteredSource = 3,
     }
 
-    /// <summary>Things worth knowing about an input that are not part of what it asked for.</summary>
+    /// <summary>Things worth knowing about an event that are not part of what it asked for.</summary>
     [Flags]
-    public enum InputFlags : byte
+    public enum EventFlags : byte
     {
         None = 0,
 
@@ -32,7 +32,7 @@ namespace Lilium.RemoteControl.Frames
         Faulted = 1 << 0,
 
         /// <summary>
-        /// The payload did not fit and was cut short. The input still applied correctly -- what
+        /// The payload did not fit and was cut short. The event still applied correctly -- what
         /// arrived was used for that -- but what was kept cannot be replayed faithfully.
         ///
         /// Only reachable for a payload with no fixed size, which in practice means text: a typed
@@ -44,8 +44,8 @@ namespace Lilium.RemoteControl.Frames
         /// Applied, but deliberately left out of the frame.
         ///
         /// For a write whose target the state lane already carries: the value arrives in the state
-        /// lane every frame regardless, so keeping the input as well says the same thing twice --
-        /// and the input record costs its full width to say it. The write still goes through the
+        /// lane every frame regardless, so keeping the event as well says the same thing twice --
+        /// and the event record costs its full width to say it. The write still goes through the
         /// gate, because ordering is the other half of what the gate is for.
         ///
         /// Never reaches a recording: the frame drops these before committing.
@@ -54,30 +54,30 @@ namespace Lilium.RemoteControl.Frames
     }
 
     /// <summary>
-    /// What a frame keeps about one input once it is committed.
+    /// What a frame keeps about one event once it is committed.
     ///
     /// Unmanaged and fixed size, so a frame is copied with a block move and slots are reused
-    /// without allocating. The strings an input refers to are not held here: they are interned in
-    /// a <see cref="InputSymbolTable"/> and referred to by id, which is what keeps this struct
+    /// without allocating. The strings an event refers to are not held here: they are interned in
+    /// a <see cref="FrameSymbolTable"/> and referred to by id, which is what keeps this struct
     /// small even though the same property path arrives sixty times a second.
     /// </summary>
-    public unsafe struct InputRecord
+    public unsafe struct EventRecord
     {
         /// <summary>
         /// Room for one payload. Wide enough for any value with a fixed width and for the text an
-        /// input carries when it has no such width, which is the only case that can overflow it.
+        /// event carries when it has no such width, which is the only case that can overflow it.
         /// </summary>
         public const int kPayloadCapacity = 512;
 
-        /// <summary>Order this input was accepted in. Gaps mean something was dropped.</summary>
+        /// <summary>Order this event was accepted in. Gaps mean something was dropped.</summary>
         public long sequence;
 
-        public InputKind kind;
+        public EventKind kind;
 
-        /// <summary>Id of where the input came from, or <see cref="InputSymbolTable.kNone"/>.</summary>
+        /// <summary>Id of where the event came from, or <see cref="FrameSymbolTable.kNone"/>.</summary>
         public int sourceId;
 
-        /// <summary>Id of what the input addressed, or <see cref="InputSymbolTable.kNone"/>.</summary>
+        /// <summary>Id of what the event addressed, or <see cref="FrameSymbolTable.kNone"/>.</summary>
         public int targetId;
 
         /// <summary>
@@ -88,17 +88,17 @@ namespace Lilium.RemoteControl.Frames
         /// Without this a replay has to guess: the same target answers to more than one verb, and
         /// picking the wrong one is the difference between setting a value and resetting it.
         ///
-        /// The vocabulary belongs to whoever submitted the input -- over REST it is the HTTP method
+        /// The vocabulary belongs to whoever submitted the event -- over REST it is the HTTP method
         /// -- and nothing in this lane interprets it. It is a symbol id and stays one.
         /// </summary>
         public int verbId;
 
         /// <summary>
-        /// Id of the type name <see cref="payload"/> holds, or <see cref="InputSymbolTable.kNone"/>
+        /// Id of the type name <see cref="payload"/> holds, or <see cref="FrameSymbolTable.kNone"/>
         /// when the record carries no payload.
         ///
         /// Bytes with no type are unreadable, so the two always travel together. The name is what
-        /// <see cref="InputPayload"/> resolves to lay the bytes back out, and it is what lets a
+        /// <see cref="EventPayload"/> resolves to lay the bytes back out, and it is what lets a
         /// viewer walk a payload with the same machinery it walks a state element with.
         /// </summary>
         public int payloadTypeId;
@@ -106,7 +106,7 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>How much of <see cref="payload"/> is used.</summary>
         public int payloadLength;
 
-        public InputFlags flags;
+        public EventFlags flags;
 
         /// <summary>
         /// The value, as bytes of the type <see cref="payloadTypeId"/> names.
@@ -118,8 +118,8 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         public fixed byte payload[kPayloadCapacity];
 
-        public InputRecord(long sequence, InputKind kind, int sourceId, int targetId,
-            InputFlags flags, int verbId = InputSymbolTable.kNone)
+        public EventRecord(long sequence, EventKind kind, int sourceId, int targetId,
+            EventFlags flags, int verbId = FrameSymbolTable.kNone)
         {
             this.sequence = sequence;
             this.kind = kind;
@@ -127,21 +127,21 @@ namespace Lilium.RemoteControl.Frames
             this.targetId = targetId;
             this.verbId = verbId;
             this.flags = flags;
-            payloadTypeId = InputSymbolTable.kNone;
+            payloadTypeId = FrameSymbolTable.kNone;
             payloadLength = 0;
         }
 
-        public bool faulted => (flags & InputFlags.Faulted) != 0;
+        public bool faulted => (flags & EventFlags.Faulted) != 0;
 
-        public bool payloadTruncated => (flags & InputFlags.PayloadTruncated) != 0;
+        public bool payloadTruncated => (flags & EventFlags.PayloadTruncated) != 0;
 
         /// <summary>True when this record carries a value at all.</summary>
-        public bool hasPayload => payloadTypeId != InputSymbolTable.kNone;
+        public bool hasPayload => payloadTypeId != FrameSymbolTable.kNone;
 
         /// <summary>
         /// Puts a value in the record, replacing whatever was there. Returns false when it did not
         /// fit, in which case what fits is kept and the caller is expected to raise
-        /// <see cref="InputFlags.PayloadTruncated"/> -- half a value is not a value, and only the
+        /// <see cref="EventFlags.PayloadTruncated"/> -- half a value is not a value, and only the
         /// caller knows whether saying so matters.
         /// </summary>
         public bool SetPayload(ReadOnlySpan<byte> value, int typeId)
@@ -181,7 +181,7 @@ namespace Lilium.RemoteControl.Frames
         /// Takes the record by reference on purpose: a span over a copy would point into a struct
         /// that is about to go out of scope, and the compiler cannot see that for a fixed buffer.
         /// </summary>
-        public static ReadOnlySpan<byte> PayloadOf(ref InputRecord record)
+        public static ReadOnlySpan<byte> PayloadOf(ref EventRecord record)
         {
             fixed (byte* bytes = record.payload)
             {
@@ -199,9 +199,9 @@ namespace Lilium.RemoteControl.Frames
     /// a bundled request applies its parts together, and splitting them across two frames would
     /// change what the caller asked for.
     /// </summary>
-    public readonly struct InputDescriptor
+    public readonly struct EventDescriptor
     {
-        public readonly InputKind kind;
+        public readonly EventKind kind;
 
         /// <summary>What the operation addresses, e.g. the property path.</summary>
         public readonly string target;
@@ -219,13 +219,13 @@ namespace Lilium.RemoteControl.Frames
         /// The request as it arrived, before anything has worked out what it means.
         ///
         /// Kept as the fallback payload: at submit time the target has not been resolved, so its
-        /// type is not known yet. Whoever applies the input knows the value it really wrote and
-        /// replaces this with it -- see <see cref="FrameGate.StampAppliedPayload"/>. What stays
+        /// type is not known yet. Whoever applies the event knows the value it really wrote and
+        /// replaces this with it -- see <c>FrameGate.StampAppliedPayload</c> on the host side. What stays
         /// text is what has no other form.
         /// </summary>
         public readonly string requestText;
 
-        public InputDescriptor(InputKind kind, string verb, string target, string requestText = null)
+        public EventDescriptor(EventKind kind, string verb, string target, string requestText = null)
         {
             this.kind = kind;
             this.verb = verb;
@@ -237,27 +237,27 @@ namespace Lilium.RemoteControl.Frames
     }
 
     /// <summary>
-    /// One input on its way through the gate: the records to keep, plus how to apply them.
+    /// One event on its way through the gate: the records to keep, plus how to apply them.
     ///
-    /// Separate from <see cref="InputRecord"/> because it carries delegates, and a frame that held
+    /// Separate from <see cref="EventRecord"/> because it carries delegates, and a frame that held
     /// one would pin every closure it captured for as long as the frame is retained.
     /// </summary>
-    internal sealed class PendingInput
+    internal sealed class PendingEvent
     {
         /// <summary>
-        /// What this input will leave behind. Usually one record; more when a bundled request was
+        /// What this event will leave behind. Usually one record; more when a bundled request was
         /// submitted as a group, in which case they are kept apart so each stays small enough to
         /// record faithfully -- one record holding a whole bundle would always be truncated.
         /// </summary>
-        public InputRecord[] records;
+        public EventRecord[] records;
 
         public int recordCount;
 
-        /// <summary>Runs the input at a frame head and completes whoever is waiting on it.</summary>
+        /// <summary>Runs the event at a frame head and completes whoever is waiting on it.</summary>
         public Action apply;
 
         /// <summary>
-        /// Abandons the input, handing the waiter the reason instead. Every queued input has to end
+        /// Abandons the event, handing the waiter the reason instead. Every queued event has to end
         /// one way or the other: dropping one without calling this leaves its caller waiting for a
         /// frame head that will never come to it.
         /// </summary>
@@ -266,8 +266,8 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>Sequence given to the first record. The rest follow it without gaps.</summary>
         public long firstSequence => recordCount > 0 ? records[0].sequence : 0;
 
-        /// <summary>Marks every record of this input, used when applying it threw.</summary>
-        public void SetFlags(InputFlags value)
+        /// <summary>Marks every record of this event, used when applying it threw.</summary>
+        public void SetFlags(EventFlags value)
         {
             for (int i = 0; i < recordCount; i++) records[i].flags |= value;
         }

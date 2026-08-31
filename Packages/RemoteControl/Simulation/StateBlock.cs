@@ -264,7 +264,7 @@ namespace Lilium.RemoteControl.Frames
         public override int SourceIdAt(int index)
         {
             var source = this[index].source;
-            return source.isValid ? source.id : InputSymbolTable.kNone;
+            return source.isValid ? source.id : FrameSymbolTable.kNone;
         }
 
         public override long TimeAt(int index) => this[index].time;

@@ -1,0 +1,17 @@
+{
+    "name": "Lilium.RemoteControl.Simulation",
+    "rootNamespace": "Lilium.RemoteControl.Frames",
+    "references": [
+        "Lilium.RemoteControl.Core",
+        "Unity.Collections"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

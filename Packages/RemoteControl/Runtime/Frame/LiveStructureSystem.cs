@@ -123,7 +123,7 @@ namespace Lilium.RemoteControl.Frames
         /// the recording never mentioned is left alone, because a recording is a record of what it
         /// watched and not a claim about everything that may exist.
         /// </summary>
-        public static void ApplyFrom(StructureBlock structure, InputSymbolTable symbols)
+        public static void ApplyFrom(StructureBlock structure, FrameSymbolTable symbols)
         {
             createdCount = 0;
             destroyedCount = 0;
@@ -148,7 +148,7 @@ namespace Lilium.RemoteControl.Frames
             _DestroyUnlisted(symbols);
         }
 
-        private static void _Create(string id, string recipeKey, InputSymbolTable symbols)
+        private static void _Create(string id, string recipeKey, FrameSymbolTable symbols)
         {
             if (string.IsNullOrEmpty(recipeKey))
             {
@@ -188,7 +188,7 @@ namespace Lilium.RemoteControl.Frames
             createdCount++;
         }
 
-        private static void _DestroyUnlisted(InputSymbolTable symbols)
+        private static void _DestroyUnlisted(FrameSymbolTable symbols)
         {
             if (_made.Count == 0) return;
 
@@ -222,7 +222,7 @@ namespace Lilium.RemoteControl.Frames
         ///
         /// Returns how many objects are in it afterwards.
         /// </summary>
-        public static int CaptureInto(StructureBlock structure, InputSymbolTable symbols)
+        public static int CaptureInto(StructureBlock structure, FrameSymbolTable symbols)
         {
             if (structure == null || symbols == null) return 0;
 
@@ -235,7 +235,7 @@ namespace Lilium.RemoteControl.Frames
                 if (!handle.hasId || !handle.isValid) continue;
 
                 var id = symbols.Intern(handle.id);
-                if (id == InputSymbolTable.kNone) continue;
+                if (id == FrameSymbolTable.kNone) continue;
 
                 _present.Add(id);
 
@@ -276,16 +276,16 @@ namespace Lilium.RemoteControl.Frames
         /// from different prefabs, and the type name would send a replay to whichever maker happened
         /// to be registered for it.
         /// </summary>
-        private static int _RecipeId(LiveObjectHandle handle, InputSymbolTable symbols)
+        private static int _RecipeId(LiveObjectHandle handle, FrameSymbolTable symbols)
         {
             var key = handle.target is ILiveMadeFromRecipe made ? made.recipeKey : null;
-            return string.IsNullOrEmpty(key) ? InputSymbolTable.kNone : symbols.Intern(key);
+            return string.IsNullOrEmpty(key) ? FrameSymbolTable.kNone : symbols.Intern(key);
         }
 
-        private static int _ParentId(LiveObjectHandle handle, InputSymbolTable symbols)
+        private static int _ParentId(LiveObjectHandle handle, FrameSymbolTable symbols)
         {
             var parent = handle.target is LiveUnityObjectBase proxy ? proxy.parentId : null;
-            return string.IsNullOrEmpty(parent) ? InputSymbolTable.kNone : symbols.Intern(parent);
+            return string.IsNullOrEmpty(parent) ? FrameSymbolTable.kNone : symbols.Intern(parent);
         }
     }
 }

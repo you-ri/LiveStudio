@@ -75,7 +75,7 @@ namespace Lilium.RemoteControl.Tests
         {
             frame.structure.AddOrUpdate(
                 FrameGate.symbols.Intern("lamp"), FrameGate.symbols.Intern("Beam"),
-                InputSymbolTable.kNone);
+                FrameSymbolTable.kNone);
 
             var block = frame.state.GetOrCreate<Beam>();
             ref var element = ref block.GetOrCreate(FrameGate.symbols.Intern("lamp"));
@@ -167,7 +167,7 @@ namespace Lilium.RemoteControl.Tests
 
                 if (frame.frameNumber != 1) return;
 
-                FrameGate._Enqueue(InputKind.PropertyWrite, "test", "/live/object/lamp/intensity",
+                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/lamp/intensity",
                     "{\"value\":1}", () => true, verb: "PUT");
             }
 
@@ -177,13 +177,13 @@ namespace Lilium.RemoteControl.Tests
             feed.Open(_path);
 
             feed.Seek(0);
-            Assert.AreEqual(0, feed.inputCount);
+            Assert.AreEqual(0, feed.eventCount);
 
             // Enqueued during frame 1's head, so it is applied at the head of frame 2.
             feed.Seek(2);
-            Assert.AreEqual(1, feed.inputCount);
-            Assert.AreEqual("/live/object/lamp/intensity", feed.GetInput(0).target);
-            Assert.AreEqual("PUT", feed.GetInput(0).verb);
+            Assert.AreEqual(1, feed.eventCount);
+            Assert.AreEqual("/live/object/lamp/intensity", feed.GetEvent(0).target);
+            Assert.AreEqual("PUT", feed.GetEvent(0).verb);
         }
 
         [Test]

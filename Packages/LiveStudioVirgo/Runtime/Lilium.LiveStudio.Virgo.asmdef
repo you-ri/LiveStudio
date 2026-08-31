@@ -4,6 +4,7 @@
     "references": [
         "Lilium.RemoteControl.Core",
         "Lilium.RemoteControl.Server",
+        "Lilium.RemoteControl.Simulation",
         "GUID:3f0594a14a115274bb20bef8ed9ed08f",
         "GUID:4307f53044263cf4b835bd812fc161a4",
         "GUID:75469ad4d38634e559750d17036d5f7c",

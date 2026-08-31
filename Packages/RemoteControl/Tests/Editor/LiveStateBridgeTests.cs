@@ -25,7 +25,7 @@ namespace Lilium.RemoteControl.Tests
         [LiveField(lane = FrameLane.State)]
         private ProbeMode _mode;
 
-        // Ordinary lane: changes when someone asks, so it is recorded as an input.
+        // Ordinary lane: changes when someone asks, so it is recorded as an event.
         [LiveField]
         private string _label = "probe";
 
@@ -83,7 +83,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var fields = typeof(StateLaneProbe.LiveStateBlock).GetFields();
 
-            // The label is in the input lane, so it is recorded when it changes rather than carried
+            // The label is in the event lane, so it is recorded when it changes rather than carried
             // every frame -- and it is a string, which a block could not hold anyway.
             CollectionAssert.AreEquivalent(
                 new[] { "_intensity", "_position", "_mode" },

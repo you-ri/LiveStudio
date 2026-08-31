@@ -71,7 +71,7 @@ namespace Lilium.RemoteControl.Tests
 
         private LampRecipe _recipe;
         private StructureBlock _structure;
-        private InputSymbolTable _symbols;
+        private FrameSymbolTable _symbols;
 
         [SetUp]
         public void StartClean()
@@ -88,7 +88,7 @@ namespace Lilium.RemoteControl.Tests
             LiveRecipes.Register(kRecipe, _recipe);
 
             _structure = new StructureBlock();
-            _symbols = new InputSymbolTable();
+            _symbols = new FrameSymbolTable();
         }
 
         [TearDown]
@@ -108,8 +108,8 @@ namespace Lilium.RemoteControl.Tests
         private void Listed(string id, string recipe = kRecipe)
         {
             _structure.AddOrUpdate(_symbols.Intern(id), _symbols.Intern(nameof(Lamp)),
-                InputSymbolTable.kNone,
-                recipe == null ? InputSymbolTable.kNone : _symbols.Intern(recipe));
+                FrameSymbolTable.kNone,
+                recipe == null ? FrameSymbolTable.kNone : _symbols.Intern(recipe));
         }
 
         [Test]

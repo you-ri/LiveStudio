@@ -7,9 +7,11 @@
         "Lilium.LiveStudio",
         "Lilium.LiveStudio.Editor",
         "Lilium.RemoteControl",
+        "Lilium.RemoteControl.Server",
         "Lilium.RemoteControl.LiveScene",
         "Unity.InputSystem",
-        "Lilium.RemoteControl.Core"
+        "Lilium.RemoteControl.Core",
+        "Lilium.RemoteControl.Simulation"
     ],
     "includePlatforms": [
         "Editor"

@@ -61,7 +61,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Keyframes_ArePutAtTheInterval()
         {
-            void Producer(ref Frame frame) => frame.structure.AddOrUpdate(1, 10, InputSymbolTable.kNone);
+            void Producer(ref Frame frame) => frame.structure.AddOrUpdate(1, 10, FrameSymbolTable.kNone);
 
             var bytes = Record(20, keyframeInterval: 5, Producer);
 
@@ -79,10 +79,10 @@ namespace Lilium.RemoteControl.Tests
 
             void Producer(ref Frame frame)
             {
-                frame.structure.AddOrUpdate(1, 10, InputSymbolTable.kNone);
+                frame.structure.AddOrUpdate(1, 10, FrameSymbolTable.kNone);
 
                 // Something appears well away from the interval.
-                if (frames == 7) frame.structure.AddOrUpdate(2, 10, InputSymbolTable.kNone);
+                if (frames == 7) frame.structure.AddOrUpdate(2, 10, FrameSymbolTable.kNone);
                 frames++;
             }
 
@@ -99,7 +99,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void WithNoInterval_OnlyChangesWriteAKeyframe()
         {
-            void Producer(ref Frame frame) => frame.structure.AddOrUpdate(1, 10, InputSymbolTable.kNone);
+            void Producer(ref Frame frame) => frame.structure.AddOrUpdate(1, 10, FrameSymbolTable.kNone);
 
             var bytes = Record(20, keyframeInterval: 0, Producer);
 
@@ -118,8 +118,8 @@ namespace Lilium.RemoteControl.Tests
 
             void Producer(ref Frame frame)
             {
-                frame.structure.AddOrUpdate(1, 10, InputSymbolTable.kNone);
-                if (frames >= 8) frame.structure.AddOrUpdate(2, 10, InputSymbolTable.kNone);
+                frame.structure.AddOrUpdate(1, 10, FrameSymbolTable.kNone);
+                if (frames >= 8) frame.structure.AddOrUpdate(2, 10, FrameSymbolTable.kNone);
 
                 frame.state.GetOrCreate<Beam>().GetOrCreate(1).value.intensity = frames;
                 frames++;
@@ -171,7 +171,7 @@ namespace Lilium.RemoteControl.Tests
         {
             void Producer(ref Frame frame)
             {
-                for (int i = 0; i < 10; i++) frame.structure.AddOrUpdate(i, 10, InputSymbolTable.kNone);
+                for (int i = 0; i < 10; i++) frame.structure.AddOrUpdate(i, 10, FrameSymbolTable.kNone);
                 frame.state.GetOrCreate<Beam>().GetOrCreate(1).value.intensity = frame.frameNumber;
             }
 

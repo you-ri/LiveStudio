@@ -11,11 +11,11 @@ namespace Lilium.RemoteControl.Frames
     /// ├─ position    frame number / rate / structure epoch
     /// ├─ structure   inventory (id / type / parent)
     /// ├─ state       dense per-type arrays, one element per object
-    /// └─ inputs      the records applied at this head
+    /// └─ events      the records applied at this head
     /// </code>
     ///
     /// The structure and state blocks are carried from frame to frame rather than rebuilt: together
-    /// they are the current state of the world, not a per-frame delta. The input lane is the
+    /// they are the current state of the world, not a per-frame delta. The event lane is the
     /// opposite -- it holds only what arrived at this head.
     ///
     /// A struct rather than a class: it is passed by reference on a hot path, and the lanes it will
@@ -36,11 +36,11 @@ namespace Lilium.RemoteControl.Frames
         public StateBlockSet state;
 
         /// <summary>
-        /// The inputs applied at this head, in the order they were applied. Owned by
-        /// <see cref="InputFrameBuffer"/> and reused, so it is a reference into the live slot --
+        /// The events applied at this head, in the order they were applied. Owned by
+        /// <see cref="EventFrameBuffer"/> and reused, so it is a reference into the live slot --
         /// valid for the duration of the frame head, not afterwards.
         /// </summary>
-        public InputFrame inputs;
+        public EventFrame events;
 
         /// <summary>
         /// True when this frame's lanes were filled by an <see cref="IFrameSource"/> -- played from a
@@ -67,7 +67,7 @@ namespace Lilium.RemoteControl.Frames
     }
 
     /// <summary>
-    /// Runs at the head of a frame, after that frame's inputs have been applied.
+    /// Runs at the head of a frame, after that frame's events have been applied.
     ///
     /// The frame is passed by reference so a producer writes into it directly. Taking it by value
     /// would hand out a copy that goes nowhere once the state block exists.
