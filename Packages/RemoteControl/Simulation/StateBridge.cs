@@ -33,8 +33,13 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>Creates this type's block in a set, so a replay has somewhere to put it.</summary>
         public abstract StateBlock EnsureBlock(StateBlockSet state);
 
-        /// <summary>Reads the object's state into its element of the set.</summary>
-        public abstract void Capture(object owner, int ownerId, StateBlockSet state,
+        /// <summary>
+        /// Reads the object's state into its element of the set. False when nothing was written.
+        ///
+        /// Answered rather than assumed, because a caller counting objects it "carried" is how a
+        /// recording that carries nothing comes to look like a recording that found nothing to say.
+        /// </summary>
+        public abstract bool Capture(object owner, int ownerId, StateBlockSet state,
             FrameSource source, long time);
 
         /// <summary>Writes the element back onto the object. False when the set has nothing for it.</summary>
@@ -61,10 +66,10 @@ namespace Lilium.RemoteControl.Frames
 
         public override StateBlock EnsureBlock(StateBlockSet state) => state.GetOrCreate<TBlock>();
 
-        public override void Capture(object owner, int ownerId, StateBlockSet state,
+        public override bool Capture(object owner, int ownerId, StateBlockSet state,
             FrameSource source, long time)
         {
-            if (!(owner is TOwner typed) || state == null) return;
+            if (!(owner is TOwner typed) || state == null) return false;
 
             ref var element = ref state.GetOrCreate<TBlock>().GetOrCreate(ownerId);
             element.source = source;
@@ -73,6 +78,7 @@ namespace Lilium.RemoteControl.Frames
             // Written straight into the block's storage. Capturing into a local and assigning it
             // back would copy the whole struct twice for every object, every frame.
             _capture(typed, ref element.value);
+            return true;
         }
 
         public override bool Apply(object owner, int ownerId, StateBlockSet state)

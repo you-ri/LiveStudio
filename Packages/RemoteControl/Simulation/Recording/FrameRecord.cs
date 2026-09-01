@@ -65,8 +65,17 @@ namespace Lilium.RemoteControl.Frames.Recording
         ///
         /// The marks above changed with the rename to live data, which is a clean break: a file
         /// written before it is refused at the first four bytes rather than at the version.
+        ///
+        /// 6 added a flag byte to the header saying whether the entries are compressed, and gave a
+        /// compressed file a frame index that names a chunk and carries its own frame numbers.
         /// </summary>
-        public const int kVersion = 5;
+        public const int kVersion = 6;
+
+        /// <summary>
+        /// Bytes a chunk spends before its compressed body: what it takes on disk, and what it
+        /// expands to. Enough to step over one without understanding it.
+        /// </summary>
+        public const int kChunkHeaderSize = 4 + 4;
 
         /// <summary>
         /// Bytes the footer occupies: the three tail offsets and the marker. Read from the end.

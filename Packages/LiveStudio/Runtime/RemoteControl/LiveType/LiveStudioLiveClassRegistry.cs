@@ -40,7 +40,9 @@ namespace Lilium.LiveStudio
                 return;
             }
 
-            LiveClassAssetSystem.RegisterTypes(asset);
+            // Permanent: these ship with the package and apply to every scene, so no container
+            // that happens to also list the asset may unregister them when it disables.
+            LiveClassAssetSystem.RegisterTypesPermanent(asset);
         }
     }
 }

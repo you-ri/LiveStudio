@@ -9,8 +9,11 @@ namespace Lilium.RemoteControl.Frames.Recording
     /// Writes every completed frame to a recording.
     ///
     /// Attaches as the gate's sink, so it sees frames at the head with the events already applied
-    /// and the state blocks already written. Each frame is flushed as it happens rather than
-    /// buffered, so a crash costs the frame in progress and nothing else.
+    /// and the state blocks already written.
+    ///
+    /// What a crash costs depends on <see cref="compress"/>. Uncompressed, each frame is written as
+    /// it happens and the loss is whatever the stream buffer had not yet put on disk. Compressed,
+    /// frames are held until the next keyframe, so the loss is up to a keyframe interval.
     /// </summary>
     public sealed class FrameRecorder : IFrameSink, IDisposable
     {
@@ -49,6 +52,19 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// leaves a seek walking back an unbounded distance for it.
         /// </summary>
         public int keyframeInterval { get; set; } = kDefaultKeyframeInterval;
+
+        /// <summary>
+        /// Compresses the recording, which measured about five times smaller over real takes
+        /// (356 MB an hour down to roughly 70).
+        ///
+        /// The cost is what a crash takes with it. Uncompressed, entries reach the file as they
+        /// happen; compressed, they are held until the next keyframe, so a process that dies loses
+        /// up to a keyframe interval instead of whatever the stream buffer had not flushed. It also
+        /// means the open chunk is not there for anything reading the file as it is written.
+        ///
+        /// Set before <see cref="Start(string)"/>; changing it mid-recording does nothing.
+        /// </summary>
+        public bool compress { get; set; }
 
         /// <summary>Frames that carried the inventory so far.</summary>
         public int keyframeCount => _writer?.keyframes.Count ?? 0;
@@ -106,7 +122,7 @@ namespace Lilium.RemoteControl.Frames.Recording
             _lastKeyframeFrame = -1;
 
             var header = DescribeRun(FrameGate.clock.frameRate, DateTime.UtcNow.Ticks);
-            _writer = new FrameRecordWriter(stream, header, leaveOpen);
+            _writer = new FrameRecordWriter(stream, header, leaveOpen, compress);
         }
 
         /// <summary>

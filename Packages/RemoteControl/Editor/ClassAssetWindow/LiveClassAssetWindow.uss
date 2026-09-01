@@ -193,6 +193,26 @@
     -unity-text-align: middle-left;
 }
 
+/* What one object of this type costs in a frame. Sits with the class-level fields because the
+ * budget belongs to the type, not to any one member. */
+.lca-state-budget {
+    margin-top: 2px;
+    margin-left: 3px;
+    margin-bottom: 2px;
+    font-size: 10px;
+    white-space: normal;
+}
+
+/* Which lane carries the member, sitting between the member name and the row's buttons. Small
+ * and right-aligned so a column of them reads down the list at a glance, rather than competing
+ * with the names it sits beside. */
+.lca-member__lane {
+    flex-shrink: 0;
+    margin-right: 4px;
+    font-size: 10px;
+    -unity-text-align: middle-right;
+}
+
 .lca-member__section-detail {
     margin-left: 12px;
 }

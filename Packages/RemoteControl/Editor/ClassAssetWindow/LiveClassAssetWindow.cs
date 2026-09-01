@@ -24,6 +24,13 @@ namespace Lilium.RemoteControl.Editor
     /// list / class detail split, and the footer lists the instance bindings - hidden entirely
     /// until a container is assigned, since there is nothing to bind into without one.
     ///
+    /// Declaring a class is the whole job for the ordinary case. A component of a GameObject the
+    /// container exposes is listed, saved and carried in the frame from the declaration alone, so
+    /// the footer is expected to stay empty. A binding is the opt-in for giving one object an id of
+    /// its own - an object that is not a component of an exposed GameObject, a second component of
+    /// a type already on the same GameObject (the composed address is keyed by type name and would
+    /// collide), or one whose id has to survive being used from another scene.
+    ///
     /// Exposure settings are stored in a <see cref="LiveClassAsset"/> asset (shared across
     /// scenes); the scene-object references live in a <see cref="RemoteControlContainer"/> in the
     /// scene, using the standard IExposedPropertyTable mechanism.
@@ -84,6 +91,18 @@ namespace Lilium.RemoteControl.Editor
         private static readonly List<LiveClassAsset.TypeDefinition> kNoDefinitions = new List<LiveClassAsset.TypeDefinition>();
 
         private RemoteControlContainer _container;
+
+        // Rows of the class list: this preset's own definitions, then the ones other assets
+        // declared. Held rather than reading _preset.typeDefinitions directly, because the list is
+        // no longer just that.
+        private readonly List<LiveClassAsset.TypeDefinition> _classRows
+            = new List<LiveClassAsset.TypeDefinition>();
+
+        // Which asset declared a row, for the ones this preset did not. An instance binding names
+        // its type and nothing else, so a type declared elsewhere can be bound here -- but its
+        // members belong to whoever declared them and are not edited through this window.
+        private readonly Dictionary<LiveClassAsset.TypeDefinition, LiveClassAsset> _classRowOwner
+            = new Dictionary<LiveClassAsset.TypeDefinition, LiveClassAsset>();
         private LiveClassAsset _preset;
 
         // Two-pane body + footer geometry (persisted for the window's lifetime only).
@@ -382,7 +401,18 @@ namespace Lilium.RemoteControl.Editor
             // Creates an unbound instance entry; the object itself is assigned in Instance
             // Bindings in the footer (or another scene's object through its container). Needs a
             // container to bind into, so it stays hidden without one.
+            //
+            // Not the ordinary route any more. A component of a GameObject the container exposes is
+            // listed, saved and carried in the frame without one -- a binding is for giving an
+            // object an identity of its own, which the tooltip says and the footer repeats.
             _addBindingButton = new ToolbarButton(() => _AddBinding(_FindSelectedDefinition())) { text = "Add Binding" };
+            _addBindingButton.tooltip =
+                "Give one object an id of its own.\n\n"
+                + "Usually unnecessary: add the GameObject to the container's object list and its "
+                + "exposed components are listed, saved and recorded already.\n\n"
+                + "Bind when the object is not a component of an exposed GameObject (an asset, a "
+                + "ScriptableObject), when two components of this type sit on one GameObject, or "
+                + "when the id has to stay the same across scenes.";
             bar.Add(_addBindingButton);
             pane.Add(bar);
 
@@ -434,13 +464,15 @@ namespace Lilium.RemoteControl.Editor
             _addClassButton.SetEnabled(hasPreset);
             _fromSelectedButton.SetEnabled(hasPreset);
 
-            _classList.itemsSource = hasPreset ? _preset.typeDefinitions : kNoDefinitions;
+            _RebuildClassRows();
+
+            _classList.itemsSource = _classRows;
             _classList.Rebuild();
 
             int selected = _FindSelectedDefinitionIndex();
             _classList.SetSelectionWithoutNotify(selected >= 0 ? new[] { selected } : Array.Empty<int>());
 
-            bool hasClasses = hasPreset && _preset.typeDefinitions.Count > 0;
+            bool hasClasses = _classRows.Count > 0;
             _classList.style.display = hasClasses ? DisplayStyle.Flex : DisplayStyle.None;
 
             // A missing prerequisite is advice and gets an icon; a list that is merely still
@@ -453,9 +485,59 @@ namespace Lilium.RemoteControl.Editor
             }
             else if (!hasClasses)
             {
-                _classEmpty.text = "Nothing exposed yet. Add a class with \"+\" or \"From Selected\", then expose its members with \"+\" in the detail pane.";
+                _classEmpty.text = "Nothing exposed yet. Add a class with \"+\" or \"From Selected\", then expose its members with \"+\" in the detail pane."
+                    + "\n\nThat is the whole of it for a component: add its GameObject to the container's object list and the declaration reaches every instance.";
             }
         }
+
+        /// <summary>
+        /// Fills the class list: this preset's definitions, then every type another asset declared.
+        ///
+        /// The second group is what makes a binding independent of where the type was declared. A
+        /// binding carries a key and a type name, and the runtime resolves the live class by type
+        /// from whoever registered it -- so a scene's own asset can bind an instance of a type a
+        /// shared package declared, without copying the declaration and without writing the scene's
+        /// object into the package.
+        /// </summary>
+        private void _RebuildClassRows()
+        {
+            _classRows.Clear();
+            _classRowOwner.Clear();
+
+            if (_preset == null) return;
+
+            var declaredHere = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var definition in _preset.typeDefinitions)
+            {
+                if (definition == null) continue;
+
+                _classRows.Add(definition);
+                if (!string.IsNullOrEmpty(definition.typeName)) declaredHere.Add(definition.typeName);
+            }
+
+            foreach (var guid in AssetDatabase.FindAssets("t:" + nameof(LiveClassAsset)))
+            {
+                var other = AssetDatabase.LoadAssetAtPath<LiveClassAsset>(AssetDatabase.GUIDToAssetPath(guid));
+                if (other == null || other == _preset) continue;
+
+                foreach (var definition in other.typeDefinitions)
+                {
+                    if (definition == null || string.IsNullOrEmpty(definition.typeName)) continue;
+
+                    // Declared in both places. The one shown is this preset's, because that is the
+                    // one an edit here would reach -- and which of the two the runtime ends up with
+                    // is decided by registration order, not by this window.
+                    if (!declaredHere.Add(definition.typeName)) continue;
+
+                    _classRows.Add(definition);
+                    _classRowOwner[definition] = other;
+                }
+            }
+        }
+
+        /// <summary>The asset a row was declared in, or null when this preset declared it.</summary>
+        private LiveClassAsset _OwnerOf(LiveClassAsset.TypeDefinition definition)
+            => definition != null && _classRowOwner.TryGetValue(definition, out var owner) ? owner : null;
 
         private void _RefreshBindings()
         {
@@ -476,7 +558,13 @@ namespace Lilium.RemoteControl.Editor
             }
             if (count == 0)
             {
-                _bindingsFoldoutElement.Add(_MakeEmpty("No instance bound. Use \"Add Binding\" on a class."));
+                // Deliberately not "use Add Binding": empty is the ordinary state. Declaring the
+                // class is enough for every component of a GameObject the container exposes, and
+                // saying otherwise here sent people to bind one object at a time.
+                _bindingsFoldoutElement.Add(_MakeEmpty(
+                    "None, which is usually right: components of a GameObject in the container's "
+                    + "object list are exposed by the declaration alone.\n"
+                    + "Bind an object here to give it an id of its own."));
                 return;
             }
             foreach (var entry in _preset.bindings)
@@ -510,8 +598,7 @@ namespace Lilium.RemoteControl.Editor
 
         private void _BindClassRow(VisualElement row, int index)
         {
-            var source = _classList.itemsSource as List<LiveClassAsset.TypeDefinition>;
-            var definition = source != null && index >= 0 && index < source.Count ? source[index] : null;
+            var definition = index >= 0 && index < _classRows.Count ? _classRows[index] : null;
             row.userData = definition;
 
             var title = (Label)row[0];
@@ -524,10 +611,19 @@ namespace Lilium.RemoteControl.Editor
             }
 
             var type = definition.ResolveType();
+            var owner = _OwnerOf(definition);
+
             title.text = type != null ? type.Name : $"(unresolved: {definition.typeName})";
-            title.tooltip = type != null ? type.FullName : definition.typeName;
-            title.EnableInClassList(LiveClassAssetStyles.kClassRowTitleUnresolved, type == null);
-            count.text = definition.members.Count == 1 ? "1 member" : $"{definition.members.Count} members";
+            title.tooltip = owner != null
+                ? $"Declared in {AssetDatabase.GetAssetPath(owner)}"
+                : (type != null ? type.FullName : definition.typeName);
+            title.EnableInClassList(LiveClassAssetStyles.kClassRowTitleUnresolved, type == null || owner != null);
+            count.text = owner != null
+                ? owner.name
+                : (definition.members.Count == 1 ? "1 member" : $"{definition.members.Count} members");
+
+            // Nothing to remove on a row this asset does not own.
+            row[2].style.display = owner == null ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         private void _OnClassSelectionChanged(IEnumerable<object> selection)
@@ -550,17 +646,28 @@ namespace Lilium.RemoteControl.Editor
             _detailContent.Clear();
 
             int index = _FindSelectedDefinitionIndex();
-            var definition = index >= 0 ? _preset.typeDefinitions[index] : null;
+            var definition = index >= 0 ? _classRows[index] : null;
             var type = definition?.ResolveType();
+            var owner = _OwnerOf(definition);
 
             _RefreshDetailTitle(definition, type);
-            _addMemberButton.style.display = definition != null ? DisplayStyle.Flex : DisplayStyle.None;
+
+            // A type declared elsewhere can be bound here but not edited here: its members belong
+            // to the asset that declared them, and editing them through this window would write a
+            // scene's opinion into whatever shared asset happens to hold the declaration.
+            _addMemberButton.style.display = definition != null && owner == null ? DisplayStyle.Flex : DisplayStyle.None;
             _addMemberButton.SetEnabled(type != null);
             _addBindingButton.style.display = definition != null && _container != null ? DisplayStyle.Flex : DisplayStyle.None;
 
             if (definition == null)
             {
                 _detailContent.Add(_MakeEmpty("Select a class on the left to edit its exposed members."));
+                return;
+            }
+
+            if (owner != null)
+            {
+                _detailContent.Add(_MakeForeignDetail(definition, type, owner));
                 return;
             }
 
@@ -573,6 +680,10 @@ namespace Lilium.RemoteControl.Editor
             // an empty icon to the type's default.
             _detailContent.Add(_MakeBoundField(definitionProperty.FindPropertyRelative("category"), null));
             _detailContent.Add(_MakeBoundField(definitionProperty.FindPropertyRelative("icon"), null));
+
+            var frameCost = _MakeFrameCost(definition, type);
+            if (frameCost != null) _detailContent.Add(frameCost);
+
             _detailContent.Add(_MakeSeparator());
 
             var members = definition.members;
@@ -585,7 +696,7 @@ namespace Lilium.RemoteControl.Editor
                 var membersProperty = definitionProperty.FindPropertyRelative("members");
                 for (int i = 0; i < members.Count; i++)
                 {
-                    _detailContent.Add(_MakeMemberCard(members, i, membersProperty.GetArrayElementAtIndex(i)));
+                    _detailContent.Add(_MakeMemberCard(members, i, membersProperty.GetArrayElementAtIndex(i), definition, type));
                 }
             }
 
@@ -623,7 +734,80 @@ namespace Lilium.RemoteControl.Editor
             }
         }
 
-        private VisualElement _MakeMemberCard(List<LiveClassAssetMember> members, int index, SerializedProperty memberProperty)
+        /// <summary>
+        /// What one object of this type costs in every frame, or null when none of its members are
+        /// on the state lane.
+        ///
+        /// The state lane's one real cost is that it is paid whether or not the value changed, and
+        /// nothing else in this window says what that costs. A number here is what someone deciding
+        /// whether to put one more member on the lane actually needs.
+        /// </summary>
+        private VisualElement _MakeFrameCost(LiveClassAsset.TypeDefinition definition, Type type)
+        {
+            if (definition == null || type == null) return null;
+
+            var perFrame = definition.MeasureFrameCost(type);
+            if (perFrame == 0) return null;
+
+            var label = new Label($"State lane: {perFrame} bytes per object, every frame"
+                + $"  ({perFrame * 60 / 1024f:0.0} KB/s at 60 fps)");
+            label.AddToClassList(LiveClassAssetStyles.kStateBudget);
+            label.AddToClassList(LiveClassAssetStyles.kSubtle);
+            label.tooltip = "Paid for every object of this type in every frame of a recording, "
+                + "whether or not the values changed. Members carried as events cost nothing until "
+                + "they are written.";
+            return label;
+        }
+
+        /// <summary>
+        /// The read-only view of a type another asset declared: what it exposes, and where to go to
+        /// change it. Enough to decide whether this is the type whose instances are wanted here.
+        /// </summary>
+        private VisualElement _MakeForeignDetail(LiveClassAsset.TypeDefinition definition, Type type,
+            LiveClassAsset owner)
+        {
+            var host = new VisualElement();
+
+            var origin = new Label($"Declared in {owner.name}. Its instances are exposed here; "
+                + "edit the members in that asset.");
+            origin.AddToClassList(LiveClassAssetStyles.kHelp);
+            origin.RegisterCallback<ClickEvent>(_ => Selection.activeObject = owner);
+            origin.tooltip = AssetDatabase.GetAssetPath(owner);
+            host.Add(origin);
+
+            var frameCost = _MakeFrameCost(definition, type);
+            if (frameCost != null) host.Add(frameCost);
+
+            host.Add(_MakeSeparator());
+
+            foreach (var member in definition.OrderedMembers())
+            {
+                if (member == null) continue;
+
+                var row = new VisualElement();
+                row.AddToClassList(LiveClassAssetStyles.kMemberHeader);
+
+                var title = new Label(member.isFunction ? member.path + " ()" : member.path);
+                title.AddToClassList(LiveClassAssetStyles.kMemberTitle);
+                title.AddToClassList(LiveClassAssetStyles.kSubtle);
+                row.Add(title);
+
+                if (!member.isFunction && type != null)
+                {
+                    var badge = new Label();
+                    badge.AddToClassList(LiveClassAssetStyles.kMemberLane);
+                    _RefreshLaneBadge(badge, definition, member, type);
+                    row.Add(badge);
+                }
+
+                host.Add(row);
+            }
+
+            return host;
+        }
+
+        private VisualElement _MakeMemberCard(List<LiveClassAssetMember> members, int index,
+            SerializedProperty memberProperty, LiveClassAsset.TypeDefinition definition, Type ownerType)
         {
             var member = members[index];
 
@@ -640,6 +824,20 @@ namespace Lilium.RemoteControl.Editor
             var title = new Label(rowTitle) { tooltip = member.path };
             title.AddToClassList(LiveClassAssetStyles.kMemberTitle);
             header.Add(title);
+
+            // Which lane carries it, on the row itself: the lane is the difference between a value
+            // a recording holds every frame and one it only hears about when it changes, and reading
+            // that off a list means not having to open every member to find out.
+            if (!member.isFunction)
+            {
+                var laneProperty = memberProperty.FindPropertyRelative("lane");
+                var laneBadge = new Label();
+                laneBadge.AddToClassList(LiveClassAssetStyles.kMemberLane);
+                _RefreshLaneBadge(laneBadge, definition, member, ownerType);
+                card.TrackPropertyValue(laneProperty,
+                    _ => _RefreshLaneBadge(laneBadge, definition, member, ownerType));
+                header.Add(laneBadge);
+            }
 
             var moveUp = _MakeTextButton("▲", "Move up", () => _MoveMember(members, index, -1));
             moveUp.SetEnabled(index > 0);
@@ -659,6 +857,7 @@ namespace Lilium.RemoteControl.Editor
             {
                 body.Add(_MakeBoundField(memberProperty.FindPropertyRelative("persistable"), null));
                 body.Add(_MakeBoundField(memberProperty.FindPropertyRelative("readOnly"), null));
+                body.Add(_MakeBoundField(memberProperty.FindPropertyRelative("lane"), "Lane"));
             }
 
             if (!member.isFunction)
@@ -700,6 +899,66 @@ namespace Lilium.RemoteControl.Editor
             return string.IsNullOrEmpty(sectionTitleProperty.stringValue) ? DisplayStyle.None : DisplayStyle.Flex;
         }
 
+        /// <summary>
+        /// Writes the member's lane onto its row.
+        ///
+        /// The lane a member is on and the lane it asked for are not always the same, and where
+        /// they differ the row says the one that is true -- a badge reading "State" on a member the
+        /// block has no room for would be the one place a person goes to check being the place that
+        /// misleads them. The answer comes from the type definition rather than being worked out
+        /// here, so the row and the registration cannot drift apart.
+        /// </summary>
+        private static void _RefreshLaneBadge(Label badge, LiveClassAsset.TypeDefinition definition,
+            LiveClassAssetMember member, Type ownerType)
+        {
+            var carriedBy = definition.EffectiveLaneOf(member, ownerType, out var refusal);
+            var isAuto = member.lane == LiveClassAssetLane.Auto;
+
+            badge.RemoveFromClassList(LiveClassAssetStyles.kSubtle);
+            badge.RemoveFromClassList(LiveClassAssetStyles.kWarning);
+            badge.RemoveFromClassList(LiveClassAssetStyles.kAccent);
+
+            string text;
+            string tooltip;
+            switch (carriedBy)
+            {
+                case FrameLane.State:
+                    text = "State";
+                    tooltip = "State lane: copied into every frame at a fixed size.";
+                    badge.AddToClassList(LiveClassAssetStyles.kAccent);
+                    break;
+                case FrameLane.None:
+                    text = "None";
+                    tooltip = "Not carried by the live data at all.";
+                    break;
+                default:
+                    text = "Event";
+                    tooltip = "Event lane: recorded when it changes, one entry at a time.";
+                    break;
+            }
+
+            if (refusal != LiveClassAsset.TypeDefinition.LaneRefusal.None)
+            {
+                text += " ⚠";
+                tooltip = $"Asks for the state lane, but {member.ResolveValueType(ownerType)?.Name ?? "this member"} "
+                    + "cannot be moved as bytes. Carried on the event lane instead.";
+                badge.AddToClassList(LiveClassAssetStyles.kWarning);
+            }
+            else if (isAuto)
+            {
+                // Dimmed and marked: nothing was said about this member, and the answer would move
+                // on its own if the member it points at changed from a field to a property.
+                text += " (auto)";
+                tooltip += " Auto, from the member being "
+                    + (carriedBy == FrameLane.State ? "a field." : "a property.")
+                    + " Set Lane to say otherwise.";
+                badge.AddToClassList(LiveClassAssetStyles.kSubtle);
+            }
+
+            badge.text = text;
+            badge.tooltip = tooltip;
+        }
+
         private PropertyField _MakeBoundField(SerializedProperty property, string label)
         {
             var field = label == null ? new PropertyField(property) : new PropertyField(property, label);
@@ -718,20 +977,23 @@ namespace Lilium.RemoteControl.Editor
         private LiveClassAsset.TypeDefinition _FindSelectedDefinition()
         {
             int index = _FindSelectedDefinitionIndex();
-            return index >= 0 ? _preset.typeDefinitions[index] : null;
+            return index >= 0 ? _classRows[index] : null;
         }
 
         private int _FindSelectedDefinitionIndex()
         {
             if (_preset == null || string.IsNullOrEmpty(_selectedTypeName)) return -1;
-            for (int i = 0; i < _preset.typeDefinitions.Count; i++)
+
+            for (int i = 0; i < _classRows.Count; i++)
             {
-                var definition = _preset.typeDefinitions[i];
-                if (definition != null && string.Equals(definition.typeName, _selectedTypeName, StringComparison.Ordinal))
+                var definition = _classRows[i];
+                if (definition != null
+                    && string.Equals(definition.typeName, _selectedTypeName, StringComparison.Ordinal))
                 {
                     return i;
                 }
             }
+
             return -1;
         }
 
@@ -840,6 +1102,11 @@ namespace Lilium.RemoteControl.Editor
         private void _RemoveTypeDefinition(LiveClassAsset.TypeDefinition definition)
         {
             if (_preset == null || definition == null) return;
+
+            // Declared by another asset. Removing it here would take this preset's bindings for the
+            // type with it while leaving the declaration standing -- the opposite of what the button
+            // says. The row hides the button; this is the guard behind it.
+            if (_OwnerOf(definition) != null) return;
             var type = definition.ResolveType();
 
             _BeginEdit("Remove Class");

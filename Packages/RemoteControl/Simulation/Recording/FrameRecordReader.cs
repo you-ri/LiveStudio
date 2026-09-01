@@ -34,6 +34,21 @@ namespace Lilium.RemoteControl.Frames.Recording
         private long[] _keyframes = Array.Empty<long>();
         private long _firstFrameNumber;
 
+        // Compression. When it is on, entries are read out of an expanded chunk rather than off the
+        // stream, and a frame is found by naming a chunk and an offset inside it.
+        private readonly bool _chunked;
+        private readonly FrameChunkCodec _codec;
+        private readonly List<long> _chunkStarts = new List<long>();
+        private byte[] _chunkRaw = Array.Empty<byte>();
+        private byte[] _chunkData = Array.Empty<byte>();
+        private int _chunkLength;
+        private int _chunkCursor;
+        private int _chunkIndex = -1;
+
+        private long[] _frameNumbers;
+        private int[] _frameChunks;
+        private int[] _frameCursors;
+
         /// <summary>What the file says about itself.</summary>
         public FrameRecordHeader header { get; }
 
@@ -41,10 +56,13 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// True when the file was closed properly and carries its tail. False for one that was cut
         /// short, which is still readable from the top.
         /// </summary>
-        public bool hasIndex => _frameOffsets != null;
+        public bool hasIndex => _chunked ? _frameNumbers != null : _frameOffsets != null;
 
         /// <summary>Frames the tail index knows about, or zero when there is no index.</summary>
-        public int indexedFrameCount => _frameOffsets?.Length ?? 0;
+        public int indexedFrameCount => (_chunked ? _frameNumbers?.Length : _frameOffsets?.Length) ?? 0;
+
+        /// <summary>True when the entries are compressed.</summary>
+        public bool isChunked => _chunked;
 
         /// <summary>
         /// Frame number the index starts at, or zero when there is no index.
@@ -106,6 +124,9 @@ namespace Lilium.RemoteControl.Frames.Recording
                 buildId = _reader.ReadString(),
             };
 
+            _chunked = _reader.ReadByte() != 0;
+            if (_chunked) _codec = new FrameChunkCodec();
+
             _entriesOffset = stream.Position;
 
             symbols = _TryReadTail();
@@ -113,26 +134,52 @@ namespace Lilium.RemoteControl.Frames.Recording
         }
 
         /// <summary>Goes back to the first entry.</summary>
-        public void Rewind() => _stream.Position = _entriesOffset;
+        public void Rewind()
+        {
+            _stream.Position = _entriesOffset;
+
+            if (!_chunked) return;
+
+            _chunkIndex = -1;
+            _chunkLength = 0;
+            _chunkCursor = 0;
+            _LoadNextChunk();
+        }
 
         /// <summary>
         /// Where the next entry starts.
         ///
         /// For building an index over a file that has none. A recording cut short has no tail, and a
-        /// reader that can only walk forward makes browsing it quadratic: noting each frame's offset
-        /// on one pass turns every later jump into a seek.
+        /// reader that can only walk forward makes browsing it quadratic: noting each frame's mark on
+        /// one pass turns every later jump into a seek.
+        ///
+        /// A bookmark rather than a file offset. Uncompressed the two are the same thing, but
+        /// compressed a position is a chunk and an offset inside it, so this is only meaningful to
+        /// the <see cref="TrySeekTo"/> of the reader that handed it out.
         /// </summary>
-        public long position => _stream.Position;
+        public long position => _chunked ? ((long)_chunkIndex << 32) | (uint)_chunkCursor : _stream.Position;
 
         /// <summary>
-        /// Goes back to an offset a previous <see cref="position"/> reported.
+        /// Goes back to a bookmark a previous <see cref="position"/> reported.
         ///
-        /// Refuses anything outside the entries rather than trusting the caller: an offset landing
+        /// Refuses anything outside the entries rather than trusting the caller: a bookmark landing
         /// in the header or the tail would be read as an entry, and the length it found there would
         /// send the next read somewhere arbitrary.
         /// </summary>
         public bool TrySeekTo(long offset)
         {
+            if (_chunked)
+            {
+                var chunk = (int)(offset >> 32);
+                var cursor = (int)(offset & 0xFFFFFFFF);
+
+                if (chunk != _chunkIndex && !_LoadChunk(chunk)) return false;
+                if (cursor < 0 || cursor > _chunkLength) return false;
+
+                _chunkCursor = cursor;
+                return true;
+            }
+
             if (offset < _entriesOffset || offset >= _stream.Length) return false;
             if (_frameOffsets != null && offset >= _tailOffset) return false;
 
@@ -148,6 +195,14 @@ namespace Lilium.RemoteControl.Frames.Recording
         {
             var index = IndexOfFrame(frameNumber);
             if (index < 0) return false;
+
+            if (_chunked)
+            {
+                if (_frameChunks[index] != _chunkIndex && !_LoadChunk(_frameChunks[index])) return false;
+
+                _chunkCursor = _frameCursors[index];
+                return true;
+            }
 
             _stream.Position = _frameOffsets[index];
             return true;
@@ -165,6 +220,15 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// </summary>
         public long FrameNumberAt(int index)
         {
+            // Compressed, the index carries the numbers: reading one back out of the file would mean
+            // expanding a chunk, which turns a search into a dozen of them.
+            if (_chunked)
+            {
+                if (_frameNumbers == null || index < 0 || index >= _frameNumbers.Length) return -1;
+
+                return _frameNumbers[index];
+            }
+
             if (_frameOffsets == null || index < 0 || index >= _frameOffsets.Length) return -1;
 
             var restore = _stream.Position;
@@ -187,6 +251,26 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// </summary>
         public int IndexOfFrame(long frameNumber)
         {
+            if (_chunked)
+            {
+                if (_frameNumbers == null) return -1;
+
+                var lo = 0;
+                var hi = _frameNumbers.Length - 1;
+                while (lo <= hi)
+                {
+                    var middle = lo + ((hi - lo) >> 1);
+                    var value = _frameNumbers[middle];
+
+                    if (value == frameNumber) return middle;
+
+                    if (value < frameNumber) lo = middle + 1;
+                    else hi = middle - 1;
+                }
+
+                return -1;
+            }
+
             if (_frameOffsets == null) return -1;
 
             var restore = _stream.Position;
@@ -273,6 +357,8 @@ namespace Lilium.RemoteControl.Frames.Recording
         {
             entry = default;
 
+            if (_chunked) return _TryReadChunkedEntry(out entry);
+
             var stream = _stream;
             if (stream.Position >= stream.Length) return false;
 
@@ -307,6 +393,87 @@ namespace Lilium.RemoteControl.Frames.Recording
             if (_ownsStream) _stream.Dispose();
         }
 
+        /// <summary>
+        /// Reads the next entry out of the expanded chunk, opening the following one when this chunk
+        /// runs out. A chunk that cannot be expanded ends the walk the way a cut entry does.
+        /// </summary>
+        private bool _TryReadChunkedEntry(out FrameEntry entry)
+        {
+            entry = default;
+
+            while (_chunkCursor >= _chunkLength)
+            {
+                if (!_LoadNextChunk()) return false;
+            }
+
+            const int kEntryHeader = 1 + 4 + 8;
+            if (_chunkCursor + kEntryHeader > _chunkLength) return false;
+
+            var data = _chunkData;
+            var at = _chunkCursor;
+
+            var kind = (FrameEntryKind)data[at];
+            var length = data[at + 1] | (data[at + 2] << 8) | (data[at + 3] << 16) | (data[at + 4] << 24);
+            var frameNumber = BitConverter.ToInt64(data, at + 5);
+
+            at += kEntryHeader;
+            if (length < 0 || at + length > _chunkLength) return false;
+
+            _chunkCursor = at + length;
+            entry = new FrameEntry(kind, frameNumber, new ReadOnlySpan<byte>(data, at, length));
+            return true;
+        }
+
+        /// <summary>Opens the chunk after the one loaded, discovering it when the tail did not name it.</summary>
+        private bool _LoadNextChunk()
+        {
+            var next = _chunkIndex + 1;
+            if (next < _chunkStarts.Count) return _LoadChunk(next);
+
+            // No tail, so the chunks are being found as the walk goes. Where the stream sits is where
+            // the next one starts, because the last read left it just past the previous body.
+            var limit = _ChunkLimit();
+            if (_stream.Position + FrameRecordFormat.kChunkHeaderSize > limit) return false;
+
+            var start = _stream.Position;
+            if (!_ReadChunkHere(next, limit)) return false;
+
+            _chunkStarts.Add(start);
+            return true;
+        }
+
+        /// <summary>Opens a chunk the tail named, or one already met while walking.</summary>
+        private bool _LoadChunk(int index)
+        {
+            if (index < 0 || index >= _chunkStarts.Count) return false;
+
+            _stream.Position = _chunkStarts[index];
+            return _ReadChunkHere(index, _ChunkLimit());
+        }
+
+        private long _ChunkLimit() => _tailOffset == long.MaxValue ? _stream.Length : _tailOffset;
+
+        private bool _ReadChunkHere(int index, long limit)
+        {
+            if (_stream.Position + FrameRecordFormat.kChunkHeaderSize > limit) return false;
+
+            var compressed = _reader.ReadInt32();
+            var expanded = _reader.ReadInt32();
+
+            // A chunk the writer never finished. Everything before it is intact, so this ends the
+            // walk rather than failing it -- the same rule an entry cut in half follows.
+            if (compressed <= 0 || expanded <= 0) return false;
+            if (_stream.Position + compressed > limit) return false;
+
+            if (_chunkRaw.Length < compressed) _chunkRaw = new byte[Math.Max(compressed, 1024)];
+            if (_reader.Read(_chunkRaw, 0, compressed) != compressed) return false;
+
+            _chunkLength = _codec.Decode(new ReadOnlySpan<byte>(_chunkRaw, 0, compressed), expanded, out _chunkData);
+            _chunkCursor = 0;
+            _chunkIndex = index;
+            return true;
+        }
+
         // Where the tail starts, so a straight walk knows to stop. Long.MaxValue while there is none.
         private long _tailOffset = long.MaxValue;
 
@@ -338,9 +505,32 @@ namespace Lilium.RemoteControl.Frames.Recording
             var frameCount = _reader.ReadInt32();
             if (frameCount < 0) return null;
 
-            var offsets = new long[frameCount];
-            for (int i = 0; i < frameCount; i++) offsets[i] = _reader.ReadInt64();
-            _frameOffsets = offsets;
+            if (_chunked)
+            {
+                _frameNumbers = new long[frameCount];
+                _frameChunks = new int[frameCount];
+                _frameCursors = new int[frameCount];
+
+                for (int i = 0; i < frameCount; i++)
+                {
+                    _frameNumbers[i] = _reader.ReadInt64();
+                    _frameChunks[i] = _reader.ReadInt32();
+                    _frameCursors[i] = _reader.ReadInt32();
+                }
+
+                var chunkCount = _reader.ReadInt32();
+                if (chunkCount < 0) return null;
+
+                _chunkStarts.Clear();
+                for (int i = 0; i < chunkCount; i++) _chunkStarts.Add(_reader.ReadInt64());
+            }
+            else
+            {
+                var offsets = new long[frameCount];
+                for (int i = 0; i < frameCount; i++) offsets[i] = _reader.ReadInt64();
+                _frameOffsets = offsets;
+            }
+
             _tailOffset = indexOffset;
 
             stream.Position = keyframeOffset;

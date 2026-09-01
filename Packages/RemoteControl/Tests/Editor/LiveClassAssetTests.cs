@@ -161,6 +161,38 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
+        public void ABinding_WorksForATypeDeclaredInAnotherAsset()
+        {
+            // What a shared package plus a project asset looks like: the package declares what a
+            // Light exposes, and the scene says which Light. Requiring the declaration to be
+            // copied into the scene's asset would put two declarations of one type in the project,
+            // where the winner is decided by registration order -- and writing the scene's object
+            // into the package would ship one project's scene to everyone.
+            var declaring = _CreatePreset();
+            var definition = declaring.GetOrAddTypeDefinition(typeof(Light));
+            definition.members.Add(new LiveClassAssetMember { path = "intensity" });
+            LiveClassAssetSystem.RegisterTypes(declaring);
+
+            var binding = _CreatePreset();
+            Assert.That(binding.FindTypeDefinition(typeof(Light)), Is.Null,
+                "the binding side is not supposed to need a declaration of its own");
+
+            var lightGo = _CreateGameObject("ForeignDeclaredLight");
+            var light = lightGo.AddComponent<Light>();
+            light.intensity = 3f;
+
+            var container = _CreateContainer(binding);
+            var entry = _AddBinding(binding, container, light);
+            container.Reload();
+
+            var handle = LiveObjectRegistry.FindById(entry.key);
+            Assert.That(handle, Is.Not.Null, "the instance was not exposed");
+            Assert.That(handle.Value.target, Is.SameAs(light));
+            Assert.That(handle.Value.FindProperty("intensity"), Is.Not.Null,
+                "the members come from whoever declared the type");
+        }
+
+        [Test]
         public void Container_ResolvesAndRegistersInstance()
         {
             var preset = _CreatePreset();
@@ -241,6 +273,35 @@ namespace Lilium.RemoteControl.Tests
             Assert.That(LiveClass.Has(typeof(Light)), Is.False,
                 "The last container to drop an asset takes its type registration with it, so an " +
                 "asset carried in by a bundle leaves nothing behind when the bundle unloads");
+        }
+
+        [Test]
+        public void Container_Disable_KeepsATypeRegisteredPermanently()
+        {
+            var preset = _CreatePreset();
+            preset.GetOrAddTypeDefinition(typeof(Light)).members.Add(new LiveClassAssetMember { path = "intensity" });
+
+            // How a package applies the declarations it ships, and the project settings theirs.
+            LiveClassAssetSystem.RegisterTypesPermanent(preset);
+
+            // The same asset also listed by a container -- which is not a misconfiguration to
+            // guard against but the ordinary case: the Live Class Asset window adds the asset it
+            // is editing to the container on its own, the moment a member is exposed.
+            var container = _CreateContainer(preset);
+            container.Reload();
+            Assert.That(LiveClass.Has(typeof(Light)), Is.True);
+
+            container.enabled = false;
+
+            Assert.That(LiveClass.Has(typeof(Light)), Is.True,
+                "The container never brought this declaration in, so its disable must not end it. "
+                + "Ending it would take the type away from every scene for the rest of the session: "
+                + "components of it quietly stop being listed, and the serializer skips their "
+                + "values on save");
+
+            // Nothing takes a permanent registration away, so this test would otherwise leave the
+            // type registered for every test after it.
+            if (LiveClass.TryGet(typeof(Light), out var liveClass)) LiveClass.Unregister(liveClass);
         }
 
         [Test]

@@ -359,16 +359,20 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>The block for an element type, creating it on first use.</summary>
         public StateBlock<T> GetOrCreate<T>() where T : unmanaged
         {
-            if (_blocks.TryGetValue(typeof(T), out var existing)) return (StateBlock<T>)existing;
-
             // Making a block is also how a type announces that it belongs on the lane, so a player
             // meeting the name in a recording can make one too. Guarded per type rather than by a
             // lookup, because this sits on the per-frame path of every producer.
-            if (!_Announced<T>.done)
+            //
+            // Ahead of the lookup, not after it: a set that already holds the block returns early,
+            // and a registry emptied underneath a long-lived set would then never be refilled by the
+            // calls that filled it the first time.
+            if (_Announced<T>.generation != StateTypeRegistry.generation)
             {
-                _Announced<T>.done = true;
+                _Announced<T>.generation = StateTypeRegistry.generation;
                 StateTypeRegistry.Register<T>();
             }
+
+            if (_blocks.TryGetValue(typeof(T), out var existing)) return (StateBlock<T>)existing;
 
             var created = new StateBlock<T>();
             _blocks.Add(typeof(T), created);
@@ -376,9 +380,56 @@ namespace Lilium.RemoteControl.Frames
             return created;
         }
 
+        /// <summary>
+        /// The block for a type declared by an asset, creating it on first use.
+        ///
+        /// Keyed by the exposed type itself, which is what gives each declared type a block of its
+        /// own rather than a shared one sized for the worst case. The width comes from the
+        /// declaration, so two builds that disagree about it produce blocks of different sizes --
+        /// which is the mismatch a recording is already checked for.
+        /// </summary>
+        public DeclaredStateBlock GetOrCreateDeclared(Type ownerType, int payloadSize)
+        {
+            if (ownerType == null) throw new ArgumentNullException(nameof(ownerType));
+
+            if (_blocks.TryGetValue(ownerType, out var existing))
+            {
+                var found = (DeclaredStateBlock)existing;
+
+                // The declaration changed under a block that is already carrying values. Replaced
+                // rather than reused: the stride is the layout, and reading the old elements at the
+                // new stride would hand back values sliced out of the middle of their neighbours.
+                if (found.payloadSize == payloadSize) return found;
+
+                _blocks.Remove(ownerType);
+                _ordered.Remove(found);
+                found.Dispose();
+            }
+
+            var created = new DeclaredStateBlock(ownerType, payloadSize);
+            StateTypeRegistry.RegisterDeclared(ownerType, payloadSize);
+
+            _blocks.Add(ownerType, created);
+            _ordered.Add(created);
+            return created;
+        }
+
+        /// <summary>The declared block for an exposed type, or null when nothing has written one.</summary>
+        public DeclaredStateBlock FindDeclared(Type ownerType)
+            => ownerType != null && _blocks.TryGetValue(ownerType, out var existing)
+                ? existing as DeclaredStateBlock
+                : null;
+
+        /// <summary>
+        /// Which generation of the registry this type last announced itself to.
+        ///
+        /// Not a bool: a static field outlives the registry being emptied, so a plain "already done"
+        /// left a cleared registry with no way of being refilled -- the calls that announced the
+        /// type the first time all skip it forever after.
+        /// </summary>
         private static class _Announced<T> where T : unmanaged
         {
-            public static bool done;
+            public static int generation = -1;
         }
 
         /// <summary>The block for an element type, or null when nothing has written one yet.</summary>

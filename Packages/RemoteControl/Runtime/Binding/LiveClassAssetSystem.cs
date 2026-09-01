@@ -29,6 +29,10 @@ namespace Lilium.RemoteControl
         private static readonly Dictionary<Type, LiveClassAsset> _ownerByType
             = new Dictionary<Type, LiveClassAsset>();
 
+        // Assets that apply for the whole session: the declarations a package ships and the ones
+        // the project settings name. Nothing may take their types away (see _UnregisterType).
+        private static readonly HashSet<LiveClassAsset> _permanent = new HashSet<LiveClassAsset>();
+
         [ThreadStatic]
         private static System.Text.StringBuilder _signatureBuilder;
 
@@ -40,6 +44,7 @@ namespace Lilium.RemoteControl
             _activeByType.Clear();
             _signatureByType.Clear();
             _ownerByType.Clear();
+            _permanent.Clear();
         }
 
         /// <summary>
@@ -63,10 +68,34 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
+        /// Registers an asset that applies for the whole session rather than for as long as
+        /// something holds it: the declarations a package ships, and the ones the project settings
+        /// name. Same registration as <see cref="RegisterTypes"/>, plus the promise that
+        /// <see cref="UnregisterTypes"/> can no longer take its types away.
+        ///
+        /// That promise is what makes such an asset safe to also list on a
+        /// <c>RemoteControlContainer</c> — which the Live Class Asset window does on its own the
+        /// moment you expose a member of it. Without it the container's disable would unregister
+        /// declarations it never brought in, and for the rest of the session every scene would be
+        /// missing the type: the components would quietly stop being listed, and the serializer
+        /// would skip their values on save.
+        ///
+        /// One-way for the session. An asset named here stays permanent even if a container
+        /// applies it again as an ordinary one.
+        /// </summary>
+        public static void RegisterTypesPermanent(LiveClassAsset asset)
+        {
+            if (asset == null) return;
+            _permanent.Add(asset);
+            RegisterTypes(asset);
+        }
+
+        /// <summary>
         /// Undoes <see cref="RegisterTypes"/> for every type this asset registered, so an asset
         /// carried in by an asset bundle can be dropped again when the bundle unloads.
         /// Conservative by design: a type is only really unregistered when this asset is the one
-        /// that defined it and no binding instance of it is left (see <see cref="_UnregisterType"/>).
+        /// that defined it, it was not registered permanently, and no binding instance of it is
+        /// left (see <see cref="_UnregisterType"/>).
         /// </summary>
         public static void UnregisterTypes(LiveClassAsset asset)
         {
@@ -173,8 +202,27 @@ namespace Lilium.RemoteControl
                 if (member == null || string.IsNullOrEmpty(member.path)) continue;
                 if (!seen.Add((member.isFunction ? "f:" : "p:") + member.path)) continue;
 
-                if (member.isFunction) functionDefines.Add(member.ToFunctionDefine());
-                else propertyDefines.Add(member.ToPropertyDefine(type));
+                if (member.isFunction)
+                {
+                    functionDefines.Add(member.ToFunctionDefine());
+                }
+                else
+                {
+                    // The lane the member gets is the one that can actually carry it, not the one
+                    // it asked for. Registering the asked-for lane is what used to drop a value out
+                    // of both lanes at once: the bridge left it out of the block, while the write
+                    // path went on omitting its event record because the declaration said State.
+                    var lane = definition.EffectiveLaneOf(member, type, out var refusal);
+                    if (refusal != LiveClassAsset.TypeDefinition.LaneRefusal.None)
+                    {
+                        Debug.LogWarning(
+                            $"[RemoteControl] '{type.Name}.{member.path}' asks for the state lane but its "
+                            + "value cannot be moved as bytes. Carried on the event lane instead.");
+                    }
+
+                    propertyDefines.Add(member.ToPropertyDefine(type, lane));
+                }
+
                 member.AppendSignature(sb);
             }
 
@@ -232,6 +280,12 @@ namespace Lilium.RemoteControl
             // Attribute-based types keep their own definition; the asset never registered one
             // (see _RegisterType), so there is nothing of ours to take away.
             if (TypeReflectionSystem.GetCustomAttribute<LiveClassAttribute>(type) != null) return;
+
+            // Registered for the session, not for as long as something holds it. A container that
+            // lists such an asset is a second applier of a declaration that is not its to end —
+            // and the Live Class Asset window adds it to the container by itself, so this is the
+            // ordinary case rather than a misconfiguration. See RegisterTypesPermanent.
+            if (_permanent.Contains(asset)) return;
 
             // Another asset defines this type too and registered last, so the live definition is
             // not ours. Dropping it here would take that asset's members away with it.

@@ -48,6 +48,82 @@ namespace Lilium.RemoteControl
             }
 
             /// <summary>
+            /// Why a member that asked for the state lane did not get it.
+            /// </summary>
+            public enum LaneRefusal
+            {
+                /// <summary>It got the lane it asked for.</summary>
+                None = 0,
+
+                /// <summary>Its value cannot be moved as bytes (see DeclaredStateBridge.CanCarry).</summary>
+                UnsupportedType = 1,
+
+            }
+
+            /// <summary>
+            /// The lane that will actually carry this member.
+            ///
+            /// Asking for the state lane and getting it are two different things: the lane moves
+            /// values as bytes, so a member whose value cannot be moved that way is carried as
+            /// events instead.
+            ///
+            /// This is the single answer to that question. Registration gives the member the lane
+            /// this returns, so what the frame carries and what an editor shows cannot disagree --
+            /// and registering the asked-for lane instead is what used to drop such a member out of
+            /// both lanes at once, the block leaving it out while the write path went on omitting
+            /// its event record.
+            /// </summary>
+            public FrameLane EffectiveLaneOf(LiveClassAssetMember member, Type ownerType = null)
+                => EffectiveLaneOf(member, ownerType, out _);
+
+            /// <inheritdoc cref="EffectiveLaneOf(LiveClassAssetMember, Type)"/>
+            public FrameLane EffectiveLaneOf(LiveClassAssetMember member, Type ownerType,
+                out LaneRefusal refusal)
+            {
+                refusal = LaneRefusal.None;
+                if (member == null) return FrameLane.Event;
+
+                ownerType = ownerType ?? ResolveType();
+
+                var asked = member.ResolveLane(ownerType);
+                if (member.isFunction || asked != FrameLane.State) return asked;
+
+                if (Frames.DeclaredStateBridge.CanCarry(member.ResolveValueType(ownerType)))
+                {
+                    return FrameLane.State;
+                }
+
+                refusal = LaneRefusal.UnsupportedType;
+                return FrameLane.Event;
+            }
+
+            /// <summary>
+            /// Bytes one object of this type adds to every frame: the metadata, the layout hash and
+            /// the declared values.
+            ///
+            /// There is no cap to measure against -- the block is built to fit -- so this is a price
+            /// rather than a budget. It is worth showing because it is the one cost of the state
+            /// lane that is paid whether or not the value ever changes.
+            /// </summary>
+            public int MeasureFrameCost(Type ownerType)
+            {
+                ownerType = ownerType ?? ResolveType();
+
+                var values = 0;
+                foreach (var member in OrderedMembers())
+                {
+                    if (member == null || member.isFunction) continue;
+                    if (EffectiveLaneOf(member, ownerType) != FrameLane.State) continue;
+
+                    values += Frames.DeclaredStateBridge.SizeOf(member.ResolveValueType(ownerType));
+                }
+
+                if (values == 0) return 0;
+
+                return Frames.DeclaredStateBlock.StrideFor(Frames.DeclaredStateBridge.kLayoutSize + values);
+            }
+
+            /// <summary>
             /// Members in the order they should be exposed. <see cref="LiveClassAssetMember.order"/>
             /// shifts an entry away from its list position (negative first, positive last); entries
             /// sharing an order keep their list order, so leaving every order at 0 changes nothing.
@@ -141,7 +217,7 @@ namespace Lilium.RemoteControl
         [Tooltip("Explicit display order. Negative moves earlier, positive later, 0 keeps list order")]
         public int order;
 
-        [Tooltip("Which lane of the live data carries this member. Auto puts fields on the state lane and properties on the input lane")]
+        [Tooltip("Which lane of the live data carries this member. Auto puts fields on the state lane and properties on the event lane")]
         public LiveClassAssetLane lane = LiveClassAssetLane.Auto;
 
         [Tooltip("Controller used to render the member in RemoteApp. None = default for the value type")]
@@ -152,11 +228,13 @@ namespace Lilium.RemoteControl
         /// The lane this member asks for, resolving <see cref="LiveClassAssetLane.Auto"/> against
         /// what the member actually is.
         ///
-        /// A field defaults to the state lane and a property to the input lane, because that is what
+        /// A field defaults to the state lane and a property to the event lane, because that is what
         /// the two usually are: a field holds a value that something else drives every frame, and a
         /// property is written from outside. Either can be said explicitly when it is not.
+        ///
+        /// What the member asks for. <see cref="EffectiveLane"/> is what it gets.
         /// </summary>
-        internal FrameLane ResolveLane(Type ownerType)
+        public FrameLane ResolveLane(Type ownerType)
         {
             switch (lane)
             {
@@ -176,13 +254,38 @@ namespace Lilium.RemoteControl
                 : FrameLane.Event;
         }
 
-        internal LivePropertyDefine ToPropertyDefine(Type ownerType = null)
+        /// <summary>
+        /// The type of the value behind this member, or null when the owner does not have it (a
+        /// renamed member, or a type that failed to resolve) or when it is a function.
+        /// </summary>
+        public Type ResolveValueType(Type ownerType)
+        {
+            if (isFunction || ownerType == null || string.IsNullOrEmpty(path)) return null;
+
+            const System.Reflection.BindingFlags flags =
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.Instance;
+
+            var property = ownerType.GetProperty(path, flags);
+            if (property != null) return property.PropertyType;
+
+            return ownerType.GetField(path, flags)?.FieldType;
+        }
+
+        /// <summary>
+        /// Builds the registration entry.
+        ///
+        /// The lane is passed in rather than worked out here: whether this member fits in the state
+        /// block depends on the members declared before it, which is a question only the whole type
+        /// definition can answer. See <see cref="TypeDefinition.EffectiveLaneOf"/>.
+        /// </summary>
+        internal LivePropertyDefine ToPropertyDefine(Type ownerType, FrameLane lane)
         {
             return new LivePropertyDefine
             {
                 name = path,
                 path = path,
-                lane = ResolveLane(ownerType),
+                lane = lane,
                 isPersistable = persistable,
                 isReadOnly = readOnly,
                 persistScope = PersistScope.Scene,
@@ -219,7 +322,8 @@ namespace Lilium.RemoteControl
                 .Append('|').Append(persistable ? '1' : '0')
                 .Append('|').Append(readOnly ? '1' : '0')
                 .Append('|').Append(icon)
-                .Append('|').Append(order);
+                .Append('|').Append(order)
+                .Append('|').Append((int)lane);
             section?.AppendSignature(sb);
             if (control != null)
             {

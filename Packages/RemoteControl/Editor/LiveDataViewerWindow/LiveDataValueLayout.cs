@@ -66,6 +66,11 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         private static readonly Dictionary<Type, List<ValueField>> _cache =
             new Dictionary<Type, List<ValueField>>();
 
+        // Declaration a cached declared layout was built from. A declaration can be edited while
+        // the window is open, and a layout kept from the previous one would point every row at the
+        // wrong bytes -- which reads as values rather than as a stale cache.
+        private static readonly Dictionary<Type, ulong> _declaredLayouts = new Dictionary<Type, ulong>();
+
         // Read as one line rather than walked into: three floats named x, y, z are more legible
         // together than as three rows, and everything here is a value everyone already pictures.
         private static readonly HashSet<Type> _inlineTypes = new HashSet<Type>
@@ -78,6 +83,27 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         public static List<ValueField> For(Type type)
         {
             if (type == null) return null;
+
+            // A type declared by an asset has no struct to reflect over: the element is a payload of
+            // bytes and the declaration says what is in it. Asked first, because the type here is
+            // the exposed type itself (UnityEngine.Light), and walking that as if it were the value
+            // would describe the component rather than the bytes.
+            var declared = StateBridgeRegistry.Find(type) as DeclaredStateBridge;
+            if (declared != null)
+            {
+                if (_cache.TryGetValue(type, out var cachedDeclared)
+                    && _declaredLayouts.TryGetValue(type, out var builtFrom)
+                    && builtFrom == declared.layout)
+                {
+                    return cachedDeclared;
+                }
+
+                var described = _DescribeDeclared(declared);
+                _cache[type] = described;
+                _declaredLayouts[type] = declared.layout;
+                return described;
+            }
+
             if (_cache.TryGetValue(type, out var cached)) return cached;
 
             var fields = new List<ValueField>();
@@ -99,7 +125,74 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         }
 
         /// <summary>Forgets the worked-out layouts. For tests, and after a type changes.</summary>
-        internal static void Clear() => _cache.Clear();
+        internal static void Clear()
+        {
+            _cache.Clear();
+            _declaredLayouts.Clear();
+        }
+
+        /// <summary>
+        /// The lines of a declared type, taken from the declaration instead of from reflection.
+        ///
+        /// The layout hash leads the payload and is a real part of what a recording holds, so it is
+        /// shown rather than hidden: when a take will not apply, this is the number that says why.
+        /// </summary>
+        private static List<ValueField> _DescribeDeclared(DeclaredStateBridge bridge)
+        {
+            var fields = new List<ValueField>
+            {
+                new ValueField
+                {
+                    label = "layout",
+                    path = "layout",
+                    offset = 0,
+                    type = typeof(ulong),
+                },
+            };
+
+            foreach (var field in bridge.fields)
+            {
+                // Emitted the way _Walk emits a member of a struct, so a declared Color reads as
+                // one line exactly like a generated one does rather than as four floats.
+                if (IsReadable(field.valueType))
+                {
+                    fields.Add(new ValueField
+                    {
+                        label = field.name,
+                        path = field.name,
+                        offset = field.offset,
+                        type = field.valueType,
+                    });
+                    continue;
+                }
+
+                fields.Add(new ValueField
+                {
+                    label = field.name,
+                    path = field.name,
+                    offset = field.offset,
+                    type = field.valueType,
+                    isHeading = true,
+                });
+
+                var before = fields.Count;
+                if (field.valueType != null && field.valueType.IsValueType)
+                {
+                    _Walk(field.valueType, field.name, 1, field.offset, fields);
+                }
+
+                // A struct nothing could describe. Shown as its own bytes rather than left as a
+                // heading with nothing under it.
+                if (fields.Count == before)
+                {
+                    fields[fields.Count - 1].isHeading = false;
+                    fields[fields.Count - 1].rawLength = field.size;
+                }
+            }
+
+            _SortByOffset(fields);
+            return fields;
+        }
 
         /// <summary>True for a type this can read a single value out of.</summary>
         public static bool IsReadable(Type type)

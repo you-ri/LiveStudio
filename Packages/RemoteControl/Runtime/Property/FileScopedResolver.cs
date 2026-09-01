@@ -201,7 +201,7 @@ namespace Lilium.RemoteControl
         }
 
         // The exposed property name of the GameObject wrapper's component list (see LiveGameObject).
-        private const string kComponentsPrefix = "components[";
+        private const string kComponentsPrefix = ComponentElementKey.kMemberName + "[";
 
         /// <summary>
         /// If <paramref name="path"/> is a single top-level component element ("components[&lt;digits&gt;]")
@@ -225,9 +225,9 @@ namespace Lilium.RemoteControl
                 if (inner[i] < '0' || inner[i] > '9') return path; // already named, or not a bare index
             }
 
-            var liveClass = LiveClass.Find(obj.GetType());
-            if (liveClass == null || string.IsNullOrEmpty(liveClass.typeName)) return path;
-            return kComponentsPrefix + liveClass.typeName + "]";
+            // The rule itself lives with the frame side's copy of it, so the two cannot drift.
+            var key = ComponentElementKey.Of(obj);
+            return key == null ? path : kComponentsPrefix + key + "]";
         }
     }
 }

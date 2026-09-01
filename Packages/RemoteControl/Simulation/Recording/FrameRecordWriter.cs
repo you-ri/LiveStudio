@@ -19,13 +19,38 @@ namespace Lilium.RemoteControl.Frames.Recording
     /// </summary>
     public sealed class FrameRecordWriter : IDisposable
     {
+        /// <summary>Where entries go. The file itself, or the chunk being built up.</summary>
         private readonly BinaryWriter _writer;
+
+        /// <summary>The file. Chunk headers and the tail go here whatever <see cref="_writer"/> is.</summary>
+        private readonly BinaryWriter _sink;
 
         // Held rather than reached for through the writer: BinaryWriter drops its reference to the
         // stream when it is disposed, so BaseStream is null by the time this would need it.
         private readonly Stream _stream;
         private readonly bool _ownsStream;
-        private readonly List<long> _frameOffsets = new List<long>();
+
+        /// <summary>
+        /// Where a frame's first entry sits. Uncompressed that is an offset in the file; compressed
+        /// it is an offset inside a chunk, which is why the chunk has to be named alongside it.
+        /// </summary>
+        private struct FrameMark
+        {
+            public long frameNumber;
+            public int chunk;
+            public long offset;
+        }
+
+        private readonly List<FrameMark> _frames = new List<FrameMark>();
+
+        // Compression. When it is on, entries are built up in memory and go out a chunk at a time
+        // instead of straight to the stream; everything that writes an entry is unaware of this,
+        // because only where _writer points changes.
+        private readonly bool _chunked;
+        private readonly FrameChunkCodec _codec;
+        private readonly MemoryStream _pending;
+        private readonly List<long> _chunkOffsets = new List<long>();
+        private int _frameStart;
 
         // Frames that carried the inventory. These are the frames a seek can land on and know the
         // shape of the world.
@@ -48,30 +73,104 @@ namespace Lilium.RemoteControl.Frames.Recording
         private bool _closed;
 
         /// <summary>Frames written so far.</summary>
-        public int frameCount => _frameOffsets.Count;
+        public int frameCount => _frames.Count;
 
         /// <summary>Frames that carried the inventory, in order.</summary>
         public IReadOnlyList<long> keyframes => _keyframes;
 
-        /// <summary>Bytes written so far.</summary>
-        public long length => _stream.Position;
+        /// <summary>Chunks closed so far, or zero when this recording is not compressed.</summary>
+        public int chunkCount => _chunkOffsets.Count;
 
-        public FrameRecordWriter(Stream stream, in FrameRecordHeader header, bool leaveOpen = false)
+        /// <summary>Bytes written so far, counting whatever is still waiting to be compressed.</summary>
+        public long length => _stream.Position + (_pending?.Length ?? 0);
+
+        /// <summary>
+        /// Opens a recording.
+        ///
+        /// <paramref name="chunked"/> compresses the entries, which costs about a second of the take
+        /// if the process dies -- a chunk is only on disk once it is closed -- and buys roughly five
+        /// times the file size back. It is off by default because a recording being written is also
+        /// something another process can follow along, and an open chunk cannot be followed.
+        /// </summary>
+        public FrameRecordWriter(Stream stream, in FrameRecordHeader header, bool leaveOpen = false,
+                                 bool chunked = false)
         {
             if (stream == null) throw new ArgumentNullException(nameof(stream));
             if (!stream.CanWrite) throw new ArgumentException("Stream is not writable.", nameof(stream));
 
-            _writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
             _stream = stream;
             _ownsStream = !leaveOpen;
+            _chunked = chunked;
 
-            _writer.Write(FrameRecordFormat.kMagic);
-            _writer.Write(FrameRecordFormat.kVersion);
-            _writer.Write(header.frameRate.numerator);
-            _writer.Write(header.frameRate.denominator);
-            _writer.Write(header.startTicks);
-            _writer.Write(header.engineId ?? string.Empty);
-            _writer.Write(header.buildId ?? string.Empty);
+            _sink = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
+
+            _sink.Write(FrameRecordFormat.kMagic);
+            _sink.Write(FrameRecordFormat.kVersion);
+            _sink.Write(header.frameRate.numerator);
+            _sink.Write(header.frameRate.denominator);
+            _sink.Write(header.startTicks);
+            _sink.Write(header.engineId ?? string.Empty);
+            _sink.Write(header.buildId ?? string.Empty);
+            _sink.Write(chunked ? (byte)1 : (byte)0);
+
+            if (chunked)
+            {
+                _codec = new FrameChunkCodec();
+                _pending = new MemoryStream();
+                _writer = new BinaryWriter(_pending, Encoding.UTF8, leaveOpen: true);
+            }
+            else
+            {
+                _writer = _sink;
+            }
+        }
+
+        /// <summary>
+        /// Closes the chunk that ends where the frame now opening began, and carries whatever has
+        /// already been written for that frame over to the front of the next one.
+        ///
+        /// Called when a keyframe is written, so chunk starts and keyframes are the same places: a
+        /// seek lands on a keyframe, and expanding the chunk that opens there is all it costs.
+        /// </summary>
+        private void _CutChunkBeforeCurrentFrame()
+        {
+            if (!_chunked || _frameStart <= 0) return;
+
+            var buffer = _pending.GetBuffer();
+            var total = (int)_pending.Length;
+
+            _FlushChunk(new ReadOnlySpan<byte>(buffer, 0, _frameStart));
+
+            var carried = total - _frameStart;
+            Buffer.BlockCopy(buffer, _frameStart, buffer, 0, carried);
+            _pending.SetLength(carried);
+            _pending.Position = carried;
+
+            var mark = _frames[_frames.Count - 1];
+            mark.chunk = _chunkOffsets.Count;
+            mark.offset = 0;
+            _frames[_frames.Count - 1] = mark;
+
+            _frameStart = 0;
+        }
+
+        /// <summary>
+        /// Compresses a run of entries and writes it out.
+        ///
+        /// Length-prefixed the way an entry is, and for the same reason: a reader that does not have
+        /// the tail can still step through the chunks, and a chunk a crash cut in half can be told
+        /// from a whole one instead of being expanded into nonsense.
+        /// </summary>
+        private void _FlushChunk(ReadOnlySpan<byte> entries)
+        {
+            if (entries.Length == 0) return;
+
+            var compressed = _codec.Encode(entries, out var body);
+
+            _chunkOffsets.Add(_stream.Position);
+            _sink.Write(compressed);
+            _sink.Write(entries.Length);
+            _sink.Write(body, 0, compressed);
         }
 
         /// <summary>
@@ -86,7 +185,15 @@ namespace Lilium.RemoteControl.Frames.Recording
             _currentFrameNumber = frame.frameNumber;
             if (_firstFrameNumber < 0) _firstFrameNumber = frame.frameNumber;
 
-            _frameOffsets.Add(_stream.Position);
+            // Noted before the symbols rather than after: a frame's mapping-table growth goes out
+            // ahead of its boundary, and a seek that landed past it would meet ids it cannot resolve.
+            _frameStart = _chunked ? (int)_pending.Length : 0;
+            _frames.Add(new FrameMark
+            {
+                frameNumber = frame.frameNumber,
+                chunk = _chunked ? _chunkOffsets.Count : -1,
+                offset = _chunked ? _frameStart : _stream.Position,
+            });
 
             _WriteSymbolsSince(symbols);
 
@@ -110,6 +217,7 @@ namespace Lilium.RemoteControl.Frames.Recording
 
             _structureEpoch = structure.epoch;
             _keyframes.Add(_currentFrameNumber);
+            _CutChunkBeforeCurrentFrame();
 
             var count = structure.count;
             _BeginEntry(FrameEntryKind.Structure, 8 + 4 + count * (4 + 4 + 4 + 4));
@@ -231,33 +339,65 @@ namespace Lilium.RemoteControl.Frames.Recording
             if (_closed) return;
             if (_currentFrameNumber >= 0) EndFrame();
 
+            if (_chunked)
+            {
+                _writer.Flush();
+                _FlushChunk(new ReadOnlySpan<byte>(_pending.GetBuffer(), 0, (int)_pending.Length));
+                _pending.SetLength(0);
+            }
+
             var indexOffset = _stream.Position;
-            _writer.Write(_firstFrameNumber < 0 ? 0 : _firstFrameNumber);
-            _writer.Write(_frameOffsets.Count);
-            for (int i = 0; i < _frameOffsets.Count; i++) _writer.Write(_frameOffsets[i]);
+            _sink.Write(_firstFrameNumber < 0 ? 0 : _firstFrameNumber);
+            _sink.Write(_frames.Count);
+
+            // Uncompressed, a frame is found at a file offset and nothing else is needed. Compressed,
+            // the offset is inside a chunk, so the chunk comes with it -- and the frame number is
+            // written out rather than read back from the file, because reading one now means
+            // expanding a chunk for every step of a search that used to be a dozen small reads.
+            if (_chunked)
+            {
+                for (int i = 0; i < _frames.Count; i++)
+                {
+                    _sink.Write(_frames[i].frameNumber);
+                    _sink.Write(_frames[i].chunk);
+                    _sink.Write((int)_frames[i].offset);
+                }
+
+                _sink.Write(_chunkOffsets.Count);
+                for (int i = 0; i < _chunkOffsets.Count; i++) _sink.Write(_chunkOffsets[i]);
+            }
+            else
+            {
+                for (int i = 0; i < _frames.Count; i++) _sink.Write(_frames[i].offset);
+            }
 
             var keyframeOffset = _stream.Position;
-            _writer.Write(_keyframes.Count);
-            for (int i = 0; i < _keyframes.Count; i++) _writer.Write(_keyframes[i]);
+            _sink.Write(_keyframes.Count);
+            for (int i = 0; i < _keyframes.Count; i++) _sink.Write(_keyframes[i]);
 
             var mappingOffset = _stream.Position;
             var count = symbols?.count ?? 0;
-            _writer.Write(count);
-            for (int i = 0; i < count; i++) _writer.Write(symbols.Resolve(i));
+            _sink.Write(count);
+            for (int i = 0; i < count; i++) _sink.Write(symbols.Resolve(i));
 
-            _writer.Write(indexOffset);
-            _writer.Write(keyframeOffset);
-            _writer.Write(mappingOffset);
-            _writer.Write(FrameRecordFormat.kFooterMagic);
+            _sink.Write(indexOffset);
+            _sink.Write(keyframeOffset);
+            _sink.Write(mappingOffset);
+            _sink.Write(FrameRecordFormat.kFooterMagic);
 
-            _writer.Flush();
+            _sink.Flush();
             _closed = true;
         }
 
         public void Dispose()
         {
             _writer.Flush();
-            _writer.Dispose();
+            if (!ReferenceEquals(_writer, _sink)) _writer.Dispose();
+
+            _sink.Flush();
+            _sink.Dispose();
+
+            _pending?.Dispose();
 
             if (_ownsStream) _stream.Dispose();
         }

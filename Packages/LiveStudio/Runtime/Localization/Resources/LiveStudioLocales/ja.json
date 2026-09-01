@@ -60,6 +60,7 @@
   "REPLAY": "再生",
   "STOP_REPLAY": "再生停止",
   "FRAME_RECORDER_KEYFRAMEINTERVAL": "キーフレームの間隔（フレーム数）。シークが世界の形を拾いに戻る距離だけが変わり、値はどのフレームにも全量入っています。60fps なら 60 で 1 秒に 1 回。",
+  "FRAME_RECORDER_COMPRESS": "録画を圧縮します。実測で約 5 分の 1 になります。収録中のファイルを読みたいとき、またはクラッシュで末尾 1 秒を失うのがサイズより困るときはオフにしてください。",
   "MENU_FRAME_RECORDER": "ライブデータ",
   "SECTION_FRAME_RECORD_TITLE": "収録",
   "SECTION_FRAME_RECORD_SUBTITLE": "ライブデータのテイクを録る",

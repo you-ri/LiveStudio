@@ -25,6 +25,9 @@ namespace Lilium.RemoteControl.Editor
         public const string kIconButton = RemoteControlEditorStyles.kIconButton;
         public const string kSeparator = RemoteControlEditorStyles.kSeparatorHorizontal;
         public const string kMember = RemoteControlEditorStyles.kCard;
+        public const string kSubtle = RemoteControlEditorStyles.kSubtle;
+        public const string kWarning = RemoteControlEditorStyles.kWarning;
+        public const string kAccent = RemoteControlEditorStyles.kAccent;
 
         // --- Live Class Asset only ---
 
@@ -45,6 +48,8 @@ namespace Lilium.RemoteControl.Editor
         public const string kClassRowCount = "lca-class-row__count";
         public const string kMemberHeader = "lca-member__header";
         public const string kMemberTitle = "lca-member__title";
+        public const string kMemberLane = "lca-member__lane";
+        public const string kStateBudget = "lca-state-budget";
         public const string kMemberSectionDetail = "lca-member__section-detail";
         public const string kFooter = "lca-footer";
         public const string kFooterTitle = "lca-footer__title";

@@ -61,10 +61,15 @@ namespace Lilium.LiveStudio
         public static readonly LivePropertyRef keyframeInterval = LivePropertyRef.Create(
             FrameRecorderController.kLiveClassName, "_keyframeInterval", typeof(int));
 
-        [LiveFunction(label = "RECORD", icon = "fiber_manual_record", order = 15)]
+        [LiveField(order = 15)]
+        [Help("FRAME_RECORDER_COMPRESS")]
+        public static readonly LivePropertyRef compress = LivePropertyRef.Create(
+            FrameRecorderController.kLiveClassName, "_compress", typeof(bool));
+
+        [LiveFunction(label = "RECORD", icon = "fiber_manual_record", order = 16)]
         public static void Record() => FrameRecorderController.instance?.Record();
 
-        [LiveFunction(label = "STOP", icon = "stop", order = 16)]
+        [LiveFunction(label = "STOP", icon = "stop", order = 17)]
         public static void Stop() => FrameRecorderController.instance?.Stop();
 
         // === Replay ===

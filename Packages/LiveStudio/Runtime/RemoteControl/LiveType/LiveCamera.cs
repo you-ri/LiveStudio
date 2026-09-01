@@ -28,7 +28,7 @@ namespace Lilium.LiveStudio
     [LiveClass(Category = "Camera", Icon = "videocam")]
     [FormerlyNamedAs("ExposedCamera")]
     [MovedFrom(false, null, null, "ExposedCamera")]
-    public class LiveCamera : LiveUnityObjectProxy<LiveCamera, CinemachineCamera>, ILiveCamera
+    public partial class LiveCamera : LiveUnityObjectProxy<LiveCamera, CinemachineCamera>, ILiveCamera
     {
         public Guid guid => Guid.TryParse(id, out var guid) ? guid : Guid.Empty;
 
@@ -66,7 +66,15 @@ namespace Lilium.LiveStudio
         // the scene file stores the values, and OnAfterLiveDeserialize re-applies them on load.
         // Synced from the reference in OnEnable so a file without the key (older saves) applies a
         // no-op instead of clobbering the scene-authored priority with the field's default.
-        [SerializeField, LiveField, Hide]
+        //
+        // State lane, because a recording has to answer "which camera is live" at every frame, not
+        // only at the frames where a switch happened: the event lane carries no snapshot of the
+        // values a take started with, so scrubbing into the middle of a recording had no priority
+        // to restore and every camera looked untouched. Priority rather than a derived "is live"
+        // flag -- the Brain derives the live camera from priority, so the flag is the folded
+        // result and cannot be folded back (restoring false says nothing about which value to
+        // write, which breaks the ordering the next live switch depends on).
+        [SerializeField, LiveField(lane = FrameLane.State), Hide]
         [FormerlyNamedAs("priority")]
         private int _priority;
 

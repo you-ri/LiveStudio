@@ -1,4 +1,5 @@
 // Copyright (c) You-Ri, 2026
+using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -26,6 +27,11 @@ namespace Lilium.RemoteControl.Tests
             public Vector3 offset;
 
             public string label = string.Empty;
+
+            // Two of these are 128 bytes: more than the whole shared buffer the declared path used
+            // to have, which is what makes them useful here.
+            public Matrix4x4 wide;
+            public Matrix4x4 wider;
 
             public float driven { get; set; }
         }
@@ -80,6 +86,123 @@ namespace Lilium.RemoteControl.Tests
             };
 
             Assert.AreEqual(FrameLane.Event, member.ResolveLane(typeof(Fixture)));
+        }
+
+        /// <summary>Declares members on an asset the way the inspector does.</summary>
+        private static LiveClassAsset.TypeDefinition DefineAsset(params LiveClassAssetMember[] members)
+        {
+            var definition = new LiveClassAsset.TypeDefinition
+            {
+                typeName = typeof(Fixture).AssemblyQualifiedName,
+            };
+            definition.members.AddRange(members);
+            return definition;
+        }
+
+        [Test]
+        public void AValueTheLaneCannotMove_IsCarriedAsEvents()
+        {
+            // A string field: the default puts it on the state lane and the lane cannot move it.
+            // What matters is that the answer is the lane something actually carries it on -- the
+            // write path omits the event record whenever the registration says State, so a member
+            // registered State that the block leaves out is a member nothing carries at all.
+            var member = new LiveClassAssetMember { path = "label" };
+            var definition = DefineAsset(member);
+
+            Assert.AreEqual(FrameLane.State, member.ResolveLane(typeof(Fixture)));
+
+            var lane = definition.EffectiveLaneOf(member, typeof(Fixture), out var refusal);
+
+            Assert.AreEqual(FrameLane.Event, lane);
+            Assert.AreEqual(LiveClassAsset.TypeDefinition.LaneRefusal.UnsupportedType, refusal);
+        }
+
+        [Test]
+        public void AValueTheLaneCanMove_IsCarriedByTheLaneItAsksFor()
+        {
+            var member = new LiveClassAssetMember { path = "driven", lane = LiveClassAssetLane.State };
+            var definition = DefineAsset(member);
+
+            Assert.AreEqual(FrameLane.State, definition.EffectiveLaneOf(member, typeof(Fixture)));
+            Assert.AreEqual(typeof(float), member.ResolveValueType(typeof(Fixture)));
+        }
+
+        [Test]
+        public void ADeclarationLargerThanOneSharedBuffer_IsCarriedWhole()
+        {
+            // The declared path used to pack every type into one 112-byte buffer, so a declaration
+            // this size lost its tail. The block is built to the declaration now, so there is no
+            // size at which values start disappearing.
+            var liveClass = Declare(
+                Member("wide", FrameLane.State),
+                Member("wider", FrameLane.State),
+                Member("intensity", FrameLane.State));
+
+            var bridge = DeclaredStateBridge.Build(liveClass);
+
+            Assert.AreEqual(3, bridge.slotCount, "a member fell off the end of the block");
+            Assert.AreEqual(DeclaredStateBridge.kLayoutSize + 64 + 64 + 4, bridge.payloadSize);
+
+            var subject = new Fixture
+            {
+                wide = Matrix4x4.identity,
+                wider = Matrix4x4.Scale(new Vector3(2f, 3f, 4f)),
+                intensity = 9f,
+            };
+            var handle = LiveObjectRegistry.Create(subject, "wide-fixture");
+            Assert.IsNotNull(handle);
+
+            bridge.Capture(subject, 1, _state, default, 0);
+
+            subject.wide = default;
+            subject.wider = default;
+            subject.intensity = 0f;
+
+            Assert.IsTrue(bridge.Apply(subject, 1, _state));
+
+            Assert.AreEqual(Matrix4x4.identity, subject.wide);
+            Assert.AreEqual(Matrix4x4.Scale(new Vector3(2f, 3f, 4f)), subject.wider);
+            Assert.AreEqual(9f, subject.intensity, 1e-5f);
+        }
+
+        [Test]
+        public void ATypeOnlyPaysForWhatItDeclared()
+        {
+            // The point of sizing the block from the declaration: a type carrying three small
+            // values does not pay for the largest declaration anyone might write.
+            var liveClass = Declare(
+                Member("intensity", FrameLane.State),
+                Member("on", FrameLane.State),
+                Member("offset", FrameLane.State));
+
+            var bridge = DeclaredStateBridge.Build(liveClass);
+            var block = (DeclaredStateBlock)bridge.EnsureBlock(_state);
+
+            Assert.AreEqual(DeclaredStateBridge.kLayoutSize + 4 + 4 + 12, bridge.payloadSize);
+            Assert.AreEqual(DeclaredStateBlock.StrideFor(bridge.payloadSize), block.elementSize);
+            Assert.AreEqual(48, block.elementSize, "16 meta + 8 layout + 20 values, padded to 8");
+        }
+
+        [Test]
+        public void TwoDeclaredTypes_DoNotShareABlock()
+        {
+            // They used to, which is why a recording needed a layout hash to tell them apart. Now
+            // each one is its own block, named after the type it belongs to.
+            var bridge = DeclaredStateBridge.Build(Declare(Member("intensity", FrameLane.State)));
+            var block = bridge.EnsureBlock(_state);
+
+            Assert.AreEqual(typeof(Fixture), block.elementType);
+            Assert.AreEqual(typeof(Fixture).FullName, block.elementType.FullName,
+                "the block has to be named after the type so a recording can find it again");
+        }
+
+        [Test]
+        public void AnEnumOnTheLane_IsMeasuredByWhatItIsUnderneath()
+        {
+            // Marshal.SizeOf refuses an enum type outright on this runtime, so asking it directly
+            // would throw at registration -- for a declaration naming an enum, which is ordinary.
+            Assert.AreEqual(4, DeclaredStateBridge.SizeOf(typeof(System.DayOfWeek)));
+            Assert.IsTrue(DeclaredStateBridge.CanCarry(typeof(System.DayOfWeek)));
         }
 
         [Test]

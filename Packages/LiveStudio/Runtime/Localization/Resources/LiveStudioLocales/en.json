@@ -60,6 +60,7 @@
   "REPLAY": "Replay",
   "STOP_REPLAY": "Stop Replay",
   "FRAME_RECORDER_KEYFRAMEINTERVAL": "Frames between keyframes. Only affects how far a seek walks back for the shape of the world; values are complete on every frame either way. 60 is once a second at 60fps.",
+  "FRAME_RECORDER_COMPRESS": "Compresses the recording, measured about five times smaller. Turn it off to read a take while it is still being recorded, or when losing the last second to a crash matters more than size.",
   "MENU_FRAME_RECORDER": "Live Data",
   "SECTION_FRAME_RECORD_TITLE": "Record",
   "SECTION_FRAME_RECORD_SUBTITLE": "Capture a take of live data",

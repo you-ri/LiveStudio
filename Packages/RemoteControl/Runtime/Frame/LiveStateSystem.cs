@@ -358,9 +358,11 @@ namespace Lilium.RemoteControl.Frames
             var type = target.GetType();
             var bridge = StateBridgeRegistry.Find(type);
 
-            if (bridge != null)
+            // Counted only when it actually wrote. A bridge that refuses (nothing to read the
+            // object through, a layout that moved) still returns, and counting the attempt is what
+            // makes a frame carrying nothing report the same number as one carrying the world.
+            if (bridge != null && bridge.Capture(target, FrameGate.symbols.Intern(id), state, _source, time))
             {
-                bridge.Capture(target, FrameGate.symbols.Intern(id), state, _source, time);
                 captured++;
             }
 
@@ -397,7 +399,98 @@ namespace Lilium.RemoteControl.Frames
                 }
             }
 
+            // The components of an exposed GameObject. Special-cased rather than reached through
+            // the collection walk above, which refuses a member whose elements are UnityEngine
+            // objects -- rightly, for a member pointing at something registered elsewhere, and
+            // wrongly for these: an exposed component is deliberately not registered, so refusing
+            // to follow it here means nothing carries it at all.
+            //
+            // The save path special-cases the same member for the same reason (see
+            // FileScopedResolver), and this is the other half of that pair: what the live scene
+            // writes, the frame has to carry.
+            if (target is LiveGameObject gameObject) captured += _CaptureComponents(gameObject, id, state, time);
+
             return captured;
+        }
+
+        // Reused across the walk. GetComponents hands back a fresh array otherwise, once per
+        // exposed GameObject per frame, for the whole of a take.
+        private static readonly List<Component> _components = new List<Component>();
+
+        /// <summary>
+        /// Carries the exposed components of one GameObject, each under the address its owner
+        /// gives it.
+        ///
+        /// Composed from the owner rather than given an id of its own, for the reason
+        /// <see cref="ComposeNestedId"/> gives: a component has nothing to make a stable identity
+        /// out of, so an id would have to be invented at run time and a recording made yesterday
+        /// would name something that no longer exists.
+        /// </summary>
+        private static int _CaptureComponents(LiveGameObject owner, string ownerId,
+            StateBlockSet state, long time)
+        {
+            if (!(owner.reference is GameObject go) || go == null) return 0;
+
+            var captured = 0;
+            go.GetComponents(_components);
+            for (int i = 0; i < _components.Count; i++)
+            {
+                var component = _components[i];
+                if (component == null) continue;
+
+                // Registered in its own right -- an instance binding gave it an id, or a request
+                // reached it first. The registry walk carried it already, and carrying it here as
+                // well would put the same state in the frame twice under two addresses.
+                if (LiveObjectRegistry.FindByTarget(component) != null) continue;
+
+                var type = component.GetType();
+                var bridge = StateBridgeRegistry.Find(type);
+                if (bridge == null) continue;
+
+                var key = ComponentElementKey.Of(component);
+                if (key == null) continue;
+
+                var ownerSymbol = FrameGate.symbols.Intern(_ComposeComponentId(ownerId, key));
+
+                // A declared bridge reads through a handle, and this component has no registered
+                // one to be found by; a generated bridge reads the object directly and needs none.
+                bool wrote;
+                if (bridge is DeclaredStateBridge declared)
+                {
+                    var liveClass = LiveClass.Find(type);
+                    if (liveClass == null) continue;
+
+                    var handle = LiveObjectHandle.CreateUnregistered(liveClass, component);
+                    wrote = declared.Capture(in handle, ownerSymbol, state, _source, time);
+                }
+                else
+                {
+                    wrote = bridge.Capture(component, ownerSymbol, state, _source, time);
+                }
+
+                if (wrote) captured++;
+            }
+
+            // Held only for the length of the walk: the list is shared, and a reference left in it
+            // keeps a destroyed component's managed side alive until the next GameObject is walked.
+            _components.Clear();
+            return captured;
+        }
+
+        /// <summary>
+        /// The address of one exposed component, cached the way the other composed ids are: this
+        /// runs per component per frame, and building the same string each time is the cost being
+        /// avoided.
+        /// </summary>
+        private static string _ComposeComponentId(string ownerId, string key)
+        {
+            var slot = (ComponentElementKey.kMemberName, key);
+            if (!_elementSlots.TryGetValue(slot, out var composed))
+            {
+                composed = ComponentElementKey.kMemberName + "[" + key + "]";
+                _elementSlots[slot] = composed;
+            }
+            return ComposeNestedId(ownerId, composed);
         }
 
         /// <summary>Writes a set back onto one object and the live objects it holds.</summary>
@@ -438,6 +531,51 @@ namespace Lilium.RemoteControl.Frames
                 }
             }
 
+            if (target is LiveGameObject gameObject) applied += _ApplyComponents(gameObject, id, state);
+
+            return applied;
+        }
+
+        /// <inheritdoc cref="_CaptureComponents"/>
+        private static int _ApplyComponents(LiveGameObject owner, string ownerId, StateBlockSet state)
+        {
+            if (!(owner.reference is GameObject go) || go == null) return 0;
+
+            var applied = 0;
+            go.GetComponents(_components);
+            for (int i = 0; i < _components.Count; i++)
+            {
+                var component = _components[i];
+                if (component == null) continue;
+                if (LiveObjectRegistry.FindByTarget(component) != null) continue;
+
+                var type = component.GetType();
+                var bridge = StateBridgeRegistry.Find(type);
+                if (bridge == null) continue;
+
+                var key = ComponentElementKey.Of(component);
+                if (key == null) continue;
+
+                var ownerSymbol = FrameGate.symbols.Intern(_ComposeComponentId(ownerId, key));
+
+                bool wrote;
+                if (bridge is DeclaredStateBridge declared)
+                {
+                    var liveClass = LiveClass.Find(type);
+                    if (liveClass == null) continue;
+
+                    var handle = LiveObjectHandle.CreateUnregistered(liveClass, component);
+                    wrote = declared.Apply(in handle, ownerSymbol, state);
+                }
+                else
+                {
+                    wrote = bridge.Apply(component, ownerSymbol, state);
+                }
+
+                if (wrote) applied++;
+            }
+
+            _components.Clear();
             return applied;
         }
 

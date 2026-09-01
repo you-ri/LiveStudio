@@ -25,6 +25,17 @@ namespace Lilium.RemoteControl.Frames
         private static readonly Dictionary<string, Func<StateBlockSet, StateBlock>> _factories =
             new Dictionary<string, Func<StateBlockSet, StateBlock>>(StringComparer.Ordinal);
 
+        /// <summary>
+        /// Bumped whenever the table is emptied, so the per-type guards that skip re-announcing know
+        /// their announcement is gone.
+        ///
+        /// The guard has to be a static field per type to stay off the per-frame path, and a static
+        /// field outlives any amount of clearing -- which left a cleared registry unable to be
+        /// refilled by the very calls that filled it the first time. A version compare costs the
+        /// same as the bool it replaces.
+        /// </summary>
+        internal static int generation { get; private set; }
+
         /// <summary>Type names that can be given a block. For diagnostics.</summary>
         public static IReadOnlyCollection<string> knownTypeNames => _factories.Keys;
 
@@ -40,6 +51,23 @@ namespace Lilium.RemoteControl.Frames
             if (name == null || _factories.ContainsKey(name)) return;
 
             _factories[name] = set => set.GetOrCreate<T>();
+        }
+
+        /// <summary>
+        /// Announces a type whose state block is described by a declaration rather than by a struct.
+        ///
+        /// The width is part of the announcement because it is not discoverable from the name: a
+        /// declared block is as wide as its declaration says, and a player has to be able to build
+        /// one before it has seen a single frame.
+        /// </summary>
+        public static void RegisterDeclared(Type ownerType, int payloadSize)
+        {
+            var name = ownerType?.FullName;
+            if (name == null) return;
+
+            // Overwritten rather than kept: an asset can be edited and re-registered while the
+            // application runs, and the last declaration is the one a block should be built from.
+            _factories[name] = set => set.GetOrCreateDeclared(ownerType, payloadSize);
         }
 
         /// <summary>
@@ -61,7 +89,13 @@ namespace Lilium.RemoteControl.Frames
         /// type -- in one process, recording a type is itself an announcement, so there is no other
         /// way to stand in for a machine that only ever replays.
         /// </summary>
-        internal static void Clear() => _factories.Clear();
+        internal static void Clear()
+        {
+            // The generation moves first so that a type announcing itself again during the same
+            // frame is not filed under the generation that was just thrown away.
+            generation++;
+            _factories.Clear();
+        }
 
         // No reset at startup, deliberately. Producers announce their types from the same
         // initialization phase, and nothing orders the two -- a clear that happens to run second

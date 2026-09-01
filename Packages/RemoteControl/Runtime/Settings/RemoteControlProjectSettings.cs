@@ -98,7 +98,9 @@ namespace Lilium.RemoteControl
                     Debug.LogWarning($"[RemoteControl] Live class asset slot {i} of the project settings is empty.");
                     continue;
                 }
-                LiveClassAssetSystem.RegisterTypes(assets[i]);
+                // Permanent: an asset named here describes the app rather than a set that comes and
+                // goes, so a container that also lists it must not be able to unregister its types.
+                LiveClassAssetSystem.RegisterTypesPermanent(assets[i]);
             }
         }
 

@@ -30,6 +30,7 @@ MonoBehaviour:
         subtitle: 
         icon: 
       order: 0
+      lane: 2
       control:
         rid: -2
     - path: color
@@ -44,6 +45,7 @@ MonoBehaviour:
         subtitle: 
         icon: 
       order: 0
+      lane: 2
       control:
         rid: -2
     - path: intensity
@@ -58,6 +60,7 @@ MonoBehaviour:
         subtitle: 
         icon: 
       order: 0
+      lane: 2
       control:
         rid: 7801357924000000001
     - path: shadows
@@ -72,6 +75,22 @@ MonoBehaviour:
         subtitle: 
         icon: 
       order: 0
+      lane: 2
+      control:
+        rid: -2
+    - path: spotAngle
+      isFunction: 0
+      label: Spot Angle
+      help: 
+      persistable: 1
+      readOnly: 0
+      icon: 
+      section:
+        title: 
+        subtitle: 
+        icon: 
+      order: 0
+      lane: 2
       control:
         rid: -2
   - typeName: UnityEngine.Playables.PlayableDirector, UnityEngine.DirectorModule,
@@ -91,6 +110,7 @@ MonoBehaviour:
         subtitle: 
         icon: 
       order: 0
+      lane: 0
       control:
         rid: -2
     - path: Stop
@@ -105,6 +125,7 @@ MonoBehaviour:
         subtitle: 
         icon: 
       order: 0
+      lane: 0
       control:
         rid: -2
     - path: Pause
@@ -119,6 +140,7 @@ MonoBehaviour:
         subtitle: 
         icon: 
       order: 0
+      lane: 0
       control:
         rid: -2
   bindings: []
