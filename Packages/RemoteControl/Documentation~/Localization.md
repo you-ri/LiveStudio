@@ -65,6 +65,42 @@ Runtime/
 |---|---|
 | Sidebar / menu labels in the Remote Control UI | `label` field on the menu item |
 | Help text | The string passed to `[Help("...")]` |
+| The package's own editor windows | `RemoteControlEditorLocalization.Tr(key)` |
+
+---
+
+## Text that carries values
+
+Put the placeholders inside the translated text and pass the values in, rather than assembling a
+sentence from translated pieces — word order is the first thing a translation changes.
+
+```csharp
+// "{0} frames / {1} MB"
+label.text = LocalizationSystem.Format("LDS_RECORDED_DETAIL", frames, megabytes.ToString("0.0"));
+```
+
+Values that need a number format (`0.0`, `D3`) are formatted before they are passed, so a translator
+never has to carry a format specifier through.
+
+---
+
+## Editor windows
+
+The editor windows of this package read their text through `RemoteControlEditorLocalization`, which
+is the same `LocalizationSystem` with two differences:
+
+- **The files live outside `Resources`**, under `Editor/Localization/RemoteControlEditorLocales/`,
+  and are read through the asset database. They describe windows that exist only in the editor, so a
+  player build has no use for the bytes.
+- **A missing key falls back to English before it falls back to the key.** A window nobody has
+  translated yet is still readable; one full of `LDS_` tokens is not.
+
+The active language is the one the application and the remote app share — an editor window does not
+hold a language of its own.
+
+A window that resolves its labels once, when it builds a row, watches
+`RemoteControlEditorLocalization.generation` to learn that it has to ask again. It moves whenever the
+language or the table behind it changes, including when entering play mode empties the table.
 
 ---
 

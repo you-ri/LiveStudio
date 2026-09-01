@@ -114,6 +114,10 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
         private string _bannerShape;
 
         private bool _showTimecode;
+
+        /// <summary>The text generation this window was built with. See <see cref="_ApplyLanguage"/>.</summary>
+        private int _textGeneration = -1;
+
         private double _nextRedraw;
         private double _nextFolderPoll;
         private DateTime _folderStamp;
@@ -151,6 +155,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
             if (now < _nextRedraw) return;
             _nextRedraw = now + kRedrawInterval;
 
+            _ApplyLanguage();
+
             // Everything drawn here moves without anything in this window happening -- the take
             // grows while it records, the position walks while it replays -- so the whole chrome is
             // refreshed on the clock rather than on a change.
@@ -163,6 +169,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
         private void CreateGUI()
         {
             var root = rootVisualElement;
+
+            _textGeneration = RemoteControlEditorLocalization.generation;
 
             RemoteControlEditorStyles.Apply(root, kStyleSheet);
 
@@ -186,6 +194,33 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
             _DrawTakes();
         }
 
+        // --- words --------------------------------------------------------
+
+        private static string _Tr(string key) => RemoteControlEditorLocalization.Tr(key);
+
+        private static string _Tr(string key, params object[] args)
+            => RemoteControlEditorLocalization.Tr(key, args);
+
+        /// <summary>
+        /// Builds the window again when the language changed under it.
+        ///
+        /// The whole window rather than the labels that moved: most of the chrome is written once,
+        /// when it is built, and a language change is the one moment where every one of those has to
+        /// be asked again. Naming them individually is a list that goes stale the first time a
+        /// control is added -- and the flicker a rebuild costs is not worth avoiding for something
+        /// that happens when a person changes a setting.
+        /// </summary>
+        private void _ApplyLanguage()
+        {
+            if (_textGeneration == RemoteControlEditorLocalization.generation) return;
+
+            var root = rootVisualElement;
+            if (root == null || root.childCount == 0) return;
+
+            root.Clear();
+            CreateGUI();
+        }
+
         // --- chrome -------------------------------------------------------
 
         private VisualElement _BuildStatusBar()
@@ -194,7 +229,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
             bar.AddToClassList("lds-status");
 
             _positionLabel = _AddStatus(bar, "lds-num");
-            _positionLabel.tooltip = "クリックでフレーム番号とタイムコードを切り替えます";
+            _positionLabel.tooltip = _Tr("LD_POSITION_TOOLTIP");
             RemoteControlEditorFonts.ApplyMonospace(_positionLabel);
             _positionLabel.RegisterCallback<MouseDownEvent>(_ => _TogglePosition());
 
@@ -244,7 +279,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
             var transport = new VisualElement();
             transport.AddToClassList("lds-transport");
 
-            _recordButton = new Button(_ToggleRecord) { text = "● 収録" };
+            _recordButton = new Button(_ToggleRecord) { text = _Tr("LDS_RECORD") };
             _recordButton.AddToClassList("lds-record");
             transport.Add(_recordButton);
 
@@ -252,17 +287,17 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
             divider.AddToClassList("lds-divider");
             transport.Add(divider);
 
-            _playButton = new Button(_TogglePlay) { text = "▶ 再生" };
+            _playButton = new Button(_TogglePlay) { text = _Tr("LDS_PLAY") };
             _playButton.AddToClassList("lds-play");
             transport.Add(_playButton);
 
-            _holdButton = new Button(_ToggleHold) { text = "❙❙", tooltip = "一時停止" };
+            _holdButton = new Button(_ToggleHold) { text = "❙❙", tooltip = _Tr("LDS_HOLD_TOOLTIP") };
             transport.Add(_holdButton);
 
-            _stepBackButton = new Button(() => _Step(-1)) { text = "◀", tooltip = "1 フレーム戻る" };
+            _stepBackButton = new Button(() => _Step(-1)) { text = "◀", tooltip = _Tr("LDS_STEP_BACK_TOOLTIP") };
             transport.Add(_stepBackButton);
 
-            _stepForwardButton = new Button(() => _Step(1)) { text = "▶", tooltip = "1 フレーム進む" };
+            _stepForwardButton = new Button(() => _Step(1)) { text = "▶", tooltip = _Tr("LDS_STEP_FORWARD_TOOLTIP") };
             transport.Add(_stepForwardButton);
 
             _slider = new SliderInt(0, 0);
@@ -291,7 +326,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
             var header = new VisualElement();
             header.AddToClassList("lds-lane-header");
 
-            var title = new Label("収録ファイル");
+            var title = new Label(_Tr("LDS_TAKES_TITLE"));
             title.AddToClassList(RemoteControlEditorStyles.kTitle);
             header.Add(title);
 
@@ -304,11 +339,11 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
             spacer.AddToClassList(RemoteControlEditorStyles.kSpacer);
             header.Add(spacer);
 
-            header.Add(new Button(() => _RefreshTakes(force: true)) { text = "更新" });
+            header.Add(new Button(() => _RefreshTakes(force: true)) { text = _Tr("LDS_REFRESH") });
 
-            // Named for what it opens rather than what it is. "フォルダ" beside a list of files reads
+            // Named for what it opens rather than what it is. "Folder" beside a list of files reads
             // as a column header, and a button nobody reads as a button is a button nobody presses.
-            _revealButton = new Button(_RevealFolder) { text = "フォルダを開く" };
+            _revealButton = new Button(_RevealFolder) { text = _Tr("LDS_REVEAL_FOLDER") };
             header.Add(_revealButton);
 
             lane.Add(header);
@@ -359,7 +394,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
 
             if (string.IsNullOrEmpty(_selectedPath))
             {
-                EditorUtility.DisplayDialog("LiveData Sequencer", "再生する収録を選択してください。", "OK");
+                EditorUtility.DisplayDialog("LiveData Sequencer", _Tr("LDS_SELECT_TAKE"), "OK");
                 return;
             }
 
@@ -431,7 +466,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
                 string.Equals(take.path, controller.recordingPath, StringComparison.OrdinalIgnoreCase))
             {
                 EditorUtility.DisplayDialog("LiveData Sequencer",
-                    "収録中のファイルは削除できません。先に収録を停止してください。", "OK");
+                    _Tr("LDS_DELETE_WHILE_RECORDING"), "OK");
                 return;
             }
 
@@ -440,10 +475,11 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
                                     StringComparison.OrdinalIgnoreCase);
 
             var message = replayingThis
-                ? $"{take.name} を削除しますか?\n\n再生中の収録です。再生を停止してから削除します。\n元に戻せません。"
-                : $"{take.name} を削除しますか?\n\n元に戻せません。";
+                ? _Tr("LDS_DELETE_CONFIRM_REPLAYING", take.name)
+                : _Tr("LDS_DELETE_CONFIRM", take.name);
 
-            if (!EditorUtility.DisplayDialog("LiveData Sequencer", message, "削除", "キャンセル")) return;
+            if (!EditorUtility.DisplayDialog("LiveData Sequencer", message,
+                    _Tr("LDS_DELETE"), _Tr("LDS_CANCEL"))) return;
 
             // The replayer holds the file open, and Windows refuses a delete outright while a handle
             // is on it rather than deferring one -- so it has to let go first.
@@ -459,7 +495,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
                 // Shown rather than logged: the user asked for this file by name, so the answer
                 // belongs where they asked.
                 EditorUtility.DisplayDialog("LiveData Sequencer",
-                    $"削除できませんでした。\n\n{_Reason(exception)}", "OK");
+                    _Tr("LDS_DELETE_FAILED", _Reason(exception)), "OK");
                 return;
             }
 
@@ -490,8 +526,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
             if (recording)
             {
                 _SetPosition(controller.recordedFrames, rate);
-                _detailLabel.text =
-                    $"{controller.recordedFrames} フレーム / {controller.recordedMegabytes:0.0} MB";
+                _detailLabel.text = _Tr("LDS_RECORDED_DETAIL",
+                    controller.recordedFrames, controller.recordedMegabytes.ToString("0.0"));
             }
             else if (replaying)
             {
@@ -500,27 +536,29 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
 
                 var count = controller.replayFrameCount;
                 _detailLabel.text = count > 0
-                    ? $"{Math.Max(index, 0) + 1} / {count} フレーム"
-                    : "索引なし (先頭から再生)";
+                    ? _Tr("LDS_REPLAY_DETAIL", Math.Max(index, 0) + 1, count)
+                    : _Tr("LDS_NO_INDEX");
             }
             else
             {
                 _positionLabel.text = _showTimecode ? "--:--:--:--" : "--------";
-                _detailLabel.text = EditorApplication.isPlaying ? "待機中" : "停止中";
+                _detailLabel.text = _Tr(EditorApplication.isPlaying ? "LD_WAITING" : "LDS_STOPPED");
             }
 
             _rateLabel.text = $"{rate.AsDecimal():0.##} fps";
 
-            _SetPill(_recordPill, "収録", recording, "lds-pill-rec");
+            _SetPill(_recordPill, _Tr("LDS_PILL_RECORD"), recording, "lds-pill-rec");
 
             // Two classes on one pill, so whichever the state does not call for has to come off --
             // otherwise a replay that was paused once keeps the amber it was given.
-            _replayPill.text = held ? "再生 (一時停止)" : "再生";
+            _replayPill.text = _Tr(held ? "LDS_PILL_REPLAY_HELD" : "LDS_PILL_REPLAY");
             _replayPill.EnableInClassList("lds-pill-play", replaying && !held);
             _replayPill.EnableInClassList("lds-pill-hold", held);
             _replayPill.EnableInClassList(RemoteControlEditorStyles.kSubtle, !replaying);
 
-            _takeLabel.text = controller != null ? $"次のテイク {controller.take:D3}" : string.Empty;
+            _takeLabel.text = controller != null
+                ? _Tr("LDS_NEXT_TAKE", controller.take.ToString("D3"))
+                : string.Empty;
         }
 
         /// <summary>
@@ -560,20 +598,16 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
             // strings and the shape comparison below keeps working on it unchanged.
             if (!EditorApplication.isPlaying)
             {
-                _bannerText.Add("!収録と再生は再生モード中のみ動作します (ゲートはプレイヤーループから回ります)。");
+                _bannerText.Add("!" + _Tr("LDS_BANNER_PLAY_MODE_ONLY"));
             }
             else if (controller == null)
             {
-                _bannerText.Add(
-                    "#シーンに FrameRecorderController がありません。" +
-                    "収録・再生するアプリの GameObject に追加してください。");
+                _bannerText.Add("#" + _Tr("LDS_BANNER_NO_CONTROLLER"));
             }
 
             if (controller != null && controller.isReplaying && controller.replayFrameCount == 0)
             {
-                _bannerText.Add(
-                    "!この収録には索引がありません (収録が正常に終了していない可能性があります)。" +
-                    "先頭から再生はできますが、スクラブはできません。");
+                _bannerText.Add("!" + _Tr("LDS_BANNER_NO_INDEX"));
             }
 
             // The failure that costs a day: a recording carries a type the playing side cannot hold,
@@ -583,9 +617,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
                 var unknown = replayer.player.unknownStateTypes;
                 if (unknown.Count > 0)
                 {
-                    _bannerText.Add(
-                        "#この収録が運んでいる状態のうち、受け皿が無いものがあります: " +
-                        string.Join(", ", unknown) + "  → その分は再生されません。");
+                    _bannerText.Add("#" + _Tr("LD_UNKNOWN_STATE_TYPES", string.Join(", ", unknown)));
                 }
             }
 
@@ -620,11 +652,11 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
             var count = replaying ? controller.replayFrameCount : 0;
 
             _recordButton.SetEnabled(live);
-            _recordButton.text = recording ? "■ 停止" : "● 収録";
+            _recordButton.text = _Tr(recording ? "LDS_STOP" : "LDS_RECORD");
             _recordButton.EnableInClassList("lds-record-on", recording);
 
             _playButton.SetEnabled(live && (replaying || !string.IsNullOrEmpty(_selectedPath)));
-            _playButton.text = replaying ? "■ 停止" : "▶ 再生";
+            _playButton.text = _Tr(replaying ? "LDS_STOP" : "LDS_PLAY");
             _playButton.EnableInClassList("lds-play-on", replaying);
 
             _holdButton.SetEnabled(replaying);
@@ -715,7 +747,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
             // answer that is always the same.
             if (string.Equals(path, recordingPath, StringComparison.OrdinalIgnoreCase))
             {
-                take.problem = "収録中";
+                take.problem = _Tr("LDS_RECORDING");
                 return take;
             }
 
@@ -785,7 +817,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
                 : null;
             var recordingPath = controller != null && controller.isRecording ? controller.recordingPath : null;
 
-            _takeCount.text = $"{_takes.Count} 件";
+            _takeCount.text = _Tr("LDS_TAKE_COUNT", _takes.Count);
 
             // The folder moves with the open project, so the tooltip is the one place the path is
             // actually readable before pressing anything.
@@ -843,7 +875,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
 
             if (_takes.Count == 0)
             {
-                var empty = new Label($"収録がまだありません。\n{FrameRecorderController.recordingFolder}");
+                var empty = new Label(_Tr("LDS_NO_TAKES", FrameRecorderController.recordingFolder));
                 empty.AddToClassList("lds-empty");
                 empty.AddToClassList(RemoteControlEditorStyles.kSubtle);
                 _takeList.Add(empty);
@@ -886,7 +918,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
             view.size = _Column(row, "lds-col-size", _Bytes(take.bytes));
             _Column(row, "lds-col-date", take.modified.ToString("MM/dd HH:mm:ss"));
 
-            view.delete = new Button(() => _DeleteTake(take)) { text = "✕", tooltip = "削除" };
+            view.delete = new Button(() => _DeleteTake(take)) { text = "✕", tooltip = _Tr("LDS_DELETE") };
             view.delete.AddToClassList("lds-delete");
 
             // The row underneath selects on mouse down, and a double click on it plays. Neither is
@@ -903,7 +935,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
             {
                 // Readable, but cut short. Worth saying on the row rather than only once it is played
                 // and the scrubber turns out to be dead.
-                view.name.text += "  (未完了)";
+                view.name.text += "  " + _Tr("LD_INCOMPLETE");
                 view.name.AddToClassList(RemoteControlEditorStyles.kWarning);
             }
 

@@ -123,24 +123,11 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
         private const string kEmptyTypesPref = "Lilium.RemoteControl.LiveDataViewer.showEmptyTypes";
 
-        /// <summary>
-        /// Where frames are read from: the running gate, or a file. The window draws whichever is
-        /// active without knowing which it is -- a recording has to be readable with the same eyes
-        /// that watched it being made.
-        /// </summary>
-        private ILiveDataFeed _feed = LiveDataTapFeed.instance;
-
-        private LiveDataFileFeed _file;
-
-        private VisualElement _transport;
-        private Label _fileLabel;
-        private Label _frameLabel;
-        private Button _openButton;
-        private Button _closeButton;
-        private SliderInt _frameSlider;
-
         private double _nextRedraw;
         private long _drawnVersion = -1;
+
+        /// <summary>The text generation this window was built with. See <see cref="_ApplyLanguage"/>.</summary>
+        private int _textGeneration = -1;
 
         private string _stateShape;
         private string _structureShape;
@@ -175,10 +162,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         {
             EditorApplication.update -= _OnUpdate;
             LiveDataTap.Release();
-
-            // The file holds an open handle. Left behind, it keeps the recording locked against the
-            // recorder that would overwrite it.
-            _CloseFile();
         }
 
         private void _OnUpdate()
@@ -187,13 +170,14 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             if (now < _nextRedraw) return;
             _nextRedraw = now + kRedrawInterval;
 
+            _ApplyLanguage();
+
             // The gate's own counters move without a frame going by (a bypassed write, a detached
             // observer), so the header is refreshed on the clock rather than on the version.
             _DrawStatus();
-            _DrawTransport();
 
-            if (_drawnVersion == _feed.version) return;
-            _drawnVersion = _feed.version;
+            if (_drawnVersion == LiveDataTap.version) return;
+            _drawnVersion = LiveDataTap.version;
 
             _DrawBanners();
             _DrawState();
@@ -205,11 +189,13 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         private void CreateGUI()
         {
             var root = rootVisualElement;
+
+            _textGeneration = RemoteControlEditorLocalization.generation;
+
             RemoteControlEditorStyles.Apply(root, kStyleSheet);
             root.AddToClassList("ldv-root");
 
             root.Add(_BuildStatusBar());
-            root.Add(_BuildTransport());
 
             _banners = new VisualElement();
             root.Add(_banners);
@@ -229,7 +215,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
             _Invalidate();
             _DrawStatus();
-            _DrawTransport();
             _DrawBanners();
             _DrawState();
             _DrawStructure();
@@ -247,6 +232,33 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _bannerShape = null;
         }
 
+        // --- words --------------------------------------------------------
+
+        private static string _Tr(string key) => RemoteControlEditorLocalization.Tr(key);
+
+        private static string _Tr(string key, params object[] args)
+            => RemoteControlEditorLocalization.Tr(key, args);
+
+        /// <summary>
+        /// Builds the window again when the language changed under it.
+        ///
+        /// The whole window rather than the labels that moved: most of the chrome is written once,
+        /// when it is built, and a language change is the one moment where every one of those has to
+        /// be asked again. Naming them individually is a list that goes stale the first time a
+        /// control is added -- and the flicker a rebuild costs is not worth avoiding for something
+        /// that happens when a person changes a setting.
+        /// </summary>
+        private void _ApplyLanguage()
+        {
+            if (_textGeneration == RemoteControlEditorLocalization.generation) return;
+
+            var root = rootVisualElement;
+            if (root == null || root.childCount == 0) return;
+
+            root.Clear();
+            CreateGUI();
+        }
+
         // --- chrome -------------------------------------------------------
 
         private VisualElement _BuildStatusBar()
@@ -259,7 +271,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _showTimecode = EditorPrefs.GetBool(kTimecodePref, false);
 
             _positionLabel = _AddStatus(bar, "ldv-num");
-            _positionLabel.tooltip = "クリックでフレーム番号とタイムコードを切り替えます";
+            _positionLabel.tooltip = _Tr("LD_POSITION_TOOLTIP");
             RemoteControlEditorFonts.ApplyMonospace(_positionLabel);
             _positionLabel.RegisterCallback<MouseDownEvent>(_ => _TogglePosition());
 
@@ -413,7 +425,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             {
                 header.Add(new Button(() =>
                 {
-                    _feed.ClearEvents();
+                    LiveDataTap.ClearEvents();
                     _Invalidate();
                 })
                 { text = "Clear" });
@@ -459,164 +471,11 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             return pane;
         }
 
-        // --- transport ----------------------------------------------------
-
-        /// <summary>
-        /// The row that opens a recording and moves through it.
-        ///
-        /// Always present, even with no file open: the button that opens one has to be somewhere,
-        /// and a row that appears only once you already know the feature exists is a row nobody
-        /// finds. The parts that only mean something for a file are hidden until there is one.
-        /// </summary>
-        private VisualElement _BuildTransport()
-        {
-            _transport = new VisualElement();
-            _transport.AddToClassList("ldv-transport");
-
-            _openButton = new Button(_OpenFile) { text = "開く…" };
-            _transport.Add(_openButton);
-
-            _fileLabel = new Label();
-            _fileLabel.AddToClassList(RemoteControlEditorStyles.kEllipsis);
-            _fileLabel.AddToClassList("ldv-file");
-            _transport.Add(_fileLabel);
-
-            _transport.Add(new Button(() => _StepFrame(-1)) { text = "◀" });
-            _transport.Add(new Button(() => _StepFrame(1)) { text = "▶" });
-
-            _frameSlider = new SliderInt(0, 0);
-            _frameSlider.AddToClassList(RemoteControlEditorStyles.kGrow);
-
-            // Only a drag the user made moves the position. Writing the slider's value while drawing
-            // would otherwise feed straight back in as a seek and fight whatever is being dragged.
-            _frameSlider.RegisterValueChangedCallback(e =>
-            {
-                if (_file == null) return;
-                if (e.newValue == _file.frameIndex) return;
-
-                _file.Seek(e.newValue);
-                _Invalidate();
-            });
-            _transport.Add(_frameSlider);
-
-            _frameLabel = new Label();
-            _frameLabel.AddToClassList("ldv-num");
-            _frameLabel.AddToClassList("ldv-frame-index");
-            RemoteControlEditorFonts.ApplyMonospace(_frameLabel);
-            _transport.Add(_frameLabel);
-
-            _closeButton = new Button(_CloseFile) { text = "閉じる" };
-            _transport.Add(_closeButton);
-
-            return _transport;
-        }
-
-        private void _DrawTransport()
-        {
-            if (_transport == null) return;
-
-            var open = _file != null;
-
-            _Show(_fileLabel, open);
-            _Show(_frameSlider, open);
-            _Show(_frameLabel, open);
-            _Show(_closeButton, open);
-
-            for (int i = 0; i < _transport.childCount; i++)
-            {
-                var child = _transport[i];
-                if (child is Button button && (button.text == "◀" || button.text == "▶")) _Show(button, open);
-            }
-
-            if (!open) return;
-
-            var count = _file.frameCount;
-            var index = _file.frameIndex;
-
-            _fileLabel.text = _file.label;
-            _fileLabel.tooltip = _file.path;
-
-            // A file cut short is still readable, and saying so is the difference between "the
-            // recording is short" and "the recorder never closed it".
-            if (!_file.isComplete) _fileLabel.text += "  (未完了)";
-
-            _frameLabel.text = count == 0 ? "0 / 0" : $"{index + 1} / {count}";
-
-            if (_frameSlider.highValue != Mathf.Max(count - 1, 0))
-            {
-                _frameSlider.highValue = Mathf.Max(count - 1, 0);
-            }
-
-            if (_frameSlider.value != index && index >= 0) _frameSlider.SetValueWithoutNotify(index);
-        }
-
         private static void _Show(VisualElement element, bool visible)
         {
             if (element == null) return;
 
             element.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
-        }
-
-        private void _StepFrame(int delta)
-        {
-            if (_file == null) return;
-
-            _file.Seek(_file.frameIndex + delta);
-            _Invalidate();
-        }
-
-        private void _OpenFile()
-        {
-            var path = EditorUtility.OpenFilePanel("LiveData を開く", string.Empty, "livedata");
-            if (string.IsNullOrEmpty(path)) return;
-
-            var feed = new LiveDataFileFeed();
-            try
-            {
-                feed.Open(path);
-            }
-            catch (System.Exception exception)
-            {
-                // Shown rather than logged: the user asked for this file by name, so the answer
-                // belongs where they asked. A recording from another format says so here.
-                feed.Dispose();
-                EditorUtility.DisplayDialog("LiveData Viewer", exception.Message, "OK");
-                return;
-            }
-
-            _CloseFile();
-
-            _file = feed;
-            _feed = feed;
-            _ResetSelection();
-            _Invalidate();
-        }
-
-        private void _CloseFile()
-        {
-            if (_file == null) return;
-
-            _file.Dispose();
-            _file = null;
-            _feed = LiveDataTapFeed.instance;
-            _ResetSelection();
-            _Invalidate();
-        }
-
-        /// <summary>
-        /// Drops what was selected when the feed changes.
-        ///
-        /// Ids belong to whoever supplied the frame, so a selection carried across from a recording
-        /// into the live gate would name whatever happens to hold that number now.
-        /// </summary>
-        private void _ResetSelection()
-        {
-            _detailKind = DetailKind.None;
-            _selectedType = null;
-            _selectedOwnerId = FrameSymbolTable.kNone;
-            _selectedEventRowId = -1;
-            _selectedObjectId = FrameSymbolTable.kNone;
-            _feed.Select(null, FrameSymbolTable.kNone);
         }
 
         // --- status -------------------------------------------------------
@@ -625,14 +484,14 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         {
             if (_positionLabel == null) return;
 
-            var snapshot = _feed.snapshot;
+            var snapshot = LiveDataTap.snapshot;
 
             // Nothing has come through yet: the rate is still zero, and a timecode wants to divide
             // by it.
-            if (!_feed.hasFrame)
+            if (!LiveDataTap.hasFrame)
             {
                 _positionLabel.text = _showTimecode ? "--:--:--:--" : "--------";
-                _rateLabel.text = _feed.isAttached ? "待機中" : "未接続";
+                _rateLabel.text = _Tr(LiveDataTap.isAttached ? "LD_WAITING" : "LDV_DISCONNECTED");
             }
             else
             {
@@ -683,10 +542,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                 var unknown = replayer.player.unknownStateTypes;
                 if (unknown.Count > 0)
                 {
-                    _bannerText.Add(
-                        "この収録が運んでいる状態のうち、受け皿が無いものがあります: " +
-                        string.Join(", ", unknown) +
-                        "  → その分は再生されません。");
+                    _bannerText.Add(_Tr("LD_UNKNOWN_STATE_TYPES", string.Join(", ", unknown)));
                 }
             }
 
@@ -710,7 +566,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         {
             if (_stateList == null) return;
 
-            var snapshot = _feed.snapshot;
+            var snapshot = LiveDataTap.snapshot;
 
             // The shape is which types and owners are present. It changes when the world does, which
             // is rarely; the numbers beside them change every frame, and writing those into rows that
@@ -752,8 +608,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
             if (_topTab == TopTab.State)
             {
-                _stateCount.text =
-                    $"{snapshot.types.Count} types / {elementTotal} elements / {_Bytes(byteTotal)} per frame";
+                _stateCount.text = _Tr("LDV_STATE_SUMMARY",
+                    snapshot.types.Count, elementTotal, _Bytes(byteTotal));
             }
 
             _stateTab.text = $"State  {snapshot.types.Count}";
@@ -802,8 +658,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                 // Filtered down to nothing is not the same as having nothing, and it must not be
                 // reported as such -- that is the exact confusion this window was built against.
                 _stateList.Add(_Empty(hidden > 0
-                    ? $"表示できる項目がありません。空の型 {hidden} 件がフィルターで隠れています。"
-                    : "状態レーンには何もありません。状態を運ぶ型がまだ 1 つも宣言されていない可能性があります。"));
+                    ? _Tr("LDV_EMPTY_FILTERED", hidden)
+                    : _Tr("LDV_EMPTY_STATE_LANE")));
             }
         }
 
@@ -818,10 +674,10 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         {
             if (_emptyToggle == null) return;
 
-            _emptyToggle.text = _showEmptyTypes ? $"空を隠す  {empty}" : $"空を表示  {empty}";
+            _emptyToggle.text = _Tr(_showEmptyTypes ? "LDV_HIDE_EMPTY" : "LDV_SHOW_EMPTY", empty);
             _emptyToggle.tooltip = _showEmptyTypes
-                ? "要素 0 の型と、登録済みでブロックの無い型を一覧から隠します。"
-                : $"空の型 {empty} 件が隠れています。クリックで再表示します。";
+                ? _Tr("LDV_HIDE_EMPTY_TOOLTIP")
+                : _Tr("LDV_SHOW_EMPTY_TOOLTIP", empty);
             _emptyToggle.EnableInClassList("ldv-toggle-active", !_showEmptyTypes);
         }
 
@@ -833,7 +689,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                 if (!_TryFindElement(snapshot, view.typeName, view.ownerId, out var element)) continue;
 
                 view.owner.text = string.IsNullOrEmpty(element.owner)
-                    ? $"#{element.ownerId} (未解決)"
+                    ? _Tr("LDV_UNRESOLVED", element.ownerId)
                     : element.owner;
                 view.owner.EnableInClassList(RemoteControlEditorStyles.kWarning,
                     string.IsNullOrEmpty(element.owner));
@@ -841,7 +697,9 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                 view.source.text = string.IsNullOrEmpty(element.source) ? "-" : element.source;
 
                 var fresh = element.lastChangedFrame == snapshot.frameNumber;
-                view.age.text = fresh ? "now" : $"{snapshot.frameNumber - element.lastChangedFrame}f 前";
+                view.age.text = fresh
+                    ? "now"
+                    : _Tr("LDV_AGE_FRAMES", snapshot.frameNumber - element.lastChangedFrame);
                 view.age.EnableInClassList("ldv-fresh", fresh);
                 view.age.EnableInClassList("ldv-stale", !fresh);
                 view.age.tooltip = $"producer stamp: {element.time}";
@@ -955,7 +813,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             name.tooltip = typeName;
             head.Add(name);
 
-            var note = new Label("  登録済み・ブロックなし");
+            var note = new Label("  " + _Tr("LDV_DECLARED_NO_BLOCK"));
             note.AddToClassList(RemoteControlEditorStyles.kWarning);
             head.Add(note);
 
@@ -968,7 +826,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _detailKind = DetailKind.StateElement;
             _selectedType = typeName;
             _selectedOwnerId = ownerId;
-            _feed.Select(typeName, ownerId);
+            LiveDataTap.Select(typeName, ownerId);
             _Invalidate();
         }
 
@@ -985,7 +843,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         {
             if (_structureList == null) return;
 
-            var snapshot = _feed.snapshot;
+            var snapshot = LiveDataTap.snapshot;
 
             _structureTab.text = $"Structure  {snapshot.structure.Count}";
 
@@ -1025,8 +883,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
             if (_structureList.childCount == 0)
             {
-                _structureList.Add(_Empty(
-                    "構造レーンは空です。フレームに載る対象がまだ 1 つも登録されていません。"));
+                _structureList.Add(_Empty(_Tr("LDV_EMPTY_STRUCTURE_LANE")));
             }
         }
 
@@ -1038,7 +895,9 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                 if (!_TryFindObject(snapshot, view.objectId, out var entry)) continue;
 
                 view.parent.text = string.IsNullOrEmpty(entry.parentName)
-                    ? (entry.parentId == FrameSymbolTable.kNone ? "-" : $"#{entry.parentId} (未解決)")
+                    ? (entry.parentId == FrameSymbolTable.kNone
+                        ? "-"
+                        : _Tr("LDV_UNRESOLVED", entry.parentId))
                     : entry.parentName;
 
                 view.parent.EnableInClassList(RemoteControlEditorStyles.kWarning,
@@ -1109,12 +968,12 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
         private void _BuildStructureDetail()
         {
-            var snapshot = _feed.snapshot;
+            var snapshot = LiveDataTap.snapshot;
 
             if (!_TryFindObject(snapshot, _selectedObjectId, out var entry))
             {
                 _detailTitle.text = $"#{_selectedObjectId}";
-                _rows.Add(new LiveDataValueRow(string.Empty, "この対象はもうフレームにありません。"));
+                _rows.Add(new LiveDataValueRow(string.Empty, _Tr("LDV_OBJECT_GONE")));
                 return;
             }
 
@@ -1123,18 +982,18 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                 : entry.objectName;
 
             _rows.Add(new LiveDataValueRow("id", string.IsNullOrEmpty(entry.objectName)
-                ? $"#{entry.objectId} (シンボル表にありません)"
+                ? _Tr("LDV_NOT_IN_SYMBOLS", entry.objectId)
                 : entry.objectName));
             _rows.Add(new LiveDataValueRow("type", string.IsNullOrEmpty(entry.typeName) ? "-" : entry.typeName));
             _rows.Add(new LiveDataValueRow("parent",
-                entry.parentId == FrameSymbolTable.kNone ? "(なし)" : entry.parentName));
+                entry.parentId == FrameSymbolTable.kNone ? _Tr("LD_NONE") : entry.parentName));
 
             // Whether a replay can stand this back up. Empty is common and not an error -- an object
             // that was in the scene from the start is listed so its values have an owner -- but it
             // also means scrubbing back past this object's spawn will not remove it, and that is not
             // visible anywhere else.
             _rows.Add(new LiveDataValueRow("recipe",
-                string.IsNullOrEmpty(entry.recipe) ? "(なし・再生では作り直されません)" : entry.recipe));
+                string.IsNullOrEmpty(entry.recipe) ? _Tr("LDV_RECIPE_NONE") : entry.recipe));
 
             // What the inventory says exists, against what the state lane is actually carrying for
             // it. An object with no state is not an error -- most have none -- but an object that
@@ -1155,7 +1014,9 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                     _rows.Add(new LiveDataValueRow(
                         _ShortTypeName(type.typeName),
                         $"{(string.IsNullOrEmpty(element.source) ? "-" : element.source)}  " +
-                        (fresh ? "now" : $"{snapshot.frameNumber - element.lastChangedFrame}f 前"),
+                        (fresh
+                            ? "now"
+                            : _Tr("LDV_AGE_FRAMES", snapshot.frameNumber - element.lastChangedFrame)),
                         depth: 1));
 
                     carried++;
@@ -1165,7 +1026,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
             if (carried == 0)
             {
-                _rows.Add(new LiveDataValueRow(string.Empty, "この対象を運ぶ状態はありません。", depth: 1));
+                _rows.Add(new LiveDataValueRow(string.Empty, _Tr("LDV_NO_STATE_FOR_OBJECT"), depth: 1));
             }
         }
 
@@ -1175,8 +1036,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         {
             if (_eventList == null) return;
 
-            var count = _feed.eventCount;
-            var newest = count == 0 ? -1 : _feed.GetEvent(count - 1).sequence;
+            var count = LiveDataTap.eventCount;
+            var newest = count == 0 ? -1 : LiveDataTap.GetEvent(count - 1).sequence;
 
             // Events only arrive, so the list is rebuilt when one does and left alone otherwise.
             var shape = $"{count}:{newest}:{_selectedEventRowId}:{_detailKind}:{RemoteControlEditorFonts.generation}";
@@ -1185,55 +1046,63 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _eventShape = shape;
 
             _eventList.Clear();
-            _eventCount.text = $"{count} records";
+            _eventCount.text = _Tr("LDV_EVENT_COUNT", count);
 
             if (count == 0)
             {
-                _eventList.Add(_Empty("入力はまだ通っていません。"));
+                _eventList.Add(_Empty(_Tr("LDV_NO_EVENTS")));
                 return;
             }
 
             // Newest first: what just happened is what is being looked for.
             for (int i = count - 1; i >= 0; i--)
             {
-                _eventList.Add(_BuildEventRow(_feed.GetEvent(i)));
+                _eventList.Add(_BuildEventRow(LiveDataTap.GetEvent(i)));
             }
         }
 
         private VisualElement _BuildEventRow(EventRow evt)
         {
             var line = new VisualElement();
-            line.AddToClassList("ldv-evt");
+            line.AddToClassList("ldv-evt-row");
             line.EnableInClassList("ldv-evt-faulted", evt.faulted);
             line.EnableInClassList("ldv-element-selected",
                 _detailKind == DetailKind.Event && evt.rowId == _selectedEventRowId);
+
+            // Frame, source and verb share one line; the target takes the next one on its own,
+            // since a target path is long enough to crowd out everything beside it.
+            var head = new VisualElement();
+            head.AddToClassList("ldv-evt");
+            line.Add(head);
 
             var frame = new Label(evt.frameNumber.ToString("D8"));
             frame.AddToClassList("ldv-col-frame");
             frame.AddToClassList(RemoteControlEditorStyles.kSubtle);
             RemoteControlEditorFonts.ApplyMonospace(frame);
-            line.Add(frame);
+            head.Add(frame);
 
             var source = new Label(string.IsNullOrEmpty(evt.source) ? "-" : evt.source);
             source.AddToClassList("ldv-col-mid");
             source.AddToClassList(RemoteControlEditorStyles.kSubtle);
-            line.Add(source);
+            head.Add(source);
 
             var verb = new Label(string.IsNullOrEmpty(evt.verb) ? evt.kind.ToString() : evt.verb);
-            verb.AddToClassList("ldv-col-narrow");
-            line.Add(verb);
-
-            var target = new Label(evt.target);
-            target.AddToClassList(RemoteControlEditorStyles.kGrow);
-            target.AddToClassList(RemoteControlEditorStyles.kEllipsis);
-            line.Add(target);
+            verb.AddToClassList(RemoteControlEditorStyles.kGrow);
+            verb.AddToClassList(RemoteControlEditorStyles.kEllipsis);
+            head.Add(verb);
 
             if (evt.truncated)
             {
-                var cut = new Label("切り詰め");
+                var cut = new Label(_Tr("LDV_TRUNCATED"));
                 cut.AddToClassList(RemoteControlEditorStyles.kWarning);
-                line.Add(cut);
+                head.Add(cut);
             }
+
+            var target = new Label(evt.target);
+            target.AddToClassList("ldv-evt-target");
+            target.AddToClassList(RemoteControlEditorStyles.kEllipsis);
+            target.tooltip = evt.target;
+            line.Add(target);
 
             var rowId = evt.rowId;
             line.RegisterCallback<MouseDownEvent>(_ => _SelectEvent(rowId));
@@ -1243,10 +1112,10 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
         private bool _TryFindEvent(long rowId, out EventRow evt)
         {
-            var count = _feed.eventCount;
+            var count = LiveDataTap.eventCount;
             for (int i = count - 1; i >= 0; i--)
             {
-                var candidate = _feed.GetEvent(i);
+                var candidate = LiveDataTap.GetEvent(i);
                 if (candidate.rowId != rowId) continue;
 
                 evt = candidate;
@@ -1278,7 +1147,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                     break;
                 default:
                     _detailTitle.text = string.Empty;
-                    _rows.Add(new LiveDataValueRow(string.Empty, "左の行を選ぶと、その中身がここに出ます。"));
+                    _rows.Add(new LiveDataValueRow(string.Empty, _Tr("LDV_DETAIL_HINT")));
                     break;
             }
 
@@ -1287,14 +1156,14 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
         private void _BuildStateDetail()
         {
-            var snapshot = _feed.snapshot;
+            var snapshot = LiveDataTap.snapshot;
             _detailTitle.text = $"{_ShortTypeName(_selectedType)}  ({snapshot.selectedValueLength} B)";
 
             if (snapshot.selectedType != _selectedType ||
                 snapshot.selectedOwnerId != _selectedOwnerId ||
                 snapshot.selectedValueLength == 0)
             {
-                _rows.Add(new LiveDataValueRow(string.Empty, "選んだ要素はこのフレームにありません。"));
+                _rows.Add(new LiveDataValueRow(string.Empty, _Tr("LDV_ELEMENT_NOT_IN_FRAME")));
                 return;
             }
 
@@ -1326,8 +1195,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         {
             if (!_TryFindEvent(_selectedEventRowId, out var evt))
             {
-                _detailTitle.text = "選択中の入力";
-                _rows.Add(new LiveDataValueRow(string.Empty, "この入力はもう保持していません。"));
+                _detailTitle.text = _Tr("LDV_SELECTED_EVENT");
+                _rows.Add(new LiveDataValueRow(string.Empty, _Tr("LDV_EVENT_DROPPED")));
                 return;
             }
 
@@ -1340,8 +1209,11 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _rows.Add(new LiveDataValueRow("verb", string.IsNullOrEmpty(evt.verb) ? "-" : evt.verb));
             _rows.Add(new LiveDataValueRow("target", evt.target));
 
-            if (evt.faulted) _rows.Add(new LiveDataValueRow("状態", "適用に失敗しました"));
-            if (evt.truncated) _rows.Add(new LiveDataValueRow("状態", "記録時に payload が切り詰められました"));
+            if (evt.faulted) _rows.Add(new LiveDataValueRow(_Tr("LDV_ROW_STATUS"), _Tr("LDV_APPLY_FAILED")));
+            if (evt.truncated)
+            {
+                _rows.Add(new LiveDataValueRow(_Tr("LDV_ROW_STATUS"), _Tr("LDV_PAYLOAD_TRUNCATED")));
+            }
 
             _AddPayloadRows(in evt);
         }
@@ -1357,7 +1229,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         {
             if (evt.payload == null || evt.payload.Length == 0)
             {
-                _rows.Add(new LiveDataValueRow("payload", "(なし)"));
+                _rows.Add(new LiveDataValueRow("payload", _Tr("LD_NONE")));
                 return;
             }
 
@@ -1375,7 +1247,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             if (type == null)
             {
                 _rows.Add(new LiveDataValueRow(string.Empty,
-                    $"このビルドに {evt.payloadTypeName} がありません。", depth: 1));
+                    _Tr("LDV_TYPE_MISSING_IN_BUILD", evt.payloadTypeName), depth: 1));
                 _rows.Add(new LiveDataValueRow(string.Empty, _Hex(evt.payload), depth: 1));
                 return;
             }

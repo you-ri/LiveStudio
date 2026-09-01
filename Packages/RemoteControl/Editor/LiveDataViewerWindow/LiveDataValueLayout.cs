@@ -424,13 +424,13 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             var shown = Math.Min(Math.Min(field.rawLength, kHexPreview), Math.Max(0, length - field.offset));
 
             var text = new System.Text.StringBuilder();
-            text.Append(field.rawLength).Append(" バイト  ");
+            text.Append(RemoteControlEditorLocalization.Tr("LDV_RAW_BYTES", field.rawLength)).Append("  ");
             for (int i = 0; i < shown; i++) text.Append(bytes[field.offset + i].ToString("X2")).Append(' ');
             if (field.rawLength > shown) text.Append("…");
 
             // Not a failure -- just nothing said what they are. Naming the way to say it beats a
             // reader working out that the tool has a gap.
-            text.Append("  [LiveArray] を付けると中身で表示されます");
+            text.Append("  ").Append(RemoteControlEditorLocalization.Tr("LDV_RAW_HINT"));
             return text.ToString();
         }
 

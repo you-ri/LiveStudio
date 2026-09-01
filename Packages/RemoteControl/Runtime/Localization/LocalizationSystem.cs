@@ -23,6 +23,19 @@ namespace Lilium.RemoteControl
 
         private static string _currentLanguage;
 
+        private static int _generation;
+
+        /// <summary>
+        /// Bumped whenever the answer <see cref="Translate"/> gives could have changed -- the active
+        /// language, or the table behind it.
+        ///
+        /// For readers that resolve a key once and keep the result: an editor window writes a label
+        /// when it builds the row, and never looks at the key again. Watching this is how such a
+        /// reader learns it has to ask again. The count only ever moves forward, so a stale value
+        /// never compares equal to a current one.
+        /// </summary>
+        public static int generation => _generation;
+
         /// <summary>
         /// 現在の言語コード（例: "en", "ja"）
         /// </summary>
@@ -37,7 +50,10 @@ namespace Lilium.RemoteControl
             set
             {
                 if (string.IsNullOrEmpty(value)) return;
+                if (_currentLanguage == value) return;
+
                 _currentLanguage = value;
+                _generation++;
                 PlayerPrefs.SetString(kPlayerPrefsKey, value);
                 PlayerPrefs.Save();
             }
@@ -98,6 +114,40 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
+        /// Looks a key up in one named language, without falling back to anything.
+        ///
+        /// For callers that want to choose their own fallback -- the editor windows read the active
+        /// language first and English second, because a window whose every label is a key is worse
+        /// than one written in a language the reader did not ask for.
+        /// </summary>
+        public static bool TryTranslate(string language, string key, out string text)
+        {
+            text = null;
+
+            if (string.IsNullOrEmpty(language) || string.IsNullOrEmpty(key)) return false;
+
+            return _translations.TryGetValue(language, out var dict) && dict.TryGetValue(key, out text);
+        }
+
+        /// <summary>
+        /// Translates a key whose text carries values, and fills them in.
+        ///
+        /// The placeholders belong in the translated text rather than around it: word order is the
+        /// first thing a translation changes, so a sentence assembled from translated pieces reads
+        /// correctly in the language it was written for and nowhere else.
+        ///
+        /// Formatting is left to <see cref="string.Format(string, object[])"/>, so a translation
+        /// carrying a broken placeholder throws here rather than quietly printing the wrong thing.
+        /// That is the loud failure the locale file wants: the fix is in the file, not at the call.
+        /// </summary>
+        public static string Format(string key, params object[] args)
+        {
+            var text = Translate(key);
+
+            return args == null || args.Length == 0 ? text : string.Format(text, args);
+        }
+
+        /// <summary>
         /// 外部パッケージから翻訳データを登録する。
         /// JSON形式: { "key": "translated text", ... }
         /// 既存のキーは上書きされる。
@@ -127,6 +177,8 @@ namespace Lilium.RemoteControl
 
                 if (!_availableLanguages.Contains(language))
                     _availableLanguages.Add(language);
+
+                _generation++;
             }
             catch (Exception ex)
             {
@@ -166,6 +218,11 @@ namespace Lilium.RemoteControl
             _currentLanguage = null;
             _translations = new Dictionary<string, Dictionary<string, string>>();
             _availableLanguages = new List<string>();
+
+            // Counted as a change like any other: entering play mode empties the table, and a reader
+            // holding text resolved in edit mode has to notice that its keys are gone. Bumped rather
+            // than reset, so the number an editor window is holding cannot match by accident.
+            _generation++;
         }
 #endif
     }
