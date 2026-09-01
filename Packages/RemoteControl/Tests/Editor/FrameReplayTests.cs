@@ -84,6 +84,11 @@ namespace Lilium.RemoteControl.Tests
         {
             var stream = new MemoryStream();
             var recorder = new FrameRecorder();
+            // These tests are about the events they submit, so the recorder is asked not to add the
+            // values it restates into each keyframe (see LiveEventRestateSystem): the editor session
+            // this runs in has live objects of its own, and their values would show up as events
+            // nothing in the test wrote.
+            recorder.restateValues = false;
 
             recorder.Start(stream, leaveOpen: true);
             FrameGate.sink = recorder;
@@ -219,10 +224,11 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void Seeking_AppliesOnlyThatFramesInputs()
+        public void Seeking_AppliesTheLastWriteToATarget_NotEveryOneWalkedOver()
         {
-            // The frames walked through on the way are already accounted for in the state that was
-            // restored; applying their events again would be a second helping of the same change.
+            // The value as of the destination is what is wanted, not the history of how it got
+            // there: putting every intermediate write back would run the same setter once per frame
+            // walked, and a setter that loads an asset would load it once per frame.
             var next = 0;
             var bytes = Record(6, () =>
             {
@@ -239,6 +245,43 @@ namespace Lilium.RemoteControl.Tests
                 Assert.AreEqual(4, replayer.frameNumber);
                 Assert.AreEqual(1, replayer.appliedEventCount);
                 Assert.AreEqual("4", applier.applied[0].text);
+            }
+        }
+
+        [Test]
+        public void Seeking_PutsBackAValueWrittenBeforeThatFrame()
+        {
+            // On the event lane the value at a frame is the last write at or before it, so a seek
+            // has to walk back to the keyframe and collect. Applying only the destination frame's
+            // own records -- which is what this used to do -- left every member nobody happened to
+            // touch on that one frame at whatever the machine was already holding.
+            var next = 0;
+            var bytes = Record(6, () =>
+            {
+                var value = (next++).ToString();
+                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", value,
+                    () => true);
+
+                // Written once, early, and never again.
+                if (value == "1")
+                {
+                    FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/near",
+                        "0.3", () => true);
+                }
+            });
+
+            var applier = new RecordingApplier();
+            using (var replayer = new FrameReplayer(new MemoryStream(bytes), applier))
+            {
+                Assert.IsTrue(replayer.TrySeek(4));
+
+                Assert.AreEqual(2, replayer.appliedEventCount, "one write per target was expected");
+
+                var near = applier.applied.Find(e => e.target == "/live/object/cam/near");
+                Assert.AreEqual("0.3", near.text, "a value set before the seek point was lost");
+
+                var fov = applier.applied.Find(e => e.target == "/live/object/cam/fov");
+                Assert.AreEqual("4", fov.text);
             }
         }
 

@@ -601,14 +601,14 @@ namespace Lilium.RemoteControl.Frames
 
                 if (member.lane == FrameLane.State) declaresState = true;
 
-                if (_HoldsNestedLiveObject(member))
+                if (HoldsNestedLiveObject(member))
                 {
                     if (nested == null) nested = new List<int>();
                     nested.Add(i);
                     continue;
                 }
 
-                if (_HoldsLiveObjectCollection(member))
+                if (HoldsLiveObjectCollection(member))
                 {
                     if (collections == null) collections = new List<int>();
                     collections.Add(i);
@@ -642,7 +642,7 @@ namespace Lilium.RemoteControl.Frames
         /// the per-element address, which is why this is for collections of objects (an operation, a
         /// deck tile, an expression) and not for a curve of floats.
         /// </summary>
-        private static bool _HoldsLiveObjectCollection(LivePropertyType member)
+        internal static bool HoldsLiveObjectCollection(LivePropertyType member)
         {
             if (member.isArrayElement || member.isStatic) return false;
 
@@ -663,7 +663,7 @@ namespace Lilium.RemoteControl.Frames
             return LiveClass.Find(elementType) != null;
         }
 
-        private static bool _HoldsNestedLiveObject(LivePropertyType member)
+        internal static bool HoldsNestedLiveObject(LivePropertyType member)
         {
             if (member.isArrayElement || member.isStatic) return false;
             if (member.isLivePropertyReference) return false;

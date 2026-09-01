@@ -11,11 +11,15 @@ using Lilium.RemoteControl.Frames.Recording;
 namespace Lilium.RemoteControl.Tests
 {
     /// <summary>
-    /// An event records the value it applied, not the request that asked for it.
+    /// An event records its value as bytes rather than as the text that carried it.
     ///
     /// A slider sends the same property sixty times a second. Kept as digits, every one of those
     /// costs a parse to read back and loses the last bits on the way; kept as bytes it is the same
     /// memory the property holds, and a viewer can walk it with the machinery it walks state with.
+    ///
+    /// The value kept is the one the write asked for. Reading it back out of the property instead
+    /// looks equivalent and is not: a getter is free to be a view over something the write only
+    /// starts, and one caught mid-reconcile reports the value that is on its way out.
     /// </summary>
     [TestFixture]
     public class FramePayloadTests
@@ -199,6 +203,66 @@ namespace Lilium.RemoteControl.Tests
             var bytes = new byte[record.payloadLength];
             record.CopyPayloadTo(bytes);
             Assert.AreEqual(35f, BitConverter.ToSingle(bytes, 0), 0f);
+        }
+
+        [LiveClass("DeferredViewSubject")]
+        public class DeferredViewSubject
+        {
+            public string requested = string.Empty;
+
+            /// <summary>What the getter reports until something else catches up.</summary>
+            public string reported = "old";
+
+            [LiveProperty]
+            public string selection
+            {
+                get => reported;
+                set => requested = value;
+            }
+        }
+
+        [Test]
+        public void AWriteToAViewThatHasNotCaughtUp_RecordsWhatWasAsked()
+        {
+            // The shape that produced a wrong recording: selecting an avatar raises the chosen asset
+            // and leaves turning the old one off to a reconcile that runs later, so the getter still
+            // named the previous avatar when the write reached it. Read back, the record said the
+            // avatar had been re-selected; replayed, it put the wrong one back.
+            LiveClass.RegisterFromAttributes<DeferredViewSubject>();
+
+            var subject = new DeferredViewSubject();
+            var handle = LiveObjectRegistry.Create(typeof(DeferredViewSubject), subject, "deferred-view");
+
+            const string target = "/live/object/deferred-view/selection";
+            const string body = "{\"value\":\"new\"}";
+
+            try
+            {
+                FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, body,
+                    () => LiveObjectHandler.ApplyRecordedOperation(
+                        null, DefaultLiveObjectResolver.Instance, "PUT", target, body, out _, out _),
+                    verb: "PUT");
+
+                FrameGate.Pump();
+
+                Assert.AreEqual("new", subject.requested, "the write did not reach the property");
+                Assert.AreEqual("old", subject.reported, "the view is meant to be stale here");
+
+                using var frame = new EventFrame();
+                Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
+
+                var record = frame[0];
+                Assert.AreEqual(EventPayload.kStringTypeName, FrameGate.symbols.Resolve(record.payloadTypeId));
+
+                var bytes = new byte[record.payloadLength];
+                record.CopyPayloadTo(bytes);
+                Assert.AreEqual("new", EventPayload.ReadString(bytes),
+                    "the record kept what the getter still reported rather than what was asked for");
+            }
+            finally
+            {
+                handle?.Unregister();
+            }
         }
 
         [Test]

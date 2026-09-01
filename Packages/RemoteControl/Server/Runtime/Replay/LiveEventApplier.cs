@@ -57,7 +57,8 @@ namespace Lilium.RemoteControl.Replay
             if (evt.payloadIsString)
             {
                 if (LiveObjectHandler.ApplyRecordedValue(
-                        _container, _resolver, evt.target, evt.text, out status, out message))
+                        _container, _resolver, evt.target, evt.text, out status, out message,
+                        evt.reemitted))
                 {
                     return true;
                 }
@@ -80,7 +81,8 @@ namespace Lilium.RemoteControl.Replay
                 }
 
                 if (LiveObjectHandler.ApplyRecordedValue(
-                        _container, _resolver, evt.target, value, out status, out message))
+                        _container, _resolver, evt.target, value, out status, out message,
+                        evt.reemitted))
                 {
                     return true;
                 }

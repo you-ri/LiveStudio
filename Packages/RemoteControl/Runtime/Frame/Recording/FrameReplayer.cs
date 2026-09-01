@@ -1,5 +1,6 @@
 // Copyright (c) You-Ri, 2026
 using System;
+using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
@@ -34,9 +35,22 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// <summary>True when the payload did not fit the record and was cut short at capture.</summary>
         public readonly bool payloadTruncated;
 
+        /// <summary>
+        /// True when the record restates a value rather than reporting a change
+        /// (<see cref="EventFlags.Reemitted"/>).
+        ///
+        /// What it changes is whether applying it is worth doing at all: a restatement whose value
+        /// the world already holds is a write with no effect, and some of those effects are
+        /// expensive (an asset reference reloads the asset). An applier is expected to compare
+        /// first and do nothing when they match.
+        /// </summary>
+        public readonly bool reemitted;
+
         public ReplayEvent(EventKind kind, string verb, string target, string payloadTypeName,
-            ReadOnlyMemory<byte> payload, string source, bool payloadTruncated)
+            ReadOnlyMemory<byte> payload, string source, bool payloadTruncated,
+            bool reemitted = false)
         {
+            this.reemitted = reemitted;
             this.kind = kind;
             this.verb = verb;
             this.target = target;
@@ -100,6 +114,11 @@ namespace Lilium.RemoteControl.Frames.Recording
         // One buffer for every event. Handed to the applier as a window over it, which is why an
         // applier is told not to hold on to it past the call.
         private readonly byte[] _payloadBuffer = new byte[EventRecord.kPayloadCapacity];
+
+        // The records a seek walked over, and where each target was last written in them. Kept on
+        // the replayer so a scrub does not allocate a pair of collections per jump.
+        private readonly List<EventRecord> _walked = new List<EventRecord>();
+        private readonly Dictionary<int, int> _lastWriteIndex = new Dictionary<int, int>();
 
         /// <summary>Events handed to the applier so far.</summary>
         public int appliedEventCount { get; private set; }
@@ -194,22 +213,131 @@ namespace Lilium.RemoteControl.Frames.Recording
         }
 
         /// <summary>
-        /// Jumps to a frame, restoring the shape of the world from the keyframe before it, and
-        /// applies that frame's events.
+        /// Jumps to a frame, restoring the shape of the world from the keyframe before it, and puts
+        /// the world's event-lane values where that frame had them.
         ///
-        /// The events of the frames walked through on the way are **not** applied. Their effect is
-        /// already in the state that was restored, and applying them again would be a second helping
-        /// of the same change.
+        /// The state lane needs none of this -- every frame states it in full, so landing on one is
+        /// enough. The event lane is the opposite: it says only what changed, so the value at a
+        /// frame is the last thing written at or before it, and a jump has to go back far enough to
+        /// find that. Far enough is the keyframe, because that is where the values are restated
+        /// (see <see cref="LiveEventRestateSystem"/>).
+        ///
+        /// <para>
+        /// The walk from there is **collapsed to one write per target**. What is wanted is the value
+        /// as of the destination, not the history of how it got there: replaying every intermediate
+        /// write would put the same member through a dozen setters, and where a setter loads an
+        /// asset that is a dozen loads to arrive at the one that was wanted.
+        /// </para>
+        ///
+        /// <para>
+        /// ⚠ Function calls are **not** replayed by a seek. A call is not a value, so there is no
+        /// "as of" for it -- it happened a certain number of times in a certain order, and neither
+        /// survives being collapsed. Playing forward (<see cref="Advance"/>) still applies them.
+        /// </para>
         /// </summary>
         public bool TrySeek(long frame)
         {
-            if (!_player.TrySeekWithStructure(frame)) return false;
+            var keyframe = _KeyframeAtOrBefore(frame);
 
-            _ApplyEventsOfCurrentFrame();
-            return true;
+            // No keyframe to read the values from: nothing to walk, so this is the old behaviour --
+            // land on the frame and apply what it carried.
+            if (keyframe < 0)
+            {
+                if (!_player.TrySeekWithStructure(frame)) return false;
+
+                _ApplyEventsOfCurrentFrame();
+                return true;
+            }
+
+            if (!_player.TrySeek(keyframe)) return false;
+
+            _walked.Clear();
+            _CollectEventsOfCurrentFrame();
+
+            while (_player.frameNumber < frame && !_player.atEnd)
+            {
+                if (!_player.Advance()) break;
+
+                _CollectEventsOfCurrentFrame();
+            }
+
+            _ApplyCollapsed();
+            return _player.frameNumber == frame;
         }
 
         public void Dispose() => _player.Dispose();
+
+        /// <summary>
+        /// The keyframe at or before <paramref name="frame"/>, or -1 when the recording has none at
+        /// all before it. Read off the index the tail carries, which is in ascending order.
+        /// </summary>
+        private long _KeyframeAtOrBefore(long frame)
+        {
+            var keyframes = _player.keyframes;
+            if (keyframes == null) return -1;
+
+            var found = -1L;
+            for (int i = 0; i < keyframes.Count; i++)
+            {
+                if (keyframes[i] > frame) break;
+
+                found = keyframes[i];
+            }
+
+            return found;
+        }
+
+        /// <summary>
+        /// Keeps this frame's records for the collapse at the end of the walk.
+        ///
+        /// Copied out rather than read in place: the player reuses its list on the next frame, and a
+        /// record kept as a reference would read as whatever the walk ended on. The struct holds its
+        /// own payload, so a copy is the whole record.
+        /// </summary>
+        private void _CollectEventsOfCurrentFrame()
+        {
+            var events = _player.events;
+
+            for (int i = 0; i < events.Count; i++)
+            {
+                var record = events[i];
+
+                // Nothing to collapse a call with, and nothing that says how many of them a
+                // destination has behind it. Left to forward play, which sees them in order.
+                if (record.kind == EventKind.FunctionCall) continue;
+
+                _walked.Add(record);
+            }
+        }
+
+        /// <summary>
+        /// Applies the last write to each target, in the order those last writes happened.
+        ///
+        /// Order is kept rather than sorted: two members can depend on each other (a selection and
+        /// the thing it selects from), and the order the recording put them in is the one that
+        /// worked live.
+        /// </summary>
+        private void _ApplyCollapsed()
+        {
+            if (_walked.Count == 0) return;
+
+            _lastWriteIndex.Clear();
+            for (int i = 0; i < _walked.Count; i++)
+            {
+                _lastWriteIndex[_walked[i].targetId] = i;
+            }
+
+            for (int i = 0; i < _walked.Count; i++)
+            {
+                var record = _walked[i];
+
+                if (_lastWriteIndex.TryGetValue(record.targetId, out var last) && last != i) continue;
+
+                _ApplyRecord(in record);
+            }
+
+            _walked.Clear();
+        }
 
         private void _ApplyEventsOfCurrentFrame()
         {
@@ -218,33 +346,39 @@ namespace Lilium.RemoteControl.Frames.Recording
             for (int i = 0; i < events.Count; i++)
             {
                 var record = events[i];
-
-                if (record.payloadTruncated)
-                {
-                    skippedTruncatedCount++;
-                    continue;
-                }
-
-                var length = record.CopyPayloadTo(_payloadBuffer);
-
-                var evt = new ReplayEvent(
-                    record.kind,
-                    _player.Resolve(record.verbId),
-                    _player.Resolve(record.targetId),
-                    _player.Resolve(record.payloadTypeId),
-                    new ReadOnlyMemory<byte>(_payloadBuffer, 0, length),
-                    _player.Resolve(record.sourceId),
-                    record.payloadTruncated);
-
-                if (_applier.Apply(in evt, out var error))
-                {
-                    appliedEventCount++;
-                    continue;
-                }
-
-                failedEventCount++;
-                Debug.LogWarning($"[RemoteControl] Replay could not apply {evt}: {error}");
+                _ApplyRecord(in record);
             }
+        }
+
+        /// <summary>Resolves one record back into what it meant and hands it to the applier.</summary>
+        private void _ApplyRecord(in EventRecord record)
+        {
+            if (record.payloadTruncated)
+            {
+                skippedTruncatedCount++;
+                return;
+            }
+
+            var length = record.CopyPayloadTo(_payloadBuffer);
+
+            var evt = new ReplayEvent(
+                record.kind,
+                _player.Resolve(record.verbId),
+                _player.Resolve(record.targetId),
+                _player.Resolve(record.payloadTypeId),
+                new ReadOnlyMemory<byte>(_payloadBuffer, 0, length),
+                _player.Resolve(record.sourceId),
+                record.payloadTruncated,
+                record.reemitted);
+
+            if (_applier.Apply(in evt, out var error))
+            {
+                appliedEventCount++;
+                return;
+            }
+
+            failedEventCount++;
+            Debug.LogWarning($"[RemoteControl] Replay could not apply {evt}: {error}");
         }
     }
 }

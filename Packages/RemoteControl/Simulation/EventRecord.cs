@@ -51,6 +51,19 @@ namespace Lilium.RemoteControl.Frames
         /// Never reaches a recording: the frame drops these before committing.
         /// </summary>
         NotRecorded = 1 << 2,
+
+        /// <summary>
+        /// Not something that happened, but the value as it stood -- written into a frame so a
+        /// recording carries a point it can be read from rather than only the changes made after it
+        /// started. See <see cref="LiveEventRestateSystem"/>.
+        ///
+        /// Told apart from a real event because it means something different on the way back in: a
+        /// real write is replayed because someone made it, a restated one only to make the world
+        /// match, so applying it when the value already matches is work with no effect. The apply
+        /// side skips those, which is what keeps a restated asset reference from reloading the
+        /// asset once a keyframe.
+        /// </summary>
+        Reemitted = 1 << 3,
     }
 
     /// <summary>
@@ -137,6 +150,9 @@ namespace Lilium.RemoteControl.Frames
 
         /// <summary>True when this record carries a value at all.</summary>
         public bool hasPayload => payloadTypeId != FrameSymbolTable.kNone;
+
+        /// <summary>True when the record restates a value rather than reporting a change.</summary>
+        public bool reemitted => (flags & EventFlags.Reemitted) != 0;
 
         /// <summary>
         /// Puts a value in the record, replacing whatever was there. Returns false when it did not

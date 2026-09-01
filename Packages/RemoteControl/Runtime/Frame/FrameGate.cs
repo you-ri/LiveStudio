@@ -176,6 +176,16 @@ namespace Lilium.RemoteControl.Frames
         private static PendingEvent _applyingEvent;
 
         /// <summary>
+        /// True while an event is being applied at a frame head, which is the only time
+        /// <see cref="StampAppliedPayload"/> has a record to write onto.
+        ///
+        /// For a caller whose value costs something to work out: outside a frame head the stamp is a
+        /// no-op, so the work would be for nothing. The same write reaches this code with the gate
+        /// off (an editor write, a direct call), and that path should stay as cheap as it was.
+        /// </summary>
+        public static bool isApplyingEvent => _applyingEvent != null;
+
+        /// <summary>
         /// Says the event being applied does not need keeping, because the state lane carries what
         /// it wrote.
         ///

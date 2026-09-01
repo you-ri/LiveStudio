@@ -52,7 +52,11 @@ namespace Lilium.LiveStudio
                 ExternalAssetManager.current != null
                     ? AvatarSelection.GetSelectedName(ExternalAssetManager.current)
                     : string.Empty;
-            set => AvatarSelection.SelectByName(ExternalAssetManager.current, value);
+            set
+            {
+                Debug.Log($"[LiveStudio] ExternalAvatarSource.selectedAvatar = {value}");
+                AvatarSelection.SelectByName(ExternalAssetManager.current, value);
+            }
         }
 
         public void RequestLoad(string filepath)

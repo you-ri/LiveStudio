@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using Lilium.RemoteControl.Reflection;
 
 namespace Lilium.RemoteControl.Frames
@@ -54,6 +55,45 @@ namespace Lilium.RemoteControl.Frames
 
         private static readonly List<Entry> _sceneComponents = new List<Entry>();
         private static bool _resolved;
+        private static bool _stale;
+        private static bool _watchingScenes;
+
+        /// <summary>
+        /// Says the scene's population has changed, so the next read walks it again.
+        ///
+        /// Deferred rather than walked here: what changes the population is a load or an unload,
+        /// and both happen while other things are still settling -- walking mid-load would resolve
+        /// half a scene and cache it. The walk is one FindObjectsByType per exposed component type,
+        /// so it is also not something to do on the spot when a caller may ask several times in a
+        /// row.
+        ///
+        /// Scene loads and unloads mark themselves (see <see cref="_WatchScenes"/>). This is for
+        /// everything else that puts an exposed component in the world or takes one out --
+        /// instantiating a prefab, loading an asset bundle -- which the engine gives no event for.
+        /// </summary>
+        public static void MarkStale() => _stale = true;
+
+        /// <summary>
+        /// Marks the roster stale whenever a scene is loaded or unloaded.
+        ///
+        /// Installed once at startup rather than at first use: with domain reloads off, static state
+        /// survives entering play mode while the objects it names do not, so the subscription has to
+        /// be re-established from a runtime hook. Subscribing is idempotent here, which is what makes
+        /// it safe to run either way.
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void _WatchScenes()
+        {
+            _sceneComponents.Clear();
+            _resolved = false;
+            _stale = false;
+
+            if (_watchingScenes) return;
+            _watchingScenes = true;
+
+            SceneManager.sceneLoaded += (scene, mode) => MarkStale();
+            SceneManager.sceneUnloaded += scene => MarkStale();
+        }
 
         /// <summary>
         /// The exposed scene components a frame should carry, resolved on first use.
@@ -65,7 +105,7 @@ namespace Lilium.RemoteControl.Frames
         {
             get
             {
-                if (!_resolved) Refresh();
+                if (!_resolved || _stale) Refresh();
                 return _sceneComponents;
             }
         }
@@ -80,6 +120,7 @@ namespace Lilium.RemoteControl.Frames
         public static void Refresh()
         {
             _resolved = true;
+            _stale = false;
             _sceneComponents.Clear();
 
             // Asked of the attribute rather than of LiveClass.all: a class is registered on demand
@@ -120,6 +161,7 @@ namespace Lilium.RemoteControl.Frames
         {
             _sceneComponents.Clear();
             _resolved = false;
+            _stale = false;
         }
 
     }

@@ -763,6 +763,27 @@ namespace Lilium.RemoteControl
             return PropertyResult.Success(json);
         }
 
+        /// <summary>
+        /// The value a write asked for, typed the way the record wants it, or null when it is not
+        /// something a record can hold on its own.
+        ///
+        /// Null is the ordinary answer for a composite -- an object or an array written as a body --
+        /// and leaves the record holding the request text, which is what stood in for those before
+        /// any of this. It is also the answer when the gate is not applying an event, because then
+        /// there is no record to stamp and the parse would be for nothing.
+        ///
+        /// Parsed from the same body the write itself was parsed from, through the same converters,
+        /// so what is recorded is what was written rather than a second reading of it.
+        /// </summary>
+        private static object _RecordableRequestValue(string body, Type type, ILiveObjectResolver resolver)
+        {
+            if (type == null || string.IsNullOrEmpty(body)) return null;
+            if (!FrameGate.isApplyingEvent) return null;
+            if (type != typeof(string) && EventPayload.SizeOf(type) <= 0) return null;
+
+            return LivePropertySerializer.FromJson(body, type, resolver);
+        }
+
         private static PropertyResult ApplySetProperty(PropertyPipelineContext ctx, ILiveObjectResolver resolver)
         {
             var property = ctx.liveObject.FindProperty(ctx.propertyPath);
@@ -798,10 +819,21 @@ namespace Lilium.RemoteControl
             }
             else
             {
-                // What the record keeps is the value that landed, not the request that asked for it.
-                // Read back rather than parsed again: a property is free to clamp or normalise what
-                // it was given, and the recording should hold what the property now says.
-                FrameGate.StampAppliedPayload(ctx.requestPath, prop.type?.resolvedValueType, prop.GetValue());
+                // What the record keeps is the value that was asked for.
+                //
+                // Not the value read back afterwards, which is what this did until a recording caught
+                // it out: a getter is free to be a view over something the write only starts, and one
+                // that reports the selected avatar by scanning for the first enabled asset still
+                // named the previous avatar when the write reached it -- the reconcile that turns the
+                // old one off had not run yet. The recording then held a value nobody ever asked for,
+                // and replaying it put the wrong avatar back.
+                //
+                // Normalisation is not lost by this. A property that clamps or rounds what it is
+                // given does the same on the way back in, because replay writes through the same
+                // setter; what the file holds is the request, and what the world ends up with is the
+                // clamped value either way.
+                FrameGate.StampAppliedPayload(ctx.requestPath, prop.type?.resolvedValueType,
+                    _RecordableRequestValue(ctx.body, prop.type?.resolvedValueType, resolver));
             }
 
             var json = LivePropertySerializer.ToJson(property.Value, resolver);
@@ -1327,10 +1359,18 @@ namespace Lilium.RemoteControl
         /// property has a fixed width. The path resolves the same way a live write resolves it, so
         /// the same object and the same property are reached; only the parsing step is gone,
         /// because there is nothing left to parse.
+        ///
+        /// <paramref name="skipIfUnchanged"/> is for a restated value (<see cref="EventFlags.Reemitted"/>):
+        /// it says how things stood rather than that someone changed them, so writing one the world
+        /// already holds is work with no effect -- and some of that work is not free. A restated
+        /// asset reference written once a keyframe would reload the asset once a keyframe. A real
+        /// write is never skipped this way: it happened, and a setter with a side effect is entitled
+        /// to run again.
         /// </summary>
         public static bool ApplyRecordedValue(
             LiveObjectContainer container, ILiveObjectResolver resolver,
-            string absolutePath, object value, out int status, out string error)
+            string absolutePath, object value, out int status, out string error,
+            bool skipIfUnchanged = false)
         {
             status = 0;
             error = null;
@@ -1356,6 +1396,14 @@ namespace Lilium.RemoteControl
                 status = 403;
                 error = LiveEditorSession.kWriteRejected;
                 return false;
+            }
+
+            // Nothing to do, and saying so counts as done: the point of a restatement is that the
+            // value ends up right, which it already is.
+            if (skipIfUnchanged && Equals(prop.GetValue(), value))
+            {
+                status = 200;
+                return true;
             }
 
             // Same scope as the live write, for the same reasons: undo captures the value as it was
