@@ -64,5 +64,7 @@
     "LDV_PAYLOAD_TRUNCATED": "the payload was truncated when it was recorded",
     "LDV_TYPE_MISSING_IN_BUILD": "{0} is not in this build.",
     "LDV_RAW_BYTES": "{0} bytes",
-    "LDV_RAW_HINT": "add [LiveArray] to show what is inside"
+    "LDV_RAW_HINT": "add [LiveArray] to show what is inside",
+    "LDV_TEXT_NULL": "(none)",
+    "LDV_TEXT_TOOLONG": "(too long — not carried)"
 }

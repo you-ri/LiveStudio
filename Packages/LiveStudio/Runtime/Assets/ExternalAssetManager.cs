@@ -629,6 +629,20 @@ namespace Lilium.LiveStudio
         /// </summary>
         public IReadOnlyList<AssetBase> assetsView => assets;
 
+        /// <summary>
+        /// The single-selection asset that is out, or is about to be: what the next reconcile will
+        /// settle on, which for everything except the moment between a request and its diff is what
+        /// is already out.
+        ///
+        /// This is the answer to "which one is selected", and reading the enabled flags instead is
+        /// not. A request raises the chosen asset and leaves lowering the others to the reconcile,
+        /// so between the two there are two raised flags and whichever comes first in the list wins
+        /// -- an answer that depends on the order assets happen to be registered in, and that says
+        /// the old one right after someone picked the new one. A write recorded through such a
+        /// getter goes into the file naming an asset nobody chose.
+        /// </summary>
+        public AssetBase selectedExclusive => _PickDesiredExclusive();
+
         /// <summary>Returns the asset with the given id, or null. Used to reach a loaded scene handle.</summary>
         public AssetBase FindAsset(string assetId) => _Find(assetId);
 

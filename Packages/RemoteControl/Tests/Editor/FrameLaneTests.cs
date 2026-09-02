@@ -48,6 +48,12 @@ namespace Lilium.RemoteControl.Tests
                 get => _shadowedSetting;
                 set => _shadowedSetting = value;
             }
+
+            /// <summary>A collection of the world. Its shape is nobody else's to say.</summary>
+            [LiveField] public float[] tracked = new float[0];
+
+            /// <summary>A collection of the machine, off the live data like any other setting.</summary>
+            [LiveField(lane = FrameLane.None)] public float[] settings = new float[0];
         }
 
         [SetUp]
@@ -149,6 +155,164 @@ namespace Lilium.RemoteControl.Tests
             Assert.AreEqual(0, frame.eventCount, "the state lane already carries it");
             Assert.AreEqual(before + 1, FrameGate.omittedRecordCount,
                 "counted, so 'no evt for this' can be told from 'the evt went missing'");
+        }
+
+        /// <summary>
+        /// Resetting a member to its default asks the same question a write does, and for a while
+        /// only the write path was asking it: a reset of a state-lane member left an event record,
+        /// so a take remembered the reset and a replay performed it again. Reached through the same
+        /// routing table a request and a replay both use.
+        /// </summary>
+        [Test]
+        public void ResettingAMemberOffTheEventLane_LeavesNoRecord()
+        {
+            var fixture = new Fixture { carried = 5f };
+            var handle = LiveObjectRegistry.Create(typeof(Fixture), fixture, kResetFixtureId);
+
+            // Edit-mode tests run in the editor, where a write to a member the live scene owns is
+            // refused before it reaches any of this. What is under test is what the running app does.
+            using var session = new LiveEditorSession.Override(editorSession: false);
+
+            try
+            {
+                const string target = "/live/object/" + kResetFixtureId + "/carried/@reset";
+                var before = FrameGate.omittedRecordCount;
+
+                _EnqueueReset(target);
+                FrameGate.Pump();
+
+                using var frame = new EventFrame();
+                Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
+
+                Assert.AreEqual(0, frame.eventCount, "the state lane already carries this member");
+                Assert.AreEqual(before + 1, FrameGate.omittedRecordCount,
+                    "counted, so 'no evt for this' can be told from 'the evt went missing'");
+
+                // What the reset leaves the member holding is not the subject here -- it depends on
+                // a default having been captured, which needs a write first. That the operation ran
+                // at all is asserted inside the gate, above.
+            }
+            finally
+            {
+                handle?.Unregister();
+            }
+        }
+
+        [Test]
+        public void ResettingAnEventLaneMember_IsRecordedAsBefore()
+        {
+            var fixture = new Fixture { requested = 5f };
+            var handle = LiveObjectRegistry.Create(typeof(Fixture), fixture, kResetFixtureId);
+
+            using var session = new LiveEditorSession.Override(editorSession: false);
+
+            try
+            {
+                _EnqueueReset("/live/object/" + kResetFixtureId + "/requested/@reset");
+                FrameGate.Pump();
+
+                using var frame = new EventFrame();
+                Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
+
+                Assert.AreEqual(1, frame.eventCount, "a reset of an event-lane member is a change to keep");
+            }
+            finally
+            {
+                handle?.Unregister();
+            }
+        }
+
+        /// <summary>
+        /// Changing a collection's shape is not the same question as writing a member's value, and
+        /// the two rules part company on the state lane: it carries the values of the elements that
+        /// exist and says nothing about which exist, so a shape change still has to be recorded.
+        /// None means what it always means.
+        /// </summary>
+        [Test]
+        public void AddingToACollectionOffTheLiveData_LeavesNoRecord()
+        {
+            var fixture = new Fixture();
+            var handle = LiveObjectRegistry.Create(typeof(Fixture), fixture, kResetFixtureId);
+
+            using var session = new LiveEditorSession.Override(editorSession: false);
+
+            try
+            {
+                var before = FrameGate.omittedRecordCount;
+
+                _EnqueueAdd("/live/object/" + kResetFixtureId + "/settings");
+                FrameGate.Pump();
+
+                using var frame = new EventFrame();
+                Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
+
+                Assert.AreEqual(0, frame.eventCount, "a setting's collection is not part of the take");
+                Assert.AreEqual(before + 1, FrameGate.omittedRecordCount);
+                Assert.AreEqual(1, fixture.settings.Length, "the element was still added");
+            }
+            finally
+            {
+                handle?.Unregister();
+            }
+        }
+
+        [Test]
+        public void AddingToACollectionOfTheWorld_IsRecorded()
+        {
+            var fixture = new Fixture();
+            var handle = LiveObjectRegistry.Create(typeof(Fixture), fixture, kResetFixtureId);
+
+            using var session = new LiveEditorSession.Override(editorSession: false);
+
+            try
+            {
+                _EnqueueAdd("/live/object/" + kResetFixtureId + "/tracked");
+                FrameGate.Pump();
+
+                using var frame = new EventFrame();
+                Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
+
+                Assert.AreEqual(1, frame.eventCount, "nothing else says the collection grew");
+                Assert.AreEqual(1, fixture.tracked.Length);
+            }
+            finally
+            {
+                handle?.Unregister();
+            }
+        }
+
+        private static void _EnqueueAdd(string target)
+        {
+            FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, "{\"value\":0}",
+                () =>
+                {
+                    var ok = LiveObjectHandler.ApplyRecordedOperation(
+                        null, DefaultLiveObjectResolver.Instance, "POST", target, "{\"value\":0}",
+                        out var status, out var error);
+                    Assert.IsTrue(ok, $"the add did not run: {status} {error}");
+                    return ok;
+                },
+                verb: "POST");
+        }
+
+        private const string kResetFixtureId = "lane-reset-fixture";
+
+        /// <summary>
+        /// Runs a reset the way a request and a replay both run one: through the routing table,
+        /// inside the gate, addressed by the path the record is keyed on.
+        /// </summary>
+        private static void _EnqueueReset(string target)
+        {
+            FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, null,
+                () =>
+                {
+                    var ok = LiveObjectHandler.ApplyRecordedOperation(
+                        null, DefaultLiveObjectResolver.Instance, "POST", target, null,
+                        out var status, out var error);
+                    Assert.IsTrue(ok, $"the reset did not run: {status} {error}");
+                    return ok;
+                },
+                verb: "POST");
         }
 
         [Test]

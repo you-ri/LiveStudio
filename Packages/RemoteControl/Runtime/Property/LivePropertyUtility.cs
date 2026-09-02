@@ -345,9 +345,9 @@ namespace Lilium.RemoteControl
         {
             if (liveObject == null) throw new ArgumentNullException(nameof(liveObject));
 
-            property.RevertValue();
-
-            return true;
+            // Answered rather than assumed. This returned true whatever happened, so a member with
+            // no recorded default reported a successful reset and left the value where it was.
+            return property.RevertValue();
         }
 
         public static void SetDefault(LiveObjectHandle liveObject)

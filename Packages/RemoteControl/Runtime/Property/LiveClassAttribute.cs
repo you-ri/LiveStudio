@@ -204,6 +204,22 @@ namespace Lilium.RemoteControl
         /// (a file path, free text) belongs in the event lane instead.
         /// </summary>
         public int textCapacity { get; set; }
+        /// <summary>
+        /// Method on this type to call when applying a recording changes this member.
+        ///
+        /// The state lane carries values, not the calls that produced them, which is what lets any
+        /// frame stand on its own -- but a value alone does nothing. A member whose meaning is
+        /// "load this", "switch to that" needs its effect produced from the value, and a plain field
+        /// has no setter to produce it in. Naming a method here is how the effect gets attached:
+        /// the generated apply writes the value and then calls it, only on the frames where the
+        /// value actually moved.
+        ///
+        /// Must be an instance method taking no arguments and returning void, reachable from the
+        /// type itself (LRC007). It runs on the apply side -- a replay, or a spare machine taking
+        /// over -- because that is where a value arrives without anyone having called anything. A
+        /// live write goes through whatever the write path already does.
+        /// </summary>
+        public string onApplied { get; set; }
 
         public LivePropertyAttribute()
         {
@@ -272,6 +288,22 @@ namespace Lilium.RemoteControl
         /// (a file path, free text) belongs in the event lane instead.
         /// </summary>
         public int textCapacity { get; set; }
+        /// <summary>
+        /// Method on this type to call when applying a recording changes this member.
+        ///
+        /// The state lane carries values, not the calls that produced them, which is what lets any
+        /// frame stand on its own -- but a value alone does nothing. A member whose meaning is
+        /// "load this", "switch to that" needs its effect produced from the value, and a plain field
+        /// has no setter to produce it in. Naming a method here is how the effect gets attached:
+        /// the generated apply writes the value and then calls it, only on the frames where the
+        /// value actually moved.
+        ///
+        /// Must be an instance method taking no arguments and returning void, reachable from the
+        /// type itself (LRC007). It runs on the apply side -- a replay, or a spare machine taking
+        /// over -- because that is where a value arrives without anyone having called anything. A
+        /// live write goes through whatever the write path already does.
+        /// </summary>
+        public string onApplied { get; set; }
 
         public LiveFieldAttribute()
         {

@@ -28,11 +28,34 @@ namespace Lilium.RemoteControl
         private static Dictionary<object, JObject> _userChangeBaseline
             = new Dictionary<object, JObject>(LiveObjectRegistry.ReferenceEqualityComparer.Instance);
 
+        /// <summary>
+        /// Values of the writable members nothing persists, as they stood when the object's defaults
+        /// were captured. Read by <see cref="Revert"/> and by nothing else.
+        /// </summary>
+        /// <remarks>
+        /// The two baselines above are shaped for persistence, because their job is to be compared
+        /// with a persistence-shaped snapshot. That shape has no room for a member nothing saves --
+        /// a <c>[LiveProperty]</c> with no field behind it, which is how a value living somewhere
+        /// else is exposed (the selected avatar lives in the asset manager) -- so resetting one
+        /// found nothing to put back and quietly did nothing.
+        /// <para/>
+        /// Kept apart rather than folded into those baselines on purpose: dirty tracking compares
+        /// them against a persistence-shaped current, so a member that cannot appear on both sides
+        /// reads as a difference. Nothing in the dirty path reads this table.
+        /// <para/>
+        /// ⚠ Writable only. A read-only member cannot be written back, and trying reports an error
+        /// and claims success. Non-persisted only: a persisted member with nothing recorded means
+        /// the path is wrong, and inventing a value there would overwrite saved state.
+        /// </remarks>
+        private static Dictionary<object, JObject> _nonPersistedDefaults
+            = new Dictionary<object, JObject>(LiveObjectRegistry.ReferenceEqualityComparer.Instance);
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void _Initialize()
         {
             _serializationBaseline = new Dictionary<object, JObject>(LiveObjectRegistry.ReferenceEqualityComparer.Instance);
             _userChangeBaseline = new Dictionary<object, JObject>(LiveObjectRegistry.ReferenceEqualityComparer.Instance);
+            _nonPersistedDefaults = new Dictionary<object, JObject>(LiveObjectRegistry.ReferenceEqualityComparer.Instance);
         }
 
         /// <summary>
@@ -64,6 +87,7 @@ namespace Lilium.RemoteControl
             var json = LivePropertySerializer.SerializeFullToJObject(obj, resolver, forPersistence: true);
             _serializationBaseline[key] = json;
             _userChangeBaseline.Remove(key);
+            _CaptureNonPersistedDefaults(obj, resolver, key, onlyIfMissing: false);
         }
 
         /// <summary>
@@ -98,6 +122,57 @@ namespace Lilium.RemoteControl
             }
             _serializationBaseline[key] = fresh;
             _userChangeBaseline.Remove(key);
+
+            // Whatever was written down for the members nothing persists stays written down. This
+            // runs when an asset finishes loading, and its whole reason for existing is not to adopt
+            // freshly applied values as defaults -- which is exactly what happens to such a member
+            // here, because loading the avatar is what set it. Re-capturing would make the recorded
+            // default "the avatar that is out", so resetting would put back the avatar it was asked
+            // to clear.
+            _CaptureNonPersistedDefaults(obj, resolver, key, onlyIfMissing: true);
+        }
+
+        /// <summary>
+        /// Writes down what the writable members nothing persists hold right now, so a reset has
+        /// something to put back. See <see cref="_nonPersistedDefaults"/>.
+        /// </summary>
+        /// <param name="onlyIfMissing">
+        /// Leave an existing record alone. For the re-baseline that runs when an asset finishes
+        /// loading, where the current value is the thing that was just applied rather than a default.
+        /// </param>
+        private static void _CaptureNonPersistedDefaults(
+            LiveObjectHandle obj, ILiveObjectResolver resolver, object key, bool onlyIfMissing)
+        {
+            if (onlyIfMissing && _nonPersistedDefaults.ContainsKey(key)) return;
+
+            var members = obj.targetType?.propertyTypes;
+            if (members == null || members.Length == 0)
+            {
+                _nonPersistedDefaults.Remove(key);
+                return;
+            }
+
+            JObject captured = null;
+
+            for (int i = 0; i < members.Length; i++)
+            {
+                var member = members[i];
+                if (member == null || member.isStatic || member.isArrayElement) continue;
+
+                // Persisted members are already in the baseline above; read-only ones cannot be
+                // written back at all. Both are somebody else's business.
+                if (member.isPersistable || member.isReadOnly) continue;
+
+                var value = LivePropertyUtility.GetValueRaw(obj.target, member);
+                var token = _SerializeWithControlAttribute(resolver, value, member);
+                if (token == null) continue;
+
+                captured ??= new JObject();
+                captured[member.name] = _AdoptToken(token);
+            }
+
+            if (captured == null) _nonPersistedDefaults.Remove(key);
+            else _nonPersistedDefaults[key] = captured;
         }
 
         /// <summary>
@@ -108,6 +183,7 @@ namespace Lilium.RemoteControl
             var key = _GetKey(obj);
             _serializationBaseline.Remove(key);
             _userChangeBaseline.Remove(key);
+            _nonPersistedDefaults.Remove(key);
         }
 
         /// <summary>
@@ -117,6 +193,7 @@ namespace Lilium.RemoteControl
         {
             _serializationBaseline.Clear();
             _userChangeBaseline.Clear();
+            _nonPersistedDefaults.Clear();
         }
 
         /// <summary>
@@ -376,14 +453,11 @@ namespace Lilium.RemoteControl
             // ただし、新規追加された配列要素など_serializationBaselineに存在しないパスは
             // _userChangeBaselineにフォールバックする。
             _serializationBaseline.TryGetValue(key, out var serialBaseline);
-            var defaultJson = serialBaseline;
-            if (defaultJson == null)
-            {
-                defaultJson = _GetUserChangeBaseline(key);
-                if (defaultJson == null) return false;
-            }
+            var defaultJson = serialBaseline ?? _GetUserChangeBaseline(key);
 
-            var defaultToken = _ResolveJsonPath(defaultJson, propertyPath);
+            // Null when this object has no captured defaults at all, which is not the end of the
+            // search: a member nothing persists is written down in its own table below.
+            var defaultToken = defaultJson == null ? null : _ResolveJsonPath(defaultJson, propertyPath);
 
             // _serializationBaselineにパスが存在しない場合（新規配列要素など）、
             // _userChangeBaselineにフォールバック
@@ -393,10 +467,18 @@ namespace Lilium.RemoteControl
                 if (userBaseline != null)
                     defaultToken = _ResolveJsonPath(userBaseline, propertyPath);
             }
-            if (defaultToken == null) return false;
-
             var property = obj.FindProperty(propertyPath);
             if (property == null) return false;
+
+            // Nothing in the persistence-shaped baselines, which is the ordinary case for a member
+            // nothing persists rather than a sign of trouble. Its value was written down separately
+            // when the defaults were captured, and that is the only place left to look.
+            if (defaultToken == null && _nonPersistedDefaults.TryGetValue(key, out var nonPersisted))
+            {
+                defaultToken = _ResolveJsonPath(nonPersisted, propertyPath);
+            }
+
+            if (defaultToken == null) return false;
 
             object defaultValue;
             var valueType = property.Value.type.valueType;
@@ -455,7 +537,13 @@ namespace Lilium.RemoteControl
             if (!_serializationBaseline.ContainsKey(key))
             {
                 CaptureDefaults(obj, resolver);
-                return;
+
+                // Deliberately not returning. What was just captured is the persistence-shaped
+                // snapshot, and a member that is not persisted is not in it -- a [LiveProperty] with
+                // no shadow field, which is how a value living somewhere else is exposed (the
+                // selected avatar lives in the asset manager). Returning here left such a member
+                // unrecorded on the one write that could still have kept the value it held before,
+                // so resetting it afterwards found nothing to put back and quietly did nothing.
             }
 
             // _userChangeBaselineでパスが解決できるか確認

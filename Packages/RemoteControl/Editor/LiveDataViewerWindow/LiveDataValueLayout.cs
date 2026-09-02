@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Text;
 using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine;
 using Lilium.RemoteControl.Frames;
@@ -77,6 +78,12 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         {
             typeof(Vector2), typeof(Vector3), typeof(Vector4), typeof(Quaternion),
             typeof(Color), typeof(Color32), typeof(Vector2Int), typeof(Vector3Int),
+
+            // Text in a block is a length and a run of UTF-8 bytes. Walked into, it reads as
+            // "_length: 12" and 256 bytes of hex, which is the storage rather than the value --
+            // and the member is called selectedAvatar, not _utf8.
+            typeof(LiveFixedString32), typeof(LiveFixedString64),
+            typeof(LiveFixedString128), typeof(LiveFixedString256),
         };
 
         /// <summary>The lines of a type, worked out on first use.</summary>
@@ -434,6 +441,39 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             return text.ToString();
         }
 
+        /// <summary>Bytes the length takes at the head of a fixed text value.</summary>
+        private const int kFixedTextHeader = 2;
+
+        private static bool _IsFixedText(Type type)
+            => type == typeof(LiveFixedString32) || type == typeof(LiveFixedString64)
+               || type == typeof(LiveFixedString128) || type == typeof(LiveFixedString256);
+
+        /// <summary>
+        /// Reads a length-prefixed UTF-8 value the way the block stores it.
+        ///
+        /// Two of the length's values are markers rather than lengths: one says the member held no
+        /// string at all, the other that the value outgrew the width its declaration asked for and
+        /// was left out rather than shortened. Both are worth seeing as themselves -- an empty line
+        /// would read as "it is empty", which is a different thing from "it was not carried".
+        /// </summary>
+        private static string _ReadFixedText(byte[] bytes, int length, int offset, int capacity)
+        {
+            if (!_Fits(offset, kFixedTextHeader, length)) return string.Empty;
+
+            var declared = BitConverter.ToUInt16(bytes, offset);
+
+            if (declared == 0xFFFF) return RemoteControlEditorLocalization.Tr("LDV_TEXT_NULL");
+            if (declared == 0xFFFE) return RemoteControlEditorLocalization.Tr("LDV_TEXT_TOOLONG");
+            if (declared == 0) return "\"\"";
+
+            // Bounded by both the width and what the recording actually carries: a file written by a
+            // build whose layout has moved can say a length the bytes do not have.
+            var count = Math.Min(declared, capacity);
+            if (!_Fits(offset + kFixedTextHeader, count, length)) return string.Empty;
+
+            return "\"" + Encoding.UTF8.GetString(bytes, offset + kFixedTextHeader, count) + "\"";
+        }
+
         private static string _ReadOne(byte[] bytes, int length, int offset, Type type)
         {
             if (type == null) return string.Empty;
@@ -461,6 +501,11 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             if (type == typeof(byte)) return bytes[offset].ToString();
             if (type == typeof(sbyte)) return ((sbyte)bytes[offset]).ToString();
             if (type == typeof(bool)) return bytes[offset] != 0 ? "true" : "false";
+
+            if (_inlineTypes.Contains(type) && _IsFixedText(type))
+            {
+                return _ReadFixedText(bytes, length, offset, UnsafeUtility.SizeOf(type) - kFixedTextHeader);
+            }
 
             if (type == typeof(Vector2)) return _Floats(bytes, length, offset, 2);
             if (type == typeof(Vector3)) return _Floats(bytes, length, offset, 3);

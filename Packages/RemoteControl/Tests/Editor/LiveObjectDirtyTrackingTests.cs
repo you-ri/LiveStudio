@@ -79,6 +79,32 @@ namespace Lilium.RemoteControl.Tests
             public int runtimeOnly;
         }
 
+        /// <summary>
+        /// A value that lives somewhere else, exposed as a property with no field behind it. Nothing
+        /// persists it -- there is nothing here to persist -- which is what makes resetting it the
+        /// case the tests at the end of this file cover.
+        /// </summary>
+        [LiveClass("TestDirtyViewOnly")]
+        public class TestDirtyViewOnly
+        {
+            public string backing = "start";
+
+            [LiveProperty]
+            public string view
+            {
+                get => backing;
+                set => backing = value;
+            }
+
+            /// <summary>Machine-local, and its default is not the empty one.</summary>
+            [LiveField(persistable = false)]
+            public int take = 1;
+
+            /// <summary>Nothing can write this back, so nothing should try.</summary>
+            [LiveProperty]
+            public string derived => backing + "!";
+        }
+
         [Serializable]
         [LiveClass("TestDirtyClassWithArray")]
         public class TestDirtyClassWithArray
@@ -2502,6 +2528,148 @@ namespace Lilium.RemoteControl.Tests
             {
                 liveObj.Unregister();
             }
+        }
+
+        #endregion
+
+        #region Resetting a member nothing persists
+
+        /// <summary>
+        /// Resetting a member that is not persisted puts back the value it held before the first
+        /// write, and says so.
+        ///
+        /// The captured defaults are shaped for persistence, so a member nothing persists is not in
+        /// them. The one chance to record what it held is the write that changes it -- and that
+        /// chance was being skipped on the very first write to an object, because capturing the
+        /// object's defaults returned early. A reset afterwards found nothing to put back and
+        /// answered success with the value untouched, which is what "reset does nothing" looked like
+        /// from the outside.
+        /// </summary>
+        [Test]
+        public void ResettingANonPersistedMember_PutsBackWhatItHeldBeforeTheFirstWrite()
+        {
+            var testObj = new TestDirtyViewOnly();
+            var liveClass = LiveClass.Find(typeof(TestDirtyViewOnly));
+            var liveObj = new LiveObjectHandle("test-dirty-view-only", liveClass, testObj);
+
+            var property = liveObj.FindProperty("view");
+            Assert.IsNotNull(property);
+
+            // The first write to this object, which is the only moment the previous value can still
+            // be recorded.
+            property.Value.SetValue("changed", captureDefault: true);
+            Assert.AreEqual("changed", testObj.backing);
+
+            Assert.IsTrue(property.Value.RevertValue(), "the reset reported having nothing to put back");
+            Assert.AreEqual("start", testObj.backing);
+        }
+
+        /// <summary>
+        /// A member nothing persists, never written through a request, resets to what it held when
+        /// the object's defaults were captured.
+        ///
+        /// The captured defaults are shaped for persistence and such a member is not in that shape,
+        /// so it is written down separately at the same moment. Without that, the one chance to keep
+        /// its previous value is its first write -- and for a member a scene restore drives through
+        /// the loader rather than through a request, that moment never comes, leaving the reset
+        /// button permanently inert.
+        ///
+        /// ⚠ What it must not do is invent an empty value. The same "not persisted" flag covers
+        /// machine-local settings whose default is not empty, and catalogues that something else
+        /// rebuilds; blanking those would turn an inert button into a destructive one.
+        /// </summary>
+        [Test]
+        public void ResettingANonPersistedMember_PutsBackWhatItHeldWhenDefaultsWereCaptured()
+        {
+            var testObj = new TestDirtyViewOnly();
+            var liveClass = LiveClass.Find(typeof(TestDirtyViewOnly));
+            var liveObj = new LiveObjectHandle("test-dirty-view-only-untouched", liveClass, testObj);
+
+            LivePropertyUtility.SetDefault(liveObj);
+
+            // Changed without ever going through a request, the way a loader does it.
+            testObj.backing = "loaded";
+            testObj.take = 7;
+
+            var view = liveObj.FindProperty("view");
+            Assert.IsNotNull(view);
+            Assert.IsTrue(view.Value.RevertValue());
+            Assert.AreEqual("start", testObj.backing);
+
+            // Not the empty value: this one's default is 1.
+            var take = liveObj.FindProperty("take");
+            Assert.IsNotNull(take);
+            Assert.IsTrue(take.Value.RevertValue());
+            Assert.AreEqual(1, testObj.take);
+        }
+
+        /// <summary>
+        /// An asset finishing its load does not turn what it just applied into the default.
+        ///
+        /// The re-baseline that runs then exists precisely to avoid adopting freshly applied values,
+        /// and a member nothing persists is the case where the freshly applied value IS the member:
+        /// loading the avatar is what set the selection. Re-recording it there made the default "the
+        /// avatar that is out", so resetting put back the avatar it was asked to clear -- the reset
+        /// button appearing to do nothing while actually writing the same value again.
+        /// </summary>
+        [Test]
+        public void AnAssetLoadRebaseline_DoesNotAdoptTheValueItJustApplied()
+        {
+            var testObj = new TestDirtyViewOnly();
+            var liveClass = LiveClass.Find(typeof(TestDirtyViewOnly));
+            var liveObj = new LiveObjectHandle("test-dirty-view-only-rebaseline", liveClass, testObj);
+
+            LivePropertyUtility.SetDefault(liveObj);
+
+            // What loading an asset does: the value arrives without anyone writing it.
+            testObj.backing = "loaded";
+            LiveObjectDefaultRegistry.CaptureDefaultsPreservingOverrides(liveObj, DefaultLiveObjectResolver.Instance);
+
+            var property = liveObj.FindProperty("view");
+            Assert.IsNotNull(property);
+
+            Assert.IsTrue(property.Value.RevertValue());
+            Assert.AreEqual("start", testObj.backing, "the loaded value was adopted as the default");
+        }
+
+        [Test]
+        public void AReadOnlyMemberIsNeverWrittenBack()
+        {
+            // Nothing can write it, and trying reports an error and claims success -- the exact
+            // failure the reset path was changed to stop producing.
+            var testObj = new TestDirtyViewOnly();
+            var liveClass = LiveClass.Find(typeof(TestDirtyViewOnly));
+            var liveObj = new LiveObjectHandle("test-dirty-view-only-readonly", liveClass, testObj);
+
+            LivePropertyUtility.SetDefault(liveObj);
+
+            var property = liveObj.FindProperty("derived");
+            Assert.IsNotNull(property);
+            Assert.IsTrue(property.Value.type.isReadOnly);
+
+            Assert.IsFalse(property.Value.RevertValue());
+        }
+
+        [Test]
+        public void ResettingWithNothingRecordedAtAll_SaysSo()
+        {
+            // The other half of the rule: no default anywhere means the reset cannot happen, and
+            // saying so is what stops it reporting success with the value untouched. Inventing one
+            // is what the first attempt at this did, and the same "not persisted" flag covers
+            // machine-local settings and rebuilt catalogues, so an invented empty value is
+            // destructive rather than merely wrong.
+            var testObj = new TestDirtyViewOnly();
+            var liveClass = LiveClass.Find(typeof(TestDirtyViewOnly));
+            var liveObj = new LiveObjectHandle("test-dirty-no-default", liveClass, testObj);
+
+            LiveObjectDefaultRegistry.Remove(liveObj);
+            testObj.backing = "moved";
+
+            var property = liveObj.FindProperty("view");
+            Assert.IsNotNull(property);
+
+            Assert.IsFalse(property.Value.RevertValue());
+            Assert.AreEqual("moved", testObj.backing, "nothing was recorded, so nothing was written");
         }
 
         #endregion

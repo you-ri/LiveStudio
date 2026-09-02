@@ -34,23 +34,34 @@ namespace Lilium.RemoteControl.SourceGenerator
         /// </summary>
         public bool IsProperty { get; }
 
+        /// <summary>
+        /// Method called after applying a recording changes this member, or null.
+        ///
+        /// The state lane carries values rather than the calls that produced them, which is what
+        /// lets any frame stand on its own. A value that means "load this" still needs its effect
+        /// produced somewhere, and a plain field has no setter to produce it in.
+        /// </summary>
+        public string AppliedCallback { get; }
+
         public StateMemberInfo(string name, string blockTypeName, int textCapacity = 0,
-            bool isProperty = false)
+            bool isProperty = false, string appliedCallback = null)
         {
             Name = name;
             BlockTypeName = blockTypeName;
             TextCapacity = textCapacity;
             IsProperty = isProperty;
+            AppliedCallback = appliedCallback;
         }
 
         public override bool Equals(object obj)
             => obj is StateMemberInfo other && Name == other.Name
                && BlockTypeName == other.BlockTypeName && TextCapacity == other.TextCapacity
-               && IsProperty == other.IsProperty;
+               && IsProperty == other.IsProperty && AppliedCallback == other.AppliedCallback;
 
         public override int GetHashCode()
-            => (((Name?.GetHashCode() ?? 0) * 397 ^ (BlockTypeName?.GetHashCode() ?? 0)) * 397
-                ^ TextCapacity) * 397 ^ (IsProperty ? 1 : 0);
+            => ((((Name?.GetHashCode() ?? 0) * 397 ^ (BlockTypeName?.GetHashCode() ?? 0)) * 397
+                ^ TextCapacity) * 397 ^ (IsProperty ? 1 : 0)) * 397
+                ^ (AppliedCallback?.GetHashCode() ?? 0);
     }
 
     /// <summary>
@@ -155,6 +166,15 @@ namespace Lilium.RemoteControl.SourceGenerator
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
 
+        public static readonly DiagnosticDescriptor kAppliedCallbackNotFound = new DiagnosticDescriptor(
+            "LRC007",
+            "onApplied names no method that can be called",
+            "'{0}' declares onApplied = \"{1}\", but the type has no instance method by that name taking no arguments, returning void, and reachable from the type itself. The value is still carried; nothing is called.",
+            "Lilium.RemoteControl",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true,
+            description: "The generated half is emitted inside the owner, so a private method of a base class cannot be reached from it.");
+
         public static readonly DiagnosticDescriptor kNestedType = new DiagnosticDescriptor(
             "LRC003",
             "State-lane type is nested",
@@ -198,7 +218,8 @@ namespace Lilium.RemoteControl.SourceGenerator
             {
                 foreach (var member in level.OriginalDefinition.GetMembers())
                 {
-                    if (!_TryReadStateMember(member, out var memberType, out var textCapacity)) continue;
+                    if (!_TryReadStateMember(member, out var memberType, out var textCapacity,
+                            out var appliedCallback)) continue;
 
                     var name = member.Name;
                     var throughProperty = member is IPropertySymbol;
@@ -223,6 +244,14 @@ namespace Lilium.RemoteControl.SourceGenerator
 
                     any = true;
 
+                    // Checked here rather than left to the generated code, where a name that does
+                    // not resolve becomes a compile error inside something the author never wrote.
+                    if (appliedCallback != null && !_HasAppliedCallback(typeSymbol, levels, appliedCallback))
+                    {
+                        problems.Add($"{level.Name}.{name}|applied-callback|{appliedCallback}");
+                        appliedCallback = null;
+                    }
+
                     // Text is the one member whose block type is not its own. It keeps its string
                     // face on the object -- that is what REST answers and what the scene file holds
                     // -- and travels as a fixed number of UTF-8 bytes, because a reference is the
@@ -244,7 +273,7 @@ namespace Lilium.RemoteControl.SourceGenerator
                         }
 
                         members.Add(new StateMemberInfo(
-                            name, kFixedStringNamespace + width, width, throughProperty));
+                            name, kFixedStringNamespace + width, width, throughProperty, appliedCallback));
                         continue;
                     }
 
@@ -262,7 +291,8 @@ namespace Lilium.RemoteControl.SourceGenerator
                         name,
                         memberType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                         textCapacity: 0,
-                        isProperty: throughProperty));
+                        isProperty: throughProperty,
+                        appliedCallback: appliedCallback));
                 }
             }
 
@@ -287,6 +317,30 @@ namespace Lilium.RemoteControl.SourceGenerator
                 problems.ToImmutable());
         }
 
+        /// <summary>
+        /// Whether the type has a method the generated apply could call by this name.
+        ///
+        /// An instance method taking nothing and returning nothing, reachable from the owner. The
+        /// generated half lives inside the owner, so a private method of a base class is not.
+        /// </summary>
+        static bool _HasAppliedCallback(INamedTypeSymbol owner, IList<INamedTypeSymbol> levels, string name)
+        {
+            foreach (var level in levels)
+            {
+                foreach (var member in level.OriginalDefinition.GetMembers(name))
+                {
+                    if (!(member is IMethodSymbol method)) continue;
+                    if (method.IsStatic || method.Parameters.Length > 0) continue;
+                    if (!method.ReturnsVoid) continue;
+                    if (!_IsAccessible(method, owner)) continue;
+
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         /// <summary>The block width that holds this many bytes of text, or zero when none does.</summary>
         static int _TextWidthFor(int requested)
         {
@@ -302,10 +356,12 @@ namespace Lilium.RemoteControl.SourceGenerator
         /// True when a member is declared in the state lane; hands back its type and, for text, the
         /// width its declaration asked for.
         /// </summary>
-        static bool _TryReadStateMember(ISymbol member, out ITypeSymbol memberType, out int textCapacity)
+        static bool _TryReadStateMember(ISymbol member, out ITypeSymbol memberType, out int textCapacity,
+            out string appliedCallback)
         {
             memberType = null;
             textCapacity = 0;
+            appliedCallback = null;
 
             AttributeData attribute = null;
             switch (member)
@@ -333,12 +389,15 @@ namespace Lilium.RemoteControl.SourceGenerator
             {
                 if (named.Key == "lane" && named.Value.Value is int value && value == 1) isState = true;
                 else if (named.Key == "textCapacity" && named.Value.Value is int width) textCapacity = width;
+                else if (named.Key == "onApplied" && named.Value.Value is string callback
+                         && !string.IsNullOrEmpty(callback)) appliedCallback = callback;
             }
 
             if (isState) return true;
 
             memberType = null;
             textCapacity = 0;
+            appliedCallback = null;
             return false;
         }
 
@@ -495,6 +554,11 @@ namespace Lilium.RemoteControl.SourceGenerator
                         context.ReportDiagnostic(Diagnostic.Create(kTextNeedsCapacity, Location.None, split[0]));
                         break;
 
+                    case "applied-callback":
+                        context.ReportDiagnostic(Diagnostic.Create(kAppliedCallbackNotFound, Location.None,
+                            split[0], split[2]));
+                        break;
+
                     case "text-too-wide":
                         context.ReportDiagnostic(Diagnostic.Create(kTextTooWide, Location.None,
                             split[0], split[2], kTextCapacities[kTextCapacities.Length - 1]));
@@ -580,19 +644,23 @@ namespace Lilium.RemoteControl.SourceGenerator
                     sb.AppendLine($"{indent}    if (block.{member.Name}.TryGetValue(target.{member.Name}, out var {local}))");
                     sb.AppendLine($"{indent}    {{");
                     sb.AppendLine($"{indent}        target.{member.Name} = {local};");
+                    _EmitAppliedCallback(sb, indent, member);
                     sb.AppendLine($"{indent}    }}");
                     continue;
                 }
 
-                if (member.IsProperty)
+                if (member.IsProperty || member.AppliedCallback != null)
                 {
-                    // A setter can do anything -- pair a device, load an asset, tell whatever
-                    // watches. The state lane says this value every frame whether or not it moved,
-                    // so asking first is what keeps a replay from running all of that sixty times a
-                    // second for a value standing still.
+                    // Guarded for two overlapping reasons. A setter can do anything -- pair a
+                    // device, load an asset, tell whatever watches -- and the state lane says this
+                    // value every frame whether or not it moved, so asking first is what keeps a
+                    // replay from running all of that sixty times a second for a value standing
+                    // still. A declared reaction wants the same question answered: it is the frame
+                    // the value moved on that it is interested in, not every frame after.
                     sb.AppendLine($"{indent}    if (!global::Lilium.RemoteControl.Frames.LiveStateValue.SameBytes(target.{member.Name}, block.{member.Name}))");
                     sb.AppendLine($"{indent}    {{");
                     sb.AppendLine($"{indent}        target.{member.Name} = block.{member.Name};");
+                    _EmitAppliedCallback(sb, indent, member);
                     sb.AppendLine($"{indent}    }}");
                     continue;
                 }
@@ -612,6 +680,20 @@ namespace Lilium.RemoteControl.SourceGenerator
             }
 
             sb.AppendLine();
+        }
+
+        /// <summary>
+        /// Emits the call that turns a changed value into whatever it is supposed to mean.
+        ///
+        /// After the write rather than before, so the reaction reads the value it is reacting to
+        /// straight off the member -- which is also where a live write would have left it, making
+        /// the two paths reach the reaction the same way.
+        /// </summary>
+        static void _EmitAppliedCallback(StringBuilder sb, string indent, StateMemberInfo member)
+        {
+            if (member.AppliedCallback == null) return;
+
+            sb.AppendLine($"{indent}        target.{member.AppliedCallback}();");
         }
 
         /// <summary>Emits the registration line for one type.</summary>

@@ -274,8 +274,9 @@ namespace Lilium.RemoteControl
             var property = FindProperty(propertyPath);
             if (property.HasValue && property.Value.type != null && property.Value.type.isLivePropertyReference)
             {
-                property.Value.RevertValue();
-                return true;
+                // Answered rather than assumed, like everything else on this path: the reference's
+                // target may have nothing recorded either.
+                return property.Value.RevertValue();
             }
             return LiveObjectDefaultRegistry.Revert(this, propertyPath, DefaultLiveObjectResolver.Instance);
         }

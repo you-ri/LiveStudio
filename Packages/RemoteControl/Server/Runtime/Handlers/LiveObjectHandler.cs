@@ -810,23 +810,7 @@ namespace Lilium.RemoteControl
                 return PropertyResult.Error(400, "Failed to set property");
             }
 
-            if ((prop.type?.lane ?? FrameLane.Event) != FrameLane.Event)
-            {
-                // Neither of the other two lanes wants a record here, for opposite reasons.
-                //
-                // State copies this member every frame, so an event record for it would be the same
-                // value written twice -- and the event pays its full width to say what the state lane
-                // already said.
-                //
-                // None is not carried by the frame at all: a setting of this machine rather than of
-                // the world. Recording it was the half of that declaration that had never been
-                // implemented, so a language or resolution changed mid-take was written down and put
-                // back on replay -- reaching over and changing the operator's own settings.
-                //
-                // Either way the write still took its place in the order.
-                FrameGate.OmitAppliedRecord(ctx.requestPath);
-            }
-            else
+            if (!_OmitRecordForLane(in prop, ctx.requestPath))
             {
                 // What the record keeps is the value that was asked for.
                 //
@@ -854,6 +838,49 @@ namespace Lilium.RemoteControl
             return PropertyResult.Success(json);
         }
 
+        /// <summary>
+        /// Keeps a write out of the recording when the member's lane says it does not belong there,
+        /// and answers whether it did.
+        ///
+        /// Neither of the other two lanes wants a record, for opposite reasons. State copies this
+        /// member every frame, so an event record would be the same value written twice -- and the
+        /// event pays its full width to say what the state lane already said. None is not carried by
+        /// the frame at all: a setting of this machine rather than of the world, which recorded and
+        /// replayed reaches over and changes the operator's own settings. Either way the write still
+        /// takes its place in the order.
+        ///
+        /// Shared rather than written at each write, because it was not: the rule lived in the set
+        /// path alone, so resetting a member to its default recorded an event for a member no lane
+        /// was supposed to record -- and a replay of that take reset it again. Any operation that
+        /// changes a member's value asks the same question, so it is asked in one place.
+        /// </summary>
+        private static bool _OmitRecordForLane(in LiveProperty prop, string requestPath)
+        {
+            if ((prop.type?.lane ?? FrameLane.Event) == FrameLane.Event) return false;
+
+            FrameGate.OmitAppliedRecord(requestPath);
+            return true;
+        }
+
+        /// <summary>
+        /// The same question for an operation that changes a collection's shape rather than a
+        /// member's value: adding an element, removing one, moving one.
+        ///
+        /// Only <see cref="FrameLane.None"/> is dropped here, and <see cref="FrameLane.State"/> is
+        /// not -- which is the one place the two rules part company. The state lane carries the
+        /// values of the elements that exist; **what exists** is not something it says, so a
+        /// collection on the state lane still needs its shape changes recorded or a replay ends up
+        /// applying element values to a collection of the wrong length. None means the same thing it
+        /// always does: this is a setting of the machine, and nothing about it belongs in the take.
+        /// </summary>
+        private static bool _OmitShapeChangeForLane(in LiveProperty prop, string requestPath)
+        {
+            if ((prop.type?.lane ?? FrameLane.Event) != FrameLane.None) return false;
+
+            FrameGate.OmitAppliedRecord(requestPath);
+            return true;
+        }
+
         private static PropertyResult ApplyAddArrayElement(PropertyPipelineContext ctx, ILiveObjectResolver resolver)
         {
             var property = ctx.liveObject.FindProperty(ctx.propertyPath);
@@ -874,6 +901,8 @@ namespace Lilium.RemoteControl
             {
                 result = LivePropertySerializer.AddArrayElement(ctx.body, in prop);
             }
+
+            if (result) _OmitShapeChangeForLane(in prop, ctx.requestPath);
 
             return result
                 ? PropertyResult.Success("{}")
@@ -901,6 +930,8 @@ namespace Lilium.RemoteControl
                 result = LivePropertySerializer.RemoveArrayElement(ctx.body, in prop);
             }
 
+            if (result) _OmitShapeChangeForLane(in prop, ctx.requestPath);
+
             return result
                 ? PropertyResult.Success("{}")
                 : PropertyResult.Error(400, "Failed to remove array element");
@@ -926,6 +957,8 @@ namespace Lilium.RemoteControl
             {
                 result = LivePropertySerializer.ReorderArrayElement(ctx.body, in prop);
             }
+
+            if (result) _OmitShapeChangeForLane(in prop, ctx.requestPath);
 
             return result
                 ? PropertyResult.Success("{}")
@@ -957,10 +990,21 @@ namespace Lilium.RemoteControl
                     return PropertyResult.Error(400, "Property cannot be reverted");
                 }
             }
-            else
+            else if (!LivePropertyUtility.ResetValue(ctx.liveObject, in prop))
             {
-                LivePropertyUtility.ResetValue(ctx.liveObject, in prop);
+                // Nothing was recorded to put back, so nothing was put back. Said out loud rather
+                // than answered 200 with the value unchanged: a reset that reports success and
+                // leaves the value alone is the one failure with nowhere to look next.
+                //
+                // Kept out of the recording whatever the member's lane says, because nothing
+                // happened. A record of it would be replayed on a machine whose defaults are its
+                // own, where the same reset can succeed -- so an operation that did nothing here
+                // would move a value there.
+                FrameGate.OmitAppliedRecord(ctx.requestPath);
+                return PropertyResult.Error(400, "No default recorded for this property");
             }
+
+            _OmitRecordForLane(in prop, ctx.requestPath);
 
             var newProperty = ctx.liveObject.FindProperty(ctx.propertyPath);
             var json = LivePropertySerializer.ToJson(newProperty.Value, resolver);

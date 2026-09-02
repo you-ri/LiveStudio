@@ -64,5 +64,7 @@
     "LDV_PAYLOAD_TRUNCATED": "記録時に payload が切り詰められました",
     "LDV_TYPE_MISSING_IN_BUILD": "このビルドに {0} がありません。",
     "LDV_RAW_BYTES": "{0} バイト",
-    "LDV_RAW_HINT": "[LiveArray] を付けると中身で表示されます"
+    "LDV_RAW_HINT": "[LiveArray] を付けると中身で表示されます",
+    "LDV_TEXT_NULL": "(なし)",
+    "LDV_TEXT_TOOLONG": "(長すぎて記録されていません)"
 }

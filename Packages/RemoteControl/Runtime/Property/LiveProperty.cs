@@ -571,9 +571,15 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// 値をデフォルト値に戻す
+        /// 値をデフォルト値に戻す。戻す値が記録されていなければ false。
         /// </summary>
-        public void RevertValue()
+        /// <remarks>
+        /// Answered rather than assumed. A member with no recorded default cannot be reset, and
+        /// saying so is the difference between a reset that failed and one that had nothing to do:
+        /// silence here reads as "it worked and nothing moved", which leaves nowhere to look next.
+        /// A container counts as reset when it or any of its children was.
+        /// </remarks>
+        public bool RevertValue()
         {
             // PropertyRef: 参照先の RevertValue に委譲
             if (type != null && type.isLivePropertyReference)
@@ -582,15 +588,16 @@ namespace Lilium.RemoteControl
                 if (resolved.HasValue)
                 {
                     var oldValue = resolved.Value.GetValue();
-                    resolved.Value.RevertValue();
+                    var reverted = resolved.Value.RevertValue();
                     // owner (FusionPage) 側の PropertyChanged も発火して変更フィード経由で UI 更新を反映
                     owner.targetType?.RaisePropertyChanged(this, oldValue);
+                    return reverted;
                 }
-                return;
+                return false;
             }
 
             // 自身をリセット
-            owner.Revert(path);
+            var any = owner.Revert(path);
 
             // 配列の場合：各要素を再帰処理
             if (isArray)
@@ -601,15 +608,15 @@ namespace Lilium.RemoteControl
                     var childProp = GetPropertyIndex(i);
                     if (childProp != null)
                     {
-                        childProp.Value.RevertValue();
+                        if (childProp.Value.RevertValue()) any = true;
                     }
                 }
-                return;
+                return any;
             }
 
             // オブジェクトの場合：子プロパティを再帰処理
             var valueType = GetPolymorphicValueType();
-            if (valueType == null) return;
+            if (valueType == null) return any;
 
             var liveClass = LiveClass.Find(valueType);
             if (liveClass != null && liveClass.propertyTypes != null)
@@ -619,10 +626,12 @@ namespace Lilium.RemoteControl
                     var childProp = GetProperty(childType.name);
                     if (childProp != null)
                     {
-                        childProp.Value.RevertValue();
+                        if (childProp.Value.RevertValue()) any = true;
                     }
                 }
             }
+
+            return any;
         }
 
         public bool Add(object element)

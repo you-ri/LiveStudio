@@ -74,6 +74,49 @@ namespace Lilium.RemoteControl.Tests
     }
 
     /// <summary>
+    /// A type whose state-lane values mean "do this", with the doing attached by declaration.
+    ///
+    /// The state lane carries values rather than the calls that produced them, which is what lets
+    /// any frame stand on its own -- but a plain field has no setter in which to turn a value into
+    /// an effect. Naming a method is how the effect gets attached, and it runs on the frame the
+    /// value moved, not on every frame after.
+    /// </summary>
+    [LiveClass("ReactiveStateProbe")]
+    public partial class ReactiveStateProbe
+    {
+        [LiveField(lane = FrameLane.State, onApplied = nameof(_OnModeApplied))]
+        private int _mode;
+
+        [LiveField(lane = FrameLane.State, textCapacity = 32, onApplied = nameof(_OnAssetApplied))]
+        private string _asset = string.Empty;
+
+        [LiveField(lane = FrameLane.State)]
+        private float _quiet;
+
+        public int mode { get => _mode; set => _mode = value; }
+
+        public string asset { get => _asset; set => _asset = value; }
+
+        public float quiet { get => _quiet; set => _quiet = value; }
+
+        [NonSerialized] public int modeReactions;
+
+        [NonSerialized] public int assetReactions;
+
+        [NonSerialized] public string loaded;
+
+        private void _OnModeApplied() => modeReactions++;
+
+        private void _OnAssetApplied()
+        {
+            assetReactions++;
+
+            // What a reaction is for: the value is the intent, and this is the effect.
+            loaded = _asset;
+        }
+    }
+
+    /// <summary>
     /// Text in the state lane.
     ///
     /// There is deliberately no fixture for the two declarations the generator refuses -- a state
@@ -279,6 +322,137 @@ namespace Lilium.RemoteControl.Tests
             bridge.Apply(restored, ownerId: 1, state);
 
             Assert.AreEqual(3f, restored.weight);
+        }
+
+        [Test]
+        public void AChangedValueRunsItsDeclaredReaction()
+        {
+            var captured = new ReactiveStateProbe { mode = 2, asset = "front" };
+            var restored = new ReactiveStateProbe();
+            var bridge = StateBridgeRegistry.Find(typeof(ReactiveStateProbe));
+
+            using var state = new StateBlockSet();
+            bridge.Capture(captured, ownerId: 1, state, default, time: 0);
+
+            bridge.Apply(restored, ownerId: 1, state);
+
+            Assert.AreEqual(1, restored.modeReactions);
+            Assert.AreEqual(1, restored.assetReactions);
+
+            // The reaction reads the value off the member, which is where a live write would have
+            // left it too -- so both paths reach the effect the same way.
+            Assert.AreEqual("front", restored.loaded);
+        }
+
+        [Test]
+        public void AValueThatDidNotMove_RunsNoReaction()
+        {
+            // The point of a reaction rather than a per-frame poll: the state lane says the value
+            // every frame, and reacting every frame would reload the asset sixty times a second.
+            var captured = new ReactiveStateProbe { mode = 2, asset = "front" };
+            var restored = new ReactiveStateProbe { mode = 2, asset = "front" };
+            var bridge = StateBridgeRegistry.Find(typeof(ReactiveStateProbe));
+
+            using var state = new StateBlockSet();
+            bridge.Capture(captured, ownerId: 1, state, default, time: 0);
+
+            bridge.Apply(restored, ownerId: 1, state);
+            bridge.Apply(restored, ownerId: 1, state);
+            bridge.Apply(restored, ownerId: 1, state);
+
+            Assert.AreEqual(0, restored.modeReactions);
+            Assert.AreEqual(0, restored.assetReactions);
+        }
+
+        [Test]
+        public void ReapplyingTheSameFrame_ReactsOnlyOnce()
+        {
+            // Scrubbing lands on the same frame again and again; a reaction that fired each time
+            // would reload on every mouse move.
+            var captured = new ReactiveStateProbe { mode = 7, asset = "back" };
+            var restored = new ReactiveStateProbe();
+            var bridge = StateBridgeRegistry.Find(typeof(ReactiveStateProbe));
+
+            using var state = new StateBlockSet();
+            bridge.Capture(captured, ownerId: 1, state, default, time: 0);
+
+            bridge.Apply(restored, ownerId: 1, state);
+            bridge.Apply(restored, ownerId: 1, state);
+            bridge.Apply(restored, ownerId: 1, state);
+
+            Assert.AreEqual(1, restored.modeReactions);
+            Assert.AreEqual(1, restored.assetReactions);
+        }
+
+        [Test]
+        public void AMemberWithNoReaction_IsStillAPlainAssignment()
+        {
+            var captured = new ReactiveStateProbe { quiet = 4f };
+            var restored = new ReactiveStateProbe();
+            var bridge = StateBridgeRegistry.Find(typeof(ReactiveStateProbe));
+
+            using var state = new StateBlockSet();
+            bridge.Capture(captured, ownerId: 1, state, default, time: 0);
+            bridge.Apply(restored, ownerId: 1, state);
+
+            Assert.AreEqual(4f, restored.quiet);
+            Assert.AreEqual(0, restored.modeReactions);
+        }
+
+        /// <summary>
+        /// The viewer shows text as text, not as the length and bytes it is stored in.
+        ///
+        /// Walked into like any other struct, a member called selectedAvatar reads as "_length: 12"
+        /// and a couple of hundred bytes of hex -- the storage rather than the value, under names
+        /// nobody wrote.
+        /// </summary>
+        [Test]
+        public void TheViewerReadsTextAsText()
+        {
+            var probe = new FixedTextProbe { title = "front camera" };
+            var bridge = StateBridgeRegistry.Find(typeof(FixedTextProbe));
+
+            using var state = new StateBlockSet();
+            bridge.Capture(probe, ownerId: 1, state, default, time: 0);
+
+            var block = state.Find<FixedTextProbe.LiveStateBlock>();
+            var bytes = new byte[block.elementSize - block.metaSize];
+            block.CopyValueTo(0, bytes);
+
+            var layout = Editor.LiveDataViewer.LiveDataValueLayout.For(
+                typeof(FixedTextProbe.LiveStateBlock));
+
+            var row = layout.Find(f => f.label == "_title");
+            Assert.IsNotNull(row.label, "the text member did not get a row of its own");
+            Assert.IsFalse(layout.Exists(f => f.label == "_length" || f.label == "_utf8"),
+                "the viewer walked into the storage instead of reading the value");
+
+            Assert.AreEqual("\"front camera\"",
+                Editor.LiveDataViewer.LiveDataValueLayout.Read(bytes, bytes.Length, row));
+        }
+
+        [Test]
+        public void TheViewerSaysWhenTextWasNotCarried()
+        {
+            // The two markers are worth seeing as themselves: an empty line would read as "it is
+            // empty", which is a different thing from "it was too long to carry".
+            var probe = new FixedTextProbe { title = new string('あ', 11) };
+            var bridge = StateBridgeRegistry.Find(typeof(FixedTextProbe));
+
+            using var state = new StateBlockSet();
+            bridge.Capture(probe, ownerId: 1, state, default, time: 0);
+
+            var block = state.Find<FixedTextProbe.LiveStateBlock>();
+            var bytes = new byte[block.elementSize - block.metaSize];
+            block.CopyValueTo(0, bytes);
+
+            var layout = Editor.LiveDataViewer.LiveDataValueLayout.For(
+                typeof(FixedTextProbe.LiveStateBlock));
+            var row = layout.Find(f => f.label == "_title");
+
+            var text = Editor.LiveDataViewer.LiveDataValueLayout.Read(bytes, bytes.Length, row);
+            Assert.IsNotEmpty(text);
+            Assert.AreNotEqual("\"\"", text, "a value that was not carried must not read as empty");
         }
 
         [Test]

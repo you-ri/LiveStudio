@@ -22,7 +22,7 @@ namespace Lilium.LiveStudio
     [DefaultExecutionOrder(250)]
     [LiveClass("ExternalAvatarSource", Category = "Avatar", Icon = "deployed_code")]
     [FormerlyNamedAs("VRMAvatarSource")]
-    public class ExternalAvatarSource : MonoBehaviour, IAvatarSource
+    public partial class ExternalAvatarSource : MonoBehaviour, IAvatarSource
     {
         public event Action<GameObject> onAvatarReady;
 
@@ -44,7 +44,22 @@ namespace Lilium.LiveStudio
 
         // ライブシーンページ等のインスペクタから、ExternalAssetManager に登録済みのアバターを
         // ドロップダウンで選択する。get/set とも manager に委譲する（backing field なし = 非永続）。
-        [LiveProperty(label = "AVATAR_SELECT"), StringSelector(nameof(avatarOptions))]
+        //
+        // State lane rather than the event lane, which is not a choice about how often it changes --
+        // it changes a few times a take -- but about what is the source of truth. The value is the
+        // intent ("this avatar is out"); loading it is the effect. Carried as state, a replay puts
+        // the intent back and the setter's reconcile produces the effect, so any frame of the
+        // recording is enough to say which avatar should be standing there. Carried as an event, the
+        // recording holds the moment someone switched and nothing else, and every reader has to
+        // reconstruct the intent by replaying history from the beginning.
+        //
+        // The write is only made when the value actually changed (the generated apply compares
+        // first), so the reconcile does not run sixty times a second for an avatar standing still.
+        // ⚠ Its width is a ceiling on the display name: a longer one is not carried at all rather
+        // than shortened, which for this member means a recording that does not say which avatar
+        // was out. 256 bytes is 85 kanji or 256 ASCII characters.
+        [LiveProperty(label = "AVATAR_SELECT", lane = FrameLane.State, textCapacity = 256)]
+        [StringSelector(nameof(avatarOptions))]
         [Help("AVATAR_SELECT_HELP")]
         public string selectedAvatar
         {

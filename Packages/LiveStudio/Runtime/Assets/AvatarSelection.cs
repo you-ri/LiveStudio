@@ -36,17 +36,25 @@ namespace Lilium.LiveStudio
             return names.ToArray();
         }
 
-        /// <summary>Name of the currently selected avatar, or empty when on the default avatar.</summary>
+        /// <summary>
+        /// Name of the currently selected avatar, or empty when on the default avatar.
+        ///
+        /// Asks the manager which asset the single-selection group has settled on rather than
+        /// looking for a raised <see cref="AssetBase.enabled"/> flag. Selecting raises the chosen
+        /// asset and leaves lowering the others to the reconcile, so in between there are two
+        /// raised flags and "the first one in the list" answers with whichever happens to be
+        /// registered earlier -- naming the previous avatar right after someone picked a new one.
+        /// That answer reached a recording as the value of the write that had just been made
+        /// (a switch to one avatar written down as a switch to another), which is what this exists
+        /// to prevent.
+        /// </summary>
         public static string GetSelectedName(ExternalAssetManager manager)
         {
-            if (manager == null) return string.Empty;
+            var selected = manager?.selectedExclusive;
 
-            var view = manager.assetsView;
-            for (int i = 0; i < view.Count; i++)
-            {
-                if (_IsAvatar(view[i]) && view[i].enabled) return view[i].name ?? string.Empty;
-            }
-            return string.Empty;
+            // The manager's groups are kind-agnostic, so a non-avatar exclusive group would answer
+            // here too. Which avatar is out is a question about avatars.
+            return _IsAvatar(selected) ? selected.name ?? string.Empty : string.Empty;
         }
 
         /// <summary>
