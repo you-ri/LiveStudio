@@ -33,7 +33,10 @@ namespace Lilium.LiveStudio
         // selected camera is refreshed every _selectedCameraPreviewIntervalMs, while the other cameras
         // are cycled one-by-one every _unselectedCameraPreviewIntervalMs. Kept per project (any scene of
         // the same project shares the same polling cadence), so they use Project persist scope.
-        [LiveField(persistScope = PersistScope.Project), Hide]
+        // None of the three intervals below are on the live data (lane = None): they tune how often
+        // the remote app asks this machine for things, which is a property of the operator's setup
+        // rather than of the world being recorded.
+        [LiveField(persistScope = PersistScope.Project, lane = FrameLane.None), Hide]
         [FormerlyNamedAs("selectedCameraPreviewIntervalMs")]
         private static int _selectedCameraPreviewIntervalMs = 100;
 
@@ -46,7 +49,7 @@ namespace Lilium.LiveStudio
             set => _selectedCameraPreviewIntervalMs = Mathf.Max(1, value);
         }
 
-        [LiveField(persistScope = PersistScope.Project), Hide]
+        [LiveField(persistScope = PersistScope.Project, lane = FrameLane.None), Hide]
         [FormerlyNamedAs("unselectedCameraPreviewIntervalMs")]
         private static int _unselectedCameraPreviewIntervalMs = 50;
 
@@ -64,7 +67,7 @@ namespace Lilium.LiveStudio
         // keeps displayed values fresh: Studio changes them from anywhere (operations/gamepad,
         // physics/animation, getter-only computed values) without notifying anyone.
         // Kept per project like the camera preview intervals above.
-        [LiveField(persistScope = PersistScope.Project), Hide]
+        [LiveField(persistScope = PersistScope.Project, lane = FrameLane.None), Hide]
         [FormerlyNamedAs("realtimePropertyIntervalMs")]
         private static int _realtimePropertyIntervalMs = 100;
 

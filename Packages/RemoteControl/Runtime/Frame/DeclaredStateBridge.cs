@@ -92,6 +92,16 @@ namespace Lilium.RemoteControl.Frames
         private readonly ulong _layout;
         private readonly int _payloadSize;
 
+        /// <summary>Widest slot, which is all the scratch the comparison below ever needs.</summary>
+        private readonly int _widestSlot;
+
+        // Where a member's current value is marshalled so it can be compared with the recorded
+        // bytes. One per bridge rather than one per call: apply runs on the main thread, once per
+        // object per frame, and allocating here would put the garbage back that the comparison
+        // exists to avoid. Built on first use, because a bridge in a run that never replays
+        // anything should not carry it.
+        private byte[] _scratch;
+
         // Built on first ask. Nothing on the per-frame path wants it -- the bridge itself works off
         // the slots -- so it stays unbuilt in a run where nobody is looking at the lane.
         private Field[] _fields;
@@ -103,6 +113,11 @@ namespace Lilium.RemoteControl.Frames
             _slots = slots;
             _layout = layout;
             _payloadSize = payloadSize;
+
+            for (int i = 0; i < slots.Length; i++)
+            {
+                if (slots[i].size > _widestSlot) _widestSlot = slots[i].size;
+            }
         }
 
         /// <summary>
@@ -143,6 +158,20 @@ namespace Lilium.RemoteControl.Frames
 
         /// <summary>The declaration's hash, which a recording is checked against.</summary>
         public ulong layout => _layout;
+
+        /// <inheritdoc/>
+        public override bool Carries(string memberName)
+        {
+            // By the name the member is exposed under, which is what a declaration names it by. A
+            // member the declaration asked for but that could not be laid out never became a slot,
+            // so asking the slots is asking what is actually moved.
+            for (int i = 0; i < _slots.Length; i++)
+            {
+                if (string.Equals(_slots[i].name, memberName, StringComparison.Ordinal)) return true;
+            }
+
+            return false;
+        }
 
         /// <summary>
         /// The declared values and where they sit, in payload order. For anything that has the bytes
@@ -308,8 +337,50 @@ namespace Lilium.RemoteControl.Frames
                 {
                     var slot = _slots[i];
                     if (!_TryBind(in handle, in slot, out var property)) continue;
+                    if (_AlreadyHolds(in property, in slot, bytes)) continue;
 
                     property.SetValue(_Read(slot, bytes));
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Whether the member already holds what the recording says, so nothing needs writing.
+        ///
+        /// The state lane restates every member on every frame, and this goes in through the same
+        /// accessor a REST write does: without asking first, replaying a recording runs the full
+        /// write -- the old value read back, the changing and changed notifications, the editor
+        /// dirty mark -- sixty times a second for every declared member of every object, almost all
+        /// of it for values that did not move. It is also what the design asks of a replay-only
+        /// apply path: idempotent, and deciding by what is actually there rather than by what was
+        /// written last.
+        ///
+        /// Compared as bytes rather than as values. <c>Equals</c> on a boxed struct with no override
+        /// is a reflective field walk, which would cost more than the write it is trying to avoid,
+        /// and the question here really is whether the memory says the same thing.
+        /// </summary>
+        private unsafe bool _AlreadyHolds(in LiveProperty property, in Slot slot, byte* bytes)
+        {
+            var current = property.GetValue();
+            if (current == null) return false;
+
+            // A reference member resolves to whatever it points at, which need not be this shape.
+            if (current.GetType() != slot.valueType) return false;
+
+            var scratch = _scratch ??= new byte[_widestSlot];
+
+            fixed (byte* mine = scratch)
+            {
+                // The same call the capture side makes, so the two agree on how a value becomes
+                // bytes -- including bool, which is four bytes here and not blittable at all.
+                Marshal.StructureToPtr(current, (IntPtr)mine, false);
+
+                var stored = bytes + slot.offset;
+                for (int b = 0; b < slot.size; b++)
+                {
+                    if (mine[b] != stored[b]) return false;
                 }
             }
 

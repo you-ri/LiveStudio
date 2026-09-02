@@ -186,13 +186,17 @@ namespace Lilium.RemoteControl.Frames
         public static bool isApplyingEvent => _applyingEvent != null;
 
         /// <summary>
-        /// Says the event being applied does not need keeping, because the state lane carries what
-        /// it wrote.
+        /// Says the event being applied does not need keeping.
         ///
-        /// Called from inside the apply, by the code that resolved the target and can see which
-        /// lane it belongs to. The write still took its place in the order -- that is the half of
-        /// the gate this does not touch -- it simply leaves no record, because a record saying what
-        /// the state lane already says is the same value written twice at 548 bytes a frame.
+        /// Two callers, for two reasons. A <see cref="FrameLane.State"/> member is already copied
+        /// every frame, so a record for it is the same value written twice at 548 bytes a frame. A
+        /// <see cref="FrameLane.None"/> member is not part of the live data at all -- a setting of
+        /// this machine rather than of the world -- and recording it means a replay reaches over and
+        /// changes the operator's language, resolution or quality level.
+        ///
+        /// Called from inside the apply, by the code that resolved the target and can see which lane
+        /// it belongs to. The write still took its place in the order -- that is the half of the gate
+        /// this does not touch -- it simply leaves no record.
         /// </summary>
         public static void OmitAppliedRecord(string target)
         {

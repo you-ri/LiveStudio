@@ -189,6 +189,21 @@ namespace Lilium.RemoteControl
         /// Set <see cref="FrameLane.None"/> to keep it out of the frame entirely.
         /// </summary>
         public FrameLane lane { get; set; } = FrameLane.Event;
+        /// <summary>
+        /// UTF-8 bytes reserved for a <c>string</c> member carried by <see cref="FrameLane.State"/>.
+        /// Ignored for every other type and for the other lanes.
+        ///
+        /// The state lane holds a fixed width per member, so text needs a bound before it can join.
+        /// There is no default: the bound is a claim about the values this member will hold, and
+        /// only whoever declared it can make that claim. Without one the member stays in the event
+        /// lane and the generator says so (LRC005).
+        ///
+        /// Rounded up to the nearest width the block has (32, 64, 128, 256). A value that outgrows
+        /// it at runtime is left out of the frame rather than shortened -- see
+        /// <c>Lilium.RemoteControl.Frames.FixedText</c> -- so a member whose length has no ceiling
+        /// (a file path, free text) belongs in the event lane instead.
+        /// </summary>
+        public int textCapacity { get; set; }
 
         public LivePropertyAttribute()
         {
@@ -242,6 +257,21 @@ namespace Lilium.RemoteControl
         /// Set <see cref="FrameLane.None"/> to keep it out of the frame entirely.
         /// </summary>
         public FrameLane lane { get; set; } = FrameLane.Event;
+        /// <summary>
+        /// UTF-8 bytes reserved for a <c>string</c> member carried by <see cref="FrameLane.State"/>.
+        /// Ignored for every other type and for the other lanes.
+        ///
+        /// The state lane holds a fixed width per member, so text needs a bound before it can join.
+        /// There is no default: the bound is a claim about the values this member will hold, and
+        /// only whoever declared it can make that claim. Without one the member stays in the event
+        /// lane and the generator says so (LRC005).
+        ///
+        /// Rounded up to the nearest width the block has (32, 64, 128, 256). A value that outgrows
+        /// it at runtime is left out of the frame rather than shortened -- see
+        /// <c>Lilium.RemoteControl.Frames.FixedText</c> -- so a member whose length has no ceiling
+        /// (a file path, free text) belongs in the event lane instead.
+        /// </summary>
+        public int textCapacity { get; set; }
 
         public LiveFieldAttribute()
         {
@@ -315,6 +345,17 @@ namespace Lilium.RemoteControl
         /// RemoteApp のボタンに表示するアイコン名 (Material Icons)。未設定ならアイコンなし。
         /// </summary>
         public string icon { get; set; }
+
+        /// <summary>
+        /// Whether a recording keeps this call. Default <see cref="FrameLane.Event"/>, which records
+        /// it; <see cref="FrameLane.None"/> keeps it out of the take entirely, for a call that
+        /// belongs to the machine rather than to the world (opening a folder, re-syncing a link).
+        ///
+        /// <see cref="FrameLane.State"/> means nothing here -- a call is not a value, so there is
+        /// nothing to copy every frame -- and is corrected to <see cref="FrameLane.Event"/> with a
+        /// warning at registration rather than obeyed in silence.
+        /// </summary>
+        public FrameLane lane { get; set; } = FrameLane.Event;
 
         public LiveFunctionAttribute()
         {

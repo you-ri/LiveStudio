@@ -33,7 +33,20 @@ namespace Lilium.RemoteControl.Tests
             public Matrix4x4 wide;
             public Matrix4x4 wider;
 
-            public float driven { get; set; }
+            /// <summary>Counts what the apply side actually wrote, not what it was handed.</summary>
+            public int drivenWrites;
+
+            private float _driven;
+
+            public float driven
+            {
+                get => _driven;
+                set
+                {
+                    _driven = value;
+                    drivenWrites++;
+                }
+            }
         }
 
         private StateBlockSet _state;
@@ -163,6 +176,50 @@ namespace Lilium.RemoteControl.Tests
             Assert.AreEqual(Matrix4x4.identity, subject.wide);
             Assert.AreEqual(Matrix4x4.Scale(new Vector3(2f, 3f, 4f)), subject.wider);
             Assert.AreEqual(9f, subject.intensity, 1e-5f);
+        }
+
+        [Test]
+        public void Apply_DoesNotWriteAValueTheTargetAlreadyHolds()
+        {
+            // The state lane restates every member on every frame, and this path goes in through
+            // the accessor a REST write uses -- the old value read back, the changing and changed
+            // notifications, the editor dirty mark. Without asking first, a replay pays all of that
+            // sixty times a second for values that did not move.
+            var bridge = DeclaredStateBridge.Build(Declare(Member("driven", FrameLane.State)));
+            var subject = new Fixture { driven = 3f };
+            var handle = LiveObjectRegistry.Create(subject, "guarded-fixture");
+            Assert.IsNotNull(handle);
+
+            bridge.Capture(subject, 1, _state, default, 0);
+
+            subject.drivenWrites = 0;
+            Assert.IsTrue(bridge.Apply(subject, 1, _state));
+            Assert.IsTrue(bridge.Apply(subject, 1, _state));
+
+            Assert.AreEqual(0, subject.drivenWrites, "an unchanged value was written back anyway");
+            Assert.AreEqual(3f, subject.driven);
+        }
+
+        [Test]
+        public void Apply_StillWritesAValueThatMoved()
+        {
+            var bridge = DeclaredStateBridge.Build(Declare(Member("driven", FrameLane.State)));
+            var subject = new Fixture { driven = 3f };
+            var handle = LiveObjectRegistry.Create(subject, "guarded-fixture");
+            Assert.IsNotNull(handle);
+
+            bridge.Capture(subject, 1, _state, default, 0);
+
+            subject.driven = 8f;
+            subject.drivenWrites = 0;
+
+            Assert.IsTrue(bridge.Apply(subject, 1, _state));
+            Assert.IsTrue(bridge.Apply(subject, 1, _state));
+
+            // Once for the value that had moved, and nothing for the second pass: applying the same
+            // frame twice has to land in the same place, which is what a scrub does all day.
+            Assert.AreEqual(1, subject.drivenWrites);
+            Assert.AreEqual(3f, subject.driven);
         }
 
         [Test]

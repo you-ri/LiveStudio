@@ -54,8 +54,11 @@ namespace Lilium.LiveStudio.Virgo
         /// <summary>UDP 受信ソケットが開いているか。</summary>
         public bool isOpened => _udpConnection.isOpened;
 
+        // Off the live data (lane = None): which UDP port this machine listens on is part of how the
+        // rig is wired, not of what was performed. A spare machine may well listen elsewhere, and a
+        // replay that wrote this back would reopen the socket on a port nobody is sending to.
         [SerializeField]
-        [LiveField]
+        [LiveField(lane = FrameLane.None)]
         private int _port = 0;
 
         private UDPConnection _udpConnection = new UDPConnection();
@@ -68,23 +71,31 @@ namespace Lilium.LiveStudio.Virgo
 
         // 受信フレームより何秒遅延させて再生するか。補間先 (i0+1) を在庫させるための余裕。
         // 大きいほど最新フレームを追い越して hold する頻度が減るが、表示レイテンシは増える。
+        //
+        // ライブデータには載せない (lane = None)。この値が効くのは受信したフレームをどう食うかであって、
+        // 記録に残るのは食った結果のポーズなので、再生時にはそもそも出番がない。
         [SerializeField]
-        [LiveField]
+        [LiveField(lane = FrameLane.None)]
         private float _delaySeconds = 0.0167f; // 約1フレーム (60fps)
 
         // Height (meters) the capture camera sits above the subject (the warp mark). With cameraDistance it
         // places VirgoMotionSource (= _position, the point the captured camera is pinned to in ResetCamera)
         // at the assumed real camera location. When both match the real rig, the avatar — placed at its
         // captured offset from the camera — lands on the mark.
+        //
+        // 収録しない (lane = None)。これは撮影リグの実寸で、機材の設置がそうなっているという事実。
+        // ⚠ 予備機や再生機のリグ設定が違えば、同じ記録でもアバターの立ち位置は変わる。
         [SerializeField]
-        [LiveField]
+        [LiveField(lane = FrameLane.None)]
         private float _cameraHeight = 1.3f;
 
         // Horizontal distance (meters) from the subject anchor to the capture camera, along the anchor's
         // forward (+Z) axis. With cameraHeight this fully specifies the capture-camera origin
         // geometrically, so this GameObject's position is determined even before/without capture pose data.
+        //
+        // cameraHeight と対で 1 つの設定なので、レーンも揃える (lane = None)。
         [SerializeField]
-        [LiveField]
+        [LiveField(lane = FrameLane.None)]
         private float _cameraDistance = 0.7f;
 
         [SerializeField]
@@ -218,7 +229,9 @@ namespace Lilium.LiveStudio.Virgo
         }
 
 
-        [LiveFunction]
+        // 収録しない (lane = None)。受信ソケットを開き直すのはこの機械の配線の話で、
+        // テイクの中で起きたことではない。
+        [LiveFunction(lane = FrameLane.None)]
         public void Open()
         {
             if (_udpConnection.isOpened)
@@ -579,8 +592,10 @@ namespace Lilium.LiveStudio.Virgo
         /// Runs on the main thread (LiveFunction invocations are marshaled there); the
         /// buffer's own lock keeps the reset safe against the receive thread.
         /// </summary>
+        // 収録しない (lane = None)。合わせ直すのは受信ストリームとこの機械の時計の関係で、
+        // 記録に残るのは合わせた結果のポーズ。再生時にやり直す相手がそもそも居ない。
         [ContextMenu("Resync Timing")]
-        [LiveFunction]
+        [LiveFunction(lane = FrameLane.None)]
         public void ResyncTiming()
         {
             // The pipeline has two timing baselines: Fusion's (its offset onto the capture stream) and
@@ -631,8 +646,12 @@ namespace Lilium.LiveStudio.Virgo
             }
         }
 
+        // 収録しない (lane = None)。⚠ **これは他の 2 つと違い、世界を動かす呼び出し**
+        // (撮影カメラの基準点を打ち直すので、アバターの立ち位置が変わる)。テイク中に押すと、
+        // その瞬間から再生は収録時と食い違う。VirgoMotionSource をリグ設定として丸ごと
+        // 収録対象外にするという判断の一部として、その代償を承知で外している。
         [ContextMenu("Reset Camera")]
-        [LiveFunction]
+        [LiveFunction(lane = FrameLane.None)]
         public override void ResetCamera() => _ResetCameraFrom(in _lastReceivedFrameData);
 
         private void _ResetCameraFrom(in AvatarAnimationData reference)

@@ -44,6 +44,22 @@ namespace Lilium.RemoteControl.Frames
 
         /// <summary>Writes the element back onto the object. False when the set has nothing for it.</summary>
         public abstract bool Apply(object owner, int ownerId, StateBlockSet state);
+
+        /// <summary>
+        /// Whether this bridge actually moves the named member.
+        ///
+        /// Asked because declaring the state lane and being carried by it are two different things.
+        /// A member can ask for the lane and not reach the block -- text with no width, a type that
+        /// is not unmanaged -- and the generator says so at compile time, but nothing said so at
+        /// runtime: the write path and the keyframe restatement both read the declaration, saw
+        /// <see cref="FrameLane.State"/>, and left the member to a lane that was not carrying it.
+        /// A member no lane carries is a hole in the recording that nothing reports, so the question
+        /// is put to whatever is doing the carrying rather than to the declaration.
+        ///
+        /// The name is the member's own, as reflection spells it. A bridge that keys its members by
+        /// the name they are exposed under answers for that spelling instead; callers try both.
+        /// </summary>
+        public abstract bool Carries(string memberName);
     }
 
     /// <inheritdoc/>
@@ -53,11 +69,19 @@ namespace Lilium.RemoteControl.Frames
     {
         private readonly StateCapture<TOwner, TBlock> _capture;
         private readonly StateApply<TOwner, TBlock> _apply;
+        private readonly string[] _memberNames;
 
-        public StateBridge(StateCapture<TOwner, TBlock> capture, StateApply<TOwner, TBlock> apply)
+        public StateBridge(StateCapture<TOwner, TBlock> capture, StateApply<TOwner, TBlock> apply,
+            string[] memberNames = null)
         {
             _capture = capture ?? throw new ArgumentNullException(nameof(capture));
             _apply = apply ?? throw new ArgumentNullException(nameof(apply));
+
+            // Empty rather than null when a bridge does not say: the answer is then "carries
+            // nothing", which leaves every member to the other lane. Wasteful where the block does
+            // carry it -- the value ends up in both -- and that is the direction to be wrong in,
+            // because the other one loses the member from the recording entirely.
+            _memberNames = memberNames ?? Array.Empty<string>();
         }
 
         public override Type ownerType => typeof(TOwner);
@@ -65,6 +89,17 @@ namespace Lilium.RemoteControl.Frames
         public override Type blockType => typeof(TBlock);
 
         public override StateBlock EnsureBlock(StateBlockSet state) => state.GetOrCreate<TBlock>();
+
+        /// <inheritdoc/>
+        public override bool Carries(string memberName)
+        {
+            for (int i = 0; i < _memberNames.Length; i++)
+            {
+                if (string.Equals(_memberNames[i], memberName, StringComparison.Ordinal)) return true;
+            }
+
+            return false;
+        }
 
         public override bool Capture(object owner, int ownerId, StateBlockSet state,
             FrameSource source, long time)
@@ -112,11 +147,12 @@ namespace Lilium.RemoteControl.Frames
 
         /// <summary>Registers a generated bridge. Re-registering the same owner type replaces it.</summary>
         public static void Register<TOwner, TBlock>(
-            StateCapture<TOwner, TBlock> capture, StateApply<TOwner, TBlock> apply)
+            StateCapture<TOwner, TBlock> capture, StateApply<TOwner, TBlock> apply,
+            params string[] memberNames)
             where TOwner : class
             where TBlock : unmanaged
         {
-            Register(new StateBridge<TOwner, TBlock>(capture, apply));
+            Register(new StateBridge<TOwner, TBlock>(capture, apply, memberNames));
         }
 
         /// <summary>Registers a bridge built by hand, for a type the generator cannot reach.</summary>

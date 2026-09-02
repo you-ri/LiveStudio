@@ -361,5 +361,73 @@ namespace Lilium.RemoteControl.Tests
 
             Assert.AreEqual(1, _subject.writes);
         }
+
+        /// <summary>
+        /// A member that asked for the state lane and did not get there is still restated.
+        ///
+        /// Declaring the lane and being carried by it are two different things: text has no layout,
+        /// so a declared type drops it from the block and says so once at registration. The type
+        /// still has a bridge, so asking "does this type have one" answers yes for a member the
+        /// block never held -- and the member falls out of both lanes with nothing reporting it.
+        /// The question has to be asked of the member.
+        ///
+        /// Uses the declared path because the generated one refuses such a member at compile time,
+        /// and a fixture for that would put a permanent warning in the package's console.
+        /// </summary>
+        [Test]
+        public void AStateMemberTheBlockCouldNotHold_IsRestatedAfterAll()
+        {
+            var liveClass = LiveClass.Register(
+                typeof(DeclaredRestateSubject), nameof(DeclaredRestateSubject),
+                new[]
+                {
+                    new LivePropertyDefine { name = "weight", path = "weight", lane = FrameLane.State },
+                    new LivePropertyDefine { name = "title", path = "title", lane = FrameLane.State },
+                });
+
+            StateBridgeRegistry.Register(DeclaredStateBridge.Build(liveClass));
+
+            var subject = new DeclaredRestateSubject { weight = 2f, title = "carried by nobody" };
+            var handle = LiveObjectRegistry.Create(typeof(DeclaredRestateSubject), subject, kDeclaredId);
+
+            try
+            {
+                var applied = ReplayFirstFrame(RecordOneFrame());
+
+                // The float reached the block, so the keyframe does not say it a second time.
+                Assert.IsFalse(FindTarget(applied, kDeclaredId, "weight").HasValue,
+                    "a member the state lane carries was restated as well");
+
+                var title = FindTarget(applied, kDeclaredId, "title");
+                Assert.IsTrue(title.HasValue, "a state member the block could not hold reached neither lane");
+                Assert.AreEqual("carried by nobody", title.Value.text);
+            }
+            finally
+            {
+                handle?.Unregister();
+                StateBridgeRegistry.Unregister(typeof(DeclaredRestateSubject));
+            }
+        }
+
+        private const string kDeclaredId = "restate-declared-subject";
+
+        /// <summary>A type with no attributes, the way an asset-declared one is.</summary>
+        public class DeclaredRestateSubject
+        {
+            public float weight;
+
+            public string title = string.Empty;
+        }
+
+        private static Applied? FindTarget(List<Applied> applied, string id, string member)
+        {
+            var target = "/live/object/" + id + "/" + member;
+            for (int i = 0; i < applied.Count; i++)
+            {
+                if (applied[i].target == target) return applied[i];
+            }
+
+            return null;
+        }
     }
 }

@@ -43,22 +43,29 @@ namespace Lilium.RemoteControl
         // The page reaches these by property path (LivePropertyRef), so they stay exposed here --
         // that keeps the value, the dirty flag and the persistence in one place. Only how they are
         // presented moved to the page.
+        //
+        // All of them are off the live data (lane = None). They are the recorder's own settings, and
+        // <see cref="excludeObjectIds"/> is not enough on its own: that excludes by this component's
+        // registry id, while a keyframe restatement -- and any client writing through the owning
+        // GameObject -- addresses the same members as `{gameObject}/components/{n}/_take`. The two
+        // never meet, so a take was carrying the take number and the compression setting it was
+        // written with, and a replay of it wrote them back over the operator's own.
         [SerializeField]
-        [LiveField(persistable = false)]
+        [LiveField(persistable = false, lane = FrameLane.None)]
         private int _take = 1;
 
         [SerializeField]
-        [LiveField]
+        [LiveField(lane = FrameLane.None)]
         private int _keyframeInterval = FrameRecorder.kDefaultKeyframeInterval;
 
         [SerializeField]
-        [LiveField]
+        [LiveField(lane = FrameLane.None)]
         private bool _compress = true;
 
         // ---- Replay ----
 
         [SerializeField]
-        [LiveField(persistable = false)]
+        [LiveField(persistable = false, lane = FrameLane.None)]
         private string _replayFilename = string.Empty;
 
         private readonly FrameRecorder _recorder = new FrameRecorder();
@@ -199,8 +206,11 @@ namespace Lilium.RemoteControl
         ///
         /// Reads false when nothing is being replayed, so a control bound to it does not report a
         /// pause that has nothing to pause.
+        ///
+        /// Off the live data for the same reason as the settings above, and more sharply: this drives
+        /// the replay itself, so a recorded pause would pause the replay that is playing it back.
         /// </summary>
-        [LiveProperty]
+        [LiveProperty(lane = FrameLane.None)]
         public bool replayPaused
         {
             get => _replayer != null && _replayer.isPaused;

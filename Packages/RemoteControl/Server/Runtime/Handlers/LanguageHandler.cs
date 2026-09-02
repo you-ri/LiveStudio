@@ -54,7 +54,10 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            await ExecuteAsEvent(EventKind.PropertyWrite, context.Request.HttpMethod,
+            // Not recorded: which language the operator reads the interface in is a setting of this
+            // machine, not part of the take. A spare machine is entitled to differ on it, and a
+            // replay that put it back would change the language out from under whoever is watching.
+            await ExecuteAsSetting(EventKind.PropertyWrite, context.Request.HttpMethod,
                 context.Request.Url.AbsolutePath, language, () =>
             {
                 LocalizationSystem.currentLanguage = language;

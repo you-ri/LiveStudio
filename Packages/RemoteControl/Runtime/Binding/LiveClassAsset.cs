@@ -306,6 +306,9 @@ namespace Lilium.RemoteControl
                 help = string.IsNullOrEmpty(help) ? null : help,
                 icon = string.IsNullOrEmpty(icon) ? null : icon,
                 section = section?.ToSectionAttribute(),
+                // A function has no owner type to resolve against, and State would mean nothing on
+                // one anyway, so the declared value is taken as it stands.
+                lane = ResolveLane(null),
             };
         }
 

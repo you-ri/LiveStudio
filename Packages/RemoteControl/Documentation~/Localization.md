@@ -96,7 +96,12 @@ is the same `LocalizationSystem` with two differences:
   translated yet is still readable; one full of `LDS_` tokens is not.
 
 The active language is the one the application and the remote app share — an editor window does not
-hold a language of its own.
+hold a language of its own, and **it does not follow the editor's own language setting**
+(`Preferences ▸ Languages`). It is `LocalizationSystem.currentLanguage`: the `RemoteControl_Language`
+player pref, else the system language. Change it from the remote app, or with
+`PUT /live/language` — deliberately, so that the windows, the application and the remote app are
+never in three different languages, and so that a machine without Unity's language pack installed
+(which cannot select anything but English there) can still read them in its own language.
 
 A window that resolves its labels once, when it builds a row, watches
 `RemoteControlEditorLocalization.generation` to learn that it has to ask again. It moves whenever the

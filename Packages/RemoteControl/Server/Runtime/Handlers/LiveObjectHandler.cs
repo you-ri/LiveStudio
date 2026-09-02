@@ -193,7 +193,7 @@ namespace Lilium.RemoteControl
             {
                 return PropertyResult.Error(400, "Invalid request format");
             }
-            return InvokeFunctionCore(container, resolver, id, functionPath, body);
+            return InvokeFunctionCore(container, resolver, id, functionPath, body, absolutePath);
         }
 
         /// <summary>
@@ -810,11 +810,20 @@ namespace Lilium.RemoteControl
                 return PropertyResult.Error(400, "Failed to set property");
             }
 
-            if (prop.type?.lane == FrameLane.State)
+            if ((prop.type?.lane ?? FrameLane.Event) != FrameLane.Event)
             {
-                // The state lane copies this member every frame, so an input record for it would be
-                // the same value written twice -- and the input pays its full width to say what the
-                // state lane already said. The write still took its place in the order.
+                // Neither of the other two lanes wants a record here, for opposite reasons.
+                //
+                // State copies this member every frame, so an event record for it would be the same
+                // value written twice -- and the event pays its full width to say what the state lane
+                // already said.
+                //
+                // None is not carried by the frame at all: a setting of this machine rather than of
+                // the world. Recording it was the half of that declaration that had never been
+                // implemented, so a language or resolution changed mid-take was written down and put
+                // back on replay -- reaching over and changing the operator's own settings.
+                //
+                // Either way the write still took its place in the order.
                 FrameGate.OmitAppliedRecord(ctx.requestPath);
             }
             else
@@ -1599,7 +1608,8 @@ namespace Lilium.RemoteControl
             // property value changing, so recording only writes would lose it.
             var result = await ExecuteAsEvent(EventKind.FunctionCall, context.Request.HttpMethod,
                 context.Request.Url.AbsolutePath, body,
-                () => InvokeFunctionCore(GetObjectContainer(), GetResolver(), id, functionPath, body));
+                () => InvokeFunctionCore(GetObjectContainer(), GetResolver(), id, functionPath, body,
+                    context.Request.Url.AbsolutePath));
 
             if (!result.ok)
             {
@@ -1618,7 +1628,7 @@ namespace Lilium.RemoteControl
         /// </summary>
         private static PropertyResult InvokeFunctionCore(
             LiveObjectContainer container, ILiveObjectResolver resolver,
-            string id, string functionPath, string body)
+            string id, string functionPath, string body, string requestPath)
         {
             // 最後の/で分割してプロパティパスと関数名に分離
             string propertyPath = null;
@@ -1641,6 +1651,14 @@ namespace Lilium.RemoteControl
             if (function == null)
             {
                 return PropertyResult.Error(400, "Function not found or failed to parse arguments");
+            }
+
+            // A call declared off the live data leaves no record: it acts on this machine rather than
+            // on the world -- reopening a socket, resyncing a clock -- so a replay has no business
+            // pressing it again. It still takes its place in the order, like any other omission.
+            if (function.lane == FrameLane.None)
+            {
+                FrameGate.OmitAppliedRecord(requestPath);
             }
 
             var args = _BuildInvokeArguments(function, body);

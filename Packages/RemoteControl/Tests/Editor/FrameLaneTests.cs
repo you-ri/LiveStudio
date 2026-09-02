@@ -21,6 +21,10 @@ namespace Lilium.RemoteControl.Tests
 
             [LiveField] public float requested;
 
+            /// <summary>A setting of the machine: the resolution it renders at, the language it
+            /// reads in. Not part of the world, so no lane carries it.</summary>
+            [LiveField(lane = FrameLane.None)] public float setting;
+
             // The convention this codebase uses for a property with side effects: the value lives
             // in a hidden field and the property pushes it somewhere on write.
             [LiveField(lane = FrameLane.State), Hide]
@@ -32,6 +36,17 @@ namespace Lilium.RemoteControl.Tests
             {
                 get => _shadowed;
                 set => _shadowed = value;
+            }
+
+            [LiveField(lane = FrameLane.None), Hide]
+            [FormerlyNamedAs("shadowedSetting")]
+            private float _shadowedSetting;
+
+            [LiveProperty]
+            public float shadowedSetting
+            {
+                get => _shadowedSetting;
+                set => _shadowedSetting = value;
             }
         }
 
@@ -71,6 +86,30 @@ namespace Lilium.RemoteControl.Tests
             // runtime until now, which is why a state-lane write was also recorded as an event.
             Assert.AreEqual(FrameLane.State, Member("carried").lane);
             Assert.AreEqual(FrameLane.Event, Member("requested").lane);
+            Assert.AreEqual(FrameLane.None, Member("setting").lane);
+        }
+
+        /// <summary>
+        /// What the write path branches on. It leaves a record for the event lane and for nothing
+        /// else: the state lane because that value is copied every frame anyway, and None because
+        /// the value is not part of the take at all.
+        /// </summary>
+        [Test]
+        public void OnlyTheEventLane_WantsARecord()
+        {
+            Assert.AreEqual(FrameLane.Event, Member("requested").lane);
+            Assert.AreNotEqual(FrameLane.Event, Member("carried").lane);
+            Assert.AreNotEqual(FrameLane.Event, Member("setting").lane);
+        }
+
+        [Test]
+        public void APropertyOverAFieldOffTheLane_IsAlsoOffIt()
+        {
+            // Same reasoning as the state pair below, and it matters more here: a setting exposed
+            // through a property with side effects is the usual shape -- the field holds the value
+            // and the property pushes it at Screen or QualitySettings. Missing the property would
+            // record the half a client actually writes to.
+            Assert.AreEqual(FrameLane.None, Member("shadowedSetting").lane);
         }
 
         [Test]
@@ -132,6 +171,35 @@ namespace Lilium.RemoteControl.Tests
 
             Assert.AreEqual(1, frame.eventCount);
             Assert.AreEqual("System.Single", FrameGate.symbols.Resolve(frame[0].payloadTypeId));
+        }
+
+        /// <summary>
+        /// A setting written mid-take leaves the recording alone. Before this, the declaration only
+        /// kept it off the state lane and out of the keyframe restatement -- a write during the take
+        /// was recorded like any other, and replaying it changed the operator's own language,
+        /// resolution or quality level.
+        /// </summary>
+        [Test]
+        public void AWriteToAMemberOffTheLane_LeavesNoRecord()
+        {
+            const string target = "/live/object/fixture/setting";
+            var before = FrameGate.omittedRecordCount;
+
+            FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, "{\"value\":2.5}",
+                () =>
+                {
+                    FrameGate.OmitAppliedRecord(target);
+                    return true;
+                },
+                verb: "PUT");
+
+            FrameGate.Pump();
+
+            using var frame = new EventFrame();
+            Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
+
+            Assert.AreEqual(0, frame.eventCount, "a setting is not part of the take");
+            Assert.AreEqual(before + 1, FrameGate.omittedRecordCount);
         }
 
         [Test]

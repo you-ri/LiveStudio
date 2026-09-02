@@ -16,18 +16,41 @@ namespace Lilium.RemoteControl.SourceGenerator
     sealed class StateMemberInfo
     {
         public string Name { get; }
-        public string TypeName { get; }
 
-        public StateMemberInfo(string name, string typeName)
+        /// <summary>
+        /// The type the block holds this member as, which is the member's own type for everything
+        /// except text: a <c>string</c> keeps its face on the object and travels as a fixed number
+        /// of bytes in the block.
+        /// </summary>
+        public string BlockTypeName { get; }
+
+        /// <summary>Width of the fixed text this member travels as, or zero when it is not text.</summary>
+        public int TextCapacity { get; }
+
+        /// <summary>
+        /// Whether writing this member runs a setter, which decides whether applying it is worth
+        /// guarding: a field costs a store either way, a property costs whatever it was written to
+        /// do.
+        /// </summary>
+        public bool IsProperty { get; }
+
+        public StateMemberInfo(string name, string blockTypeName, int textCapacity = 0,
+            bool isProperty = false)
         {
             Name = name;
-            TypeName = typeName;
+            BlockTypeName = blockTypeName;
+            TextCapacity = textCapacity;
+            IsProperty = isProperty;
         }
 
         public override bool Equals(object obj)
-            => obj is StateMemberInfo other && Name == other.Name && TypeName == other.TypeName;
+            => obj is StateMemberInfo other && Name == other.Name
+               && BlockTypeName == other.BlockTypeName && TextCapacity == other.TextCapacity
+               && IsProperty == other.IsProperty;
 
-        public override int GetHashCode() => (Name?.GetHashCode() ?? 0) * 397 ^ (TypeName?.GetHashCode() ?? 0);
+        public override int GetHashCode()
+            => (((Name?.GetHashCode() ?? 0) * 397 ^ (BlockTypeName?.GetHashCode() ?? 0)) * 397
+                ^ TextCapacity) * 397 ^ (IsProperty ? 1 : 0);
     }
 
     /// <summary>
@@ -87,6 +110,15 @@ namespace Lilium.RemoteControl.SourceGenerator
     static class StateBlockEmitter
     {
         public const string kBlockTypeName = "LiveStateBlock";
+
+        /// <summary>
+        /// Text widths a block can hold, smallest first. A declaration asking for something in
+        /// between takes the next one up -- the alternative is refusing a width that would have
+        /// worked, which teaches authors to pick from a list they should not have to know.
+        /// </summary>
+        static readonly int[] kTextCapacities = { 32, 64, 128, 256 };
+
+        const string kFixedStringNamespace = "global::Lilium.RemoteControl.Frames.LiveFixedString";
         public const string kCaptureMethodName = "CaptureLiveState";
         public const string kApplyMethodName = "ApplyLiveState";
 
@@ -102,6 +134,23 @@ namespace Lilium.RemoteControl.SourceGenerator
             "LRC002",
             "State-lane member cannot be carried",
             "'{0}' is in the state lane but its type '{1}' is not unmanaged, so it was left out of the state block. Use an unmanaged type, or leave the member in the input lane.",
+            "Lilium.RemoteControl",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true);
+
+        public static readonly DiagnosticDescriptor kTextNeedsCapacity = new DiagnosticDescriptor(
+            "LRC005",
+            "State-lane text needs a width",
+            "'{0}' is a string in the state lane but declares no textCapacity, so it was left out of the state block. The state lane holds a fixed width per member: set textCapacity to the longest value in UTF-8 bytes, or leave the member in the event lane.",
+            "Lilium.RemoteControl",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true,
+            description: "There is no default width. A bound is a claim about the values the member will hold, and only its author can make it.");
+
+        public static readonly DiagnosticDescriptor kTextTooWide = new DiagnosticDescriptor(
+            "LRC006",
+            "State-lane text is too wide",
+            "'{0}' asks for {1} bytes of text in the state lane, which is more than the widest block text ({2}). It was left out of the state block. A value this long is better carried by the event lane, which pays for it only when it changes.",
             "Lilium.RemoteControl",
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
@@ -149,9 +198,10 @@ namespace Lilium.RemoteControl.SourceGenerator
             {
                 foreach (var member in level.OriginalDefinition.GetMembers())
                 {
-                    if (!_TryReadStateMember(member, out var memberType)) continue;
+                    if (!_TryReadStateMember(member, out var memberType, out var textCapacity)) continue;
 
                     var name = member.Name;
+                    var throughProperty = member is IPropertySymbol;
 
                     if (member is IFieldSymbol field
                         && _TryFindShadowedProperty(field, propertiesByLiveName, out var behind)
@@ -159,6 +209,7 @@ namespace Lilium.RemoteControl.SourceGenerator
                     {
                         name = behind.Name;
                         memberType = behind.Type;
+                        throughProperty = true;
                     }
                     else if (member is IPropertySymbol && shadowedProperties.Contains(member.Name))
                     {
@@ -172,19 +223,46 @@ namespace Lilium.RemoteControl.SourceGenerator
 
                     any = true;
 
-                    // The one rule for what can be carried. Asking the compiler rather than keeping a
+                    // Text is the one member whose block type is not its own. It keeps its string
+                    // face on the object -- that is what REST answers and what the scene file holds
+                    // -- and travels as a fixed number of UTF-8 bytes, because a reference is the
+                    // one thing a block cannot hold. The width is the author's claim about the
+                    // values, so there is no default: without it the member stays where it was.
+                    if (memberType.SpecialType == SpecialType.System_String)
+                    {
+                        if (textCapacity <= 0)
+                        {
+                            problems.Add($"{level.Name}.{name}|text-no-capacity|");
+                            continue;
+                        }
+
+                        var width = _TextWidthFor(textCapacity);
+                        if (width == 0)
+                        {
+                            problems.Add($"{level.Name}.{name}|text-too-wide|{textCapacity}");
+                            continue;
+                        }
+
+                        members.Add(new StateMemberInfo(
+                            name, kFixedStringNamespace + width, width, throughProperty));
+                        continue;
+                    }
+
+                    // The one rule for everything else. Asking the compiler rather than keeping a
                     // list of blessed types means enums, Vector3, Color and anyone's own struct all
-                    // work without being named here, and string, arrays and Nullable are refused for
-                    // the same reason -- they are not something a block can hold.
+                    // work without being named here, and arrays and Nullable are refused for the
+                    // same reason -- they are not something a block can hold.
                     if (!memberType.IsUnmanagedType)
                     {
-                        problems.Add($"{level.Name}.{name}|{memberType.ToDisplayString()}");
+                        problems.Add($"{level.Name}.{name}|unmanaged|{memberType.ToDisplayString()}");
                         continue;
                     }
 
                     members.Add(new StateMemberInfo(
                         name,
-                        memberType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+                        memberType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        textCapacity: 0,
+                        isProperty: throughProperty));
                 }
             }
 
@@ -193,8 +271,8 @@ namespace Lilium.RemoteControl.SourceGenerator
             var isPartial = node.Modifiers.Any(SyntaxKind.PartialKeyword);
             var isNested = typeSymbol.ContainingType != null;
 
-            if (isNested) problems.Add("|nested");
-            else if (!isPartial) problems.Add("|not-partial");
+            if (isNested) problems.Add("|nested|");
+            else if (!isPartial) problems.Add("|not-partial|");
 
             var ns = typeSymbol.ContainingNamespace != null && !typeSymbol.ContainingNamespace.IsGlobalNamespace
                 ? typeSymbol.ContainingNamespace.ToDisplayString()
@@ -209,10 +287,25 @@ namespace Lilium.RemoteControl.SourceGenerator
                 problems.ToImmutable());
         }
 
-        /// <summary>True when a member is declared in the state lane; hands back its type.</summary>
-        static bool _TryReadStateMember(ISymbol member, out ITypeSymbol memberType)
+        /// <summary>The block width that holds this many bytes of text, or zero when none does.</summary>
+        static int _TextWidthFor(int requested)
+        {
+            foreach (var capacity in kTextCapacities)
+            {
+                if (requested <= capacity) return capacity;
+            }
+
+            return 0;
+        }
+
+        /// <summary>
+        /// True when a member is declared in the state lane; hands back its type and, for text, the
+        /// width its declaration asked for.
+        /// </summary>
+        static bool _TryReadStateMember(ISymbol member, out ITypeSymbol memberType, out int textCapacity)
         {
             memberType = null;
+            textCapacity = 0;
 
             AttributeData attribute = null;
             switch (member)
@@ -234,14 +327,18 @@ namespace Lilium.RemoteControl.SourceGenerator
                 return false;
             }
 
-            // lane = FrameLane.State is 1. Anything else -- absent, Input, None -- is not our business.
+            // lane = FrameLane.State is 1. Anything else -- absent, Event, None -- is not our business.
+            var isState = false;
             foreach (var named in attribute.NamedArguments)
             {
-                if (named.Key != "lane") continue;
-                if (named.Value.Value is int value && value == 1) return true;
+                if (named.Key == "lane" && named.Value.Value is int value && value == 1) isState = true;
+                else if (named.Key == "textCapacity" && named.Value.Value is int width) textCapacity = width;
             }
 
+            if (isState) return true;
+
             memberType = null;
+            textCapacity = 0;
             return false;
         }
 
@@ -379,20 +476,33 @@ namespace Lilium.RemoteControl.SourceGenerator
         {
             foreach (var problem in info.Problems)
             {
+                // member|code|detail. The code is its own field rather than being read off the
+                // detail, so a type name that happens to look like a code cannot be mistaken for one.
                 var split = problem.Split('|');
-                if (split.Length != 2) continue;
+                if (split.Length != 3) continue;
 
-                if (split[1] == "nested")
+                switch (split[1])
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(kNestedType, Location.None, info.FullyQualifiedName));
-                }
-                else if (split[1] == "not-partial")
-                {
-                    context.ReportDiagnostic(Diagnostic.Create(kNotPartial, Location.None, info.FullyQualifiedName));
-                }
-                else
-                {
-                    context.ReportDiagnostic(Diagnostic.Create(kUnsupportedMember, Location.None, split[0], split[1]));
+                    case "nested":
+                        context.ReportDiagnostic(Diagnostic.Create(kNestedType, Location.None, info.FullyQualifiedName));
+                        break;
+
+                    case "not-partial":
+                        context.ReportDiagnostic(Diagnostic.Create(kNotPartial, Location.None, info.FullyQualifiedName));
+                        break;
+
+                    case "text-no-capacity":
+                        context.ReportDiagnostic(Diagnostic.Create(kTextNeedsCapacity, Location.None, split[0]));
+                        break;
+
+                    case "text-too-wide":
+                        context.ReportDiagnostic(Diagnostic.Create(kTextTooWide, Location.None,
+                            split[0], split[2], kTextCapacities[kTextCapacities.Length - 1]));
+                        break;
+
+                    default:
+                        context.ReportDiagnostic(Diagnostic.Create(kUnsupportedMember, Location.None, split[0], split[2]));
+                        break;
                 }
             }
         }
@@ -404,7 +514,7 @@ namespace Lilium.RemoteControl.SourceGenerator
 
             foreach (var problem in info.Problems)
             {
-                if (problem.EndsWith("|nested") || problem.EndsWith("|not-partial")) return false;
+                if (problem.EndsWith("|nested|") || problem.EndsWith("|not-partial|")) return false;
             }
 
             return true;
@@ -434,7 +544,7 @@ namespace Lilium.RemoteControl.SourceGenerator
             sb.AppendLine($"{indent}{{");
             foreach (var member in info.Members)
             {
-                sb.AppendLine($"{indent}    public {member.TypeName} {member.Name};");
+                sb.AppendLine($"{indent}    public {member.BlockTypeName} {member.Name};");
             }
             sb.AppendLine($"{indent}}}");
             sb.AppendLine();
@@ -444,6 +554,12 @@ namespace Lilium.RemoteControl.SourceGenerator
             sb.AppendLine($"{indent}{{");
             foreach (var member in info.Members)
             {
+                if (member.TextCapacity > 0)
+                {
+                    sb.AppendLine($"{indent}    block.{member.Name} = {member.BlockTypeName}.From(source.{member.Name});");
+                    continue;
+                }
+
                 sb.AppendLine($"{indent}    block.{member.Name} = source.{member.Name};");
             }
             sb.AppendLine($"{indent}}}");
@@ -454,6 +570,33 @@ namespace Lilium.RemoteControl.SourceGenerator
             sb.AppendLine($"{indent}{{");
             foreach (var member in info.Members)
             {
+                if (member.TextCapacity > 0)
+                {
+                    // Asked rather than assigned, for two reasons that happen to want the same
+                    // call: a value that outgrew its width says nothing and must not overwrite what
+                    // is there, and a value that has not changed must not run the setter again --
+                    // sixty times a second, a setter behind an asset reference answers by loading.
+                    var local = $"__liveState{member.Name}";
+                    sb.AppendLine($"{indent}    if (block.{member.Name}.TryGetValue(target.{member.Name}, out var {local}))");
+                    sb.AppendLine($"{indent}    {{");
+                    sb.AppendLine($"{indent}        target.{member.Name} = {local};");
+                    sb.AppendLine($"{indent}    }}");
+                    continue;
+                }
+
+                if (member.IsProperty)
+                {
+                    // A setter can do anything -- pair a device, load an asset, tell whatever
+                    // watches. The state lane says this value every frame whether or not it moved,
+                    // so asking first is what keeps a replay from running all of that sixty times a
+                    // second for a value standing still.
+                    sb.AppendLine($"{indent}    if (!global::Lilium.RemoteControl.Frames.LiveStateValue.SameBytes(target.{member.Name}, block.{member.Name}))");
+                    sb.AppendLine($"{indent}    {{");
+                    sb.AppendLine($"{indent}        target.{member.Name} = block.{member.Name};");
+                    sb.AppendLine($"{indent}    }}");
+                    continue;
+                }
+
                 sb.AppendLine($"{indent}    target.{member.Name} = block.{member.Name};");
             }
             sb.AppendLine($"{indent}}}");
@@ -488,6 +631,18 @@ namespace Lilium.RemoteControl.SourceGenerator
             sb.Append(info.FullyQualifiedName);
             sb.Append('.');
             sb.Append(kApplyMethodName);
+
+            // The members that actually reached the block, so the runtime can tell "asked for the
+            // state lane" from "carried by it". A member the generator turned away (no width for
+            // its text, a type that is not unmanaged) is absent here, which is how the keyframe
+            // restatement learns to keep carrying it.
+            foreach (var member in info.Members)
+            {
+                sb.Append(", \"");
+                sb.Append(member.Name);
+                sb.Append('"');
+            }
+
             sb.AppendLine(");");
         }
     }

@@ -120,6 +120,11 @@ namespace Lilium.RemoteControl.Frames.Recording
         private readonly List<EventRecord> _walked = new List<EventRecord>();
         private readonly Dictionary<int, int> _lastWriteIndex = new Dictionary<int, int>();
 
+        // Records put back since the last frame was supplied, waiting to be written into that
+        // frame's event lane. A list rather than writing straight through, because a seek applies
+        // its events outside a frame head -- there is no lane to write into until the next one.
+        private readonly List<EventRecord> _replayed = new List<EventRecord>();
+
         /// <summary>Events handed to the applier so far.</summary>
         public int appliedEventCount { get; private set; }
 
@@ -198,6 +203,10 @@ namespace Lilium.RemoteControl.Frames.Recording
             {
                 frame.structure = _player.structure;
                 frame.state = _player.state;
+
+                // Nothing played, but a seek may have put events back since the last frame: they
+                // belong to this head, because this is the head they became visible at.
+                _PublishReplayed(frame.events);
                 return true;
             }
 
@@ -209,7 +218,37 @@ namespace Lilium.RemoteControl.Frames.Recording
             frame.state = _player.state;
 
             _ApplyEventsOfCurrentFrame();
+
+            // A replayed event was applied at this head like any other, so it goes into the lane
+            // like any other. Without this the frame carries the recording's state and structure but
+            // an empty event lane, and everything downstream -- a viewer's event list first among
+            // them -- reports that a replay fired nothing.
+            _PublishReplayed(frame.events);
             return true;
+        }
+
+        /// <summary>
+        /// Moves the records put back since the last frame into that frame's event lane.
+        ///
+        /// The ids in them are the recording's, not this run's, exactly as the structure and state
+        /// pointed at here are. A reader of a supplied frame resolves through
+        /// <see cref="player"/> for the same reason.
+        /// </summary>
+        private void _PublishReplayed(EventFrame lane)
+        {
+            if (_replayed.Count == 0) return;
+
+            // No lane to publish into (a caller driving the replayer outside the gate). Dropped
+            // rather than kept: holding them would hand a later frame events that are not its own.
+            if (lane != null)
+            {
+                for (int i = 0; i < _replayed.Count; i++)
+                {
+                    lane.Add(_replayed[i]);
+                }
+            }
+
+            _replayed.Clear();
         }
 
         /// <summary>
@@ -353,6 +392,12 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// <summary>Resolves one record back into what it meant and hands it to the applier.</summary>
         private void _ApplyRecord(in EventRecord record)
         {
+            // Kept for the lane before anything can turn it away. What the frame reports is what the
+            // recording carried at it -- a record that was skipped or that the applier refused still
+            // happened in the take, and a viewer that hides those is the one place the difference
+            // between "the recording has nothing here" and "nothing could be put back" is invisible.
+            _replayed.Add(record);
+
             if (record.payloadTruncated)
             {
                 skippedTruncatedCount++;

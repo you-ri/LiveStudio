@@ -180,14 +180,14 @@ namespace Lilium.RemoteControl.Frames
 
             _visited.Add(target);
 
-            // Whether the state lane is actually carrying this type's state members, as opposed to
-            // being asked to. A type that declares the state lane but produced no bridge (not
-            // partial, no reference to the simulation) has its state members carried by neither
-            // lane -- the block leaves them out and the write path omits their records on the
-            // strength of the declaration. Asking the bridge rather than the declaration puts them
-            // back here, so a build that went past the generator's warnings still records a world
-            // that changes.
-            var carriedByState = StateBridgeRegistry.Find(type) != null;
+            // What the state lane is actually carrying for this type, as opposed to what was asked
+            // of it. A type that declares the state lane but produced no bridge (not partial, no
+            // reference to the simulation) has its state members carried by neither lane -- the
+            // block leaves them out and the write path omits their records on the strength of the
+            // declaration. Asked per member rather than per type, because the two part company one
+            // member at a time: text with no declared width, a field whose type is not unmanaged.
+            // Those reach the block's owner but not the block, and the type still has a bridge.
+            var stateBridge = StateBridgeRegistry.Find(type);
 
             var members = liveClass.propertyTypes;
             for (int i = 0; i < members.Length; i++)
@@ -258,7 +258,7 @@ namespace Lilium.RemoteControl.Frames
                     continue;
                 }
 
-                if (!_ShouldRestate(member, carriedByState)) continue;
+                if (!_ShouldRestate(member, stateBridge)) continue;
 
                 var value = LivePropertyUtility.GetValueRaw(target, in member);
                 if (value == null) continue;
@@ -291,8 +291,27 @@ namespace Lilium.RemoteControl.Frames
             return elementType != null && typeof(Component).IsAssignableFrom(elementType);
         }
 
+        /// <summary>
+        /// Whether the state lane is moving this member, as opposed to having been asked to.
+        ///
+        /// Tried under every name the member goes by, because the two kinds of bridge key their
+        /// members differently: a generated block names them the way the code does, and a declared
+        /// one names them the way they are exposed. Being wrong towards "not carried" only costs a
+        /// value written down twice; being wrong the other way loses it from the recording.
+        /// </summary>
+        private static bool _IsCarriedByState(LivePropertyType member, StateBridge bridge)
+        {
+            if (bridge == null) return false;
+
+            if (member.properyInfo != null && bridge.Carries(member.properyInfo.Name)) return true;
+            if (member.fieldInfo != null && bridge.Carries(member.fieldInfo.Name)) return true;
+            if (member.shadowField != null && bridge.Carries(member.shadowField.Name)) return true;
+
+            return bridge.Carries(member.name);
+        }
+
         /// <summary>Whether one leaf member's value belongs in a restatement.</summary>
-        private static bool _ShouldRestate(LivePropertyType member, bool carriedByState)
+        private static bool _ShouldRestate(LivePropertyType member, StateBridge bridge)
         {
             // Nothing to write it back through. A read-only member is also the one thing the design
             // forbids putting in a frame as a value: replaying an application's own result and then
@@ -307,10 +326,10 @@ namespace Lilium.RemoteControl.Frames
                     return false;
 
                 // Already in every frame at its own address, so restating it would be the same value
-                // twice. Unless nothing is actually carrying it (see the caller), in which case this
-                // is the only lane left.
+                // twice. Unless nothing is actually carrying it (see above), in which case this is
+                // the only lane left.
                 case FrameLane.State:
-                    return !carriedByState;
+                    return !_IsCarriedByState(member, bridge);
             }
 
             // A reference to another member's value. What it points at is restated in its own right,

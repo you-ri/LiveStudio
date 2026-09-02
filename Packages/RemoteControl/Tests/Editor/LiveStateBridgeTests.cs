@@ -84,7 +84,8 @@ namespace Lilium.RemoteControl.Tests
             var fields = typeof(StateLaneProbe.LiveStateBlock).GetFields();
 
             // The label is in the event lane, so it is recorded when it changes rather than carried
-            // every frame -- and it is a string, which a block could not hold anyway.
+            // every frame. Text can join the other lane now (see LiveFixedStringStateTests), but
+            // only where a declaration claims a width for it; this one claims none.
             CollectionAssert.AreEquivalent(
                 new[] { "_intensity", "_position", "_mode" },
                 System.Array.ConvertAll(fields, f => f.Name));

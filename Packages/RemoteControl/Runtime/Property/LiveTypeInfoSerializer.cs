@@ -231,6 +231,20 @@ namespace Lilium.RemoteControl
                 jObject["persistScope"] = "project";
             }
 
+            // Which lane of the live data carries this member, so a client can say whether a take
+            // remembers it -- and, when it does, whether it is paid for every frame or only when it
+            // changes. Nothing but the declaration knows this, and the declaration is in code.
+            //
+            // ⚠ Event is left unsaid, on the same reasoning as Scene above: it is the default, and
+            // saying it on every member would grow the table for no news. It also keeps every
+            // existing response byte-identical -- only members that are actually off the default
+            // gain a field.
+            switch (propertyType.lane)
+            {
+                case FrameLane.State: jObject["lane"] = "state"; break;
+                case FrameLane.None: jObject["lane"] = "none"; break;
+            }
+
             // 多態配列: 要素型に代入可能な具象 [LiveClass] 型名を列挙し、クライアントの
             // 「型を選んで要素追加」UI に渡す。プリミティブ等 (候補 0 件) では付与しない。
             if (isArray && valueType != null)
@@ -335,6 +349,14 @@ namespace Lilium.RemoteControl
                 ["parameters"] = jParams,
                 ["order"] = functionType.order
             };
+
+            // Say so when a recording does not keep this call. Event is left unsaid, as on a property:
+            // it is the default, and every existing response stays byte-identical.
+            // ⚠ State never reaches here -- LiveFunctionType corrects it at construction.
+            if (functionType.lane == FrameLane.None)
+            {
+                jObject["lane"] = "none";
+            }
 
             // controller項目を追加（nullでない場合のみ）
             if (functionType.controlAttribute != null)

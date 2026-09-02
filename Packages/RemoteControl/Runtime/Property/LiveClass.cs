@@ -88,6 +88,13 @@ namespace Lilium.RemoteControl
         /// <summary>Help text override.</summary>
         public string help;
 
+        /// <summary>
+        /// Whether a recording keeps this call. See <see cref="LiveFunctionAttribute.lane"/>.
+        /// Declared here rather than read from the attribute, because an asset declares functions
+        /// for types it cannot put attributes on.
+        /// </summary>
+        public FrameLane lane;
+
         /// <summary>Section override (button-only sections).</summary>
         public SectionAttribute section;
     }
@@ -1635,8 +1642,16 @@ namespace Lilium.RemoteControl
         /// <summary>条件付き表示が設定されているか。</summary>
         public bool hasVisibilityCondition => visibilityConditions != null && visibilityConditions.Length > 0;
 
+        /// <summary>
+        /// Whether a recording keeps this call. See <see cref="LiveFunctionAttribute.lane"/>.
+        /// Only <see cref="FrameLane.Event"/> (recorded) and <see cref="FrameLane.None"/> (not) are
+        /// meaningful; State is corrected to Event at construction.
+        /// </summary>
+        public readonly FrameLane lane;
+
         public LiveFunctionType(string name, MethodInfo methodInfo,
-            string labelOverride = null, string iconOverride = null, string helpOverride = null, SectionAttribute sectionOverride = null)
+            string labelOverride = null, string iconOverride = null, string helpOverride = null,
+            SectionAttribute sectionOverride = null, FrameLane? laneOverride = null)
         {
             Debug.Assert(methodInfo != null, "MethodInfo cannot be null");
 
@@ -1653,6 +1668,18 @@ namespace Lilium.RemoteControl
             var funcAttr = TypeReflectionSystem.GetCustomAttribute<LiveFunctionAttribute>(methodInfo);
             this.label = labelOverride ?? funcAttr?.label;
             this.icon = iconOverride ?? funcAttr?.icon;
+
+            // Which lane, if any, keeps this call. State is not a thing a call can be on -- there is
+            // no value to copy every frame -- so it is corrected rather than obeyed, and said out
+            // loud: a silent correction would read as "I asked for something and nothing happened".
+            var lane = laneOverride ?? funcAttr?.lane ?? FrameLane.Event;
+            if (lane == FrameLane.State)
+            {
+                Debug.LogWarning($"[RemoteControl] {methodInfo.DeclaringType?.Name}.{name}: " +
+                    "FrameLane.State means nothing on a function. Recording it as an event.");
+                lane = FrameLane.Event;
+            }
+            this.lane = lane;
 
             // ControlAttribute属性を読み取り
             this.controlAttribute = TypeReflectionSystem.GetCustomAttribute<ControlAttribute>(methodInfo);

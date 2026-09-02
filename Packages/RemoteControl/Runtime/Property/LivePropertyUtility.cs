@@ -164,7 +164,8 @@ namespace Lilium.RemoteControl
                 if (methodInfo != null)
                 {
                     return new LiveFunctionType(e.name ?? methodInfo.Name, methodInfo,
-                        labelOverride: e.label, iconOverride: e.icon, helpOverride: e.help, sectionOverride: e.section);
+                        labelOverride: e.label, iconOverride: e.icon, helpOverride: e.help,
+                        sectionOverride: e.section, laneOverride: e.lane);
                 }
 
                 Debug.LogError($"[RemoteControl] Method not found for {type.Name}.{e.path}");

@@ -400,6 +400,26 @@ namespace Lilium.RemoteControl.RestApi
                 () => { action(); return true; });
 
         /// <summary>
+        /// Applies a request that changes a setting of this machine rather than of the world: it
+        /// goes through the gate but leaves no record, so a replay does not reach over and change it.
+        ///
+        /// This is <see cref="FrameLane.None"/> for a route that has no exposed member to declare it
+        /// on. An exposed property says so in its declaration and <c>LiveObjectHandler</c> honours it;
+        /// a handler with a route of its own -- the language, say -- has nowhere to put the
+        /// declaration and says it here instead.
+        ///
+        /// The gate is still the right place for it. What it gives is the main thread and the order,
+        /// and needing those has nothing to do with whether the take should remember it.
+        /// </summary>
+        protected Task ExecuteAsSetting(EventKind kind, string method, string target, string body,
+            Action action)
+            => ExecuteAsEvent(kind, method, target, body, () =>
+            {
+                FrameGate.OmitAppliedRecord(target);
+                action();
+            });
+
+        /// <summary>
         /// Applies several operations as one unit, for a bundled request whose parts have to take
         /// effect in the same frame.
         /// </summary>

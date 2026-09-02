@@ -141,6 +141,61 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
+        public void ReplayedEvents_AreCarriedInTheSuppliedFramesEventLane()
+        {
+            // A supplied frame used to carry the recording's structure and state but an empty event
+            // lane, so everything reading frames -- the viewer's event list first among them --
+            // reported that a replay had fired nothing.
+            var next = 0;
+            var bytes = Record(2, () =>
+                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov",
+                    (next++).ToString(), () => true, verb: "PUT"));
+
+            var applier = new RecordingApplier();
+            using (var lane = new EventFrame())
+            using (var replayer = new FrameReplayer(new MemoryStream(bytes), applier))
+            {
+                var frame = new Frame { events = lane };
+
+                for (int i = 0; i < 2; i++)
+                {
+                    lane.Reset(i, FrameRate.FPS60);
+
+                    Assert.IsTrue(replayer.FillFrame(ref frame), $"frame {i} should have played");
+                    Assert.AreEqual(1, lane.eventCount, $"frame {i} should carry its one event");
+                    Assert.AreEqual(EventKind.PropertyWrite, lane[0].kind);
+                }
+            }
+        }
+
+        [Test]
+        public void AHeldFrame_DoesNotRepeatTheEventsItAlreadyCarried()
+        {
+            // The pause re-supplies the frame it stopped on. Its events landed when it played, so
+            // listing them again every frame would turn one write into a rising count of them.
+            var bytes = Record(1, () =>
+                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", "35.0",
+                    () => true, verb: "PUT"));
+
+            var applier = new RecordingApplier();
+            using (var lane = new EventFrame())
+            using (var replayer = new FrameReplayer(new MemoryStream(bytes), applier))
+            {
+                var frame = new Frame { events = lane };
+
+                lane.Reset(0, FrameRate.FPS60);
+                Assert.IsTrue(replayer.FillFrame(ref frame));
+                Assert.AreEqual(1, lane.eventCount);
+
+                replayer.isPaused = true;
+
+                lane.Reset(1, FrameRate.FPS60);
+                Assert.IsTrue(replayer.FillFrame(ref frame));
+                Assert.AreEqual(0, lane.eventCount, "a held frame replays nothing, so it carries nothing");
+            }
+        }
+
+        [Test]
         public void TheVerb_SurvivesSoAReplayDoesNotHaveToGuessIt()
         {
             // The same path answers to more than one verb, so replaying a write as a reset would be
