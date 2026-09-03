@@ -188,20 +188,22 @@ namespace Lilium.LiveStudio
 
                 property.Value.SetValue(value);
 
-                if (property.Value.type?.lane == FrameLane.State)
+                // A deck key and a remote write are the same write, so they ask the same question --
+                // through the same code, because a second copy of the rule is how the two came to
+                // disagree. The write still took its place in the order either way.
+                if (LiveStateCarriage.OmitsRecord(property.Value.type, property.Value.obj))
                 {
-                    // The state lane copies this member every frame, so an input record for it would
-                    // be the same value written twice -- and the input pays its full width to say
-                    // what the state lane already said. The write still took its place in the order.
-                    // Same rule the REST path applies; a deck key and a remote write are the same
-                    // write, and only one of them honouring it would record a value once or twice
-                    // depending on which control was used.
                     FrameGate.OmitAppliedRecord(target);
                 }
                 else
                 {
+                    // The value that was asked for, not the one read back afterwards -- the same
+                    // rule the remote path follows, and for the same reason: a getter is free to be
+                    // a view over something the write only starts, and one that reports the selected
+                    // avatar by scanning for the first enabled asset still named the previous avatar
+                    // when the write reached it. The recording then holds a value nobody asked for.
                     FrameGate.StampAppliedPayload(
-                        target, property.Value.type?.resolvedValueType, property.Value.GetValue());
+                        target, property.Value.type?.resolvedValueType, value);
                 }
             });
         }

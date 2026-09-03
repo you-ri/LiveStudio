@@ -459,7 +459,8 @@ namespace Lilium.RemoteControl.Tests
         public void ABridgeSaysWhichMembersItActuallyCarries()
         {
             // Declaring the state lane and being carried by it are two different things, and only
-            // the bridge knows which. See LiveEventRestateTests for what depends on the answer.
+            // the bridge knows which. LiveStateCarriage asks this to decide whether a write still
+            // needs an event record.
             var bridge = StateBridgeRegistry.Find(typeof(FixedTextProbe));
 
             Assert.IsTrue(bridge.Carries("_title"));

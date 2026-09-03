@@ -36,6 +36,12 @@ namespace Lilium.RemoteControl.Tests
             /// <summary>Counts what the apply side actually wrote, not what it was handed.</summary>
             public int drivenWrites;
 
+            /// <summary>
+            /// Worked out from something else and never assigned. The lane is a round trip, so a
+            /// member it can only read is a member it cannot carry.
+            /// </summary>
+            public float derived => intensity * 2f;
+
             private float _driven;
 
             public float driven
@@ -99,6 +105,28 @@ namespace Lilium.RemoteControl.Tests
             };
 
             Assert.AreEqual(FrameLane.Event, member.ResolveLane(typeof(Fixture)));
+        }
+
+        /// <summary>
+        /// The declared path asks the same question the generated one asks at compile time.
+        ///
+        /// The generated movers refuse a read-only member with LRC008, because assigning one would
+        /// be a compile error in code nobody wrote. A declaration read at load has no compile time
+        /// to refuse at, so it would have captured the member every frame and had the write refused
+        /// every frame -- the same defect arriving as noise instead of as a diagnostic.
+        /// </summary>
+        [Test]
+        public void AReadOnlyMemberAskingForTheStateLane_IsLeftOnTheEventLane()
+        {
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("read-only"));
+
+            var bridge = DeclaredStateBridge.Build(Declare(
+                Member("intensity", FrameLane.State),
+                Member("derived", FrameLane.State)));
+
+            Assert.IsTrue(bridge.Carries("intensity"), "the writable member is unaffected");
+            Assert.IsFalse(bridge.Carries("derived"),
+                "a replay has no way to write it back, so no lane should claim to carry it");
         }
 
         /// <summary>Declares members on an asset the way the inspector does.</summary>

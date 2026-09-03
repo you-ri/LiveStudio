@@ -28,7 +28,12 @@ namespace Lilium.RemoteControl.Tests
         /// <summary>A state payload of <paramref name="count"/> elements, filled by the caller.</summary>
         private static byte[] State(int typeId, int elementSize, int count, Func<int, int, byte> value)
         {
-            var payload = new byte[12 + elementSize * count];
+            // type, element width, element count, layout hash -- the shape a state entry names
+            // before its elements. The hash is left zero: what is under test is the transposition,
+            // and the codec copies the header through without reading past the shape.
+            const int header = 4 + 4 + 4 + 8;
+
+            var payload = new byte[header + elementSize * count];
             Buffer.BlockCopy(BitConverter.GetBytes(typeId), 0, payload, 0, 4);
             Buffer.BlockCopy(BitConverter.GetBytes(elementSize), 0, payload, 4, 4);
             Buffer.BlockCopy(BitConverter.GetBytes(count), 0, payload, 8, 4);
@@ -37,7 +42,7 @@ namespace Lilium.RemoteControl.Tests
             {
                 for (int b = 0; b < elementSize; b++)
                 {
-                    payload[12 + element * elementSize + b] = value(element, b);
+                    payload[header + element * elementSize + b] = value(element, b);
                 }
             }
 
@@ -184,11 +189,13 @@ namespace Lilium.RemoteControl.Tests
                                + (Next() % 64) * 0.0000001f;
                 }
 
-                var payload = new byte[12 + kFloats * 4];
+                const int header = 4 + 4 + 4 + 8;
+
+                var payload = new byte[header + kFloats * 4];
                 Buffer.BlockCopy(BitConverter.GetBytes(3), 0, payload, 0, 4);
                 Buffer.BlockCopy(BitConverter.GetBytes(kFloats * 4), 0, payload, 4, 4);
                 Buffer.BlockCopy(BitConverter.GetBytes(1), 0, payload, 8, 4);
-                Buffer.BlockCopy(value, 0, payload, 12, kFloats * 4);
+                Buffer.BlockCopy(value, 0, payload, header, kFloats * 4);
 
                 Append(entries, FrameEntryKind.FrameBoundary, frame, new byte[] { 1, 0, 0, 0, 60, 0, 0, 0 });
                 Append(entries, FrameEntryKind.State, frame, payload);

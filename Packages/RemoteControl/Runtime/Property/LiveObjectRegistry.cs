@@ -302,6 +302,19 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
+        /// True when <paramref name="target"/> is registered <em>under an id</em> -- an address
+        /// something else can reach it by.
+        ///
+        /// Deliberately not the same question as "is it registered". A handle can exist with no id
+        /// (one resolved on demand, one made to capture defaults), and such a registration is not
+        /// an address: nothing that addresses by id carries the object. So whatever decides
+        /// "something else already carries this, leave it alone" has to ask this rather than
+        /// <see cref="FindByTarget"/> -- otherwise an id-less registration takes the object away
+        /// from whatever would have carried it, and it falls out of the world entirely.
+        /// </summary>
+        public static bool HasAddress(object target) => FindByTarget(target)?.hasId == true;
+
+        /// <summary>
         /// ターゲットオブジェクトからLiveObjectを検索
         /// </summary>
         public static LiveObjectHandle? FindByTarget(object target)

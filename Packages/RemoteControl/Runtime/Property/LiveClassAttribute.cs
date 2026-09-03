@@ -185,7 +185,7 @@ namespace Lilium.RemoteControl
         ///
         /// Set <see cref="FrameLane.State"/> for a member that changes many times a second, or one
         /// that is also written from inside the application without passing through the frame gate
-        /// -- such writes are not inputs and leave no trace in the input lane.
+        /// -- such writes are not events and leave no trace in the event lane.
         /// Set <see cref="FrameLane.None"/> to keep it out of the frame entirely.
         /// </summary>
         public FrameLane lane { get; set; } = FrameLane.Event;
@@ -269,7 +269,7 @@ namespace Lilium.RemoteControl
         ///
         /// Set <see cref="FrameLane.State"/> for a member that changes many times a second, or one
         /// that is also written from inside the application without passing through the frame gate
-        /// -- such writes are not inputs and leave no trace in the input lane.
+        /// -- such writes are not events and leave no trace in the event lane.
         /// Set <see cref="FrameLane.None"/> to keep it out of the frame entirely.
         /// </summary>
         public FrameLane lane { get; set; } = FrameLane.Event;

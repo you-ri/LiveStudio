@@ -46,8 +46,12 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// <summary>Bytes an entry spends on its header: kind, payload length, frame number.</summary>
         private const int kEntryHeader = 1 + 4 + 8;
 
-        /// <summary>Bytes a state payload spends naming its shape before the elements.</summary>
-        private const int kStateHeader = 4 + 4 + 4;
+        /// <summary>
+        /// Bytes a state payload spends naming its shape before the elements: type, element width,
+        /// element count, layout hash. Copied through verbatim -- only the elements are transposed,
+        /// and the header is the same bytes in every frame of a group, which deflate crushes.
+        /// </summary>
+        private const int kStateHeader = 4 + 4 + 4 + 8;
 
         // Reused across calls. A chunk is built about once a second, but it is built on the frame
         // thread, so these are buffers to refill rather than allocations to make.

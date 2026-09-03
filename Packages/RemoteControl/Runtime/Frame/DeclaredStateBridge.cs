@@ -217,12 +217,38 @@ namespace Lilium.RemoteControl.Frames
             {
                 if (member == null || member.lane != FrameLane.State) continue;
 
+                // The lane is a round trip: capture reads the member out every frame and apply
+                // writes it back on replay. A member that cannot take the write would be captured
+                // and then refused sixty times a second -- and read-only is the one thing the
+                // design forbids putting in a frame as a value anyway, because replaying an
+                // application's own result and comparing against it agrees with itself. The
+                // generated path asks this at compile time (LRC008); this is the same question on
+                // the path that has no compile time.
+                if (member.isReadOnly)
+                {
+                    Debug.LogWarning(
+                        $"[RemoteControl] '{liveClass.typeName}.{member.name}' asks for the state lane " +
+                        $"but is read-only, so a replay has no way to write it back. Left on the event lane.");
+                    continue;
+                }
+
+                // The block holds an element per object, so one value shared by all of them has no
+                // element to sit in: it would be written into every one and read back from whichever
+                // came last. Refused on the generated path too (LRC008).
+                if (member.isStatic)
+                {
+                    Debug.LogWarning(
+                        $"[RemoteControl] '{liveClass.typeName}.{member.name}' asks for the state lane " +
+                        $"but is static, and the lane carries a value per object. Left on the event lane.");
+                    continue;
+                }
+
                 var valueType = member.resolvedValueType ?? member.valueType;
                 if (valueType == null || !CanCarry(valueType))
                 {
                     Debug.LogWarning(
                         $"[RemoteControl] '{liveClass.typeName}.{member.name}' asks for the state lane " +
-                        $"but its type is not something a frame can carry as bytes. Left on the evt lane.");
+                        $"but its type is not something a frame can carry as bytes. Left on the event lane.");
                     continue;
                 }
 

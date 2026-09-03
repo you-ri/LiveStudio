@@ -197,7 +197,7 @@ namespace Lilium.RemoteControl.Tests
                     Assert.AreEqual(block.elementSize, elementSize);
                     Assert.AreEqual(1, count);
 
-                    var elements = MemoryMarshal.Cast<byte, StateElement<Pose>>(entry.payload.Slice(12));
+                    var elements = MemoryMarshal.Cast<byte, StateElement<Pose>>(entry.payload.Slice(4 + 4 + 4 + 8));
                     Assert.AreEqual(4321, elements[0].time);
                     Assert.AreEqual(1.5f, elements[0].value.x);
                     Assert.AreEqual(-2.5f, elements[0].value.y);

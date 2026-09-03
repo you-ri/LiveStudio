@@ -25,6 +25,13 @@ namespace Lilium.LiveStudio.EditorTests
 
             // Its counterpart in the input lane, so the two can be told apart in the same fixture.
             [LiveField] public float requested;
+
+            // Asks for the state lane and never reaches a block (left out of the bridge below).
+            // The declaration alone used to be enough to drop the record here.
+            [LiveField(lane = FrameLane.State)] public float uncarried;
+
+            // A setting of the machine. No lane carries it and none ever will.
+            [LiveField(lane = FrameLane.None)] public float setting;
             public int invokeCount;
 
             // Records the last argument received by SetValue so an argument-bearing invoke can be asserted.
@@ -36,6 +43,14 @@ namespace Lilium.LiveStudio.EditorTests
 
             [LiveFunction]
             public void DoThing() => invokeCount++;
+
+            /// <summary>
+            /// A call that acts on this machine rather than on the world -- reopening a socket,
+            /// resyncing a clock. Recorded and replayed, it reaches over and presses a button on
+            /// the operator's own equipment.
+            /// </summary>
+            [LiveFunction(lane = FrameLane.None)]
+            public void DoMachineThing() => invokeCount++;
 
             [LiveFunction]
             public void SetValue(int value)
@@ -85,6 +100,14 @@ namespace Lilium.LiveStudio.EditorTests
             LiveObjectRegistry.ClearAll();
             LiveClass.RegisterFromAttributes<WeightedEntry>();
             LiveClass.RegisterFromAttributes<FakeTarget>();
+
+            // Declaring the state lane is a request; being carried by it is a fact, and the write
+            // path now asks the second question. A fixture is not partial so the generator never
+            // sees it -- without a bridge, `carried` would be a member nothing carries and its
+            // writes would be recorded like any other.
+            Lilium.RemoteControl.Frames.StateBridgeRegistry
+                .Register<FakeTarget, FakeTargetBlock>(_CaptureTarget, _ApplyTarget,
+                    nameof(FakeTarget.carried));
             _target = new FakeTarget
             {
                 weights = new[] { new WeightedEntry("Alpha"), new WeightedEntry("Beta") },
@@ -96,8 +119,21 @@ namespace Lilium.LiveStudio.EditorTests
         public void TearDown()
         {
             LiveObjectRegistry.ClearAll();
+            Lilium.RemoteControl.Frames.StateBridgeRegistry.Unregister(typeof(FakeTarget));
             Lilium.RemoteControl.Frames.FrameGate.RestoreDefaultClock();
         }
+
+        /// <summary>What a generated block for <see cref="FakeTarget"/> would hold.</summary>
+        struct FakeTargetBlock
+        {
+            public float carried;
+        }
+
+        static void _CaptureTarget(FakeTarget source, ref FakeTargetBlock block)
+            => block.carried = source.carried;
+
+        static void _ApplyTarget(in FakeTargetBlock block, FakeTarget target)
+            => target.carried = block.carried;
 
         /// <summary>
         /// Applies the operation and runs the frame head it posted its work to.
@@ -280,6 +316,89 @@ namespace Lilium.LiveStudio.EditorTests
             Assert.AreEqual(0, frame.eventCount, "the state lane already carries it");
             Assert.AreEqual(omitted + 1, Lilium.RemoteControl.Frames.FrameGate.omittedRecordCount,
                 "counted, so 'no input for this' can be told from 'the input went missing'");
+        }
+
+        /// <summary>
+        /// The function version of the same drift. The remote path has honoured a call's lane since
+        /// functions got one; this path did not, so the same machine-side call stayed out of the
+        /// take when it came over the network and went into it when it came from a deck key.
+        /// </summary>
+        [Test]
+        public void InvokeFunctionOperation_OnACallOffTheLane_LeavesNoRecord()
+        {
+            var action = new InvokeFunctionOperation { targetId = kTargetId, functionName = "DoMachineThing" };
+            var omitted = Lilium.RemoteControl.Frames.FrameGate.omittedRecordCount;
+
+            Fire(action, Triggered(active: true));
+
+            Assert.AreEqual(1, _target.invokeCount, "the call still runs");
+
+            using var frame = new Lilium.RemoteControl.Frames.EventFrame();
+            Assert.AreEqual(Lilium.RemoteControl.Frames.FrameLookup.Found,
+                Lilium.RemoteControl.Frames.FrameGate.buffer.TryReadLatest(frame));
+
+            Assert.AreEqual(0, frame.eventCount, "a machine-side call is not part of the take");
+            Assert.AreEqual(omitted + 1, Lilium.RemoteControl.Frames.FrameGate.omittedRecordCount);
+        }
+
+        [Test]
+        public void InvokeFunctionOperation_OnAnOrdinaryCall_IsStillRecorded()
+        {
+            var action = new InvokeFunctionOperation { targetId = kTargetId, functionName = "DoThing" };
+
+            Fire(action, Triggered(active: true));
+
+            using var frame = new Lilium.RemoteControl.Frames.EventFrame();
+            Assert.AreEqual(Lilium.RemoteControl.Frames.FrameLookup.Found,
+                Lilium.RemoteControl.Frames.FrameGate.buffer.TryReadLatest(frame));
+
+            Assert.AreEqual(1, frame.eventCount, "a call never shows up as a value changing");
+        }
+
+        /// <summary>
+        /// The regression this exists for. Declaring the state lane is a request that can be
+        /// refused, and this path read the declaration rather than asking what is being carried --
+        /// so a member the block does not hold lost its record here while the REST path kept it.
+        /// The value then appeared in neither lane.
+        /// </summary>
+        [Test]
+        public void SetPropertyOperation_OnAStateMemberNothingCarries_IsStillRecorded()
+        {
+            var action = new SetPropertyOperation { targetId = kTargetId, propertyPath = "uncarried" };
+
+            Fire(action, Value(0.5f));
+
+            Assert.AreEqual(0.5f, _target.uncarried, 1e-5f, "the write still lands");
+
+            using var frame = new Lilium.RemoteControl.Frames.EventFrame();
+            Assert.AreEqual(Lilium.RemoteControl.Frames.FrameLookup.Found,
+                Lilium.RemoteControl.Frames.FrameGate.buffer.TryReadLatest(frame));
+
+            Assert.AreEqual(1, frame.eventCount,
+                "nothing else in the file says this member changed");
+        }
+
+        /// <summary>
+        /// The other half of the drift. This path only ever honoured the state lane, so a setting
+        /// changed from a deck key stayed in the take -- and replaying it reached over and changed
+        /// the operator's own machine.
+        /// </summary>
+        [Test]
+        public void SetPropertyOperation_OnAMemberOffTheLane_LeavesNoRecord()
+        {
+            var action = new SetPropertyOperation { targetId = kTargetId, propertyPath = "setting" };
+            var omitted = Lilium.RemoteControl.Frames.FrameGate.omittedRecordCount;
+
+            Fire(action, Value(0.5f));
+
+            Assert.AreEqual(0.5f, _target.setting, 1e-5f, "the write still lands");
+
+            using var frame = new Lilium.RemoteControl.Frames.EventFrame();
+            Assert.AreEqual(Lilium.RemoteControl.Frames.FrameLookup.Found,
+                Lilium.RemoteControl.Frames.FrameGate.buffer.TryReadLatest(frame));
+
+            Assert.AreEqual(0, frame.eventCount, "a setting is not part of the take");
+            Assert.AreEqual(omitted + 1, Lilium.RemoteControl.Frames.FrameGate.omittedRecordCount);
         }
 
         [Test]

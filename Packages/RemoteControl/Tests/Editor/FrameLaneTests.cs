@@ -54,6 +54,39 @@ namespace Lilium.RemoteControl.Tests
 
             /// <summary>A collection of the machine, off the live data like any other setting.</summary>
             [LiveField(lane = FrameLane.None)] public float[] settings = new float[0];
+
+            /// <summary>
+            /// Asks for the state lane and never reaches a block. The real causes are compile-time
+            /// -- text with no declared width, a type that is not unmanaged, an owner that is not
+            /// partial -- and all of them end the same way: the declaration says state and nothing
+            /// is carrying it. Left out of the bridge below to stand for all of them.
+            /// </summary>
+            [LiveField(lane = FrameLane.State)] public float uncarried;
+        }
+
+        /// <summary>
+        /// What a generated block for <see cref="Fixture"/> would hold.
+        ///
+        /// Hand-written because the generator does not run on a test fixture (it is not partial),
+        /// and what is under test is what the readers do once something is carrying a member --
+        /// not how the block came to exist.
+        /// </summary>
+        private struct FixtureBlock
+        {
+            public float carried;
+            public float shadowed;
+        }
+
+        private static void _CaptureFixture(Fixture source, ref FixtureBlock block)
+        {
+            block.carried = source.carried;
+            block.shadowed = source.shadowed;
+        }
+
+        private static void _ApplyFixture(in FixtureBlock block, Fixture target)
+        {
+            target.carried = block.carried;
+            target.shadowed = block.shadowed;
         }
 
         [SetUp]
@@ -61,6 +94,12 @@ namespace Lilium.RemoteControl.Tests
         {
             LiveObjectRegistry.ClearAll();
             LiveClass.RegisterFromAttributes<Fixture>();
+
+            // Named as reflection spells them: the shadowed pair is carried under the field's name,
+            // which is what the generated block would assign to.
+            StateBridgeRegistry.Register<Fixture, FixtureBlock>(_CaptureFixture, _ApplyFixture,
+                nameof(Fixture.carried), "_shadowed");
+
             FrameGate.ResetState("[test] cleared");
             FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
         }
@@ -69,6 +108,7 @@ namespace Lilium.RemoteControl.Tests
         public void Finish()
         {
             LiveObjectRegistry.ClearAll();
+            StateBridgeRegistry.Unregister(typeof(Fixture));
             FrameGate.ResetState("[test] cleared");
             FrameGate.RestoreDefaultClock();
         }
@@ -293,6 +333,116 @@ namespace Lilium.RemoteControl.Tests
                     return ok;
                 },
                 verb: "POST");
+        }
+
+        /// <summary>Runs a write the way a request and a replay both run one.</summary>
+        private static void _EnqueueSet(string target, string body)
+        {
+            FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, body,
+                () =>
+                {
+                    var ok = LiveObjectHandler.ApplyRecordedOperation(
+                        null, DefaultLiveObjectResolver.Instance, "PUT", target, body,
+                        out var status, out var error);
+                    Assert.IsTrue(ok, $"the write did not run: {status} {error}");
+                    return ok;
+                },
+                verb: "PUT");
+        }
+
+        /// <summary>
+        /// The failure this exists for. Declaring the state lane is a request that can be refused --
+        /// text with no width, a type that is not unmanaged, an owner that is not partial -- and the
+        /// write path used to drop the record on the strength of the declaration alone. The block
+        /// did not hold the value and the file did not say it changed, so the member fell out of
+        /// both lanes and a replay left it at whatever the machine happened to hold.
+        /// </summary>
+        [Test]
+        public void AWriteToAStateMemberNothingCarries_IsStillRecorded()
+        {
+            var fixture = new Fixture();
+            var handle = LiveObjectRegistry.Create(typeof(Fixture), fixture, kResetFixtureId);
+
+            using var session = new LiveEditorSession.Override(editorSession: false);
+
+            try
+            {
+                _EnqueueSet("/live/object/" + kResetFixtureId + "/uncarried", "{\"value\":2.5}");
+                FrameGate.Pump();
+
+                using var frame = new EventFrame();
+                Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
+
+                Assert.AreEqual(2.5f, fixture.uncarried, 1e-5f, "the write still lands");
+                Assert.AreEqual(1, frame.eventCount,
+                    "nothing else in the file says this member changed");
+            }
+            finally
+            {
+                handle?.Unregister();
+            }
+        }
+
+        /// <summary>The same question asked by a reset rather than a write.</summary>
+        [Test]
+        public void ResettingAStateMemberNothingCarries_IsStillRecorded()
+        {
+            var fixture = new Fixture();
+            var handle = LiveObjectRegistry.Create(typeof(Fixture), fixture, kResetFixtureId);
+
+            using var session = new LiveEditorSession.Override(editorSession: false);
+
+            try
+            {
+                // A default is only captured by a write, and the reset needs one to run at all.
+                _EnqueueSet("/live/object/" + kResetFixtureId + "/uncarried", "{\"value\":2.5}");
+                FrameGate.Pump();
+
+                _EnqueueReset("/live/object/" + kResetFixtureId + "/uncarried/@reset");
+                FrameGate.Pump();
+
+                using var frame = new EventFrame();
+                Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
+
+                Assert.AreEqual(1, frame.eventCount,
+                    "a reset of a member no lane carries is a change to keep");
+            }
+            finally
+            {
+                handle?.Unregister();
+            }
+        }
+
+        /// <summary>
+        /// The other side of it: a member the bridge does move is still kept out of the event lane,
+        /// which is the whole point of declaring the state lane in the first place.
+        /// </summary>
+        [Test]
+        public void AWriteToAStateMemberTheBridgeCarries_LeavesNoRecord()
+        {
+            var fixture = new Fixture();
+            var handle = LiveObjectRegistry.Create(typeof(Fixture), fixture, kResetFixtureId);
+
+            using var session = new LiveEditorSession.Override(editorSession: false);
+
+            try
+            {
+                var before = FrameGate.omittedRecordCount;
+
+                _EnqueueSet("/live/object/" + kResetFixtureId + "/carried", "{\"value\":2.5}");
+                FrameGate.Pump();
+
+                using var frame = new EventFrame();
+                Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
+
+                Assert.AreEqual(2.5f, fixture.carried, 1e-5f, "the write still lands");
+                Assert.AreEqual(0, frame.eventCount, "the state lane already carries it");
+                Assert.AreEqual(before + 1, FrameGate.omittedRecordCount);
+            }
+            finally
+            {
+                handle?.Unregister();
+            }
         }
 
         private const string kResetFixtureId = "lane-reset-fixture";

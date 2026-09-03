@@ -55,6 +55,20 @@ namespace Lilium.RemoteControl.Tests
     }
 
     /// <summary>
+    /// An exposed component. Both walks the state lane makes can reach one of these: the components
+    /// of an exposed GameObject, and the roster of scene components addressed by type name.
+    /// </summary>
+    [LiveClass("StateWalkGauge")]
+    public partial class StateWalkGauge : MonoBehaviour
+    {
+        [LiveField(lane = FrameLane.State), Hide]
+        private float _reading;
+
+        [LiveProperty]
+        public float reading { get => _reading; set => _reading = value; }
+    }
+
+    /// <summary>
     /// The roster the state lane walks: registered objects that have an id, and the live objects
     /// nested inside them.
     /// </summary>
@@ -227,6 +241,96 @@ namespace Lilium.RemoteControl.Tests
             {
                 proxy.OnDisable();
                 UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        [Test]
+        public void AnExposedComponentOfAnExposedGameObject_IsCarriedOnce_NotAlsoUnderItsTypeName()
+        {
+            // Both walks can reach it: the owner's component list gives it "<owner>/components[Type]",
+            // and the roster gives the only component of its type in the scene its bare type name.
+            // Using both puts one object's state in the frame twice, and a replay then has two
+            // answers for what the object was doing.
+            var go = new GameObject("state-walk-host");
+            var gauge = go.AddComponent<StateWalkGauge>();
+            var proxy = new LiveGameObject(go);
+            proxy.OnEnable();
+            LiveObjectRoster.Refresh();
+
+            try
+            {
+                gauge.reading = 0.75f;
+
+                using var state = new StateBlockSet();
+                LiveStateSystem.CaptureInto(state, time: 0);
+
+                var blocks = state.Find<StateWalkGauge.LiveStateBlock>();
+                Assert.IsNotNull(blocks, "the component's state was not carried at all");
+
+                var throughOwner = blocks.IndexOf(
+                    FrameGate.symbols.Intern(proxy.id + "/components[StateWalkGauge]"));
+                Assert.GreaterOrEqual(throughOwner, 0,
+                    "the component was not carried under the address its owner gives it");
+                Assert.AreEqual(0.75f, blocks[throughOwner].value._reading);
+
+                Assert.Less(blocks.IndexOf(FrameGate.symbols.Intern("StateWalkGauge")), 0,
+                    "the roster carried the same component again under its type name");
+                Assert.AreEqual(1, blocks.count, "the same object is in the frame at two addresses");
+            }
+            finally
+            {
+                proxy.OnDisable();
+                UnityEngine.Object.DestroyImmediate(go);
+                LiveObjectRoster.Clear();
+            }
+        }
+
+        [Test]
+        public void AComponentRegisteredWithoutAnId_IsStillCarriedThroughItsOwner()
+        {
+            // An id-less registration is not an address: nothing that addresses by id carries the
+            // object. Reading it as "something else has this one" takes the component away from the
+            // only walk that can carry it, and the value then falls out of the recording with
+            // nothing saying so -- the write is off the event lane because the member is declared
+            // state, and the state lane is not carrying it either.
+            var go = new GameObject("state-walk-host");
+            var gauge = go.AddComponent<StateWalkGauge>();
+            var proxy = new LiveGameObject(go);
+            proxy.OnEnable();
+
+            var idless = LiveObjectRegistry.Create(typeof(StateWalkGauge), gauge, string.Empty);
+            Assert.IsFalse(idless.Value.hasId, "the fixture did not produce an id-less registration");
+
+            LiveObjectRoster.Refresh();
+
+            try
+            {
+                gauge.reading = 0.5f;
+
+                using var state = new StateBlockSet();
+                LiveStateSystem.CaptureInto(state, time: 0);
+
+                var blocks = state.Find<StateWalkGauge.LiveStateBlock>();
+                Assert.IsNotNull(blocks,
+                    "an id-less registration took the component out of the frame altogether");
+
+                var index = blocks.IndexOf(
+                    FrameGate.symbols.Intern(proxy.id + "/components[StateWalkGauge]"));
+                Assert.GreaterOrEqual(index, 0,
+                    "the component was not carried under the address its owner gives it");
+                Assert.AreEqual(0.5f, blocks[index].value._reading);
+
+                gauge.reading = 0f;
+                LiveStateSystem.ApplyFrom(state);
+
+                Assert.AreEqual(0.5f, gauge.reading, "the recorded value was not written back");
+            }
+            finally
+            {
+                idless?.Unregister();
+                proxy.OnDisable();
+                UnityEngine.Object.DestroyImmediate(go);
+                LiveObjectRoster.Clear();
             }
         }
     }

@@ -22,11 +22,6 @@ namespace Lilium.RemoteControl.Tests
             FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
             _stream = new MemoryStream();
             _recorder = new FrameRecorder();
-            // These tests are about the events they submit, so the recorder is asked not to add the
-            // values it restates into each keyframe (see LiveEventRestateSystem): the editor session
-            // this runs in has live objects of its own, and their values would show up as events
-            // nothing in the test wrote.
-            _recorder.restateValues = false;
         }
 
         [TearDown]

@@ -365,7 +365,25 @@ namespace Lilium.RemoteControl.Frames.Recording
                 return;
             }
 
-            block.ReadFrom(payload.Slice(12), count);
+            // The case the width cannot see. Two builds that disagree about the order of two
+            // members of the same size produce elements that measure alike, and reading one as the
+            // other lands each value in the wrong member -- which looks like values, not like an
+            // error, and is the one failure worth refusing loudly.
+            var layoutHash = BitConverter.ToUInt64(payload.Slice(12, 8));
+            if (!StateLayoutRegistry.Matches(typeName, layoutHash))
+            {
+                if (_reportedUnknownTypes.Add(typeName))
+                {
+                    Debug.LogError(
+                        $"[RemoteControl] Recording stores '{typeName}' with a different layout than this " +
+                        "build has. The elements are the same width, so reading them would put each value " +
+                        "in the wrong member. The recording is from a different build.");
+                }
+
+                return;
+            }
+
+            block.ReadFrom(payload.Slice(20), count);
         }
 
         private void _ApplyEvent(ReadOnlySpan<byte> payload)

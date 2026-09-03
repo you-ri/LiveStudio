@@ -468,6 +468,16 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             pane.Add(scroll);
 
             _detailList = scroll.contentContainer;
+
+            // The rows are a cache of what is in the container, so they belong to this container and
+            // not to the window. Building the pane again -- which a language change does, by clearing
+            // the tree and running CreateGUI a second time -- leaves the old rows holding elements
+            // that are no longer in any tree, and _WriteDetailRows writes into those instead of
+            // filling the pane, because their count already matches. The other lanes are spared only
+            // because _Invalidate forces them to rebuild, which clears theirs; this one has no shape
+            // to invalidate, so it is cleared where it is emptied.
+            _detailRows.Clear();
+
             return pane;
         }
 

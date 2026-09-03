@@ -47,11 +47,6 @@ namespace Lilium.RemoteControl.Tests
         {
             var stream = new MemoryStream();
             var recorder = new FrameRecorder();
-            // These tests are about the events they submit, so the recorder is asked not to add the
-            // values it restates into each keyframe (see LiveEventRestateSystem): the editor session
-            // this runs in has live objects of its own, and their values would show up as events
-            // nothing in the test wrote.
-            recorder.restateValues = false;
 
             if (producer != null) FrameGate.AddFrameHeadHandler(producer);
             recorder.Start(stream, leaveOpen: true);
@@ -124,6 +119,69 @@ namespace Lilium.RemoteControl.Tests
                 Assert.IsTrue(player.Advance());
                 Assert.AreEqual(2f, block[0].value.intensity);
             }
+        }
+
+        /// <summary>
+        /// The failure a width check cannot see.
+        ///
+        /// Two builds that disagree about the order of two members of the same size produce
+        /// elements that measure alike, so the width check passes and every value lands in the
+        /// wrong member -- which looks like values rather than like an error. The declared path has
+        /// hashed its layout since it was built; the generated path had only the width until now.
+        /// </summary>
+        [Test]
+        public void StateWrittenWithADifferentLayout_IsRefusedEvenAtTheSameWidth()
+        {
+            StateLayoutRegistry.Declare(typeof(Beam).FullName, 0xAAAA_BBBB_CCCC_DDDDUL);
+
+            byte[] bytes;
+            try
+            {
+                bytes = Record(1, (ref Frame frame) =>
+                    frame.state.GetOrCreate<Beam>().GetOrCreate(1).value.intensity = 5f);
+            }
+            finally
+            {
+                StateLayoutRegistry.Clear();
+            }
+
+            // The same width, a different arrangement: what a member swap between two builds looks
+            // like from here.
+            StateLayoutRegistry.Declare(typeof(Beam).FullName, 0x1111_2222_3333_4444UL);
+
+            try
+            {
+                LogAssert.Expect(LogType.Error, new Regex("different layout"));
+
+                using var player = new FrameRecordPlayer(new MemoryStream(bytes));
+                var block = player.state.GetOrCreate<Beam>();
+
+                Assert.IsTrue(player.Advance());
+                Assert.AreEqual(0f, block.count == 0 ? 0f : block[0].value.intensity,
+                    "nothing was read into the block");
+            }
+            finally
+            {
+                StateLayoutRegistry.Clear();
+            }
+        }
+
+        /// <summary>
+        /// A producer that hand-registers a struct declares no layout, and neither side claiming
+        /// one is a pass. Refusing on the strength of an absent claim would break every such
+        /// producer to catch nothing.
+        /// </summary>
+        [Test]
+        public void StateWithNoLayoutDeclared_IsReadAsBefore()
+        {
+            var bytes = Record(1, (ref Frame frame) =>
+                frame.state.GetOrCreate<Beam>().GetOrCreate(1).value.intensity = 5f);
+
+            using var player = new FrameRecordPlayer(new MemoryStream(bytes));
+            var block = player.state.GetOrCreate<Beam>();
+
+            Assert.IsTrue(player.Advance());
+            Assert.AreEqual(5f, block[0].value.intensity);
         }
 
         [Test]
@@ -265,11 +323,6 @@ namespace Lilium.RemoteControl.Tests
         {
             var stream = new MemoryStream();
             var recorder = new FrameRecorder();
-            // These tests are about the events they submit, so the recorder is asked not to add the
-            // values it restates into each keyframe (see LiveEventRestateSystem): the editor session
-            // this runs in has live objects of its own, and their values would show up as events
-            // nothing in the test wrote.
-            recorder.restateValues = false;
             recorder.Start(stream, leaveOpen: true);
             FrameGate.sink = recorder;
 

@@ -42,6 +42,9 @@ namespace Lilium.RemoteControl
 
         public bool isDirty => LiveObjectDefaultRegistry.IsDirty(this, DefaultLiveObjectResolver.Instance);
 
+        // [Debug] TEMPORARY. Remove with the probe in the constructor below.
+        private static readonly HashSet<Type> _idlessReported = new HashSet<Type>();
+
         public LiveObjectHandle(string id, LiveClass type, object target)
         {
             Debug.Assert(type != null, "LiveClass type cannot be null");
@@ -50,6 +53,11 @@ namespace Lilium.RemoteControl
             {
                 Debug.LogWarning($"[RemoteControl] Creating LiveObjectHandle with null target for non-static type:{type.typeName} id:{id}");
             }
+
+            // [Debug] TEMPORARY: find who registers a component with no id. Once per type so it
+            // cannot spam. Remove once the caller is fixed.
+            if (string.IsNullOrEmpty(id) && target is Component && _idlessReported.Add(target.GetType()))
+                Debug.LogWarning("[Debug] id-less handle for " + type?.typeName + " :: " + System.Environment.StackTrace);
 
             this.targetType = type;
             this.target = target;

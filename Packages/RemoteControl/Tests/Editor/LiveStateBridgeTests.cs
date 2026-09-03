@@ -174,11 +174,6 @@ namespace Lilium.RemoteControl.Tests
 
             var stream = new MemoryStream();
             var recorder = new FrameRecorder();
-            // These tests are about the events they submit, so the recorder is asked not to add the
-            // values it restates into each keyframe (see LiveEventRestateSystem): the editor session
-            // this runs in has live objects of its own, and their values would show up as events
-            // nothing in the test wrote.
-            recorder.restateValues = false;
 
             FrameGate.AddFrameHeadHandler(Producer);
             recorder.Start(stream, leaveOpen: true);

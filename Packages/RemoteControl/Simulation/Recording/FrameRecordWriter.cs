@@ -266,10 +266,17 @@ namespace Lilium.RemoteControl.Frames.Recording
                 var typeId = symbols.Intern(block.elementType.FullName);
                 var bytes = block.AsBytes();
 
-                _BeginEntry(FrameEntryKind.State, 4 + 4 + 4 + bytes.Length);
+                // The width and the layout, because the width alone was never enough: two builds
+                // that disagree about the order of two float members produce elements of the same
+                // size, and reading one as the other puts each value in the wrong member without
+                // anything noticing. Zero when nothing declared a layout for this type.
+                var layoutHash = StateLayoutRegistry.HashFor(block.elementType.FullName);
+
+                _BeginEntry(FrameEntryKind.State, 4 + 4 + 4 + 8 + bytes.Length);
                 _writer.Write(typeId);
                 _writer.Write(block.elementSize);
                 _writer.Write(block.count);
+                _writer.Write(layoutHash);
                 _writer.Write(bytes);
             }
         }

@@ -30,9 +30,6 @@ namespace Lilium.RemoteControl.Frames.Recording
         private FrameSymbolTable _symbols;
         private Stream _stream;
         private string _path;
-        // The restated values of the frame being written. Kept and reused rather than built per
-        // keyframe: it settles at the size of the exposed surface and stops allocating.
-        private EventFrame _restateFrame;
         // Frame the last keyframe was written at, or -1 before the first. A frame number rather
         // than a counter: the interval is a distance between frames, and counting ticks instead
         // put the periodic keyframe one frame late.
@@ -71,27 +68,6 @@ namespace Lilium.RemoteControl.Frames.Recording
 
         /// <summary>Frames that carried the inventory so far.</summary>
         public int keyframeCount => _writer?.keyframes.Count ?? 0;
-
-        /// <summary>
-        /// Writes the value of every event-lane member into each keyframe, so a seek has somewhere
-        /// to read them from (see <see cref="LiveEventRestateSystem"/>).
-        ///
-        /// On by default, because without it the event lane holds only the changes made during the
-        /// take: a value settled before recording started is in the file nowhere at all, and one set
-        /// before the keyframe a seek lands on is behind the point it reads from. Both read as a
-        /// replay that quietly keeps whatever the machine was already holding.
-        ///
-        /// Tied to keyframes rather than to an interval of its own, because a keyframe is where a
-        /// seek starts reading. A restatement anywhere else would only be found by a player already
-        /// walking through it, which is the case that did not need it.
-        ///
-        /// The cost is per keyframe rather than per frame: records are variable length on disk, so
-        /// what this adds is the exposed surface written out about once a second.
-        /// </summary>
-        public bool restateValues { get; set; } = true;
-
-        /// <summary>Members restated into the most recent keyframe.</summary>
-        public int restatedMemberCount { get; private set; }
 
         /// <summary>
         /// Exposed objects whose events are left out of the recording. Set this to whatever is
@@ -166,9 +142,6 @@ namespace Lilium.RemoteControl.Frames.Recording
             _symbols = null;
             _stream = null;
             _path = null;
-
-            _restateFrame?.Dispose();
-            _restateFrame = null;
         }
 
         public void OnFrameCompleted(in Frame frame, FrameSymbolTable symbols)
@@ -194,31 +167,8 @@ namespace Lilium.RemoteControl.Frames.Recording
 
             _writer.WriteState(frame.state, symbols);
 
-            // Before the frame's own events, so a value that really was written on this frame stands
-            // as the later of the two. The restatement says how things stood; the event says what
-            // someone did, and what someone did is what a reader has to end up with.
-            if (isKeyframe && restateValues) _WriteRestatedValues(in frame, symbols);
-
             _writer.WriteEvents(frame.events, symbols, excludeObjectIds);
             _writer.EndFrame();
-        }
-
-        /// <summary>
-        /// Reads the world's event-lane values and writes them as this keyframe's leading records.
-        ///
-        /// Written from a frame of its own rather than into the one being recorded: what goes in
-        /// here never happened, and the live frame is handed to observers and mirrors that would
-        /// have no way to tell the difference.
-        /// </summary>
-        private void _WriteRestatedValues(in Frame frame, FrameSymbolTable symbols)
-        {
-            _restateFrame ??= new EventFrame();
-            _restateFrame.Reset(frame.frameNumber, frame.frameRate);
-
-            restatedMemberCount = LiveEventRestateSystem.RestateInto(_restateFrame, symbols);
-            if (restatedMemberCount == 0) return;
-
-            _writer.WriteEvents(_restateFrame, symbols, excludeObjectIds);
         }
 
         public void Dispose() => Stop();

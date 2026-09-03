@@ -845,6 +845,21 @@ namespace Lilium.LiveStudio
             _Broadcast();
         }
 
+        /// <summary>
+        /// Says the desired state of some asset has moved and the world has not caught up yet.
+        ///
+        /// Every path that changes <see cref="AssetBase.enabled"/> has to say so, because what the
+        /// flag means is "load this" and nothing loads until the diff runs. A remote write goes
+        /// through <see cref="SetAssetEnabled"/> above; a replay writes the flag straight into the
+        /// object off the state lane, which is a store and nothing else -- so it says so here
+        /// instead (<c>AssetBase.OnEnabledApplied</c>).
+        ///
+        /// ⚠ Without this a replay restores the flag, the getter that reports which avatar is out
+        /// starts answering with the recorded one, and the write that would have loaded it is
+        /// skipped as "no change" -- the value comes back and the avatar does not.
+        /// </summary>
+        public void MarkAssetsDirty() => _dirty = true;
+
         private void _OnPropertyChanged(LiveProperty property, object oldValue)
         {
             if (!_initialized) return;

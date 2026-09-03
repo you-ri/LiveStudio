@@ -853,10 +853,17 @@ namespace Lilium.RemoteControl
         /// path alone, so resetting a member to its default recorded an event for a member no lane
         /// was supposed to record -- and a replay of that take reset it again. Any operation that
         /// changes a member's value asks the same question, so it is asked in one place.
+        ///
+        /// ⚠ State is asked of the lane, not read off the declaration. A member can declare the
+        /// state lane and never reach a block -- text with no width, a type that is not unmanaged,
+        /// an owner that is not <c>partial</c> -- and dropping its record on the strength of the
+        /// declaration left the value in neither lane: the block does not hold it and the file does
+        /// not say it changed. Omitting only what something is actually carrying makes the failure
+        /// "the member did not migrate" rather than "the member stopped being recorded".
         /// </summary>
         private static bool _OmitRecordForLane(in LiveProperty prop, string requestPath)
         {
-            if ((prop.type?.lane ?? FrameLane.Event) == FrameLane.Event) return false;
+            if (!LiveStateCarriage.OmitsRecord(prop.type, prop.obj)) return false;
 
             FrameGate.OmitAppliedRecord(requestPath);
             return true;

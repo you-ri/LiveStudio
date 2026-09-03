@@ -46,8 +46,8 @@ namespace Lilium.RemoteControl
         //
         // All of them are off the live data (lane = None). They are the recorder's own settings, and
         // <see cref="excludeObjectIds"/> is not enough on its own: that excludes by this component's
-        // registry id, while a keyframe restatement -- and any client writing through the owning
-        // GameObject -- addresses the same members as `{gameObject}/components/{n}/_take`. The two
+        // registry id, while any client writing through the owning GameObject addresses the same
+        // members as `{gameObject}/components/{n}/_take`. The two
         // never meet, so a take was carrying the take number and the compression setting it was
         // written with, and a replay of it wrote them back over the operator's own.
         [SerializeField]

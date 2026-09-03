@@ -258,8 +258,16 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// The state lane needs none of this -- every frame states it in full, so landing on one is
         /// enough. The event lane is the opposite: it says only what changed, so the value at a
         /// frame is the last thing written at or before it, and a jump has to go back far enough to
-        /// find that. Far enough is the keyframe, because that is where the values are restated
-        /// (see <see cref="LiveEventRestateSystem"/>).
+        /// find that. Far enough is the keyframe, because that is where the shape of the world is
+        /// written down and therefore where a seek starts reading.
+        ///
+        /// <para>
+        /// ⚠ A value last written before that keyframe is not recovered. Keyframes used to carry a
+        /// restatement of every event-lane member for exactly this reason, and no longer do
+        /// (2026-09-04). A member that has to survive a seek belongs on the state lane
+        /// (<c>lane = FrameLane.State</c>); until it is moved, its value before the keyframe is in
+        /// the file nowhere at all.
+        /// </para>
         ///
         /// <para>
         /// The walk from there is **collapsed to one write per target**. What is wanted is the value

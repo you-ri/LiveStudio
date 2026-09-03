@@ -55,13 +55,18 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>
         /// Not something that happened, but the value as it stood -- written into a frame so a
         /// recording carries a point it can be read from rather than only the changes made after it
-        /// started. See <see cref="LiveEventRestateSystem"/>.
+        /// started.
         ///
-        /// Told apart from a real event because it means something different on the way back in: a
-        /// real write is replayed because someone made it, a restated one only to make the world
-        /// match, so applying it when the value already matches is work with no effect. The apply
-        /// side skips those, which is what keeps a restated asset reference from reloading the
-        /// asset once a keyframe.
+        /// ⚠ Nothing writes this any more. Keyframes used to carry a restatement of every event-lane
+        /// member, and stopped on 2026-09-04: the walk cost scaled with the exposed surface and all
+        /// of it landed on one frame. Carrying a value across a seek is the state lane's job now,
+        /// one member at a time as they are declared into it.
+        ///
+        /// Kept because recordings made before that still hold these records, and reading one has to
+        /// keep telling them apart from real writes: a real write is replayed because someone made
+        /// it, a restated one only to make the world match, so applying it when the value already
+        /// matches is work with no effect. The apply side skips those, which is what keeps a restated
+        /// asset reference from reloading the asset once a keyframe.
         /// </summary>
         Reemitted = 1 << 3,
     }

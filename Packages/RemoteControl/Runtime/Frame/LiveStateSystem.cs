@@ -96,6 +96,8 @@ namespace Lilium.RemoteControl.Frames
 
             var captured = 0;
             _unaddressableObjectCount = 0;
+            _visited.Clear();
+            _idless.Clear();
 
             foreach (var handle in LiveObjectRegistry.instances)
             {
@@ -108,9 +110,13 @@ namespace Lilium.RemoteControl.Frames
                 // event lane, where a change to it is recorded when it happens.
                 if (target == null) continue;
 
+                // Held rather than reported here. Being registered without an id only means this
+                // walk cannot address the object; the walks below still can, through the owner
+                // that holds it or by its type name. Whether anything carried it is not known
+                // until they have run.
                 if (!handle.hasId)
                 {
-                    _NoteUnaddressable(target);
+                    _idless.Add(target);
                     continue;
                 }
 
@@ -130,13 +136,19 @@ namespace Lilium.RemoteControl.Frames
                     continue;
                 }
 
-                // Registered since the roster was resolved: the walk above carried it already, and
-                // carrying it here as well would write the same address twice.
-                if (LiveObjectRegistry.FindByTarget(entry.target) != null) continue;
+                // Given an id since the roster was resolved: the walk above carried it already,
+                // and carrying it here too would write the same state at a second address.
+                //
+                // Asked of the id rather than of the registration. A handle with no id is not an
+                // address: the walk above passes such an object over, so standing aside for one
+                // here would leave the object carried by nothing at all.
+                if (LiveObjectRegistry.HasAddress(entry.target)) continue;
+                if (_visited.Contains(entry.target)) continue;
 
                 captured += _Capture(entry.target, entry.id, state, time, depth: 0);
             }
 
+            _ReportUnaddressable();
             _RefreshRosterIfStale();
 
             return captured;
@@ -151,6 +163,7 @@ namespace Lilium.RemoteControl.Frames
             if (state == null) return 0;
 
             var applied = 0;
+            _visited.Clear();
 
             foreach (var handle in LiveObjectRegistry.instances)
             {
@@ -172,7 +185,8 @@ namespace Lilium.RemoteControl.Frames
                     continue;
                 }
 
-                if (LiveObjectRegistry.FindByTarget(entry.target) != null) continue;
+                if (LiveObjectRegistry.HasAddress(entry.target)) continue;
+                if (_visited.Contains(entry.target)) continue;
 
                 applied += _Apply(entry.target, entry.id, state, depth: 0);
             }
@@ -312,6 +326,16 @@ namespace Lilium.RemoteControl.Frames
 
         private static readonly int[] _noNested = Array.Empty<int>();
 
+        // What the registry walk reached on this pass, so the roster below it does not carry the
+        // same object at a second address. A component of an exposed GameObject is addressed
+        // through its owner; the type name is the address of last resort, and using both puts one
+        // object's state in the frame twice.
+        private static readonly HashSet<object> _visited = new HashSet<object>();
+
+        // Registered objects this pass could not address by id, pending the question of whether one
+        // of the other walks reached them anyway.
+        private static readonly List<object> _idless = new List<object>();
+
         // "member[key]" by the pair it was built from, for the same reason the composed ids are
         // cached: the walk asks for the same handful of them sixty times a second.
         private static readonly Dictionary<(string, string), string> _elementSlots =
@@ -357,6 +381,8 @@ namespace Lilium.RemoteControl.Frames
             var captured = 0;
             var type = target.GetType();
             var bridge = StateBridgeRegistry.Find(type);
+
+            _visited.Add(target);
 
             // Counted only when it actually wrote. A bridge that refuses (nothing to read the
             // object through, a layout that moved) still returns, and counting the attempt is what
@@ -438,10 +464,12 @@ namespace Lilium.RemoteControl.Frames
                 var component = _components[i];
                 if (component == null) continue;
 
-                // Registered in its own right -- an instance binding gave it an id, or a request
-                // reached it first. The registry walk carried it already, and carrying it here as
-                // well would put the same state in the frame twice under two addresses.
-                if (LiveObjectRegistry.FindByTarget(component) != null) continue;
+                // Registered under an id of its own -- an instance binding gave it one, or a
+                // request reached it first. The registry walk carried it already, and carrying it
+                // here as well would put the same state in the frame twice under two addresses.
+                // An id-less registration is not such an address, and does not count: the registry
+                // walk cannot carry that object, so this walk is the only one that can.
+                if (LiveObjectRegistry.HasAddress(component)) continue;
 
                 var type = component.GetType();
                 var bridge = StateBridgeRegistry.Find(type);
@@ -451,6 +479,12 @@ namespace Lilium.RemoteControl.Frames
                 if (key == null) continue;
 
                 var ownerSymbol = FrameGate.symbols.Intern(_ComposeComponentId(ownerId, key));
+
+                // Addressable through its owner, so the roster's type name is not needed for it.
+                // Marked here rather than at the top of the loop: a component the owner cannot
+                // address (no element key, no bridge) has only the type name to be carried under,
+                // and claiming it was reached would drop it from the frame altogether.
+                _visited.Add(component);
 
                 // A declared bridge reads through a handle, and this component has no registered
                 // one to be found by; a generated bridge reads the object directly and needs none.
@@ -500,6 +534,8 @@ namespace Lilium.RemoteControl.Frames
             var type = target.GetType();
             var bridge = StateBridgeRegistry.Find(type);
 
+            _visited.Add(target);
+
             if (bridge != null && bridge.Apply(target, FrameGate.symbols.Intern(id), state)) applied++;
 
             var info = _InfoFor(type, out var liveClass);
@@ -547,7 +583,7 @@ namespace Lilium.RemoteControl.Frames
             {
                 var component = _components[i];
                 if (component == null) continue;
-                if (LiveObjectRegistry.FindByTarget(component) != null) continue;
+                if (LiveObjectRegistry.HasAddress(component)) continue;
 
                 var type = component.GetType();
                 var bridge = StateBridgeRegistry.Find(type);
@@ -557,6 +593,8 @@ namespace Lilium.RemoteControl.Frames
                 if (key == null) continue;
 
                 var ownerSymbol = FrameGate.symbols.Intern(_ComposeComponentId(ownerId, key));
+
+                _visited.Add(component);
 
                 bool wrote;
                 if (bridge is DeclaredStateBridge declared)
@@ -707,6 +745,25 @@ namespace Lilium.RemoteControl.Frames
                 $"[RemoteControl] '{type.Name}' declares members in the state lane but has no state " +
                 "bridge, so its state is not carried. Make the type partial and give its assembly a " +
                 "reference to 'Lilium.RemoteControl.Simulation'.");
+        }
+
+        /// <summary>
+        /// Says once, after the walk, that an object was carried by nothing.
+        ///
+        /// Deferred to here because an id is not the only address there is: an object registered
+        /// without one is still carried if it is a component of an exposed GameObject, or the only
+        /// one of its type in the scene. Reporting at the point the id was found missing named
+        /// objects the frame goes on to carry perfectly well.
+        /// </summary>
+        private static void _ReportUnaddressable()
+        {
+            for (int i = 0; i < _idless.Count; i++)
+            {
+                var target = _idless[i];
+                if (_visited.Contains(target)) continue;
+
+                _NoteUnaddressable(target);
+            }
         }
 
         /// <summary>

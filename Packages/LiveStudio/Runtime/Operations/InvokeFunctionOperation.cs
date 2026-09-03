@@ -104,6 +104,13 @@ namespace Lilium.LiveStudio
             // (e.g. a StageManager set's WarpTo). A dangling path/function is a silent no-op: valid surfaces it.
             var function = handle.Value.ResolveFunction(propertyPath, _ApiName(), out var functionTarget);
             if (function == null || !function.isValid) return;
+
+            // A call declared off the live data leaves no record, whichever control pressed it. The
+            // remote path has asked this since functions got a lane; this one did not, so the same
+            // machine-side call -- reopening a socket, resyncing a clock -- stayed out of the take
+            // when it came over the network and went into it when it came from a deck key, and a
+            // replay pressed it again on the operator's own machine.
+            if (function.lane == FrameLane.None) FrameGate.OmitAppliedRecord(LivePath());
             // No arguments (empty argsJson) keeps passing null, exactly as before. When present, the stored
             // JSON is deserialized to the function's parameter types just like the REST invoke path. A trigger
             // is a discrete user action (key-up / rising edge), so parsing here is not on a per-frame hot path.

@@ -11,6 +11,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Frames;
 using Lilium.RemoteControl.LiveScene;
 
 namespace Lilium.LiveStudio
@@ -85,13 +86,38 @@ namespace Lilium.LiveStudio
         [LiveField, Hide]
         public string path;
 
-        /// <summary>Desired state. Toggling loads (true) / unloads (false) the asset. Persisted.</summary>
-        [LiveField, Hide]
+        /// <summary>
+        /// Desired state. Toggling loads (true) / unloads (false) the asset. Persisted.
+        ///
+        /// An intent rather than a fact, which is what puts it on the state lane: any frame says
+        /// which assets are meant to be up, so a replay joined partway through knows without having
+        /// seen the toggle that put them there.
+        ///
+        /// ⚠ The flag is only half of what a toggle does -- the other half is the diff that loads,
+        /// and a replay writes this straight into the object without going near it. So the write
+        /// says so itself. Before this, restoring the flag made the getter that reports the selected
+        /// avatar answer with the recorded one, which made the write that would have loaded it look
+        /// like a no-op: the value came back and the avatar did not.
+        /// </summary>
+        [LiveField(onApplied = nameof(OnEnabledApplied)), Hide]
         public bool enabled;
 
-        /// <summary>Actual state, synced after a load/unload completes. Not persisted.</summary>
-        [LiveField(persistable = false), Hide]
+        /// <summary>
+        /// Actual state, synced after a load/unload completes. Not persisted.
+        ///
+        /// Off the live data because it is a result, not an intent: a replay that restored it would
+        /// be claiming an asset is loaded that nothing loaded. What loads it is <see cref="enabled"/>
+        /// above, and whatever does the loading sets this when it is true.
+        /// </summary>
+        [LiveField(lane = FrameLane.None, persistable = false), Hide]
         public bool isLoaded;
+
+        /// <summary>
+        /// Told to the manager after a replay writes <see cref="enabled"/>, so the diff that acts on
+        /// it runs. The remote path reaches the same flag through
+        /// <see cref="ExternalAssetManager.SetAssetEnabled"/>, which marks it there.
+        /// </summary>
+        public void OnEnabledApplied() => ExternalAssetManager.current?.MarkAssetsDirty();
 
         /// <summary>
         /// Stable id of this asset's exposed object, so the remote app can keep a durable reference

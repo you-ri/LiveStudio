@@ -147,7 +147,11 @@ namespace Lilium.RemoteControl.Frames
                 // Already registered under an id of its own -- by a request that reached it first,
                 // or by a scene restore. The registry walk carries it, and carrying it here as well
                 // would put the same object in the frame twice under two names.
-                if (LiveObjectRegistry.FindByTarget(component) != null) continue;
+                //
+                // Under an id, not merely registered: a handle with no id gives the registry walk
+                // nothing to address the object by, so it passes the object over -- and a roster
+                // that stood aside for such a registration would leave nothing carrying it.
+                if (LiveObjectRegistry.HasAddress(component)) continue;
 
                 _sceneComponents.Add(new Entry(liveClass.typeName, liveClass.typeName, component));
             }

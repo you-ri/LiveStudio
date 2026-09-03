@@ -79,10 +79,17 @@ namespace Lilium.RemoteControl.SourceGenerator
 
                     // 参照が無いなら、出せないことを型ごとに名指しで言う。出力を止めるのは
                     // 生成コードの中で CS0246 を出さないため — 直す場所は生成コードではない。
+                    //
+                    // 強さは「誰が求めたか」で決める。明示的に状態レーンを宣言した型には error
+                    // (参照を足せば通る、対処可能な要求)。既定で状態レーンに入っただけの型には
+                    // info —— 何も求めていない人のビルドを、要求していないことの不備で止めない。
+                    // ブロックが出ないだけでイベントレーンには載るので、挙動は今までと変わらない。
                     if (!hasSimulation && StateBlockEmitter.CanEmit(info.State))
                     {
                         spc.ReportDiagnostic(Diagnostic.Create(
                             StateBlockEmitter.kMissingSimulationReference, Location.None,
+                            StateBlockEmitter.SeverityFor(info.State.AnyDeclared, DiagnosticSeverity.Error),
+                            null, null,
                             info.State.FullyQualifiedName));
                     }
                 }

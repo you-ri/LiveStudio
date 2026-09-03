@@ -253,10 +253,29 @@ namespace Lilium.RemoteControl.Reflection
         // GetProperty / GetField 共通のキャッシュ定型: null/空チェック → prefix 付き cacheKey で
         // ReflectionCache を引き、ミスなら reflection で取得してキャッシュする。delegate は
         // static readonly で1度だけ確保し per-call の GC を避ける。
+        // Type.GetProperty / GetField は基底クラスの private メンバーを返さないため、
+        // 見つからなければ階層を遡って DeclaredOnly で探し直す。
+        //
+        // 基底に private フィールドを置き、派生型で公開する構造 (このリポジトリの
+        // shadow field 慣習そのもの) が、shadow field 経路でだけ通って通常メンバー経路では
+        // "Member not found" になっていた。遡りは shadow field 側に既にあったものを揃えた形で、
+        // 影響するのは今まで null を返していた (= エラーになっていた) 場合だけ。
         private static readonly Func<Type, string, BindingFlags, PropertyInfo> _lookupProperty =
-            (t, n, f) => t.GetProperty(n, f);
+            (t, n, f) => t.GetProperty(n, f) ?? _FindDeclaredInBases(t, b => b.GetProperty(n, f | BindingFlags.DeclaredOnly));
         private static readonly Func<Type, string, BindingFlags, FieldInfo> _lookupField =
-            (t, n, f) => t.GetField(n, f);
+            (t, n, f) => t.GetField(n, f) ?? _FindDeclaredInBases(t, b => b.GetField(n, f | BindingFlags.DeclaredOnly));
+
+        /// <summary>継承チェーンを遡って、各階層で宣言されたメンバーだけを探す。</summary>
+        private static T _FindDeclaredInBases<T>(Type type, Func<Type, T> lookup) where T : MemberInfo
+        {
+            for (var b = type?.BaseType; b != null; b = b.BaseType)
+            {
+                var found = lookup(b);
+                if (found != null) return found;
+            }
+
+            return null;
+        }
 
         private static T _GetCachedMember<T>(Type type, string name, string prefix,
             Func<Type, string, BindingFlags, T> lookup, BindingFlags flags) where T : MemberInfo
