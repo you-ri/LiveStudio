@@ -64,7 +64,7 @@ namespace Lilium.LiveStudio
         [LiveField(persistable = false), Hide]
         public string id;
 
-        [LiveField]
+        [LiveField(lane = FrameLane.State, textCapacity = 128)]
         public string name;
 
         /// <summary>

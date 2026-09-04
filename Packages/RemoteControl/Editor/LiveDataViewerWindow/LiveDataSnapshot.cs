@@ -59,6 +59,32 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         /// not remove, and that is not visible any other way.
         /// </summary>
         public string recipe;
+
+        /// <summary>
+        /// The collection member this is an element of, or empty for an object in its own right.
+        ///
+        /// The id already reads as <c>{owner}/{member}[{key}]</c>, but only by convention -- it is
+        /// an opaque token everywhere else, and a key holding a slash makes reading it back guesswork.
+        /// These come from the entry's own fields, which is where the replay reads them too.
+        /// </summary>
+        public string memberName;
+
+        /// <summary>Key identifying the element within its member, or empty when it has none.</summary>
+        public string keyName;
+
+        /// <summary>Position within the member, or -1 for a non-element.</summary>
+        public int ordinal;
+
+        /// <summary>True when this row is an element of a collection.</summary>
+        public bool isElement => !string.IsNullOrEmpty(memberName) && ordinal >= 0;
+
+        /// <summary>
+        /// True when this row is a collection rather than something in it.
+        ///
+        /// Drawn even when it holds nothing: "recorded and empty" and "never walked" look the same
+        /// on screen otherwise, and telling them apart is what this window is for.
+        /// </summary>
+        public bool isCollection => !string.IsNullOrEmpty(memberName) && ordinal < 0;
     }
 
     /// <summary>One recorded event, kept in the viewer's own ring.</summary>

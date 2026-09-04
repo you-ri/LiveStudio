@@ -50,7 +50,7 @@ namespace Lilium.LiveStudio.EditorTests
             public void Reset() { value = 0; }
         }
 
-        private const string kDefaultSceneFileName = "ProjectSwitchTests.live.json";
+        private const string kDefaultSceneFileName = "ProjectSwitchTests.scene.json";
 
         private string _projectA;
         private string _sceneA;
@@ -147,10 +147,10 @@ namespace Lilium.LiveStudio.EditorTests
 
             LiveSceneSaveSystem.SetStateProjectDirectory(_projectB);
             var save = _NewSaveSystem();
-            save.currentFilePath = Path.Combine(_projectB, "Saved.live.json");
+            save.currentFilePath = Path.Combine(_projectB, "Saved.scene.json");
 
             StringAssert.Contains(
-                "Saved.live.json",
+                "Saved.scene.json",
                 File.ReadAllText(StartupStateStore.GetStartupFilePath(_projectB)),
                 "The opened project must record the scene it is now on.");
             Assert.AreEqual(beforeA, File.ReadAllText(stateA),
@@ -217,7 +217,7 @@ namespace Lilium.LiveStudio.EditorTests
                 Path.GetTempPath(), "ProjectSwitchTests_" + label + "_" + Path.GetRandomFileName());
             Directory.CreateDirectory(root);
 
-            scenePath = Path.Combine(root, "Scene" + label + ".live.json");
+            scenePath = Path.Combine(root, "Scene" + label + ".scene.json");
             File.WriteAllText(scenePath, "{\"baseSceneName\":\"Studio\"}");
             StartupStateStore.Write(root, scenePath);
             return root;

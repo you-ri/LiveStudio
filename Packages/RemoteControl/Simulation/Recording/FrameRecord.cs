@@ -68,8 +68,14 @@ namespace Lilium.RemoteControl.Frames.Recording
         ///
         /// 6 added a flag byte to the header saying whether the entries are compressed, and gave a
         /// compressed file a frame index that names a chunk and carries its own frame numbers.
+        ///
+        /// 7 widened an inventory entry from 16 to 28 bytes: a collection element carries the member
+        /// holding it, its key within that member, and its position. Before this the inventory could
+        /// only name objects with a registry id, so the elements of an exposed collection were in
+        /// neither lane -- the state lane carried their values and nothing carried the fact that they
+        /// existed, which left a seek unable to stand one back up or take one away.
         /// </summary>
-        public const int kVersion = 6;
+        public const int kVersion = 7;
 
         /// <summary>
         /// Bytes a chunk spends before its compressed body: what it takes on disk, and what it

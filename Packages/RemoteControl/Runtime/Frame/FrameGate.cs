@@ -513,13 +513,24 @@ namespace Lilium.RemoteControl.Frames
         ///
         /// Main thread only. A handler that throws is logged and the rest still run -- one
         /// misbehaving producer must not stop events from being applied.
+        ///
+        /// <para>
+        /// Handlers run in the order they were added, and <paramref name="first"/> is how the one
+        /// that has to precede the others says so rather than relying on whoever installs it doing
+        /// so early enough. The inventory needs it: applying a supplied frame's structure creates
+        /// and destroys the objects the state is addressed to, so it has to happen before any
+        /// producer writes a value -- and that ordering was a property of two Retain calls in a
+        /// method nobody would think to read.
+        /// </para>
         /// </summary>
-        public static void AddFrameHeadHandler(FrameHeadDelegate handler)
+        public static void AddFrameHeadHandler(FrameHeadDelegate handler, bool first = false)
         {
             if (handler == null) throw new ArgumentNullException(nameof(handler));
             if (_frameHeadHandlers.Contains(handler)) return;
 
-            _frameHeadHandlers.Add(handler);
+            if (first) _frameHeadHandlers.Insert(0, handler);
+            else _frameHeadHandlers.Add(handler);
+
             _frameHeadSnapshotStale = true;
         }
 

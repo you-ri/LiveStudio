@@ -7,7 +7,7 @@ namespace Lilium.RemoteControl
 {
     /// <summary>
     /// 永続化メンバーの保存先を指定する。
-    /// <see cref="Scene"/> はシーンファイル (*.live.json) に、<see cref="Project"/> は
+    /// <see cref="Scene"/> はシーンファイル (*.scene.json) に、<see cref="Project"/> は
     /// プロジェクト全体の設定ファイル ({projectPath}/Settings/{クラス名}.settings.json) に保存する。
     /// <see cref="Custom"/> はどちらにも書かず、所有者が自前のファイルへ書き出す。
     /// 既定は <see cref="Scene"/> (=0) のため、未指定時は従来どおりシーンに保存される。

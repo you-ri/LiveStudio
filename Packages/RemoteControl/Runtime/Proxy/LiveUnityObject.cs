@@ -257,7 +257,7 @@ namespace Lilium.RemoteControl
         // serialization reads/writes this field directly. OnBeforeLiveSerialize
         // refreshes _name from the live state before save; OnAfterLiveDeserialize
         // applies _name to _reference.name and _fallbackName after load.
-        [LiveField, Hide]
+        [LiveField(lane = FrameLane.State, textCapacity = 128), Hide]
         [FormerlyNamedAs("name")]
         private string _name;
 
@@ -645,7 +645,7 @@ namespace Lilium.RemoteControl
         private string _fallbackName;
 
         // Shadow Field for name. See LiveUnityObjectProxy for the same pattern.
-        [LiveField, Hide]
+        [LiveField(lane = FrameLane.State, textCapacity = 128), Hide]
         [FormerlyNamedAs("name")]
         private string _name;
 

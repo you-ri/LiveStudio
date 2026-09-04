@@ -35,7 +35,7 @@ namespace Lilium.RemoteControl
             Name,
         }
 
-        [SerializeField, LiveField, Hide]
+        [SerializeField, LiveField(lane = FrameLane.State, textCapacity = 128), Hide]
         [FormerlyNamedAs("ownerName")]
         string _ownerName;
 

@@ -23,7 +23,7 @@ namespace Lilium.LiveStudio.EditorTests
                 AssetTypeRegistry.ResolveImportSubfolder("Demo.snapshot.json"));
 
             // The ".json" tail must not steal the kinds that sit below snapshots in priority.
-            Assert.IsInstanceOf<LiveSceneAsset>(AssetTypeRegistry.Create("C:/proj/Start.live.json"));
+            Assert.IsInstanceOf<LiveSceneAsset>(AssetTypeRegistry.Create("C:/proj/Start.scene.json"));
             Assert.IsInstanceOf<DeckAsset>(AssetTypeRegistry.Create("C:/proj/Decks/Live.deck.json"));
         }
 
@@ -55,8 +55,8 @@ namespace Lilium.LiveStudio.EditorTests
             Assert.AreEqual("D:/elsewhere/A.B.snapshot.png",
                 SnapshotManager.ResolveThumbnailPath("D:/elsewhere/A.B.snapshot.json"));
             // Only snapshots have one; every other kind keeps the base's "no picture file" answer.
-            Assert.IsNull(SnapshotManager.ResolveThumbnailPath("C:/proj/Start.live.json"));
-            Assert.IsNull(AssetTypeRegistry.Create("C:/proj/Start.live.json").thumbnailFilePath);
+            Assert.IsNull(SnapshotManager.ResolveThumbnailPath("C:/proj/Start.scene.json"));
+            Assert.IsNull(AssetTypeRegistry.Create("C:/proj/Start.scene.json").thumbnailFilePath);
         }
     }
 }

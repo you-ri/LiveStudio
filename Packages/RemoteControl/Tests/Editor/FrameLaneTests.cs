@@ -21,6 +21,13 @@ namespace Lilium.RemoteControl.Tests
 
             [LiveField] public float requested;
 
+            /// <summary>
+            /// Says nothing about its lane, and is carried anyway: the generator puts an undeclared
+            /// field in the block, while the attribute it was declared with still reports the event
+            /// lane. Stands for most of the exposed surface.
+            /// </summary>
+            [LiveField] public float undeclared;
+
             /// <summary>A setting of the machine: the resolution it renders at, the language it
             /// reads in. Not part of the world, so no lane carries it.</summary>
             [LiveField(lane = FrameLane.None)] public float setting;
@@ -75,18 +82,21 @@ namespace Lilium.RemoteControl.Tests
         {
             public float carried;
             public float shadowed;
+            public float undeclared;
         }
 
         private static void _CaptureFixture(Fixture source, ref FixtureBlock block)
         {
             block.carried = source.carried;
             block.shadowed = source.shadowed;
+            block.undeclared = source.undeclared;
         }
 
         private static void _ApplyFixture(in FixtureBlock block, Fixture target)
         {
             target.carried = block.carried;
             target.shadowed = block.shadowed;
+            target.undeclared = block.undeclared;
         }
 
         [SetUp]
@@ -98,7 +108,7 @@ namespace Lilium.RemoteControl.Tests
             // Named as reflection spells them: the shadowed pair is carried under the field's name,
             // which is what the generated block would assign to.
             StateBridgeRegistry.Register<Fixture, FixtureBlock>(_CaptureFixture, _ApplyFixture,
-                nameof(Fixture.carried), "_shadowed");
+                nameof(Fixture.carried), "_shadowed", nameof(Fixture.undeclared));
 
             FrameGate.ResetState("[test] cleared");
             FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
@@ -376,6 +386,46 @@ namespace Lilium.RemoteControl.Tests
                 Assert.AreEqual(2.5f, fixture.uncarried, 1e-5f, "the write still lands");
                 Assert.AreEqual(1, frame.eventCount,
                     "nothing else in the file says this member changed");
+            }
+            finally
+            {
+                handle?.Unregister();
+            }
+        }
+
+        /// <summary>
+        /// A field that never asked for the state lane and is carried by it regardless.
+        ///
+        /// The generator puts an undeclared field in the block; the attribute it was declared with
+        /// answers <see cref="FrameLane.Event"/>. Branching on the declaration therefore kept an
+        /// event record for a value the block was already copying every frame, which is the same
+        /// value in both lanes -- what this whole area exists to prevent, arrived at from the other
+        /// direction.
+        /// </summary>
+        [Test]
+        public void AWriteToAFieldTheBlockCarriesWithoutSayingSo_LeavesNoRecord()
+        {
+            var fixture = new Fixture();
+            var handle = LiveObjectRegistry.Create(typeof(Fixture), fixture, kResetFixtureId);
+
+            using var session = new LiveEditorSession.Override(editorSession: false);
+
+            try
+            {
+                Assert.AreEqual(FrameLane.Event, Member("undeclared").lane,
+                    "the declaration says event -- the block carrying it is what has to be asked");
+
+                var before = FrameGate.omittedRecordCount;
+
+                _EnqueueSet("/live/object/" + kResetFixtureId + "/undeclared", "{\"value\":2.5}");
+                FrameGate.Pump();
+
+                using var frame = new EventFrame();
+                Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
+
+                Assert.AreEqual(2.5f, fixture.undeclared, 1e-5f, "the write still lands");
+                Assert.AreEqual(0, frame.eventCount, "the block already carries it");
+                Assert.AreEqual(before + 1, FrameGate.omittedRecordCount);
             }
             finally
             {

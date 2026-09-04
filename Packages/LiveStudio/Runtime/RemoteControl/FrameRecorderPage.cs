@@ -32,7 +32,9 @@ namespace Lilium.LiveStudio
         // === Record ===
 
         [Section("fiber_manual_record", "SECTION_FRAME_RECORD_TITLE", "SECTION_FRAME_RECORD_SUBTITLE")]
-        [LiveProperty(order = 10)]
+        // lane = None: 収録機自身の設定であって世界の状態ではない。excludeObjectIds でもこのページは
+        // 外れるが、除外リストに頼らず宣言でも言う (コンポーネント側の _take も None)。
+        [LiveProperty(order = 10, lane = FrameLane.None)]
         public static int take
         {
             get => FrameRecorderController.instance?.take ?? 1;
@@ -75,7 +77,7 @@ namespace Lilium.LiveStudio
         // === Replay ===
 
         [Section("play_circle", "SECTION_FRAME_REPLAY_TITLE", "SECTION_FRAME_REPLAY_SUBTITLE")]
-        [LiveProperty(order = 20)]
+        [LiveProperty(order = 20, lane = FrameLane.None)]
         [StringSelector(nameof(availableRecordings))]
         public static string replayFilename
         {

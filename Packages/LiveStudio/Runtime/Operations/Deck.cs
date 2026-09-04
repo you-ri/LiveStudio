@@ -23,7 +23,9 @@ namespace Lilium.LiveStudio
         /// (auto-suffixing on collision) so placed controls can reference it by name
         /// (<see cref="DeckControl.deckName"/>). Renaming goes through <see cref="OperationManager.RenameDeck"/>
         /// so referencing controls follow.</summary>
-        [LiveField]
+        // 安定キー ([LiveKey])。名前は OperationManager が一意に保ち、改名は RenameDeck を通って
+        // 参照側も追従するので、要素の識別子として使える。
+        [LiveField(lane = FrameLane.State, textCapacity = 128), LiveKey]
         public string name = "Deck";
 
         /// <summary>Logical column count of the grid. The remote app keeps this fixed and lets the physical

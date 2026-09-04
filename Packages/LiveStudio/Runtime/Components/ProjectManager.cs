@@ -12,7 +12,7 @@ namespace Lilium.LiveStudio
     /// <summary>
     /// Tracks a single "project folder" and feeds its contents into <see cref="ExternalAssetManager"/>.
     /// Opening a project crawls the folder by path/extension only (never reading file contents): every
-    /// supported file — props / avatars / scene bundles and live scenes (*.live.json / *.scene.json) —
+    /// supported file — props / avatars / scene bundles and live scenes (*.scene.json / legacy *.live.json) —
     /// is registered as a path-only, disabled entry (loaded lazily, or opened in the live-scene case).
     /// The folder path is persisted to PlayerPrefs and the last project is re-opened automatically on
     /// startup.

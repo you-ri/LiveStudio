@@ -11,7 +11,11 @@ namespace Lilium.LiveStudio.Tests
     /// An operation set's slider is dragged many times a second, and it lives in a list rather than
     /// being a member of something registered -- which is what the frame could not reach before.
     /// Each element is addressed the way the rest of the codebase addresses one
-    /// (<c>operationSets[0]</c>), so a recorded value has somewhere to go back to.
+    /// (<c>operationSets[set-a]</c>), so a recorded value has somewhere to go back to.
+    ///
+    /// By the set's id rather than its position, because <see cref="OperationSet.id"/> declares
+    /// itself the key: an address built from a position moves every value one along the moment a
+    /// set is inserted above it.
     /// </summary>
     public class CollectionStateLaneTests
     {
@@ -55,10 +59,10 @@ namespace Lilium.LiveStudio.Tests
             var blocks = state.Find<OperationSet.LiveStateBlock>();
             Assert.IsNotNull(blocks, "no element of the collection was carried");
 
-            var first = blocks.IndexOf(FrameGate.symbols.Intern(kId + "/operationSets[0]"));
-            var second = blocks.IndexOf(FrameGate.symbols.Intern(kId + "/operationSets[1]"));
+            var first = blocks.IndexOf(FrameGate.symbols.Intern(kId + "/operationSets[set-a]"));
+            var second = blocks.IndexOf(FrameGate.symbols.Intern(kId + "/operationSets[set-b]"));
 
-            Assert.GreaterOrEqual(first, 0, "the first element was not carried under owner id + slot");
+            Assert.GreaterOrEqual(first, 0, "the first element was not carried under owner id + key");
             Assert.GreaterOrEqual(second, 0);
 
             Assert.AreEqual(0.25f, blocks[first].value._manualValue);

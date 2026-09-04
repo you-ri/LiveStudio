@@ -29,7 +29,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Write_StoresUnderSettingsFolder()
         {
-            var scene = Path.Combine(_projectPath, "MyScene.live.json");
+            var scene = Path.Combine(_projectPath, "MyScene.scene.json");
             StartupStateStore.Write(_projectPath, scene);
 
             var expected = Path.Combine(_projectPath, "Settings", "startup.json");
@@ -39,7 +39,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void WriteRead_SceneInsideProject_RoundTripsToSameAbsolutePath()
         {
-            var scene = Path.Combine(_projectPath, "Sub", "MyScene.live.json");
+            var scene = Path.Combine(_projectPath, "Sub", "MyScene.scene.json");
             StartupStateStore.Write(_projectPath, scene);
 
             var read = StartupStateStore.Read(_projectPath);
@@ -49,11 +49,11 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Write_SceneInsideProject_StoresRelativePath()
         {
-            var scene = Path.Combine(_projectPath, "MyScene.live.json");
+            var scene = Path.Combine(_projectPath, "MyScene.scene.json");
             StartupStateStore.Write(_projectPath, scene);
 
             var json = File.ReadAllText(Path.Combine(_projectPath, "Settings", "startup.json"));
-            StringAssert.Contains("\"MyScene.live.json\"", json);
+            StringAssert.Contains("\"MyScene.scene.json\"", json);
             StringAssert.DoesNotContain(_projectPath.Replace('\\', '/'), json,
                 "A scene inside the project should be stored relative, not absolute.");
         }
@@ -61,7 +61,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void WriteRead_SceneOutsideProject_KeepsAbsolutePath()
         {
-            var outside = Path.Combine(Path.GetTempPath(), "Outside_" + Path.GetRandomFileName() + ".live.json");
+            var outside = Path.Combine(Path.GetTempPath(), "Outside_" + Path.GetRandomFileName() + ".scene.json");
             StartupStateStore.Write(_projectPath, outside);
 
             var read = StartupStateStore.Read(_projectPath);
@@ -85,7 +85,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Delete_RemovesFile()
         {
-            StartupStateStore.Write(_projectPath, Path.Combine(_projectPath, "MyScene.live.json"));
+            StartupStateStore.Write(_projectPath, Path.Combine(_projectPath, "MyScene.scene.json"));
             var path = Path.Combine(_projectPath, "Settings", "startup.json");
             Assert.IsTrue(File.Exists(path));
 

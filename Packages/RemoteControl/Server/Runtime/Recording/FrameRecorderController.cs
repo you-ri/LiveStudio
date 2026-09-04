@@ -36,7 +36,13 @@ namespace Lilium.RemoteControl
         public const string kLiveClassName = "FrameRecorder";
 
         /// <summary>Extension of a live data recording. One take, one file.</summary>
-        public const string kExtension = ".livedata";
+        public const string kExtension = ".live.bin";
+
+        /// <summary>
+        /// Extension takes were written with before <see cref="kExtension"/>. Only listing accepts
+        /// it, so existing recordings stay visible in the picker; new takes use the current one.
+        /// </summary>
+        public const string kLegacyExtension = ".livedata";
 
         // ---- Recording ----
 
@@ -278,6 +284,7 @@ namespace Lilium.RemoteControl
             if (!Directory.Exists(recordingFolder)) return Array.Empty<string>();
 
             var files = new List<string>(Directory.GetFiles(recordingFolder, "*" + kExtension));
+            files.AddRange(Directory.GetFiles(recordingFolder, "*" + kLegacyExtension));
             files.Sort((a, b) => File.GetLastWriteTimeUtc(b).CompareTo(File.GetLastWriteTimeUtc(a)));
 
             var names = new string[files.Count];
@@ -445,11 +452,11 @@ namespace Lilium.RemoteControl
             if (_holdsStateSystems) return;
             _holdsStateSystems = true;
 
-            LiveStateSystem.Retain();
-
-            // The inventory goes with the values. A recording of state addressed to objects it
-            // never lists cannot say whether the world it is being replayed into is the right one.
+            // The inventory goes with the values, and ahead of them: on a supplied frame it stands
+            // up the objects the state is addressed to. The systems no longer depend on this order
+            // (the inventory asks the gate to run first), but the reading order should match it.
             LiveStructureSystem.Retain();
+            LiveStateSystem.Retain();
         }
 
         // Undoes what this object turned on, and only that: a system someone else installed stays.

@@ -17,11 +17,11 @@ namespace Lilium.RemoteControl.LiveScene
     public class LiveSceneSaveSystem
     {
         // New live scene files are written with this extension. Loading is extension-agnostic
-        // (the file content is read regardless), so legacy ".scene.json" files still open; only
+        // (the file content is read regardless), so legacy ".live.json" files still open; only
         // the "Save As" default and the editor extension auto-completion use the new value.
-        private const string kLiveSceneFileExtension = ".live.json";
-        private const string kLegacyFileExtension = ".scene.json";
-        private const string kLiveSceneFileDefaultName = "Untitled.live.json";
+        private const string kLiveSceneFileExtension = ".scene.json";
+        private const string kLegacyFileExtension = ".live.json";
+        private const string kLiveSceneFileDefaultName = "Untitled.scene.json";
         private const string kSceneFileDefaultSubDir = "Virgo Motion/Saved";
 
         /// <summary>
@@ -68,7 +68,7 @@ namespace Lilium.RemoteControl.LiveScene
         }
 
         /// <summary>
-        /// True if the path is a live scene file (current ".live.json" or legacy ".scene.json").
+        /// True if the path is a live scene file (current ".scene.json" or legacy ".live.json").
         /// Lets a project crawler classify files by path alone, without reading their contents.
         /// </summary>
         public static bool IsLiveSceneFile(string filePath)
@@ -611,8 +611,8 @@ namespace Lilium.RemoteControl.LiveScene
                 return false;
             }
             // EditorUtility.SaveFilePanel only auto-completes a single extension, so we add the
-            // compound suffix manually. A legacy ".scene.json" name (overwriting an existing file)
-            // is kept as-is; otherwise the new ".live.json" extension is appended.
+            // compound suffix manually. A legacy ".live.json" name (overwriting an existing file)
+            // is kept as-is; otherwise the new ".scene.json" extension is appended.
             if (!savePath.EndsWith(kLiveSceneFileExtension, StringComparison.OrdinalIgnoreCase)
                 && !savePath.EndsWith(kLegacyFileExtension, StringComparison.OrdinalIgnoreCase))
                 savePath += kLiveSceneFileExtension;

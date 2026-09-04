@@ -98,7 +98,7 @@ namespace Lilium.LiveStudio
         /// <summary>
         /// デバイスフィルタ
         /// </summary>
-        [SerializeField, LiveField, Hide]
+        [SerializeField, LiveField(lane = FrameLane.State, textCapacity = 128), Hide]
         [FormerlyNamedAs("deviceName")]
         internal string _deviceName;
 

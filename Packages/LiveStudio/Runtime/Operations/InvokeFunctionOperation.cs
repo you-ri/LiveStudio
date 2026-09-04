@@ -36,7 +36,7 @@ namespace Lilium.LiveStudio
         public string targetId = string.Empty;
 
         /// <summary>Name of the <c>[LiveFunction]</c> to invoke.</summary>
-        [LiveField]
+        [LiveField(lane = FrameLane.State, textCapacity = 64)]
         public string functionName = string.Empty;
 
         /// <summary>Path (remote-app slash transport form; e.g. "sets/0") of the property whose value owns the

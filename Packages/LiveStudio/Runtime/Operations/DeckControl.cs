@@ -27,7 +27,7 @@ namespace Lilium.LiveStudio
     {
         /// <summary>Name of the <see cref="Deck"/> this control is placed on (deck names are kept unique),
         /// or empty when unplaced. An empty or unknown name is normalized to the default page on load.</summary>
-        [LiveField]
+        [LiveField(lane = FrameLane.State, textCapacity = 128)]
         public string deckName = string.Empty;
 
         /// <summary>Grid column of the tile's top-left cell (0-based). Driven by the deck's drag layout,

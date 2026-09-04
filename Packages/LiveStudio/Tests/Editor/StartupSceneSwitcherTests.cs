@@ -77,7 +77,7 @@ namespace Lilium.LiveStudio.EditorTests
         [Test]
         public void ReadBaseSceneName_RecordedScene_ReturnsBaseSceneName()
         {
-            var scenePath = Path.Combine(_stateDir, "MyScene.live.json");
+            var scenePath = Path.Combine(_stateDir, "MyScene.scene.json");
             File.WriteAllText(scenePath, "{\"baseSceneName\":\"Studio\"}");
             StartupStateStore.Write(_stateDir, scenePath);
 
@@ -87,7 +87,7 @@ namespace Lilium.LiveStudio.EditorTests
         [Test]
         public void ReadBaseSceneName_RecordedFileMissing_ReturnsNull()
         {
-            var scenePath = Path.Combine(_stateDir, "Gone.live.json");
+            var scenePath = Path.Combine(_stateDir, "Gone.scene.json");
             File.WriteAllText(scenePath, "{\"baseSceneName\":\"Studio\"}");
             StartupStateStore.Write(_stateDir, scenePath);
             File.Delete(scenePath);
@@ -99,7 +99,7 @@ namespace Lilium.LiveStudio.EditorTests
         public void ReadBaseSceneName_SceneWithoutBaseName_ReturnsNull()
         {
             // Legacy file with no baseSceneName field.
-            var scenePath = Path.Combine(_stateDir, "Legacy.live.json");
+            var scenePath = Path.Combine(_stateDir, "Legacy.scene.json");
             File.WriteAllText(scenePath, "{\"objects\":[]}");
             StartupStateStore.Write(_stateDir, scenePath);
 

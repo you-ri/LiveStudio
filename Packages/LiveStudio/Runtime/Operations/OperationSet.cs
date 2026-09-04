@@ -24,10 +24,13 @@ namespace Lilium.LiveStudio
     {
         /// <summary>Stable id, assigned by <see cref="OperationManager"/> on creation. Used to address the
         /// set from the remote app's add/remove functions. Hidden from the generic UI.</summary>
-        [LiveField, Hide]
+        // 安定キー ([LiveKey])。name ではなく id — 名前は重複も改名もするが id は発番されたきり
+        // 変わらない。シーンに直書きされたセットは OperationManager が id を埋めるまで空で、その間
+        // だけ住所が位置に落ちる (埋まった時点で構造変化として 1 度キーフレームを打つ)。
+        [LiveField, Hide, LiveKey]
         public string id = string.Empty;
 
-        [LiveField]
+        [LiveField(lane = FrameLane.State, textCapacity = 128)]
         public string name = "Operation Set";
 
         [LiveField]
@@ -37,7 +40,7 @@ namespace Lilium.LiveStudio
         /// <see cref="control"/> is in <see cref="InputMode.Toggle"/> (a <see cref="DeckToggle"/>) are
         /// mutually exclusive: turning one on clears the others (toggle-style radio — all-off is still
         /// allowed). Empty means ungrouped (no exclusivity). The remote app also groups its cards by this name.</summary>
-        [LiveField]
+        [LiveField(lane = FrameLane.State, textCapacity = 64)]
         public string group = string.Empty;
 
         /// <summary>The firing side. A single polymorphic field — the remote app swaps its concrete type

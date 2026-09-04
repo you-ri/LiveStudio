@@ -32,15 +32,26 @@ namespace Lilium.RemoteControl.Frames
         /// stayed in the take, and it kept reading the declaration after the REST path had stopped.
         /// A write recorded once or twice depending on which control was used is the shape of every
         /// bug this has had.
+        ///
+        /// <para>
+        /// ⚠ The question put to the block is "is this value already carried", not "was the state
+        /// lane asked for". The two are not the same, and not only in the direction this class was
+        /// built for: a <c>[LiveField]</c> that says nothing about its lane is carried by the block
+        /// (the generator's default for a field), while the attribute it was declared with reports
+        /// <see cref="FrameLane.Event"/>. Reading the declaration therefore kept an event record for
+        /// a value the block was already copying sixty times a second -- the same value in both
+        /// lanes, which is exactly what this is here to prevent.
+        /// </para>
         /// </summary>
         public static bool OmitsRecord(LivePropertyType member, object owner)
         {
             var lane = member?.lane ?? FrameLane.Event;
-            if (lane == FrameLane.Event) return false;
 
             // None is never carried by anything, so there is nothing to ask: the member is off the
-            // live data by declaration. Only State makes a claim that can turn out to be false.
-            return lane != FrameLane.State || IsCarriedByState(member, owner);
+            // live data by declaration, whatever any block happens to hold.
+            if (lane == FrameLane.None) return true;
+
+            return IsCarriedByState(member, owner);
         }
 
         /// <summary>

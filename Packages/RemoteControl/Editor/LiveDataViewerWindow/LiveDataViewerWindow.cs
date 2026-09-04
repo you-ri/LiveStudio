@@ -1005,6 +1005,19 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _rows.Add(new LiveDataValueRow("recipe",
                 string.IsNullOrEmpty(entry.recipe) ? _Tr("LDV_RECIPE_NONE") : entry.recipe));
 
+            // An element is addressed through the member holding it, and the id spells that out
+            // only by convention. Shown as the fields the replay actually reads, so a key with a
+            // slash in it (a mesh path) reads as one key rather than as more of the address.
+            if (entry.isElement)
+            {
+                _rows.Add(new LiveDataValueRow("member", entry.memberName));
+                _rows.Add(new LiveDataValueRow("key",
+                    string.IsNullOrEmpty(entry.keyName) ? _Tr("LDV_KEY_BY_POSITION") : entry.keyName));
+                _rows.Add(new LiveDataValueRow("ordinal", entry.ordinal.ToString()));
+            }
+
+            _AddElementsOf(snapshot, entry.objectId);
+
             // What the inventory says exists, against what the state lane is actually carrying for
             // it. An object with no state is not an error -- most have none -- but an object that
             // should have some and does not is exactly what this view is for.
@@ -1037,6 +1050,57 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             if (carried == 0)
             {
                 _rows.Add(new LiveDataValueRow(string.Empty, _Tr("LDV_NO_STATE_FOR_OBJECT"), depth: 1));
+            }
+        }
+
+        /// <summary>
+        /// The collection elements this object holds, grouped by the member holding them.
+        ///
+        /// Read from the inventory rather than from the object: what is under test here is what the
+        /// recording says exists, and an element the walk missed is exactly what this view has to
+        /// make visible. Nothing is drawn when the object holds none, which is most of them.
+        /// </summary>
+        private void _AddElementsOf(LiveDataSnapshot snapshot, int ownerId)
+        {
+            // The collections first: each is listed whether or not it holds anything, because an
+            // empty one is a fact the recording states and an absent one is a fact about the walk.
+            var headed = false;
+
+            for (int c = 0; c < snapshot.structure.Count; c++)
+            {
+                var collection = snapshot.structure[c];
+                if (!collection.isCollection || collection.parentId != ownerId) continue;
+
+                if (!headed)
+                {
+                    _rows.Add(new LiveDataValueRow("elements", string.Empty));
+                    headed = true;
+                }
+
+                _rows.Add(new LiveDataValueRow(collection.memberName,
+                    _ShortTypeName(collection.typeName) + "[]", depth: 1));
+
+                var held = 0;
+                for (int i = 0; i < snapshot.structure.Count; i++)
+                {
+                    var row = snapshot.structure[i];
+                    if (!row.isElement || row.parentId != ownerId) continue;
+                    if (row.memberName != collection.memberName) continue;
+
+                    _rows.Add(new LiveDataValueRow(
+                        string.IsNullOrEmpty(row.keyName)
+                            ? $"[{row.ordinal}]"
+                            : $"[{row.keyName}]",
+                        _ShortTypeName(row.typeName),
+                        depth: 2));
+
+                    held++;
+                }
+
+                if (held == 0)
+                {
+                    _rows.Add(new LiveDataValueRow(string.Empty, _Tr("LDV_COLLECTION_EMPTY"), depth: 2));
+                }
             }
         }
 
@@ -1186,19 +1250,28 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             if (presenter != null)
             {
                 presenter(snapshot.selectedValue, snapshot.selectedValueLength, _rows);
-                return;
             }
-
-            var layout = LiveDataValueLayout.For(elementType);
-            if (layout == null) return;
-
-            for (int i = 0; i < layout.Count; i++)
+            else
             {
-                var field = layout[i];
-                var text = LiveDataValueLayout.Read(snapshot.selectedValue, snapshot.selectedValueLength, field);
+                var layout = LiveDataValueLayout.For(elementType);
+                if (layout != null)
+                {
+                    for (int i = 0; i < layout.Count; i++)
+                    {
+                        var field = layout[i];
+                        var text = LiveDataValueLayout.Read(
+                            snapshot.selectedValue, snapshot.selectedValueLength, field);
 
-                _rows.Add(new LiveDataValueRow(field.label, text, field.depth));
+                        _rows.Add(new LiveDataValueRow(field.label, text, field.depth));
+                    }
+                }
             }
+
+            // The collections this object holds, under the values it carries. Shown here as well as
+            // on the inventory row because this is where most objects are selected from: a component
+            // exposed by its type name has no inventory row of its own (its existence comes with the
+            // scene), so the state lane is the only place it can be picked.
+            _AddElementsOf(snapshot, _selectedOwnerId);
         }
 
         private void _BuildEventDetail()

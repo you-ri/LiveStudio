@@ -18,7 +18,14 @@ namespace Lilium.LiveStudio
     [Serializable]
     public class MeshState
     {
-        [LiveField, StringSelector(nameof(AvatarController.meshPaths))]
+        // 安定キー ([LiveKey])。要素の住所を位置ではなくメッシュのパスで決めるため。位置だと
+        // 配列に 1 つ挿入しただけで、記録した visible が隣のメッシュに適用される。
+        //
+        // ⚠ キーには '/' (階層の深いメッシュ) と '.' (Blender の "Body.001") が入りうる。どちらも
+        // プロパティパスの区切り文字なので、キーをそのままパスに埋めると解決できない。状態レーンの
+        // 住所は不透明な文字列なので無害だが、パスを組む側 (RemoteApp の「アクション化」) は
+        // 含む場合に位置バインドへ落とすこと。
+        [LiveField, LiveKey, StringSelector(nameof(AvatarController.meshPaths))]
         public string name;
 
         [LiveField]
@@ -35,7 +42,10 @@ namespace Lilium.LiveStudio
     [Serializable]
     public class AnimationParameterOverride
     {
-        [LiveField, StringSelector(nameof(AvatarController.animationParameters))]
+        // 安定キー ([LiveKey])。Animator のパラメータ名が要素の識別子なので、住所を位置ではなく
+        // これで決める。位置だと配列に 1 つ挿入しただけで、値が隣のパラメータに適用される。
+        [LiveField(lane = FrameLane.State, textCapacity = 64), LiveKey]
+        [StringSelector(nameof(AvatarController.animationParameters))]
         public string name;
 
         // パラメータ名から自動判別された型。ShowIf がこのフィールドを参照して値フィールドの表示を切り替える。
@@ -79,7 +89,10 @@ namespace Lilium.LiveStudio
         [LiveProperty, LiveKey]
         public string name => _name;
 
-        [LiveProperty]
+        // 状態レーン。表情ウェイトは blendTime をかけて毎フレーム動くので、イベントレコードでは
+        // 変化そのものを追えない (途中の値は再生時の再計算に頼ることになる)。値は ExpressionService が
+        // 持つ真値を getter が返すので、そのまま写して戻せる。
+        [LiveProperty(lane = FrameLane.State)]
         public float weight
         {
             // A default-constructed entry has an empty name: that is the array-diff template built by
@@ -209,9 +222,12 @@ namespace Lilium.LiveStudio
 
         // アバターモデル（ターゲットの子孫すべて）に適用するレイヤー。
         // 空文字＝「変更しない」で、その場合は Prefab 元のレイヤーを維持する。
+        // internal: 状態ブロックはこの型が partial でないので型の外に生成される。外からは private が
+        // 見えないのでムーバーが届かず、黙ってブロックから外れる (LRC009)。同じアセンブリなので
+        // internal で足りる (partial 化は不要)。
         [SerializeField]
-        [LiveField(label="AVATAR_LAYER"), StringSelector(nameof(layerNames))]
-        private string _avatarLayer = string.Empty;
+        [LiveField(label="AVATAR_LAYER", lane = FrameLane.State, textCapacity = 64), StringSelector(nameof(layerNames))]
+        internal string _avatarLayer = string.Empty;
 
         // _ApplyAvatarLayer で元レイヤーへ戻せるよう、ターゲット差し替え時に一度だけ捕捉する
         // 子孫 Transform → 元レイヤーのスナップショット。
@@ -265,10 +281,11 @@ namespace Lilium.LiveStudio
         // (humanScale 正規化済みでキャラの身長に依らず同位置) に固定し、root (アバター全体) を
         // 位置・回転とも motionSource の anchor へ固定する。各ボーンの回転は mocap を反映しつつ、
         // 両足は脚の 2 ボーン IK で接地位置に固定する。クリップ未設定時は固定されない。
+        // internal: _avatarLayer と同じ理由 — ブロックは型の外に生成されるので private では届かない。
         [SerializeField]
         [LiveField(label="AVATAR_LOCKLOWERBODYPOSE")]
         [Help("AVATAR_LOCKLOWERBODYPOSE_HELP")]
-        private bool _lockLowerBodyPose;
+        internal bool _lockLowerBodyPose;
 
         [SerializeField]
         [LiveField, Hide]
@@ -994,6 +1011,11 @@ namespace Lilium.LiveStudio
             if (property.PathContains(nameof(meshStateOverrides)))
             {
                 _ApplyMeshStateOverrides(_target);
+
+                // meshStateOverrides[key].visible を解決結果キャッシュで駆動する SetPropertyOperation 等に、
+                // 要素の並びが変わったことを通知して再解決させる。キャッシュが持つのはキー解決後の位置
+                // 付きパスなので、通知しないと並べ替え後に隣の要素へ書き続ける。
+                LiveObjectRegistry.NotifyKeyedCollectionChanged();
             }
 
             if (property.PathContains(nameof(animationParameterOverrides)))

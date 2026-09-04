@@ -27,7 +27,7 @@ namespace Lilium.LiveStudio
     public class PropAttachment : IManipulatorTarget
     {
         // Target socket name. The prop attaches to the avatar socket with this name.
-        [LiveField]
+        [LiveField(lane = FrameLane.State, textCapacity = 64)]
         [StringSelector(nameof(availableSocketNames))]
         public string socketName = "S_WristRight";
 

@@ -87,7 +87,7 @@ namespace Lilium.LiveStudio.EditorTests
         [TestCase("foo.deck.json", true)]
         [TestCase("a/b/foo.deck.json", true)]
         [TestCase("foo.DECK.JSON", true)]
-        [TestCase("foo.live.json", false)]
+        [TestCase("foo.scene.json", false)]
         [TestCase("foo.json", false)]
         public void IsDeckFile_MatchesCompoundExtension(string path, bool expected)
         {
@@ -121,6 +121,9 @@ namespace Lilium.LiveStudio.EditorTests
             Assert.AreEqual("Live", AssetTypeRegistry.DeriveName("C:/proj/Decks/Live.deck.json"));
             Assert.AreEqual(DeckFile.Subfolder, AssetTypeRegistry.ResolveImportSubfolder("x.deck.json"));
             // The ".json" tail must not steal live scenes, which sit below decks in priority.
+            Assert.IsInstanceOf<LiveSceneAsset>(AssetTypeRegistry.Create("C:/proj/Start.scene.json"));
+            // Live scenes saved under the previous ".live.json" name still classify, so an existing
+            // project keeps listing them after the extension change.
             Assert.IsInstanceOf<LiveSceneAsset>(AssetTypeRegistry.Create("C:/proj/Start.live.json"));
         }
 

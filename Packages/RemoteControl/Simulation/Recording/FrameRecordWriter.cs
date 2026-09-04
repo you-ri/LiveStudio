@@ -202,6 +202,9 @@ namespace Lilium.RemoteControl.Frames.Recording
             _writer.Write(frame.frameRate.denominator);
         }
 
+        /// <summary>Bytes one inventory entry occupies on disk. See <see cref="ObjectEntry"/>.</summary>
+        internal const int kEntrySize = 4 * 7;
+
         /// <summary>
         /// Writes the inventory. Skipped when it has not moved, unless <paramref name="force"/> --
         /// which is how a keyframe is made: the same inventory written again so a seek landing here
@@ -220,7 +223,7 @@ namespace Lilium.RemoteControl.Frames.Recording
             _CutChunkBeforeCurrentFrame();
 
             var count = structure.count;
-            _BeginEntry(FrameEntryKind.Structure, 8 + 4 + count * (4 + 4 + 4 + 4));
+            _BeginEntry(FrameEntryKind.Structure, 8 + 4 + count * kEntrySize);
             _writer.Write(structure.epoch);
             _writer.Write(count);
 
@@ -231,6 +234,9 @@ namespace Lilium.RemoteControl.Frames.Recording
                 _writer.Write(entry.typeId);
                 _writer.Write(entry.parentId);
                 _writer.Write(entry.recipeId);
+                _writer.Write(entry.memberId);
+                _writer.Write(entry.keyId);
+                _writer.Write(entry.ordinal);
             }
         }
 

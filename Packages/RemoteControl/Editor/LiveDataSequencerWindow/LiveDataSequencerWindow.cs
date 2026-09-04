@@ -436,17 +436,20 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
         }
 
         /// <summary>
-        /// Opens the folder takes are written to in the OS file browser.
+        /// Opens the folder takes are written to in the OS file browser, showing its contents.
         ///
         /// Created first, because the folder only comes into being when something is recorded --
         /// and "open" quietly doing nothing is the worst answer to "where are my takes".
+        ///
+        /// The trailing separator is what asks for the contents: given a bare folder path,
+        /// RevealInFinder opens the *parent* with the folder merely selected.
         /// </summary>
         private void _RevealFolder()
         {
             var folder = FrameRecorderController.recordingFolder;
 
             Directory.CreateDirectory(folder);
-            EditorUtility.RevealInFinder(folder);
+            EditorUtility.RevealInFinder(folder.TrimEnd('/', '\\') + Path.DirectorySeparatorChar);
         }
 
         /// <summary>
@@ -715,6 +718,9 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
             _takes.Clear();
             var files = Directory.GetFiles(folder, "*" + FrameRecorderController.kExtension);
             for (int i = 0; i < files.Length; i++) _takes.Add(_Describe(files[i], recordingPath));
+            // Takes recorded under the previous extension stay listed and playable.
+            var legacy = Directory.GetFiles(folder, "*" + FrameRecorderController.kLegacyExtension);
+            for (int i = 0; i < legacy.Length; i++) _takes.Add(_Describe(legacy[i], recordingPath));
 
             _takes.Sort((a, b) => b.modified.CompareTo(a.modified));
 

@@ -51,6 +51,8 @@
     "LDV_OBJECT_GONE": "This object is no longer in the frame.",
     "LDV_NOT_IN_SYMBOLS": "#{0} (not in the symbol table)",
     "LDV_RECIPE_NONE": "(none — a replay will not build it again)",
+    "LDV_KEY_BY_POSITION": "(by position — the element type declares no key)",
+    "LDV_COLLECTION_EMPTY": "(empty — recorded, holds nothing)",
     "LDV_NO_STATE_FOR_OBJECT": "No state carries this object.",
     "LDV_NO_EVENTS": "No input has come through yet.",
     "LDV_EVENT_COUNT": "{0} records",

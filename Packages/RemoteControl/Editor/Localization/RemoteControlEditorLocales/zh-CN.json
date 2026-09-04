@@ -51,6 +51,8 @@
     "LDV_OBJECT_GONE": "该对象已不在帧中。",
     "LDV_NOT_IN_SYMBOLS": "#{0} (不在符号表中)",
     "LDV_RECIPE_NONE": "(无・回放时不会重新创建)",
+    "LDV_KEY_BY_POSITION": "(按位置识别・元素类型未声明键)",
+    "LDV_COLLECTION_EMPTY": "(空・已记录但无内容)",
     "LDV_NO_STATE_FOR_OBJECT": "没有状态携带该对象。",
     "LDV_NO_EVENTS": "还没有任何输入通过。",
     "LDV_EVENT_COUNT": "{0} 条",

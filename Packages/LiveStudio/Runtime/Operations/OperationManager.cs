@@ -30,7 +30,7 @@ namespace Lilium.LiveStudio
     [LiveClass(Icon = "bolt", Category = "Operation", HideInScene = true)]
     // Renamed from ActionManager (and earlier TriggerManager). MovedFrom restores the
     // [SerializeReference] managed type in old scene/prefab YAML; FormerlyNamedAs restores the
-    // RemoteControl @type discriminator from old *.live.json. MovedFrom allows only one source, so it
+    // RemoteControl @type discriminator from old *.scene.json. MovedFrom allows only one source, so it
     // names the most recent prior type (ActionManager); the @type history keeps both old names.
     [MovedFrom(false, null, null, "ActionManager")]
     [FormerlyNamedAs("ActionManager")]

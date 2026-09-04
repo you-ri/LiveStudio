@@ -179,10 +179,15 @@ namespace Lilium.RemoteControl.Tests
             var everySecond = Record(60, keyframeInterval: 60, Producer).Length;
             var everyFrame = Record(60, keyframeInterval: 1, Producer).Length;
 
-            // 12 of block header plus 12 per object plus 13 of entry header: about 145 bytes for ten
+            // 12 of block header plus 28 per object plus 13 of entry header: about 305 bytes for ten
             // objects. Cheap enough that the interval is a responsiveness decision, not a size one.
+            //
+            // 28 rather than the 16 this once was: an entry carries the member and key it sits under
+            // and where in that member it is, so a collection element can be stood back up. The
+            // claim under test is unchanged -- what a keyframe costs is the inventory and nothing
+            // else -- and only the width of one entry moved.
             var perKeyframe = (everyFrame - sparse) / 59.0;
-            Assert.Less(perKeyframe, 200, $"a keyframe cost {perKeyframe:F0} bytes");
+            Assert.Less(perKeyframe, 350, $"a keyframe cost {perKeyframe:F0} bytes");
 
             Assert.AreEqual(sparse, everySecond, "one a second over a second of frames is just the first");
         }

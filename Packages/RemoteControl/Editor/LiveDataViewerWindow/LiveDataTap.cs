@@ -84,8 +84,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             // Watching the frame is not enough to see anything: the lanes are filled by producers,
             // and outside a recording nobody had asked for them. So the window asks -- otherwise it
             // opens on an empty list and "nothing is being produced" looks like "nothing exists".
-            LiveStateSystem.Retain();
             LiveStructureSystem.Retain();
+            LiveStateSystem.Retain();
         }
 
         /// <summary>Stops watching once the last window is done.</summary>
@@ -254,6 +254,13 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                         ? string.Empty
                         : resolve(entry.parentId),
                     recipe = resolve(entry.recipeId),
+                    memberName = entry.memberId == FrameSymbolTable.kNone
+                        ? string.Empty
+                        : resolve(entry.memberId),
+                    keyName = entry.keyId == FrameSymbolTable.kNone
+                        ? string.Empty
+                        : resolve(entry.keyId),
+                    ordinal = entry.ordinal,
                 });
             }
         }

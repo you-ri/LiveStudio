@@ -242,11 +242,11 @@ namespace Lilium.LiveStudio
                 importSubfolder = SnapshotManager.kSnapshotDirName,
             });
 
-            // Live scenes (*.live.json / *.scene.json) are launcher entries, not loadable resources.
+            // Live scenes (*.scene.json / legacy *.live.json) are launcher entries, not loadable resources.
             Register(new AssetTypeDescriptor
             {
                 priority = 30,
-                suffixes = new[] { ".live.json", ".scene.json" },
+                suffixes = new[] { ".scene.json", ".live.json" },
                 matches = LiveSceneSaveSystem.IsLiveSceneFile,
                 create = _ => new LiveSceneAsset(),
             });

@@ -158,9 +158,22 @@ namespace Lilium.RemoteControl.Frames
         /// Writes a set back onto the live objects it came from. Used by replay, after the structure
         /// has been reconciled so the objects it names exist.
         /// </summary>
-        public static int ApplyFrom(StateBlockSet state)
+        public static int ApplyFrom(StateBlockSet state) => ApplyFrom(state, null);
+
+        /// <inheritdoc cref="ApplyFrom(StateBlockSet)"/>
+        /// <param name="idOf">
+        /// Turns an address into the id the rows are filed under, or null to use this run's table.
+        ///
+        /// ⚠ A supplied frame's rows are filed under the ids the *recording* gave them, and the same
+        /// address gets a different number in this run's table. Interning locally and looking that
+        /// number up found either nothing or somebody else's row, which is why replaying a take put
+        /// nothing back.
+        /// </param>
+        public static int ApplyFrom(StateBlockSet state, Func<string, int> idOf)
         {
             if (state == null) return 0;
+
+            _idOf = idOf;
 
             var applied = 0;
             _visited.Clear();
@@ -193,8 +206,16 @@ namespace Lilium.RemoteControl.Frames
 
             _RefreshRosterIfStale();
 
+            _idOf = null;
             return applied;
         }
+
+        // How an address becomes the id its row is filed under, for the apply now running. Null
+        // means this run's table, which is right for everything but a supplied frame.
+        private static Func<string, int> _idOf;
+
+        private static int _OwnerId(string id)
+            => _idOf != null ? _idOf(id) : FrameGate.symbols.Intern(id);
 
         // Set when the walk finds an entry whose object has gone, which means a scene changed under
         // the roster. Acted on after the walk rather than during it, because refreshing rebuilds the
@@ -356,6 +377,20 @@ namespace Lilium.RemoteControl.Frames
             public bool declaresState;
         }
 
+        /// <summary>
+        /// How an address becomes the id a supplied frame files its rows under.
+        ///
+        /// Null when the frame did not come from a recording, which leaves the walk using this run's
+        /// table -- right for everything else.
+        /// </summary>
+        private static Func<string, int> _SuppliedIdOf()
+        {
+            if (!(FrameGate.source is Recording.FrameReplayer replayer)) return null;
+
+            var player = replayer.player;
+            return address => player.IdOf(address);
+        }
+
         private static void _OnFrameHead(ref Frame frame)
         {
             // A supplied frame already carries the world. Capturing into it here would replace the
@@ -363,7 +398,9 @@ namespace Lilium.RemoteControl.Frames
             // would then compare the present against itself and find no difference at all.
             if (frame.isSupplied)
             {
-                _appliedObjectCount = ApplyFrom(frame.state);
+                // Through the recording's own table: the rows are filed under the ids it gave
+                // them, and this run would hand the same address a different number.
+                _appliedObjectCount = ApplyFrom(frame.state, _SuppliedIdOf());
                 return;
             }
 
@@ -516,6 +553,13 @@ namespace Lilium.RemoteControl.Frames
         /// runs per component per frame, and building the same string each time is the cost being
         /// avoided.
         /// </summary>
+        /// <summary>
+        /// The address an exposed component is carried under. Shared with the structure lane for
+        /// the reason <see cref="TryDescribe"/> is.
+        /// </summary>
+        internal static string ComposeComponentId(string ownerId, string key)
+            => _ComposeComponentId(ownerId, key);
+
         private static string _ComposeComponentId(string ownerId, string key)
         {
             var slot = (ComponentElementKey.kMemberName, key);
@@ -536,7 +580,7 @@ namespace Lilium.RemoteControl.Frames
 
             _visited.Add(target);
 
-            if (bridge != null && bridge.Apply(target, FrameGate.symbols.Intern(id), state)) applied++;
+            if (bridge != null && bridge.Apply(target, _OwnerId(id), state)) applied++;
 
             var info = _InfoFor(type, out var liveClass);
             if (info == null || depth >= kMaxNestingDepth) return applied;
@@ -592,7 +636,7 @@ namespace Lilium.RemoteControl.Frames
                 var key = ComponentElementKey.Of(component);
                 if (key == null) continue;
 
-                var ownerSymbol = FrameGate.symbols.Intern(_ComposeComponentId(ownerId, key));
+                var ownerSymbol = _OwnerId(_ComposeComponentId(ownerId, key));
 
                 _visited.Add(component);
 
@@ -616,6 +660,36 @@ namespace Lilium.RemoteControl.Frames
             _components.Clear();
             return applied;
         }
+
+        /// <summary>
+        /// What the walk finds in a type: the members holding a nested live object, and the members
+        /// holding a collection of them.
+        ///
+        /// Shared with the structure lane so the two walks meet the same objects in the same order
+        /// and give them the same addresses. Two walks that classify members differently would put
+        /// an element's value at an address its inventory entry never mentions.
+        /// </summary>
+        internal static bool TryDescribe(Type type, out LiveClass liveClass,
+            out int[] nested, out int[] collections)
+        {
+            var info = _InfoFor(type, out liveClass);
+            if (info == null)
+            {
+                nested = _noNested;
+                collections = _noNested;
+                return false;
+            }
+
+            nested = info.nested;
+            collections = info.collections;
+            return true;
+        }
+
+        /// <summary>
+        /// The element's key, or null when it has none. Shared for the same reason as
+        /// <see cref="TryDescribe"/>.
+        /// </summary>
+        internal static string KeyOf(object element) => _KeyOf(element);
 
         /// <summary>What the walk needs to know about a type, worked out once per class.</summary>
         private static ClassInfo _InfoFor(Type type, out LiveClass liveClass)

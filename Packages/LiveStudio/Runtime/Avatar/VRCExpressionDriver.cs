@@ -27,7 +27,7 @@ namespace Lilium.LiveStudio
     [Serializable]
     public class VRCExpression
     {
-        [LiveField]
+        [LiveField(lane = FrameLane.State, textCapacity = 64)]
         [Tooltip("表情名 (FacialKey.name)。AvatarExpression の \"Expression.<name>\" InputAction と紐付く")]
         public string name;
 

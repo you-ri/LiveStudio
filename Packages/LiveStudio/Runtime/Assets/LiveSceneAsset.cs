@@ -7,7 +7,7 @@ using Lilium.RemoteControl;
 namespace Lilium.LiveStudio
 {
     /// <summary>
-    /// A live scene file (<c>*.live.json</c> / <c>*.scene.json</c>) discovered in the project folder,
+    /// A live scene file (<c>*.scene.json</c> / legacy <c>*.live.json</c>) discovered in the project folder,
     /// listed in <see cref="ExternalAssetManager.assets"/> like any other asset.
     ///
     /// Unlike props / avatars / scene bundles, a live scene is not a resource loaded *into* the current

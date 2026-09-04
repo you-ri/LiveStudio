@@ -108,6 +108,40 @@ namespace Lilium.RemoteControl.Frames.Recording
             return _symbols[id] ?? string.Empty;
         }
 
+        // The other direction, built on demand. Applying a recorded frame needs it: the world is
+        // walked by address, and the row holding that address is filed under the number the
+        // *recording* gave it -- not the one this run would hand out for the same string.
+        private readonly Dictionary<string, int> _idByName = new Dictionary<string, int>();
+        private int _idByNameCount;
+
+        /// <summary>
+        /// The id this recording used for a string, or <see cref="FrameSymbolTable.kNone"/> when the
+        /// recording never mentioned it.
+        ///
+        /// None is the ordinary answer for anything the take did not touch, and the caller reads it
+        /// as "no row for this", which is exactly right: a recording says nothing about an object
+        /// that was not in it.
+        /// </summary>
+        public int IdOf(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return FrameSymbolTable.kNone;
+
+            // The table grows as the file is read (symbols are appended as they first appear), so
+            // the map is topped up rather than rebuilt.
+            if (_idByNameCount != _symbols.Count)
+            {
+                for (int i = _idByNameCount; i < _symbols.Count; i++)
+                {
+                    var name = _symbols[i];
+                    if (!string.IsNullOrEmpty(name)) _idByName[name] = i;
+                }
+
+                _idByNameCount = _symbols.Count;
+            }
+
+            return _idByName.TryGetValue(value, out var id) ? id : FrameSymbolTable.kNone;
+        }
+
         /// <summary>
         /// Plays the next frame: applies its structure and state, and collects its events. False at
         /// the end of the recording.
@@ -257,6 +291,8 @@ namespace Lilium.RemoteControl.Frames.Recording
             if (table == null) return;
 
             _symbols.Clear();
+            _idByName.Clear();
+            _idByNameCount = 0;
             for (int i = 0; i < table.Count; i++) _symbols.Add(table[i]);
         }
 
@@ -312,9 +348,12 @@ namespace Lilium.RemoteControl.Frames.Recording
                 var typeId = BitConverter.ToInt32(payload.Slice(offset + 4, 4));
                 var parentId = BitConverter.ToInt32(payload.Slice(offset + 8, 4));
                 var recipeId = BitConverter.ToInt32(payload.Slice(offset + 12, 4));
-                offset += 16;
+                var memberId = BitConverter.ToInt32(payload.Slice(offset + 16, 4));
+                var keyId = BitConverter.ToInt32(payload.Slice(offset + 20, 4));
+                var ordinal = BitConverter.ToInt32(payload.Slice(offset + 24, 4));
+                offset += FrameRecordWriter.kEntrySize;
 
-                structure.AddOrUpdate(id, typeId, parentId, recipeId);
+                structure.AddOrUpdate(id, typeId, parentId, recipeId, memberId, keyId, ordinal);
                 seen.Add(id);
             }
 
