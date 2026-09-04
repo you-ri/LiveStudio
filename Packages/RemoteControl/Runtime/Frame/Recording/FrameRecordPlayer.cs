@@ -22,7 +22,6 @@ namespace Lilium.RemoteControl.Frames.Recording
     public sealed class FrameRecordPlayer : IDisposable
     {
         private readonly FrameRecordReader _reader;
-        private readonly List<string> _symbols = new List<string>();
         private readonly List<EventRecord> _events = new List<EventRecord>();
         private readonly HashSet<string> _reportedUnknownTypes = new HashSet<string>();
 
@@ -100,47 +99,17 @@ namespace Lilium.RemoteControl.Frames.Recording
             _reader = new FrameRecordReader(stream, leaveOpen);
         }
 
-        /// <summary>Resolves an id the way the recording meant it, or an empty string.</summary>
-        public string Resolve(int id)
-        {
-            if (id < 0 || id >= _symbols.Count) return string.Empty;
-
-            return _symbols[id] ?? string.Empty;
-        }
-
-        // The other direction, built on demand. Applying a recorded frame needs it: the world is
-        // walked by address, and the row holding that address is filed under the number the
-        // *recording* gave it -- not the one this run would hand out for the same string.
-        private readonly Dictionary<string, int> _idByName = new Dictionary<string, int>();
-        private int _idByNameCount;
-
         /// <summary>
-        /// The id this recording used for a string, or <see cref="FrameSymbolTable.kNone"/> when the
-        /// recording never mentioned it.
+        /// The table this recording's ids index, both ways round.
         ///
-        /// None is the ordinary answer for anything the take did not touch, and the caller reads it
-        /// as "no row for this", which is exactly right: a recording says nothing about an object
-        /// that was not in it.
+        /// The file's own numbering, not this run's: the same address is a different id in each, so
+        /// a frame filled from here carries this table with it rather than leaving each reader to
+        /// work out which one to ask.
         /// </summary>
-        public int IdOf(string value)
-        {
-            if (string.IsNullOrEmpty(value)) return FrameSymbolTable.kNone;
+        public FrameSymbolTable symbols { get; } = new FrameSymbolTable();
 
-            // The table grows as the file is read (symbols are appended as they first appear), so
-            // the map is topped up rather than rebuilt.
-            if (_idByNameCount != _symbols.Count)
-            {
-                for (int i = _idByNameCount; i < _symbols.Count; i++)
-                {
-                    var name = _symbols[i];
-                    if (!string.IsNullOrEmpty(name)) _idByName[name] = i;
-                }
-
-                _idByNameCount = _symbols.Count;
-            }
-
-            return _idByName.TryGetValue(value, out var id) ? id : FrameSymbolTable.kNone;
-        }
+        /// <summary>Resolves an id the way the recording meant it, or an empty string.</summary>
+        public string Resolve(int id) => symbols.Resolve(id);
 
         /// <summary>
         /// Plays the next frame: applies its structure and state, and collects its events. False at
@@ -251,7 +220,7 @@ namespace Lilium.RemoteControl.Frames.Recording
         public void Rewind()
         {
             _reader.Rewind();
-            _symbols.Clear();
+            symbols.Reset();
             _events.Clear();
             structure.Reset();
             state.Reset();
@@ -290,10 +259,8 @@ namespace Lilium.RemoteControl.Frames.Recording
             var table = _reader.symbols;
             if (table == null) return;
 
-            _symbols.Clear();
-            _idByName.Clear();
-            _idByNameCount = 0;
-            for (int i = 0; i < table.Count; i++) _symbols.Add(table[i]);
+            symbols.Reset();
+            for (int i = 0; i < table.Count; i++) symbols.SetAt(i, table[i]);
         }
 
         private void _Apply(in FrameEntry entry)
@@ -324,13 +291,9 @@ namespace Lilium.RemoteControl.Frames.Recording
             var length = BitConverter.ToInt32(payload.Slice(4, 4));
             var value = Encoding.UTF8.GetString(payload.Slice(8, length));
 
-            // Ids are positions, and the writer emits them in order, so a gap would mean a lost
-            // entry rather than a sparse table. Filled rather than dropped so later ids still land
-            // where they belong.
-            while (_symbols.Count < id) _symbols.Add(null);
-
-            if (_symbols.Count == id) _symbols.Add(value);
-            else _symbols[id] = value;
+            // At the id the writer chose, not the next free one: a gap would mean a lost entry
+            // rather than a sparse table, and later ids still have to land where they belong.
+            symbols.SetAt(id, value);
         }
 
         private void _ApplyStructure(ReadOnlySpan<byte> payload)

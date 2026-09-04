@@ -14,9 +14,10 @@ namespace Lilium.RemoteControl.Frames
     /// recording holds values addressed to objects it never mentions, and a replay has nothing to
     /// tell it whether the world it is writing into is the world that was recorded.
     ///
-    /// This is the capture half only. Applying an inventory is not assignment but a reconcile
-    /// against reality -- create what is missing, destroy what is not in it -- and that half is
-    /// what makes scrubbing past a spawn work. It is not here yet; see the design note.
+    /// Applying an inventory is not assignment but a reconcile against reality -- create what is
+    /// missing, remove what is not in it, then put the rest in the order recorded. That is what
+    /// makes scrubbing past a spawn work, and it is why this lane runs ahead of the state lane: a
+    /// value has nowhere to land until the thing holding it exists.
     /// </summary>
     public static class LiveStructureSystem
     {
@@ -71,25 +72,6 @@ namespace Lilium.RemoteControl.Frames
             FrameGate.RemoveFrameHeadHandler(_OnFrameHead);
         }
 
-        /// <summary>
-        /// How to read the ids of a supplied frame.
-        ///
-        /// A recording carries its own mapping table and its ids index that one. Falls back to the
-        /// live table when the frame came from something with no table of its own: there is nothing
-        /// better to try, and the reconcile then fails to find things rather than finding wrong ones.
-        /// </summary>
-        private static Func<int, string> _SuppliedResolver()
-        {
-            if (FrameGate.source is Recording.FrameReplayer replayer)
-            {
-                var player = replayer.player;
-                return id => player.Resolve(id);
-            }
-
-            var symbols = FrameGate.symbols;
-            return id => symbols.Resolve(id);
-        }
-
         private static void _OnFrameHead(ref Frame frame)
         {
             // A supplied frame brought its own inventory. Writing ours over it would replace the
@@ -98,14 +80,11 @@ namespace Lilium.RemoteControl.Frames
             {
                 _objectCount = frame.structure?.count ?? 0;
 
-                // ⚠ Resolved through the recording's own table, not this run's. The ids in a
-                // supplied frame index the table the recording carries, and the live table holds
-                // different strings at those numbers -- so reading them here named whatever
-                // happened to be interned in that slot, the reconcile matched nothing, and
-                // replaying a take changed nothing at all. The viewer resolves the same way
-                // (LiveDataTap._ResolverFor), which is why a take could look right on screen and
-                // still do nothing on replay.
-                if (applyOnSuppliedFrames) ApplyFrom(frame.structure, _SuppliedResolver());
+                // ⚠ Through the table the frame carries, which for a supplied frame is the
+                // recording's. The live table holds different strings at those numbers, so reading
+                // them against it named whatever happened to be interned in that slot, the
+                // reconcile matched nothing, and replaying a take changed nothing at all.
+                if (applyOnSuppliedFrames) ApplyFrom(frame.structure, frame.symbols);
 
                 return;
             }
@@ -159,30 +138,16 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         public static void ApplyFrom(StructureBlock structure, FrameSymbolTable symbols)
         {
-            if (symbols == null)
-            {
-                createdCount = 0;
-                destroyedCount = 0;
-                unresolvedCount = 0;
-                return;
-            }
-
-            ApplyFrom(structure, symbols.Resolve);
-        }
-
-        /// <inheritdoc cref="ApplyFrom(StructureBlock, FrameSymbolTable)"/>
-        /// <param name="resolve">
-        /// Reads an id back into the string it stood for. Taken as a function rather than a table
-        /// because a recording's table is not one: it is the list the file carried, and the ids of a
-        /// supplied frame index that rather than anything this run interned.
-        /// </param>
-        public static void ApplyFrom(StructureBlock structure, Func<int, string> resolve)
-        {
             createdCount = 0;
             destroyedCount = 0;
             unresolvedCount = 0;
 
-            if (structure == null || resolve == null) return;
+            if (structure == null || symbols == null) return;
+
+            // The walk below reads ids in several places; taken once here rather than passed as a
+            // table so the reconcile keeps working in strings, which is what lets it match a
+            // recorded key against a live one without interning anything into the recording.
+            Func<int, string> resolve = symbols.Resolve;
 
             _present.Clear();
             _presentIds.Clear();
@@ -283,28 +248,33 @@ namespace Lilium.RemoteControl.Frames
 
             foreach (var pair in _wanted) pair.Value.Sort(_ByOrdinal);
 
-            _visited.Clear();
+            _walkResolve = resolve;
 
-            foreach (var handle in LiveObjectRegistry.instances)
-            {
-                if (!handle.hasId || !handle.isValid) continue;
+            LiveObjectWalk.Walk(_NoteNothing, _ReconcileCollectionOf);
 
-                var target = handle.target;
-                if (target == null) continue;
+            _walkResolve = null;
+        }
 
-                _ReconcileElementsOf(target, handle.id, resolve, depth: 0);
-            }
+        private static Func<int, string> _walkResolve;
 
-            var scene = LiveObjectRoster.sceneComponents;
-            for (int i = 0; i < scene.Count; i++)
-            {
-                var entry = scene[i];
-                if (!entry.isAlive) continue;
-                if (LiveObjectRegistry.HasAddress(entry.target)) continue;
-                if (_visited.Contains(entry.target)) continue;
+        /// <summary>
+        /// Brings one collection to the shape the inventory records, before the walk reads it.
+        ///
+        /// Ahead of the descent on purpose: standing an element up replaces the array behind the
+        /// member, and what the walk goes on into has to be what this left rather than what was
+        /// there when the frame began.
+        /// </summary>
+        private static bool _ReconcileCollectionOf(object owner, string ownerAddress, LiveClass liveClass,
+            in LivePropertyType member)
+        {
+            if (!IsRecordedCollection(member)) return false;
 
-                _ReconcileElementsOf(entry.target, entry.id, resolve, depth: 0);
-            }
+            // Nothing recorded for this collection. Left alone rather than emptied: a recording is
+            // a record of what it watched, not a claim about everything that exists.
+            if (!_wanted.TryGetValue((ownerAddress, member.name), out var wanted)) return false;
+
+            _ReconcileCollection(owner, liveClass, in member, wanted, _walkResolve);
+            return true;
         }
 
         private static readonly Comparison<ObjectEntry> _ByOrdinal =
@@ -331,58 +301,6 @@ namespace Lilium.RemoteControl.Frames
             _wanted.Clear();
         }
 
-        private static void _ReconcileElementsOf(object target, string id, Func<int, string> resolve,
-            int depth)
-        {
-            if (target == null || depth >= LiveStateSystem.kMaxNestingDepth) return;
-            if (!LiveStateSystem.TryDescribe(target.GetType(), out var liveClass,
-                    out var nested, out var collections)) return;
-
-            _visited.Add(target);
-
-            var members = liveClass.propertyTypes;
-
-            for (int i = 0; i < nested.Length; i++)
-            {
-                var member = members[nested[i]];
-                var value = LivePropertyUtility.GetValueRaw(target, in member);
-                if (value == null) continue;
-
-                _ReconcileElementsOf(value, LiveStateSystem.ComposeNestedId(id, member.name),
-                    resolve, depth + 1);
-            }
-
-            for (int i = 0; i < collections.Length; i++)
-            {
-                var member = members[collections[i]];
-                if (!IsRecordedCollection(member)) continue;
-
-                if (!_wanted.TryGetValue((id, member.name), out var wanted)) continue;
-
-                _ReconcileCollection(target, liveClass, in member, wanted, resolve);
-
-                // Re-read: standing an element up replaces the array behind the member.
-                if (!(LivePropertyUtility.GetValueRaw(target, in member) is IList list)) continue;
-
-                for (int e = 0; e < list.Count; e++)
-                {
-                    var element = list[e];
-                    if (element == null) continue;
-
-                    _ReconcileElementsOf(element,
-                        LiveStateSystem.ComposeElementId(id, member.name, element, e),
-                        resolve, depth + 1);
-                }
-            }
-
-            if (target is LiveGameObject gameObject)
-            {
-                _WalkComponents(gameObject, id, depth,
-                    (component, componentId, d) =>
-                        _ReconcileElementsOf(component, componentId, resolve, d));
-            }
-        }
-
         /// <summary>
         /// Brings one collection to the shape the inventory records: remove, create, then order.
         ///
@@ -404,7 +322,7 @@ namespace Lilium.RemoteControl.Frames
             for (int i = list.Count - 1; i >= 0; i--)
             {
                 var element = list[i];
-                var key = element == null ? null : LiveStateSystem.KeyOf(element);
+                var key = element == null ? null : LiveObjectWalk.KeyOf(element);
 
                 var keep = key != null
                     ? _IndexOfKey(wanted, key, resolve) >= 0
@@ -502,7 +420,7 @@ namespace Lilium.RemoteControl.Frames
                 var element = list[i];
                 if (element == null) continue;
 
-                if (string.Equals(LiveStateSystem.KeyOf(element), key, StringComparison.Ordinal))
+                if (string.Equals(LiveObjectWalk.KeyOf(element), key, StringComparison.Ordinal))
                 {
                     return i;
                 }
@@ -621,14 +539,11 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         public const string kElementRecipe = "element";
 
-        // Objects the walk has reached, so one addressable two ways is not walked twice.
-        private static readonly HashSet<object> _visited = new HashSet<object>();
-
         /// <summary>
         /// Walks the exposed world for collection elements and puts each in the inventory.
         ///
-        /// The same walk the state lane makes (<see cref="LiveStateSystem.TryDescribe"/> classifies
-        /// the members, <see cref="LiveStateSystem.ComposeElementId"/> gives the address), so an
+        /// The same walk the state lane makes (<see cref="LiveObjectWalk.TryDescribe"/> classifies
+        /// the members, <see cref="LiveObjectWalk.ComposeElementId"/> gives the address), so an
         /// element's entry and its values agree about what it is called. Two walks that disagreed
         /// would put a value at an address the inventory never mentions.
         ///
@@ -638,132 +553,72 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         private static void _CaptureElements(StructureBlock structure, FrameSymbolTable symbols)
         {
-            _visited.Clear();
+            _walkStructure = structure;
+            _walkSymbols = symbols;
 
-            foreach (var handle in LiveObjectRegistry.instances)
-            {
-                if (!handle.hasId || !handle.isValid) continue;
+            LiveObjectWalk.Walk(_NoteNothing, _CaptureCollection);
 
-                var target = handle.target;
-                if (target == null) continue;
-
-                _CaptureElementsOf(target, handle.id, structure, symbols, depth: 0);
-            }
-
-            var scene = LiveObjectRoster.sceneComponents;
-            for (int i = 0; i < scene.Count; i++)
-            {
-                var entry = scene[i];
-                if (!entry.isAlive) continue;
-                if (LiveObjectRegistry.HasAddress(entry.target)) continue;
-                if (_visited.Contains(entry.target)) continue;
-
-                _CaptureElementsOf(entry.target, entry.id, structure, symbols, depth: 0);
-            }
+            _walkStructure = null;
+            _walkSymbols = null;
         }
 
-        private static void _CaptureElementsOf(object target, string id, StructureBlock structure,
-            FrameSymbolTable symbols, int depth)
-        {
-            if (target == null || depth >= LiveStateSystem.kMaxNestingDepth) return;
-            if (!LiveStateSystem.TryDescribe(target.GetType(), out var liveClass,
-                    out var nested, out var collections)) return;
-
-            _visited.Add(target);
-
-            var members = liveClass.propertyTypes;
-
-            for (int i = 0; i < nested.Length; i++)
-            {
-                var member = members[nested[i]];
-                var value = LivePropertyUtility.GetValueRaw(target, in member);
-                if (value == null) continue;
-
-                _CaptureElementsOf(value, LiveStateSystem.ComposeNestedId(id, member.name),
-                    structure, symbols, depth + 1);
-            }
-
-            for (int i = 0; i < collections.Length; i++)
-            {
-                var member = members[collections[i]];
-                if (!IsRecordedCollection(member)) continue;
-                if (!(LivePropertyUtility.GetValueRaw(target, in member) is IList list)) continue;
-
-                var parentId = symbols.Intern(id);
-                var memberId = symbols.Intern(member.name);
-                var recipeId = symbols.Intern(kElementRecipe);
-
-                // The collection itself, so "recorded and empty" is a thing the file can say. Its
-                // own address (no key, no position), and no recipe: a member is not something a
-                // replay stands up -- it exists because its owner does.
-                var collectionId = symbols.Intern(LiveStateSystem.ComposeNestedId(id, member.name));
-                if (collectionId != FrameSymbolTable.kNone)
-                {
-                    _present.Add(collectionId);
-                    structure.AddOrUpdate(collectionId, _ElementTypeId(in member, symbols),
-                        parentId, FrameSymbolTable.kNone, memberId, FrameSymbolTable.kNone, -1);
-                }
-
-                for (int e = 0; e < list.Count; e++)
-                {
-                    var element = list[e];
-                    if (element == null) continue;
-
-                    var address = LiveStateSystem.ComposeElementId(id, member.name, element, e);
-                    var elementId = symbols.Intern(address);
-                    if (elementId == FrameSymbolTable.kNone) continue;
-
-                    var key = LiveStateSystem.KeyOf(element);
-
-                    _present.Add(elementId);
-                    structure.AddOrUpdate(elementId, _TypeId(element, symbols),
-                        parentId, recipeId, memberId,
-                        key == null ? FrameSymbolTable.kNone : symbols.Intern(key), e);
-
-                    _CaptureElementsOf(element, address, structure, symbols, depth + 1);
-                }
-            }
-
-            // The exposed components of an exposed GameObject. Reached the way the state lane
-            // reaches them -- through the owner rather than the roster -- because a collection can
-            // sit on a component that has no address of its own, and the walk above would never
-            // arrive at it.
-            if (target is LiveGameObject gameObject)
-            {
-                _WalkComponents(gameObject, id, depth,
-                    (component, componentId, d) =>
-                        _CaptureElementsOf(component, componentId, structure, symbols, d));
-            }
-        }
+        // What the walk now running is writing into. Static rather than captured in a lambda: the
+        // visitor runs per collection per frame for the length of a take.
+        private static StructureBlock _walkStructure;
+        private static FrameSymbolTable _walkSymbols;
 
         /// <summary>
-        /// Runs <paramref name="visit"/> over the exposed components of a GameObject, each under the
-        /// address its owner gives it.
+        /// Nothing, for both walks below.
         ///
-        /// Skips a component the registry can address on its own: that object is walked from the
-        /// registry, and walking it here as well would put one element in the inventory twice under
-        /// two different addresses.
+        /// The inventory is about what sits in a collection, not about every object the walk passes
+        /// through: an object reached as a nested member exists because its owner does, and saying
+        /// so again in the inventory would be an entry a replay could only ever agree with.
         /// </summary>
-        private static void _WalkComponents(LiveGameObject owner, string ownerId,
-            int depth, Action<object, string, int> visit)
+        private static void _NoteNothing(object target, string address, int depth) { }
+
+        /// <summary>Records one collection and what is in it, then lets the walk go on into it.</summary>
+        private static bool _CaptureCollection(object owner, string ownerAddress, LiveClass liveClass,
+            in LivePropertyType member)
         {
-            if (!(owner.reference is UnityEngine.GameObject go) || go == null) return;
+            if (!IsRecordedCollection(member)) return false;
+            if (!(LivePropertyUtility.GetValueRaw(owner, in member) is IList list)) return false;
 
-            var components = new List<UnityEngine.Component>();
-            go.GetComponents(components);
+            var structure = _walkStructure;
+            var symbols = _walkSymbols;
 
-            for (int i = 0; i < components.Count; i++)
+            var parentId = symbols.Intern(ownerAddress);
+            var memberId = symbols.Intern(member.name);
+            var recipeId = symbols.Intern(kElementRecipe);
+
+            // The collection itself, so "recorded and empty" is a thing the file can say. Its own
+            // address (no key, no position), and no recipe: a member is not something a replay
+            // stands up -- it exists because its owner does.
+            var collectionId = symbols.Intern(LiveObjectWalk.ComposeNestedId(ownerAddress, member.name));
+            if (collectionId != FrameSymbolTable.kNone)
             {
-                var component = components[i];
-                if (component == null) continue;
-                if (LiveObjectRegistry.HasAddress(component)) continue;
-                if (_visited.Contains(component)) continue;
-
-                var key = ComponentElementKey.Of(component);
-                if (key == null) continue;
-
-                visit(component, LiveStateSystem.ComposeComponentId(ownerId, key), depth + 1);
+                _present.Add(collectionId);
+                structure.AddOrUpdate(collectionId, _ElementTypeId(in member, symbols),
+                    parentId, FrameSymbolTable.kNone, memberId, FrameSymbolTable.kNone, -1);
             }
+
+            for (int e = 0; e < list.Count; e++)
+            {
+                var element = list[e];
+                if (element == null) continue;
+
+                var address = LiveObjectWalk.ComposeElementId(ownerAddress, member.name, element, e);
+                var elementId = symbols.Intern(address);
+                if (elementId == FrameSymbolTable.kNone) continue;
+
+                var key = LiveObjectWalk.KeyOf(element);
+
+                _present.Add(elementId);
+                structure.AddOrUpdate(elementId, _TypeId(element, symbols),
+                    parentId, recipeId, memberId,
+                    key == null ? FrameSymbolTable.kNone : symbols.Intern(key), e);
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -823,7 +678,7 @@ namespace Lilium.RemoteControl.Frames
             // shape change still needs an event record, and the two parted company the moment it
             // was only in one of them: an added float was dropped from the take on the strength of
             // an inventory entry that was never going to exist.
-            return LiveStateSystem.HoldsLiveObjectCollection(member);
+            return LiveObjectWalk.HoldsLiveObjectCollection(member);
         }
 
         /// <summary>

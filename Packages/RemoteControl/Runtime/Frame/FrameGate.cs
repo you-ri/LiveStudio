@@ -858,6 +858,9 @@ namespace Lilium.RemoteControl.Frames
             _frame.events = events;
             _frame.isSupplied = false;
 
+            // This run's table, unless a source replaces it along with the lanes below.
+            _frame.symbols = _symbols;
+
             _writeKeysThisFrame.Clear();
 
             // Before the queued events, so what the recording asked for lands first and an operator

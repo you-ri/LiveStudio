@@ -47,7 +47,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         {
             public VisualElement root;
             public Label owner;
-            public Label source;
             public Label age;
             public string typeName;
             public int ownerId;
@@ -704,8 +703,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                 view.owner.EnableInClassList(RemoteControlEditorStyles.kWarning,
                     string.IsNullOrEmpty(element.owner));
 
-                view.source.text = string.IsNullOrEmpty(element.source) ? "-" : element.source;
-
                 var fresh = element.lastChangedFrame == snapshot.frameNumber;
                 view.age.text = fresh
                     ? "now"
@@ -783,11 +780,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             owner.AddToClassList(RemoteControlEditorStyles.kEllipsis);
             line.Add(owner);
 
-            var source = new Label();
-            source.AddToClassList("ldv-col-mid");
-            source.AddToClassList(RemoteControlEditorStyles.kSubtle);
-            line.Add(source);
-
             var age = new Label();
             age.AddToClassList("ldv-col-mid");
             line.Add(age);
@@ -800,7 +792,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             {
                 root = line,
                 owner = owner,
-                source = source,
                 age = age,
                 typeName = typeName,
                 ownerId = ownerId,
@@ -996,14 +987,14 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                 : entry.objectName));
             _rows.Add(new LiveDataValueRow("type", string.IsNullOrEmpty(entry.typeName) ? "-" : entry.typeName));
             _rows.Add(new LiveDataValueRow("parent",
-                entry.parentId == FrameSymbolTable.kNone ? _Tr("LD_NONE") : entry.parentName));
+                entry.parentId == FrameSymbolTable.kNone ? "(none)" : entry.parentName));
 
             // Whether a replay can stand this back up. Empty is common and not an error -- an object
             // that was in the scene from the start is listed so its values have an owner -- but it
             // also means scrubbing back past this object's spawn will not remove it, and that is not
             // visible anywhere else.
             _rows.Add(new LiveDataValueRow("recipe",
-                string.IsNullOrEmpty(entry.recipe) ? _Tr("LDV_RECIPE_NONE") : entry.recipe));
+                string.IsNullOrEmpty(entry.recipe) ? "(none)" : entry.recipe));
 
             // An element is addressed through the member holding it, and the id spells that out
             // only by convention. Shown as the fields the replay actually reads, so a key with a
@@ -1036,10 +1027,9 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
                     _rows.Add(new LiveDataValueRow(
                         _ShortTypeName(type.typeName),
-                        $"{(string.IsNullOrEmpty(element.source) ? "-" : element.source)}  " +
-                        (fresh
+                        fresh
                             ? "now"
-                            : _Tr("LDV_AGE_FRAMES", snapshot.frameNumber - element.lastChangedFrame)),
+                            : _Tr("LDV_AGE_FRAMES", snapshot.frameNumber - element.lastChangedFrame),
                         depth: 1));
 
                     carried++;
@@ -1080,7 +1070,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                 _rows.Add(new LiveDataValueRow(collection.memberName,
                     _ShortTypeName(collection.typeName) + "[]", depth: 1));
 
-                var held = 0;
                 for (int i = 0; i < snapshot.structure.Count; i++)
                 {
                     var row = snapshot.structure[i];
@@ -1093,13 +1082,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                             : $"[{row.keyName}]",
                         _ShortTypeName(row.typeName),
                         depth: 2));
-
-                    held++;
-                }
-
-                if (held == 0)
-                {
-                    _rows.Add(new LiveDataValueRow(string.Empty, _Tr("LDV_COLLECTION_EMPTY"), depth: 2));
                 }
             }
         }

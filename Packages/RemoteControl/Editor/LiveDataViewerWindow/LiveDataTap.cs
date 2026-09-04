@@ -151,13 +151,9 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
         private static Func<int, string> _ResolverFor(in Frame frame, FrameSymbolTable symbols)
         {
-            if (frame.isSupplied && FrameGate.source is FrameReplayer replayer)
-            {
-                var player = replayer.player;
-                return id => player.Resolve(id);
-            }
+            var table = frame.symbols ?? symbols;
 
-            return id => symbols.Resolve(id);
+            return id => table.Resolve(id);
         }
 
         private static void _CaptureState(in Frame frame, Func<int, string> resolve)
@@ -200,7 +196,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                     {
                         ownerId = ownerId,
                         owner = resolve(ownerId),
-                        source = _SourceAt(block, e, resolve),
                         time = stamp,
                         lastChangedFrame = changedFrame,
                     });
@@ -215,12 +210,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         // The element's metadata sits at a fixed offset the file format already depends on, so it is
         // read through the block rather than guessed at here.
         private static long _StampAt(StateBlock block, int index) => block.TimeAt(index);
-
-        private static string _SourceAt(StateBlock block, int index, Func<int, string> resolve)
-        {
-            var id = block.SourceIdAt(index);
-            return id == FrameSymbolTable.kNone ? string.Empty : resolve(id);
-        }
 
         private static void _CaptureSelected(StateBlock block, int index, TypeRow row)
         {

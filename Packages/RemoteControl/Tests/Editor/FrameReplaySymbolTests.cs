@@ -142,7 +142,7 @@ namespace Lilium.RemoteControl.Tests
             using var player = new FrameRecordPlayer(new MemoryStream(bytes));
             Assert.IsTrue(player.Advance());
 
-            var recorded = player.IdOf(kOwnerId);
+            player.symbols.TryGetId(kOwnerId, out var recorded);
             Assert.AreNotEqual(FrameSymbolTable.kNone, recorded, "the recording never mentioned the owner");
             Assert.AreNotEqual(FrameGate.symbols.Intern(kOwnerId), recorded,
                 "the two tables agree by chance -- this fixture no longer tests what it says it does");
@@ -162,7 +162,7 @@ namespace Lilium.RemoteControl.Tests
             using var player = new FrameRecordPlayer(new MemoryStream(bytes));
             Assert.IsTrue(player.Advance());
 
-            LiveStateSystem.ApplyFrom(player.state, player.IdOf);
+            LiveStateSystem.ApplyFrom(player.state, player.symbols);
 
             Assert.AreEqual(7, _owner.channel, "the recorded value was looked for under the wrong id");
         }
@@ -181,7 +181,7 @@ namespace Lilium.RemoteControl.Tests
             using var player = new FrameRecordPlayer(new MemoryStream(bytes));
             Assert.IsTrue(player.Advance());
 
-            LiveStructureSystem.ApplyFrom(player.structure, player.Resolve);
+            LiveStructureSystem.ApplyFrom(player.structure, player.symbols);
 
             Assert.AreEqual(2, _owner.rows.Count, "the inventory was read against the wrong table");
             Assert.AreEqual("one", _owner.rows[0].name);

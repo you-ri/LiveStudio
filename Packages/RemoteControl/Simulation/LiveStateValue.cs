@@ -4,12 +4,12 @@ namespace Lilium.RemoteControl.Frames
     /// <summary>
     /// Comparisons the generated state movers make before they write.
     ///
-    /// The state lane restates every member on every frame, so applying a recording writes each one
+    /// The state lane carries every member on every frame, so applying a recording writes each one
     /// sixty times a second whether or not it moved. Where a member is a plain field that costs a
-    /// store and nothing else, and the generated mover assigns it outright. Where it travels through
-    /// a property it costs whatever that property's setter does -- pairing an input device,
-    /// reloading an asset, notifying whatever watches it -- and doing that to a value that has not
-    /// changed is the replay-side equivalent of the keyframe restatement's own guard.
+    /// store and nothing else, the generated mover assigns it outright. Where it travels through a
+    /// property it costs whatever that property's setter does -- pairing an input device, reloading
+    /// an asset, notifying whatever watches it -- so the mover asks first and writes only what
+    /// actually differs.
     /// </summary>
     public static unsafe class LiveStateValue
     {

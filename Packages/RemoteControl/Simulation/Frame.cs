@@ -52,6 +52,19 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         public bool isSupplied;
 
+        /// <summary>
+        /// The table the ids in this frame's lanes index.
+        ///
+        /// Carried on the frame because a supplied frame's ids belong to the recording that filled
+        /// it, not to this run: the same address is a different number in each, and reading one
+        /// against the other names whatever happens to sit in that slot now. It was left to each
+        /// consumer to notice, and three of them did not -- so a take replayed into nothing while
+        /// the viewer, which did resolve through the recording, showed it as correct.
+        ///
+        /// A reader takes the table from the frame it was handed and asks no further questions.
+        /// </summary>
+        public FrameSymbolTable symbols;
+
         /// <summary>Readable position, derived from the number and the rate rather than stored.</summary>
         public Timecode timecode => new Timecode(frameNumber, frameRate);
 

@@ -203,6 +203,7 @@ namespace Lilium.RemoteControl.Frames.Recording
             {
                 frame.structure = _player.structure;
                 frame.state = _player.state;
+                frame.symbols = _player.symbols;
 
                 // Nothing played, but a seek may have put events back since the last frame: they
                 // belong to this head, because this is the head they became visible at.
@@ -216,6 +217,10 @@ namespace Lilium.RemoteControl.Frames.Recording
             // exist before the values that belong in it.
             frame.structure = _player.structure;
             frame.state = _player.state;
+
+            // With the lanes, because the ids in them index this table and not the one the gate
+            // hands a live frame.
+            frame.symbols = _player.symbols;
 
             _ApplyEventsOfCurrentFrame();
 

@@ -277,13 +277,32 @@ namespace Lilium.RemoteControl.Frames
             FrameSource source, long time)
         {
             if (owner == null || state == null) return false;
-
-            // Only an object registered in its own right can be found this way. One reached through
-            // whatever owns it -- a component of an exposed GameObject -- is not, which is what the
-            // overload below is for: the caller walking to it already knows how to read it.
-            if (!LiveObjectRegistry.TryFindByTarget(owner, out var handle)) return false;
+            if (!_TryHandleFor(owner, out var handle)) return false;
 
             return Capture(in handle, ownerId, state, source, time);
+        }
+
+        /// <summary>
+        /// How this bridge reaches an object it was handed without a handle.
+        ///
+        /// Registered is asked first, because that handle carries what the registration knows. An
+        /// object the registry cannot be asked about is read through an unregistered one instead:
+        /// values travel through the same accessors either way, so being registered was never the
+        /// requirement, only the way a handle was found.
+        ///
+        /// Refusing here instead is what made the walk uneven. A declared type met as a component
+        /// was carried -- the walk built the handle itself for that one case -- and the same type
+        /// met as a nested object or as an element of a collection was dropped, with nothing said.
+        /// </summary>
+        private bool _TryHandleFor(object owner, out LiveObjectHandle handle)
+        {
+            if (LiveObjectRegistry.TryFindByTarget(owner, out handle)) return true;
+
+            var found = LiveClass.Find(owner.GetType());
+            if (found == null) return false;
+
+            handle = LiveObjectHandle.CreateUnregistered(found, owner);
+            return true;
         }
 
         /// <summary>
@@ -330,7 +349,7 @@ namespace Lilium.RemoteControl.Frames
         public override bool Apply(object owner, int ownerId, StateBlockSet state)
         {
             if (owner == null || state == null) return false;
-            if (!LiveObjectRegistry.TryFindByTarget(owner, out var handle)) return false;
+            if (!_TryHandleFor(owner, out var handle)) return false;
 
             return Apply(in handle, ownerId, state);
         }

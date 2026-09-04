@@ -15,9 +15,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         /// <summary>The owner's id resolved to text, or empty when the table does not know it.</summary>
         public string owner;
 
-        /// <summary>Which producer put it there.</summary>
-        public string source;
-
         /// <summary>
         /// The producer's own stamp. Not comparable across types -- a capture source writes the
         /// sender's frame number and the state system writes this frame's -- so it is shown as it

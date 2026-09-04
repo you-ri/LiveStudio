@@ -51,8 +51,8 @@ namespace Lilium.RemoteControl.Frames
         /// Asked because declaring the state lane and being carried by it are two different things.
         /// A member can ask for the lane and not reach the block -- text with no width, a type that
         /// is not unmanaged -- and the generator says so at compile time, but nothing said so at
-        /// runtime: the write path and the keyframe restatement both read the declaration, saw
-        /// <see cref="FrameLane.State"/>, and left the member to a lane that was not carrying it.
+        /// runtime: the record path read the declaration, saw <see cref="FrameLane.State"/>, and
+        /// left the member to a lane that was not carrying it.
         /// A member no lane carries is a hole in the recording that nothing reports, so the question
         /// is put to whatever is doing the carrying rather than to the declaration.
         ///

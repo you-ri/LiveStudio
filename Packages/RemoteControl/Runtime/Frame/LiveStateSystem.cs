@@ -31,16 +31,6 @@ namespace Lilium.RemoteControl.Frames
         private static long _appliedObjectCount;
         private static long _unaddressableObjectCount;
 
-        /// <summary>
-        /// How far the walk follows nested live objects.
-        ///
-        /// Bounded rather than followed to the end: an object graph is free to contain a cycle, and
-        /// nothing about the state lane says it may not. Four is past anything exposed today (a
-        /// camera holds a controller, a prop holds an attachment) and short enough that a cycle
-        /// costs a handful of getter calls rather than a hung frame.
-        /// </summary>
-        public const int kMaxNestingDepth = 4;
-
         /// <summary>Objects whose state was captured on the most recent frame.</summary>
         public static long capturedObjectCount => _capturedObjectCount;
 
@@ -94,141 +84,98 @@ namespace Lilium.RemoteControl.Frames
         {
             if (state == null) return 0;
 
-            var captured = 0;
             _unaddressableObjectCount = 0;
-            _visited.Clear();
-            _idless.Clear();
+            _walkState = state;
+            _walkTime = time;
+            _walkCount = 0;
 
-            foreach (var handle in LiveObjectRegistry.instances)
-            {
-                if (!handle.isValid) continue;
+            LiveObjectWalk.Walk(_CaptureOne);
 
-                var target = handle.target;
-
-                // A static live class has no instance to read members off. What such a class holds
-                // is settings rather than the state of something in the world, so it stays on the
-                // event lane, where a change to it is recorded when it happens.
-                if (target == null) continue;
-
-                // Held rather than reported here. Being registered without an id only means this
-                // walk cannot address the object; the walks below still can, through the owner
-                // that holds it or by its type name. Whether anything carried it is not known
-                // until they have run.
-                if (!handle.hasId)
-                {
-                    _idless.Add(target);
-                    continue;
-                }
-
-                captured += _Capture(target, handle.id, state, time, depth: 0);
-            }
-
-            // Then the exposed scene components, which are not registered but are addressable by
-            // their type name. Without them a recording says nothing changed about the screen
-            // rather than saying nothing about it.
-            var scene = LiveObjectRoster.sceneComponents;
-            for (int i = 0; i < scene.Count; i++)
-            {
-                var entry = scene[i];
-                if (!entry.isAlive)
-                {
-                    _staleRoster = true;
-                    continue;
-                }
-
-                // Given an id since the roster was resolved: the walk above carried it already,
-                // and carrying it here too would write the same state at a second address.
-                //
-                // Asked of the id rather than of the registration. A handle with no id is not an
-                // address: the walk above passes such an object over, so standing aside for one
-                // here would leave the object carried by nothing at all.
-                if (LiveObjectRegistry.HasAddress(entry.target)) continue;
-                if (_visited.Contains(entry.target)) continue;
-
-                captured += _Capture(entry.target, entry.id, state, time, depth: 0);
-            }
-
+            _walkState = null;
             _ReportUnaddressable();
-            _RefreshRosterIfStale();
 
-            return captured;
+            return _walkCount;
+        }
+
+        // What the walk now running is writing into, and what it has done so far. Static rather
+        // than captured in a lambda: the visitor runs per object per frame for the length of a
+        // take, and a closure here would allocate on every frame.
+        private static StateBlockSet _walkState;
+        private static long _walkTime;
+        private static int _walkCount;
+
+        /// <summary>
+        /// Writes one object's state into the frame.
+        ///
+        /// Counted only when it actually wrote. A bridge that refuses (nothing to read the object
+        /// through, a layout that moved) still returns, and counting the attempt is what makes a
+        /// frame carrying nothing report the same number as one carrying the world.
+        /// </summary>
+        private static void _CaptureOne(object target, string address, int depth)
+        {
+            var type = target.GetType();
+            var bridge = StateBridgeRegistry.Find(type);
+
+            if (bridge == null)
+            {
+                if (LiveObjectWalk.DeclaresState(type)) _ReportNoBridge(type);
+                return;
+            }
+
+            if (bridge.Capture(target, FrameGate.symbols.Intern(address), _walkState, _source, _walkTime))
+            {
+                _walkCount++;
+            }
         }
 
         /// <summary>
         /// Writes a set back onto the live objects it came from. Used by replay, after the structure
         /// has been reconciled so the objects it names exist.
         /// </summary>
-        public static int ApplyFrom(StateBlockSet state) => ApplyFrom(state, null);
+        public static int ApplyFrom(StateBlockSet state) => ApplyFrom(state, FrameGate.symbols);
 
         /// <inheritdoc cref="ApplyFrom(StateBlockSet)"/>
-        /// <param name="idOf">
-        /// Turns an address into the id the rows are filed under, or null to use this run's table.
+        /// <param name="symbols">
+        /// The table the rows are filed under -- <see cref="Frame.symbols"/> for a frame, this run's
+        /// for anything else.
         ///
-        /// ⚠ A supplied frame's rows are filed under the ids the *recording* gave them, and the same
-        /// address gets a different number in this run's table. Interning locally and looking that
-        /// number up found either nothing or somebody else's row, which is why replaying a take put
-        /// nothing back.
+        /// ⚠ A supplied frame's rows carry the ids the *recording* gave them, and the same address
+        /// is a different number in this run's table. Reading them against the wrong one found
+        /// either nothing or somebody else's row, which is why replaying a take put nothing back.
         /// </param>
-        public static int ApplyFrom(StateBlockSet state, Func<string, int> idOf)
+        public static int ApplyFrom(StateBlockSet state, FrameSymbolTable symbols)
         {
             if (state == null) return 0;
 
-            _idOf = idOf;
+            _applySymbols = symbols;
+            _walkState = state;
+            _walkCount = 0;
 
-            var applied = 0;
-            _visited.Clear();
+            LiveObjectWalk.Walk(_ApplyOne);
 
-            foreach (var handle in LiveObjectRegistry.instances)
-            {
-                if (!handle.isValid) continue;
-
-                var target = handle.target;
-                if (target == null || !handle.hasId) continue;
-
-                applied += _Apply(target, handle.id, state, depth: 0);
-            }
-
-            var scene = LiveObjectRoster.sceneComponents;
-            for (int i = 0; i < scene.Count; i++)
-            {
-                var entry = scene[i];
-                if (!entry.isAlive)
-                {
-                    _staleRoster = true;
-                    continue;
-                }
-
-                if (LiveObjectRegistry.HasAddress(entry.target)) continue;
-                if (_visited.Contains(entry.target)) continue;
-
-                applied += _Apply(entry.target, entry.id, state, depth: 0);
-            }
-
-            _RefreshRosterIfStale();
-
-            _idOf = null;
-            return applied;
+            _walkState = null;
+            _applySymbols = null;
+            return _walkCount;
         }
 
-        // How an address becomes the id its row is filed under, for the apply now running. Null
-        // means this run's table, which is right for everything but a supplied frame.
-        private static Func<string, int> _idOf;
-
-        private static int _OwnerId(string id)
-            => _idOf != null ? _idOf(id) : FrameGate.symbols.Intern(id);
-
-        // Set when the walk finds an entry whose object has gone, which means a scene changed under
-        // the roster. Acted on after the walk rather than during it, because refreshing rebuilds the
-        // list being walked.
-        private static bool _staleRoster;
-
-        private static void _RefreshRosterIfStale()
+        /// <summary>Writes one object's recorded state back onto it.</summary>
+        private static void _ApplyOne(object target, string address, int depth)
         {
-            if (!_staleRoster) return;
+            var bridge = StateBridgeRegistry.Find(target.GetType());
+            if (bridge == null) return;
 
-            _staleRoster = false;
-            LiveObjectRoster.Refresh();
+            if (bridge.Apply(target, _OwnerId(address), _walkState)) _walkCount++;
         }
+
+        // The table the apply now running reads its ids out of.
+        private static FrameSymbolTable _applySymbols;
+
+        // Looked up rather than interned: an address nothing filed a row under has no row, and
+        // handing out a fresh id for it would say the same thing while growing the table.
+        private static int _OwnerId(string id)
+            => _applySymbols != null && _applySymbols.TryGetId(id, out var found)
+                ? found
+                : FrameSymbolTable.kNone;
 
         /// <summary>
         /// Creates a block for every registered type, so a recording can be played into a set that
@@ -243,139 +190,18 @@ namespace Lilium.RemoteControl.Frames
             for (int i = 0; i < bridges.Count; i++) bridges[i].EnsureBlock(state);
         }
 
-        /// <summary>
-        /// The address a nested live object's state is carried under: the owner's id and the name of
-        /// the member holding it, which is how the event lane addresses a write to it as well.
-        ///
-        /// Composed rather than an id of its own. A nested object is not registered and has nothing
-        /// to give it a stable identity, so an id would have to be invented on the spot -- and a
-        /// polymorphic member swapped from one controller to another would then come back as a
-        /// different object, losing the thread through a change that is really "the same slot,
-        /// holding something else".
-        /// </summary>
-        public static string ComposeNestedId(string ownerId, string memberName)
-        {
-            if (string.IsNullOrEmpty(ownerId)) return memberName;
-            if (string.IsNullOrEmpty(memberName)) return ownerId;
-
-            var key = (ownerId, memberName);
-            if (_composedIds.TryGetValue(key, out var composed)) return composed;
-
-            composed = ownerId + "/" + memberName;
-            _composedIds[key] = composed;
-            return composed;
-        }
-
-        /// <summary>
-        /// The address one element of a collection is carried under: the owner, the member holding
-        /// the collection, and which element -- written the way this codebase already addresses one
-        /// (<c>expressions[Joy]</c>).
-        ///
-        /// By key when the element type declares one, because that is the address that survives the
-        /// collection being reordered: a recording keyed by position would, after an insert, put
-        /// every value on the element next door. By position only when there is nothing else to go
-        /// on.
-        /// </summary>
-        public static string ComposeElementId(string ownerId, string memberName, object element, int index)
-        {
-            var key = _KeyOf(element) ?? _IndexKey(index);
-            var slot = (memberName, key);
-
-            if (!_elementSlots.TryGetValue(slot, out var composed))
-            {
-                composed = memberName + "[" + key + "]";
-                _elementSlots[slot] = composed;
-            }
-
-            return ComposeNestedId(ownerId, composed);
-        }
-
-        /// <summary>The element's own key, when its type declares one. Null otherwise.</summary>
-        private static string _KeyOf(object element)
-        {
-            var liveClass = LiveClass.Find(element.GetType());
-            var key = liveClass?.keyProperty;
-            if (key == null) return null;
-
-            var value = LivePropertyUtility.GetValueRaw(element, in key);
-            var text = value as string ?? value?.ToString();
-            return string.IsNullOrEmpty(text) ? null : text;
-        }
-
-        /// <summary>
-        /// The position as a string, from a table rather than built each time: this runs per element
-        /// per frame, and a fresh string for every index would allocate through the whole take.
-        /// </summary>
-        private static string _IndexKey(int index)
-        {
-            if (index < 0) return "0";
-
-            if (index >= _indexKeys.Length)
-            {
-                var grown = new string[Math.Max(index + 1, _indexKeys.Length * 2)];
-                Array.Copy(_indexKeys, grown, _indexKeys.Length);
-                _indexKeys = grown;
-            }
-
-            return _indexKeys[index] ?? (_indexKeys[index] = index.ToString());
-        }
-
         /// <summary>Forgets the cached class layouts, composed ids and reports. For tests.</summary>
         internal static void ClearCaches()
         {
-            _classInfo.Clear();
-            _composedIds.Clear();
-            _elementSlots.Clear();
+            LiveObjectWalk.ClearCaches();
             _reported.Clear();
         }
 
         private const string kSourceName = "live";
 
-        // Composed nested ids, so the walk does not build the same string sixty times a second.
-        // Keyed by the pair rather than by the result: building the result is the cost being avoided.
-        private static readonly Dictionary<(string, string), string> _composedIds =
-            new Dictionary<(string, string), string>();
-
-        // What each exposed class contributes to the walk, worked out once. The alternative is
-        // deciding it per object per frame, which is the same answer reached sixty times a second.
-        private static readonly Dictionary<LiveClass, ClassInfo> _classInfo =
-            new Dictionary<LiveClass, ClassInfo>();
-
         // Types already reported as unable to take part, so the console says it once rather than
         // every frame for as long as the recording runs.
         private static readonly HashSet<Type> _reported = new HashSet<Type>();
-
-        private static readonly int[] _noNested = Array.Empty<int>();
-
-        // What the registry walk reached on this pass, so the roster below it does not carry the
-        // same object at a second address. A component of an exposed GameObject is addressed
-        // through its owner; the type name is the address of last resort, and using both puts one
-        // object's state in the frame twice.
-        private static readonly HashSet<object> _visited = new HashSet<object>();
-
-        // Registered objects this pass could not address by id, pending the question of whether one
-        // of the other walks reached them anyway.
-        private static readonly List<object> _idless = new List<object>();
-
-        // "member[key]" by the pair it was built from, for the same reason the composed ids are
-        // cached: the walk asks for the same handful of them sixty times a second.
-        private static readonly Dictionary<(string, string), string> _elementSlots =
-            new Dictionary<(string, string), string>();
-
-        private static string[] _indexKeys = new string[16];
-
-        /// <summary>What the walk needs to know about one exposed class.</summary>
-        private sealed class ClassInfo
-        {
-            /// <summary>Indices of the members holding a nested live object.</summary>
-            public int[] nested;
-
-            /// <summary>Indices of the members holding a collection of live objects.</summary>
-            public int[] collections;
-
-            /// <summary>True when the class asks for the state lane at all.</summary>
-            public bool declaresState;
-        }
 
         /// <summary>
         /// The id a frame's rows are filed under for an address.
@@ -388,28 +214,9 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         public static int OwnerIdOf(in Frame frame, string address)
         {
-            if (string.IsNullOrEmpty(address)) return FrameSymbolTable.kNone;
+            var symbols = frame.symbols ?? FrameGate.symbols;
 
-            if (frame.isSupplied && FrameGate.source is Recording.FrameReplayer replayer)
-            {
-                return replayer.player.IdOf(address);
-            }
-
-            return FrameGate.symbols.Intern(address);
-        }
-
-        /// <summary>
-        /// How an address becomes the id a supplied frame files its rows under.
-        ///
-        /// Null when the frame did not come from a recording, which leaves the walk using this run's
-        /// table -- right for everything else.
-        /// </summary>
-        private static Func<string, int> _SuppliedIdOf()
-        {
-            if (!(FrameGate.source is Recording.FrameReplayer replayer)) return null;
-
-            var player = replayer.player;
-            return address => player.IdOf(address);
+            return symbols.TryGetId(address, out var id) ? id : FrameSymbolTable.kNone;
         }
 
         private static void _OnFrameHead(ref Frame frame)
@@ -419,456 +226,13 @@ namespace Lilium.RemoteControl.Frames
             // would then compare the present against itself and find no difference at all.
             if (frame.isSupplied)
             {
-                // Through the recording's own table: the rows are filed under the ids it gave
-                // them, and this run would hand the same address a different number.
-                _appliedObjectCount = ApplyFrom(frame.state, _SuppliedIdOf());
+                // Through whatever table the frame carries. For a supplied frame that is the
+                // recording's, which is the whole of what used to be got wrong here.
+                _appliedObjectCount = ApplyFrom(frame.state, frame.symbols);
                 return;
             }
 
             _capturedObjectCount = CaptureInto(frame.state, frame.frameNumber);
-        }
-
-        /// <summary>
-        /// Writes one object's state, then the state of whatever live objects it holds.
-        ///
-        /// Owner before nested, which is the rule keyframes are applied in as well (structure, then
-        /// state): what holds the slot is settled before what is in it.
-        /// </summary>
-        private static int _Capture(object target, string id, StateBlockSet state, long time, int depth)
-        {
-            var captured = 0;
-            var type = target.GetType();
-            var bridge = StateBridgeRegistry.Find(type);
-
-            _visited.Add(target);
-
-            // Counted only when it actually wrote. A bridge that refuses (nothing to read the
-            // object through, a layout that moved) still returns, and counting the attempt is what
-            // makes a frame carrying nothing report the same number as one carrying the world.
-            if (bridge != null && bridge.Capture(target, FrameGate.symbols.Intern(id), state, _source, time))
-            {
-                captured++;
-            }
-
-            if (bridge == null && _InfoFor(type, out _)?.declaresState == true) _ReportNoBridge(type);
-
-            return captured + _CaptureMembers(target, id, state, time, depth);
-        }
-
-        /// <summary>
-        /// Carries what an object holds: the live objects nested in it, the elements of its
-        /// collections, and -- for an exposed GameObject -- its exposed components.
-        ///
-        /// Apart from <see cref="_Capture"/> because a component is reached differently from a
-        /// nested object (through its owner's key rather than a member name) but holds the same
-        /// kinds of thing. Sharing this is what stops one of the two ways in from going only one
-        /// level deep, which is what happened: a collection on an exposed component was in the
-        /// inventory and in no state block at all.
-        /// </summary>
-        private static int _CaptureMembers(object target, string id, StateBlockSet state, long time,
-            int depth)
-        {
-            var captured = 0;
-
-            var info = _InfoFor(target.GetType(), out var liveClass);
-            if (info == null) return captured;
-
-            if (depth >= kMaxNestingDepth) return captured;
-
-            var nested = info.nested;
-            for (int i = 0; i < nested.Length; i++)
-            {
-                var member = liveClass.propertyTypes[nested[i]];
-                var value = LivePropertyUtility.GetValueRaw(target, in member);
-                if (value == null) continue;
-
-                captured += _Capture(value, ComposeNestedId(id, member.name), state, time, depth + 1);
-            }
-
-            var collections = info.collections;
-            for (int i = 0; i < collections.Length; i++)
-            {
-                var member = liveClass.propertyTypes[collections[i]];
-                if (!(LivePropertyUtility.GetValueRaw(target, in member) is IList list)) continue;
-
-                for (int e = 0; e < list.Count; e++)
-                {
-                    var element = list[e];
-                    if (element == null) continue;
-
-                    captured += _Capture(element, ComposeElementId(id, member.name, element, e),
-                        state, time, depth + 1);
-                }
-            }
-
-            // The components of an exposed GameObject. Special-cased rather than reached through
-            // the collection walk above, which refuses a member whose elements are UnityEngine
-            // objects -- rightly, for a member pointing at something registered elsewhere, and
-            // wrongly for these: an exposed component is deliberately not registered, so refusing
-            // to follow it here means nothing carries it at all.
-            //
-            // The save path special-cases the same member for the same reason (see
-            // FileScopedResolver), and this is the other half of that pair: what the live scene
-            // writes, the frame has to carry.
-            if (target is LiveGameObject gameObject)
-            {
-                captured += _CaptureComponents(gameObject, id, state, time, depth);
-            }
-
-            return captured;
-        }
-
-        // Reused across the walk. GetComponents hands back a fresh array otherwise, once per
-        // exposed GameObject per frame, for the whole of a take.
-        private static readonly List<Component> _components = new List<Component>();
-
-        /// <summary>
-        /// Carries the exposed components of one GameObject, each under the address its owner
-        /// gives it.
-        ///
-        /// Composed from the owner rather than given an id of its own, for the reason
-        /// <see cref="ComposeNestedId"/> gives: a component has nothing to make a stable identity
-        /// out of, so an id would have to be invented at run time and a recording made yesterday
-        /// would name something that no longer exists.
-        /// </summary>
-        private static int _CaptureComponents(LiveGameObject owner, string ownerId,
-            StateBlockSet state, long time, int depth)
-        {
-            if (!(owner.reference is GameObject go) || go == null) return 0;
-
-            var captured = 0;
-            go.GetComponents(_components);
-            for (int i = 0; i < _components.Count; i++)
-            {
-                var component = _components[i];
-                if (component == null) continue;
-
-                // Registered under an id of its own -- an instance binding gave it one, or a
-                // request reached it first. The registry walk carried it already, and carrying it
-                // here as well would put the same state in the frame twice under two addresses.
-                // An id-less registration is not such an address, and does not count: the registry
-                // walk cannot carry that object, so this walk is the only one that can.
-                if (LiveObjectRegistry.HasAddress(component)) continue;
-
-                var type = component.GetType();
-                var bridge = StateBridgeRegistry.Find(type);
-                if (bridge == null) continue;
-
-                var key = ComponentElementKey.Of(component);
-                if (key == null) continue;
-
-                var componentId = _ComposeComponentId(ownerId, key);
-                var ownerSymbol = FrameGate.symbols.Intern(componentId);
-
-                // Addressable through its owner, so the roster's type name is not needed for it.
-                // Marked here rather than at the top of the loop: a component the owner cannot
-                // address (no element key, no bridge) has only the type name to be carried under,
-                // and claiming it was reached would drop it from the frame altogether.
-                _visited.Add(component);
-
-                // A declared bridge reads through a handle, and this component has no registered
-                // one to be found by; a generated bridge reads the object directly and needs none.
-                bool wrote;
-                if (bridge is DeclaredStateBridge declared)
-                {
-                    var liveClass = LiveClass.Find(type);
-                    if (liveClass == null) continue;
-
-                    var handle = LiveObjectHandle.CreateUnregistered(liveClass, component);
-                    wrote = declared.Capture(in handle, ownerSymbol, state, _source, time);
-                }
-                else
-                {
-                    wrote = bridge.Capture(component, ownerSymbol, state, _source, time);
-                }
-
-                if (wrote) captured++;
-
-                // ⚠ And what the component holds. Only its own block was taken before, which left
-                // the members of anything inside it -- the elements of a collection on an exposed
-                // MonoBehaviour, mesh overrides being the case that found this -- carried by
-                // nothing. The shape of those collections was in the inventory (that walk does go
-                // down) and their values were nowhere, so a replay stood the elements back up with
-                // their defaults and nothing about the take showed.
-                captured += _CaptureMembers(component, componentId, state, time, depth + 1);
-            }
-
-            // Held only for the length of the walk: the list is shared, and a reference left in it
-            // keeps a destroyed component's managed side alive until the next GameObject is walked.
-            _components.Clear();
-            return captured;
-        }
-
-        /// <summary>
-        /// The address of one exposed component, cached the way the other composed ids are: this
-        /// runs per component per frame, and building the same string each time is the cost being
-        /// avoided.
-        /// </summary>
-        /// <summary>
-        /// The address an exposed component is carried under. Shared with the structure lane for
-        /// the reason <see cref="TryDescribe"/> is.
-        /// </summary>
-        internal static string ComposeComponentId(string ownerId, string key)
-            => _ComposeComponentId(ownerId, key);
-
-        private static string _ComposeComponentId(string ownerId, string key)
-        {
-            var slot = (ComponentElementKey.kMemberName, key);
-            if (!_elementSlots.TryGetValue(slot, out var composed))
-            {
-                composed = ComponentElementKey.kMemberName + "[" + key + "]";
-                _elementSlots[slot] = composed;
-            }
-            return ComposeNestedId(ownerId, composed);
-        }
-
-        /// <summary>Writes a set back onto one object and the live objects it holds.</summary>
-        private static int _Apply(object target, string id, StateBlockSet state, int depth)
-        {
-            var applied = 0;
-            var type = target.GetType();
-            var bridge = StateBridgeRegistry.Find(type);
-
-            _visited.Add(target);
-
-            if (bridge != null && bridge.Apply(target, _OwnerId(id), state)) applied++;
-
-            return applied + _ApplyMembers(target, id, state, depth);
-        }
-
-        /// <inheritdoc cref="_CaptureMembers"/>
-        private static int _ApplyMembers(object target, string id, StateBlockSet state, int depth)
-        {
-            var applied = 0;
-
-            var info = _InfoFor(target.GetType(), out var liveClass);
-            if (info == null || depth >= kMaxNestingDepth) return applied;
-
-            var nested = info.nested;
-            for (int i = 0; i < nested.Length; i++)
-            {
-                var member = liveClass.propertyTypes[nested[i]];
-                var value = LivePropertyUtility.GetValueRaw(target, in member);
-                if (value == null) continue;
-
-                applied += _Apply(value, ComposeNestedId(id, member.name), state, depth + 1);
-            }
-
-            var collections = info.collections;
-            for (int i = 0; i < collections.Length; i++)
-            {
-                var member = liveClass.propertyTypes[collections[i]];
-                if (!(LivePropertyUtility.GetValueRaw(target, in member) is IList list)) continue;
-
-                for (int e = 0; e < list.Count; e++)
-                {
-                    var element = list[e];
-                    if (element == null) continue;
-
-                    applied += _Apply(element, ComposeElementId(id, member.name, element, e),
-                        state, depth + 1);
-                }
-            }
-
-            if (target is LiveGameObject gameObject)
-            {
-                applied += _ApplyComponents(gameObject, id, state, depth);
-            }
-
-            return applied;
-        }
-
-        /// <inheritdoc cref="_CaptureComponents"/>
-        private static int _ApplyComponents(LiveGameObject owner, string ownerId, StateBlockSet state,
-            int depth)
-        {
-            if (!(owner.reference is GameObject go) || go == null) return 0;
-
-            var applied = 0;
-            go.GetComponents(_components);
-            for (int i = 0; i < _components.Count; i++)
-            {
-                var component = _components[i];
-                if (component == null) continue;
-                if (LiveObjectRegistry.HasAddress(component)) continue;
-
-                var type = component.GetType();
-                var bridge = StateBridgeRegistry.Find(type);
-                if (bridge == null) continue;
-
-                var key = ComponentElementKey.Of(component);
-                if (key == null) continue;
-
-                var componentId = _ComposeComponentId(ownerId, key);
-                var ownerSymbol = _OwnerId(componentId);
-
-                _visited.Add(component);
-
-                bool wrote;
-                if (bridge is DeclaredStateBridge declared)
-                {
-                    var liveClass = LiveClass.Find(type);
-                    if (liveClass == null) continue;
-
-                    var handle = LiveObjectHandle.CreateUnregistered(liveClass, component);
-                    wrote = declared.Apply(in handle, ownerSymbol, state);
-                }
-                else
-                {
-                    wrote = bridge.Apply(component, ownerSymbol, state);
-                }
-
-                if (wrote) applied++;
-
-                // The other half of the capture above: what the component holds is written back too.
-                applied += _ApplyMembers(component, componentId, state, depth + 1);
-            }
-
-            _components.Clear();
-            return applied;
-        }
-
-        /// <summary>
-        /// What the walk finds in a type: the members holding a nested live object, and the members
-        /// holding a collection of them.
-        ///
-        /// Shared with the structure lane so the two walks meet the same objects in the same order
-        /// and give them the same addresses. Two walks that classify members differently would put
-        /// an element's value at an address its inventory entry never mentions.
-        /// </summary>
-        internal static bool TryDescribe(Type type, out LiveClass liveClass,
-            out int[] nested, out int[] collections)
-        {
-            var info = _InfoFor(type, out liveClass);
-            if (info == null)
-            {
-                nested = _noNested;
-                collections = _noNested;
-                return false;
-            }
-
-            nested = info.nested;
-            collections = info.collections;
-            return true;
-        }
-
-        /// <summary>
-        /// The element's key, or null when it has none. Shared for the same reason as
-        /// <see cref="TryDescribe"/>.
-        /// </summary>
-        internal static string KeyOf(object element) => _KeyOf(element);
-
-        /// <summary>What the walk needs to know about a type, worked out once per class.</summary>
-        private static ClassInfo _InfoFor(Type type, out LiveClass liveClass)
-        {
-            // Find rather than TryGet: a class is registered on demand, and a type first met here
-            // (a nested object whose owner was registered before it) would otherwise look like a
-            // type with nothing exposed at all.
-            liveClass = LiveClass.Find(type);
-            if (liveClass == null) return null;
-            if (_classInfo.TryGetValue(liveClass, out var info)) return info;
-
-            var members = liveClass.propertyTypes;
-            List<int> nested = null;
-            List<int> collections = null;
-            var declaresState = false;
-
-            for (int i = 0; i < members.Length; i++)
-            {
-                var member = members[i];
-                if (member == null) continue;
-
-                if (member.lane == FrameLane.State) declaresState = true;
-
-                if (HoldsNestedLiveObject(member))
-                {
-                    if (nested == null) nested = new List<int>();
-                    nested.Add(i);
-                    continue;
-                }
-
-                if (HoldsLiveObjectCollection(member))
-                {
-                    if (collections == null) collections = new List<int>();
-                    collections.Add(i);
-                }
-            }
-
-            info = new ClassInfo
-            {
-                nested = nested != null ? nested.ToArray() : _noNested,
-                collections = collections != null ? collections.ToArray() : _noNested,
-                declaresState = declaresState,
-            };
-
-            _classInfo[liveClass] = info;
-            return info;
-        }
-
-        /// <summary>
-        /// Whether a member holds a live object whose own state the frame should carry.
-        ///
-        /// What is wanted is ownership: a member that *is* the nested object, the way a camera holds
-        /// its controller. A member pointing at something registered elsewhere is not followed --
-        /// that object is carried under its own id, and following it here would put the same state
-        /// in the frame twice, under two different addresses.
-        /// </summary>
-        /// <summary>
-        /// Whether a member holds a collection of live objects the frame should carry each of.
-        ///
-        /// Elements are addressed individually rather than being packed as a run, which is what lets
-        /// them be keyed: an expression keeps its address when the list is reordered. The cost is
-        /// the per-element address, which is why this is for collections of objects (an operation, a
-        /// deck tile, an expression) and not for a curve of floats.
-        /// </summary>
-        internal static bool HoldsLiveObjectCollection(LivePropertyType member)
-        {
-            if (member.isArrayElement || member.isStatic) return false;
-
-            var valueType = member.valueType;
-            if (valueType == null) return false;
-            if (!typeof(IList).IsAssignableFrom(valueType)) return false;
-
-            var elementType = valueType.IsArray
-                ? valueType.GetElementType()
-                : (valueType.IsGenericType ? valueType.GetGenericArguments()[0] : null);
-
-            if (elementType == null || !elementType.IsClass) return false;
-            if (elementType == typeof(string)) return false;
-            if (typeof(UnityEngine.Object).IsAssignableFrom(elementType)) return false;
-
-            // Exposed in its own right, asked the way the nested case asks it -- so a type first met
-            // here is registered rather than looking like a type with nothing exposed.
-            return LiveClass.Find(elementType) != null;
-        }
-
-        internal static bool HoldsNestedLiveObject(LivePropertyType member)
-        {
-            if (member.isArrayElement || member.isStatic) return false;
-            if (member.isLivePropertyReference) return false;
-
-            var valueType = member.valueType;
-            if (valueType == null || !valueType.IsClass) return false;
-            if (valueType == typeof(string) || valueType.IsArray) return false;
-
-            // A Unity object is registered in its own right and carried under its own id. Following
-            // it here would put the same state in the frame twice, under two addresses.
-            if (typeof(UnityEngine.Object).IsAssignableFrom(valueType)) return false;
-
-            // A collection is shape as much as value, and shape belongs to the structure lane: the
-            // length has to be in the frame before the elements mean anything. Until that is in, a
-            // collection of live objects stays on the event lane rather than being carried half-way.
-            if (typeof(System.Collections.IEnumerable).IsAssignableFrom(valueType)) return false;
-
-            // Exposed in its own right, asked in a way that does not depend on which of the two
-            // types happened to be registered first: LiveClass.Find registers on demand, where the
-            // member's own liveValueClass is only filled in if the value type was already known
-            // when the owner was registered.
-            //
-            // The declared type is what is asked about, so a polymorphic member follows only if its
-            // base is exposed. That is how such members are declared here -- a type selector needs
-            // an exposed base to offer the choices from.
-            return LiveClass.Find(valueType) != null;
         }
 
         /// <summary>
@@ -898,10 +262,15 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         private static void _ReportUnaddressable()
         {
-            for (int i = 0; i < _idless.Count; i++)
+            var idless = LiveObjectWalk.unaddressedRoots;
+
+            for (int i = 0; i < idless.Count; i++)
             {
-                var target = _idless[i];
-                if (_visited.Contains(target)) continue;
+                var target = idless[i];
+
+                // Reached by some other address after all -- through whatever owns it, or by its
+                // type name. Having no id of its own is then not a hole in the recording.
+                if (LiveObjectWalk.WasVisited(target)) continue;
 
                 _NoteUnaddressable(target);
             }
@@ -918,8 +287,7 @@ namespace Lilium.RemoteControl.Frames
             _unaddressableObjectCount++;
 
             var type = target.GetType();
-            var info = _InfoFor(type, out _);
-            if (info == null || !info.declaresState) return;
+            if (!LiveObjectWalk.DeclaresState(type)) return;
             if (!_reported.Add(type)) return;
 
             Debug.LogWarning(

@@ -8,6 +8,8 @@ using UnityEngine;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
+using Lilium.RemoteControl.Frames;
+
 namespace Lilium.RemoteControl
 {
     /// <summary>
@@ -30,9 +32,11 @@ namespace Lilium.RemoteControl
             var jObject = new JObject
             {
                 ["type"] = type.typeName,
+                // The block this type's state actually travels in, so each member can be asked
+                // whether it is carried rather than what it declared (see the lane note below).
                 ["properties"] = new JArray(type.propertyTypes.Select(p =>
                 {
-                    var pj = ToJObject(p);
+                    var pj = ToJObject(p, StateBridgeRegistry.Find(type.type));
                     // [LiveKey] のプロパティに印を付け、RemoteApp が配列要素を index でなく
                     // このプロパティ値で安定参照 ("arr[Joy].weight") できるようにする。
                     if (type.keyProperty != null && ReferenceEquals(p, type.keyProperty)) pj["isKey"] = true;
@@ -127,7 +131,7 @@ namespace Lilium.RemoteControl
         internal static string ToJson(LivePropertyType propertyType)
             => LivePropertySerializer.SerializeToJson(ToJObject(propertyType));
 
-        internal static JObject ToJObject(LivePropertyType propertyType)
+        internal static JObject ToJObject(LivePropertyType propertyType, StateBridge stateBridge = null)
         {
             // LivePropertyRef の場合、RemoteApp には参照先の型 (例: float) を伝える
             var valueType = propertyType.resolvedValueType;
@@ -233,16 +237,30 @@ namespace Lilium.RemoteControl
 
             // Which lane of the live data carries this member, so a client can say whether a take
             // remembers it -- and, when it does, whether it is paid for every frame or only when it
-            // changes. Nothing but the declaration knows this, and the declaration is in code.
+            // changes.
             //
-            // ⚠ Event is left unsaid, on the same reasoning as Scene above: it is the default, and
-            // saying it on every member would grow the table for no news. It also keeps every
-            // existing response byte-identical -- only members that are actually off the default
-            // gain a field.
-            switch (propertyType.lane)
+            // ⚠ **The question is put to whatever is carrying the member, not to its declaration**,
+            // which is the same rule the write path follows (see <see cref="LiveStateCarriage"/>).
+            // The two disagree often enough that reading the declaration was simply wrong: a
+            // [LiveField] that says nothing about its lane is carried by the generated block (the
+            // generator's default for a field) while the attribute reports Event, and a member that
+            // asked for State but could not reach a block falls back to events. Both were reported
+            // the wrong way round.
+            //
+            // Event is left unsaid, on the same reasoning as Scene above: it is the default, and
+            // saying it on every member would grow the table for no news.
+            if (propertyType.lane == FrameLane.None)
             {
-                case FrameLane.State: jObject["lane"] = "state"; break;
-                case FrameLane.None: jObject["lane"] = "none"; break;
+                jObject["lane"] = "none";
+            }
+            else if (LiveStateCarriage.IsCarriedByState(propertyType, stateBridge)
+                     || LiveStructureSystem.IsRecordedCollection(propertyType))
+            {
+                // A collection of exposed objects is the second way onto the state lane, and it
+                // does not go through the owner's block: the inventory carries the shape and each
+                // element's own block carries its values. Nothing about it is ever an event, so
+                // calling it one told the operator the opposite of the truth.
+                jObject["lane"] = "state";
             }
 
             // 多態配列: 要素型に代入可能な具象 [LiveClass] 型名を列挙し、クライアントの

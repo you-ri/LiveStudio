@@ -68,6 +68,56 @@ namespace Lilium.RemoteControl.Frames
             }
         }
 
+        /// <summary>
+        /// The id already standing for a string, without adding one.
+        ///
+        /// The question an apply asks. Interning would answer it by handing out a fresh id, which
+        /// reads as "no row is filed under this" either way for a live table -- but silently grows
+        /// a recording's table with a string the take never had.
+        /// </summary>
+        public bool TryGetId(string value, out int id)
+        {
+            id = kNone;
+            if (string.IsNullOrEmpty(value)) return false;
+
+            return _ids.TryGetValue(value, out id);
+        }
+
+        /// <summary>
+        /// Puts a string at an id somebody else chose, for reading a table back rather than
+        /// building one.
+        ///
+        /// A recording's ids are already assigned. Re-interning them in the order they happen to be
+        /// read would renumber the take, which is the whole fault this exists to make impossible.
+        /// Gaps stay empty: a file may name an id before the ones below it, and those resolve to
+        /// nothing until they arrive.
+        /// </summary>
+        public void SetAt(int id, string value)
+        {
+            if (id < 0) return;
+
+            lock (_appendLock)
+            {
+                if (id >= _symbols.Length)
+                {
+                    var size = _symbols.Length;
+                    while (size <= id) size *= 2;
+
+                    var grown = new string[size];
+                    Array.Copy(_symbols, grown, _count);
+                    _symbols = grown;
+                }
+
+                var previous = _symbols[id];
+                if (!string.IsNullOrEmpty(previous)) _ids.TryRemove(previous, out _);
+
+                _symbols[id] = value;
+                if (id >= _count) _count = id + 1;
+
+                if (!string.IsNullOrEmpty(value)) _ids[value] = id;
+            }
+        }
+
         /// <summary>Returns the string behind an id, or null for <see cref="kNone"/>.</summary>
         public bool TryResolve(int id, out string value)
         {
