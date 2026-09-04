@@ -28,8 +28,22 @@ namespace Lilium.LiveStudio
         [LiveField, LiveKey, StringSelector(nameof(AvatarController.meshPaths))]
         public string name;
 
-        [LiveField]
+        // onApplied: 状態レーンが値を書き戻したときに、その効果を作る。配列そのものが変わったときは
+        // AvatarController.OnPropertyChanged が _ApplyMeshStateOverrides を呼ぶが、要素の値だけが
+        // 変わる再生ではそれが走らない — 値は戻るのに画面は変わらないのはこのため。
+        [LiveField(onApplied = nameof(ApplyVisibility))]
         public bool visible = true;
+
+        /// <summary>
+        /// 解決済みのレンダラーへ visible を反映する。
+        ///
+        /// レンダラー未解決 (アバター差し替え直後など) では何もしない。解決は
+        /// AvatarController._ApplyMeshStateOverrides の仕事で、そちらが走った後は再びここが効く。
+        /// </summary>
+        public void ApplyVisibility()
+        {
+            if (skinnedMeshRenderer != null) skinnedMeshRenderer.gameObject.SetActive(visible);
+        }
 
         public SkinnedMeshRenderer skinnedMeshRenderer;
 

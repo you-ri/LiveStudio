@@ -350,7 +350,9 @@ namespace Lilium.LiveStudio.Virgo
 
             if (frame.state == null) return false;
 
-            var owner = _OwnerId();
+            // Through the recording's table on a supplied frame: the row was filed under the id
+            // the take gave this source, not the one this run interned for the same address.
+            var owner = LiveStateSystem.OwnerIdOf(in frame, _OwnerAddress());
             if (owner == FrameSymbolTable.kNone) return false;
 
             var block = frame.state.Find<AvatarAnimationData>();
@@ -380,15 +382,30 @@ namespace Lilium.LiveStudio.Virgo
         /// </summary>
         private int _OwnerId()
         {
+            var address = _OwnerAddress();
+
+            return string.IsNullOrEmpty(address)
+                ? FrameSymbolTable.kNone
+                : FrameGate.symbols.Intern(address);
+        }
+
+        /// <summary>
+        /// The address this source publishes its pose under, or null while it has none.
+        ///
+        /// Kept apart from the interned number because the two are wanted in different tables: a
+        /// live frame files the row under this run's id, and a replayed one under the recording's.
+        /// </summary>
+        private string _OwnerAddress()
+        {
             if (_ownerLiveId == null)
             {
                 var id = LiveObjectRegistry.FindOwnLiveId(transform);
-                if (string.IsNullOrEmpty(id)) return FrameSymbolTable.kNone;
+                if (string.IsNullOrEmpty(id)) return null;
 
                 _ownerLiveId = id;
             }
 
-            return FrameGate.symbols.Intern(_ownerLiveId);
+            return _ownerLiveId;
         }
 
         private Matrix4x4 _PlacementMatrix()

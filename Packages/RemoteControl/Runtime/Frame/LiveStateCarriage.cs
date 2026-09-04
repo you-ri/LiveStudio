@@ -55,6 +55,35 @@ namespace Lilium.RemoteControl.Frames
         }
 
         /// <summary>
+        /// Whether a change to a collection's *shape* should be kept out of the recording: an
+        /// element added, removed, or moved.
+        ///
+        /// A different question from <see cref="OmitsRecord"/>, and until 2026-09-04 it had a
+        /// different answer: the state lane carries the values of the elements that exist and says
+        /// nothing about which ones do, so a shape change had to be recorded as an event or a replay
+        /// would put element values into a collection of the wrong length.
+        ///
+        /// The inventory now carries the shape (see <see cref="LiveStructureSystem"/>), and a change
+        /// recorded in both lanes is worse than one recorded in neither: the event stands the
+        /// element up and the reconcile takes it away again, once per frame, for as long as the take
+        /// runs. So the question is put to the lane that is actually carrying it -- the same rule as
+        /// for values, asked of the other lane.
+        ///
+        /// ⚠ Asked of the system rather than of the declaration, because a collection is only
+        /// carried while something is taking an inventory. With nothing running, the event lane is
+        /// the only lane there is and the record has to stay.
+        /// </summary>
+        public static bool OmitsShapeRecord(LivePropertyType member)
+        {
+            var lane = member?.lane ?? FrameLane.Event;
+
+            // Off the live data by declaration -- a setting of this machine, shape and all.
+            if (lane == FrameLane.None) return true;
+
+            return LiveStructureSystem.isRunning && LiveStructureSystem.IsRecordedCollection(member);
+        }
+
+        /// <summary>
         /// Whether the block for <paramref name="owner"/>'s type moves this member.
         ///
         /// The exact runtime type, because that is how bridges are keyed -- a derived type gets its

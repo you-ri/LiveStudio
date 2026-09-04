@@ -378,6 +378,27 @@ namespace Lilium.RemoteControl.Frames
         }
 
         /// <summary>
+        /// The id a frame's rows are filed under for an address.
+        ///
+        /// ⚠ Not simply interning the address. A supplied frame's rows carry the ids the *recording*
+        /// gave them, and this run's table hands the same address a different number -- so a
+        /// producer reading its own row back out of a replayed frame has to ask the recording, or it
+        /// looks under a number nobody filed anything under and finds nothing. Every place that
+        /// reads a row by address needs this; three of them were written without it.
+        /// </summary>
+        public static int OwnerIdOf(in Frame frame, string address)
+        {
+            if (string.IsNullOrEmpty(address)) return FrameSymbolTable.kNone;
+
+            if (frame.isSupplied && FrameGate.source is Recording.FrameReplayer replayer)
+            {
+                return replayer.player.IdOf(address);
+            }
+
+            return FrameGate.symbols.Intern(address);
+        }
+
+        /// <summary>
         /// How an address becomes the id a supplied frame files its rows under.
         ///
         /// Null when the frame did not come from a recording, which leaves the walk using this run's
@@ -429,10 +450,28 @@ namespace Lilium.RemoteControl.Frames
                 captured++;
             }
 
-            var info = _InfoFor(type, out var liveClass);
-            if (info == null) return captured;
+            if (bridge == null && _InfoFor(type, out _)?.declaresState == true) _ReportNoBridge(type);
 
-            if (bridge == null && info.declaresState) _ReportNoBridge(type);
+            return captured + _CaptureMembers(target, id, state, time, depth);
+        }
+
+        /// <summary>
+        /// Carries what an object holds: the live objects nested in it, the elements of its
+        /// collections, and -- for an exposed GameObject -- its exposed components.
+        ///
+        /// Apart from <see cref="_Capture"/> because a component is reached differently from a
+        /// nested object (through its owner's key rather than a member name) but holds the same
+        /// kinds of thing. Sharing this is what stops one of the two ways in from going only one
+        /// level deep, which is what happened: a collection on an exposed component was in the
+        /// inventory and in no state block at all.
+        /// </summary>
+        private static int _CaptureMembers(object target, string id, StateBlockSet state, long time,
+            int depth)
+        {
+            var captured = 0;
+
+            var info = _InfoFor(target.GetType(), out var liveClass);
+            if (info == null) return captured;
 
             if (depth >= kMaxNestingDepth) return captured;
 
@@ -471,7 +510,10 @@ namespace Lilium.RemoteControl.Frames
             // The save path special-cases the same member for the same reason (see
             // FileScopedResolver), and this is the other half of that pair: what the live scene
             // writes, the frame has to carry.
-            if (target is LiveGameObject gameObject) captured += _CaptureComponents(gameObject, id, state, time);
+            if (target is LiveGameObject gameObject)
+            {
+                captured += _CaptureComponents(gameObject, id, state, time, depth);
+            }
 
             return captured;
         }
@@ -490,7 +532,7 @@ namespace Lilium.RemoteControl.Frames
         /// would name something that no longer exists.
         /// </summary>
         private static int _CaptureComponents(LiveGameObject owner, string ownerId,
-            StateBlockSet state, long time)
+            StateBlockSet state, long time, int depth)
         {
             if (!(owner.reference is GameObject go) || go == null) return 0;
 
@@ -515,7 +557,8 @@ namespace Lilium.RemoteControl.Frames
                 var key = ComponentElementKey.Of(component);
                 if (key == null) continue;
 
-                var ownerSymbol = FrameGate.symbols.Intern(_ComposeComponentId(ownerId, key));
+                var componentId = _ComposeComponentId(ownerId, key);
+                var ownerSymbol = FrameGate.symbols.Intern(componentId);
 
                 // Addressable through its owner, so the roster's type name is not needed for it.
                 // Marked here rather than at the top of the loop: a component the owner cannot
@@ -540,6 +583,14 @@ namespace Lilium.RemoteControl.Frames
                 }
 
                 if (wrote) captured++;
+
+                // ⚠ And what the component holds. Only its own block was taken before, which left
+                // the members of anything inside it -- the elements of a collection on an exposed
+                // MonoBehaviour, mesh overrides being the case that found this -- carried by
+                // nothing. The shape of those collections was in the inventory (that walk does go
+                // down) and their values were nowhere, so a replay stood the elements back up with
+                // their defaults and nothing about the take showed.
+                captured += _CaptureMembers(component, componentId, state, time, depth + 1);
             }
 
             // Held only for the length of the walk: the list is shared, and a reference left in it
@@ -582,7 +633,15 @@ namespace Lilium.RemoteControl.Frames
 
             if (bridge != null && bridge.Apply(target, _OwnerId(id), state)) applied++;
 
-            var info = _InfoFor(type, out var liveClass);
+            return applied + _ApplyMembers(target, id, state, depth);
+        }
+
+        /// <inheritdoc cref="_CaptureMembers"/>
+        private static int _ApplyMembers(object target, string id, StateBlockSet state, int depth)
+        {
+            var applied = 0;
+
+            var info = _InfoFor(target.GetType(), out var liveClass);
             if (info == null || depth >= kMaxNestingDepth) return applied;
 
             var nested = info.nested;
@@ -611,13 +670,17 @@ namespace Lilium.RemoteControl.Frames
                 }
             }
 
-            if (target is LiveGameObject gameObject) applied += _ApplyComponents(gameObject, id, state);
+            if (target is LiveGameObject gameObject)
+            {
+                applied += _ApplyComponents(gameObject, id, state, depth);
+            }
 
             return applied;
         }
 
         /// <inheritdoc cref="_CaptureComponents"/>
-        private static int _ApplyComponents(LiveGameObject owner, string ownerId, StateBlockSet state)
+        private static int _ApplyComponents(LiveGameObject owner, string ownerId, StateBlockSet state,
+            int depth)
         {
             if (!(owner.reference is GameObject go) || go == null) return 0;
 
@@ -636,7 +699,8 @@ namespace Lilium.RemoteControl.Frames
                 var key = ComponentElementKey.Of(component);
                 if (key == null) continue;
 
-                var ownerSymbol = _OwnerId(_ComposeComponentId(ownerId, key));
+                var componentId = _ComposeComponentId(ownerId, key);
+                var ownerSymbol = _OwnerId(componentId);
 
                 _visited.Add(component);
 
@@ -655,6 +719,9 @@ namespace Lilium.RemoteControl.Frames
                 }
 
                 if (wrote) applied++;
+
+                // The other half of the capture above: what the component holds is written back too.
+                applied += _ApplyMembers(component, componentId, state, depth + 1);
             }
 
             _components.Clear();

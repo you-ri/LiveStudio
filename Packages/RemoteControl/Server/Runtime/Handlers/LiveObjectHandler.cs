@@ -873,16 +873,15 @@ namespace Lilium.RemoteControl
         /// The same question for an operation that changes a collection's shape rather than a
         /// member's value: adding an element, removing one, moving one.
         ///
-        /// Only <see cref="FrameLane.None"/> is dropped here, and <see cref="FrameLane.State"/> is
-        /// not -- which is the one place the two rules part company. The state lane carries the
-        /// values of the elements that exist; **what exists** is not something it says, so a
-        /// collection on the state lane still needs its shape changes recorded or a replay ends up
-        /// applying element values to a collection of the wrong length. None means the same thing it
-        /// always does: this is a setting of the machine, and nothing about it belongs in the take.
+        /// Decided by <see cref="LiveStateCarriage.OmitsShapeRecord"/>, which asks the inventory
+        /// whether it is carrying this collection's shape. It did not used to: the state lane says
+        /// what the elements are worth and never what exists, so a shape change had to be an event.
+        /// Now that the inventory carries the shape, keeping the event as well makes the two fight --
+        /// the replayed event adds the element and the reconcile removes it again on the same frame.
         /// </summary>
         private static bool _OmitShapeChangeForLane(in LiveProperty prop, string requestPath)
         {
-            if ((prop.type?.lane ?? FrameLane.Event) != FrameLane.None) return false;
+            if (!LiveStateCarriage.OmitsShapeRecord(prop.type)) return false;
 
             FrameGate.OmitAppliedRecord(requestPath);
             return true;

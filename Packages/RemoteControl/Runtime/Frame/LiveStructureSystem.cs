@@ -814,8 +814,16 @@ namespace Lilium.RemoteControl.Frames
         {
             if (member == null || member.isReadOnly || member.isStatic) return false;
             if (member.lane == FrameLane.None) return false;
+            if (!member.isPersistable) return false;
 
-            return member.isPersistable;
+            // ⚠ The precondition, folded in rather than left to the caller. The inventory only ever
+            // reaches a collection of exposed objects -- the walk is built on that -- so a member
+            // holding anything else (an array of floats, of strings) has its shape carried by
+            // nobody. Asked separately by the capture walk and by the rule that decides whether a
+            // shape change still needs an event record, and the two parted company the moment it
+            // was only in one of them: an added float was dropped from the take on the strength of
+            // an inventory entry that was never going to exist.
+            return LiveStateSystem.HoldsLiveObjectCollection(member);
         }
 
         /// <summary>
