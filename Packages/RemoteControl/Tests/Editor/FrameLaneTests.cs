@@ -85,14 +85,14 @@ namespace Lilium.RemoteControl.Tests
             public float undeclared;
         }
 
-        private static void _CaptureFixture(Fixture source, ref FixtureBlock block)
+        private static void _CaptureFixture(Fixture source, ref FixtureBlock block, FrameSymbolTable symbols)
         {
             block.carried = source.carried;
             block.shadowed = source.shadowed;
             block.undeclared = source.undeclared;
         }
 
-        private static void _ApplyFixture(in FixtureBlock block, Fixture target)
+        private static void _ApplyFixture(in FixtureBlock block, Fixture target, FrameSymbolTable symbols)
         {
             target.carried = block.carried;
             target.shadowed = block.shadowed;

@@ -5,11 +5,19 @@ using System.Collections.Generic;
 namespace Lilium.RemoteControl.Frames
 {
     /// <summary>Copies an object's state-lane members into its block.</summary>
-    public delegate void StateCapture<in TOwner, TBlock>(TOwner source, ref TBlock block)
+    /// <param name="symbols">
+    /// The table a member carried as an id belongs to (<see cref="LiveTextId"/>). The frame's own,
+    /// so that reading a recorded id and interning a live one cannot end up asking different
+    /// tables -- which is the whole reason the frame carries one.
+    /// </param>
+    public delegate void StateCapture<in TOwner, TBlock>(TOwner source, ref TBlock block,
+        FrameSymbolTable symbols)
         where TBlock : unmanaged;
 
     /// <summary>Writes a block back onto the object it came from.</summary>
-    public delegate void StateApply<in TOwner, TBlock>(in TBlock block, TOwner target)
+    /// <inheritdoc cref="StateCapture{TOwner,TBlock}" path="/param[@name='symbols']"/>
+    public delegate void StateApply<in TOwner, TBlock>(in TBlock block, TOwner target,
+        FrameSymbolTable symbols)
         where TBlock : unmanaged;
 
     /// <summary>
@@ -40,10 +48,11 @@ namespace Lilium.RemoteControl.Frames
         /// recording that carries nothing comes to look like a recording that found nothing to say.
         /// </summary>
         public abstract bool Capture(object owner, int ownerId, StateBlockSet state,
-            FrameSource source, long time);
+            FrameSource source, long time, FrameSymbolTable symbols);
 
         /// <summary>Writes the element back onto the object. False when the set has nothing for it.</summary>
-        public abstract bool Apply(object owner, int ownerId, StateBlockSet state);
+        public abstract bool Apply(object owner, int ownerId, StateBlockSet state,
+            FrameSymbolTable symbols);
 
         /// <summary>
         /// Whether this bridge actually moves the named member.
@@ -102,7 +111,7 @@ namespace Lilium.RemoteControl.Frames
         }
 
         public override bool Capture(object owner, int ownerId, StateBlockSet state,
-            FrameSource source, long time)
+            FrameSource source, long time, FrameSymbolTable symbols)
         {
             if (!(owner is TOwner typed) || state == null) return false;
 
@@ -112,11 +121,12 @@ namespace Lilium.RemoteControl.Frames
 
             // Written straight into the block's storage. Capturing into a local and assigning it
             // back would copy the whole struct twice for every object, every frame.
-            _capture(typed, ref element.value);
+            _capture(typed, ref element.value, symbols);
             return true;
         }
 
-        public override bool Apply(object owner, int ownerId, StateBlockSet state)
+        public override bool Apply(object owner, int ownerId, StateBlockSet state,
+            FrameSymbolTable symbols)
         {
             if (!(owner is TOwner typed) || state == null) return false;
 
@@ -126,7 +136,7 @@ namespace Lilium.RemoteControl.Frames
             var index = block.IndexOf(ownerId);
             if (index < 0) return false;
 
-            _apply(in block[index].value, typed);
+            _apply(in block[index].value, typed, symbols);
             return true;
         }
     }

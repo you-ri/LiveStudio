@@ -66,5 +66,9 @@
     "LDV_RAW_BYTES": "{0} bytes",
     "LDV_RAW_HINT": "add [LiveArray] to show what is inside",
     "LDV_TEXT_NULL": "(none)",
-    "LDV_TEXT_TOOLONG": "(too long — not carried)"
+    "LDV_TEXT_TOOLONG": "(too long — not carried)",
+    "LDV_TEXT_UNSET": "(not written)",
+    "LDV_TEXT_UNRESOLVED": "(not in the table)",
+    "LDV_TEXT_STORAGE_TABLE": "(table)",
+    "LDV_TEXT_STORAGE_FIXED": "(fixed {0}B)"
 }

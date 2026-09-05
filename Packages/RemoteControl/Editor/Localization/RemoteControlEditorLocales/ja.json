@@ -66,5 +66,9 @@
     "LDV_RAW_BYTES": "{0} バイト",
     "LDV_RAW_HINT": "[LiveArray] を付けると中身で表示されます",
     "LDV_TEXT_NULL": "(なし)",
-    "LDV_TEXT_TOOLONG": "(長すぎて記録されていません)"
+    "LDV_TEXT_TOOLONG": "(長すぎて記録されていません)",
+    "LDV_TEXT_UNSET": "(未書き込み)",
+    "LDV_TEXT_UNRESOLVED": "(記号表にありません)",
+    "LDV_TEXT_STORAGE_TABLE": "(記号表)",
+    "LDV_TEXT_STORAGE_FIXED": "(固定長 {0}B)"
 }

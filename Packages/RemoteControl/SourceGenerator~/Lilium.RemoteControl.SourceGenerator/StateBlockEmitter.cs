@@ -43,25 +43,36 @@ namespace Lilium.RemoteControl.SourceGenerator
         /// </summary>
         public string AppliedCallback { get; }
 
+        /// <summary>
+        /// Whether this member travels as a symbol id rather than as text in the block.
+        ///
+        /// Text drawn from a set repeats unchanged on every frame, so the table holds it once for
+        /// the whole recording and the block holds four bytes -- with no width for a value to
+        /// outgrow, which is the part that matters.
+        /// </summary>
+        public bool IsTextTable { get; }
+
         public StateMemberInfo(string name, string blockTypeName, int textCapacity = 0,
-            bool isProperty = false, string appliedCallback = null)
+            bool isProperty = false, string appliedCallback = null, bool isTextTable = false)
         {
             Name = name;
             BlockTypeName = blockTypeName;
             TextCapacity = textCapacity;
             IsProperty = isProperty;
             AppliedCallback = appliedCallback;
+            IsTextTable = isTextTable;
         }
 
         public override bool Equals(object obj)
             => obj is StateMemberInfo other && Name == other.Name
                && BlockTypeName == other.BlockTypeName && TextCapacity == other.TextCapacity
-               && IsProperty == other.IsProperty && AppliedCallback == other.AppliedCallback;
+               && IsProperty == other.IsProperty && AppliedCallback == other.AppliedCallback
+               && IsTextTable == other.IsTextTable;
 
         public override int GetHashCode()
-            => ((((Name?.GetHashCode() ?? 0) * 397 ^ (BlockTypeName?.GetHashCode() ?? 0)) * 397
+            => (((((Name?.GetHashCode() ?? 0) * 397 ^ (BlockTypeName?.GetHashCode() ?? 0)) * 397
                 ^ TextCapacity) * 397 ^ (IsProperty ? 1 : 0)) * 397
-                ^ (AppliedCallback?.GetHashCode() ?? 0);
+                ^ (AppliedCallback?.GetHashCode() ?? 0)) * 397 ^ (IsTextTable ? 1 : 0);
     }
 
     /// <summary>
@@ -180,6 +191,8 @@ namespace Lilium.RemoteControl.SourceGenerator
         static readonly int[] kTextCapacities = { 32, 64, 128, 256 };
 
         const string kFixedStringNamespace = "global::Lilium.RemoteControl.Frames.LiveFixedString";
+        const string kTextIdType = "global::Lilium.RemoteControl.Frames.LiveTextId";
+        const string kSymbolTableType = "global::Lilium.RemoteControl.Frames.FrameSymbolTable";
         public const string kCaptureMethodName = "CaptureLiveState";
         public const string kApplyMethodName = "ApplyLiveState";
 
@@ -212,7 +225,7 @@ namespace Lilium.RemoteControl.SourceGenerator
         public static readonly DiagnosticDescriptor kTextNeedsCapacity = new DiagnosticDescriptor(
             "LRC005",
             "State-lane text needs a width",
-            "'{0}' is a string in the state lane but declares no textCapacity, so it was left out of the state block. The state lane holds a fixed width per member: set textCapacity to the longest value in UTF-8 bytes, or leave the member in the event lane.",
+            "'{0}' is a string in the state lane but says nothing about how it should travel, so it was left out of the state block. Text chosen from a set travels as a symbol id -- a [StringSelector] says so already, or set textTable. Text that is typed needs a width: set textCapacity to the longest value in UTF-8 bytes, or leave the member in the event lane.",
             "Lilium.RemoteControl",
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true,
@@ -302,7 +315,7 @@ namespace Lilium.RemoteControl.SourceGenerator
                 foreach (var member in level.OriginalDefinition.GetMembers())
                 {
                     if (!_TryReadStateMember(member, out var memberType, out var textCapacity,
-                            out var appliedCallback, out var laneWasDeclared)) continue;
+                            out var appliedCallback, out var laneWasDeclared, out var textTable)) continue;
 
                     // Any member of this type having said "state" out loud makes the type's own
                     // problems (it is a struct, it cannot be named) addressed to someone.
@@ -378,11 +391,26 @@ namespace Lilium.RemoteControl.SourceGenerator
 
                     // Text is the one member whose block type is not its own. It keeps its string
                     // face on the object -- that is what REST answers and what the scene file holds
-                    // -- and travels as a fixed number of UTF-8 bytes, because a reference is the
-                    // one thing a block cannot hold. The width is the author's claim about the
-                    // values, so there is no default: without it the member stays where it was.
+                    // -- and travels either as a symbol id or as a fixed number of UTF-8 bytes,
+                    // because a reference is the one thing a block cannot hold.
                     if (memberType.SpecialType == SpecialType.System_String)
                     {
+                        // Chosen from a set, so the table holds it once for the whole recording and
+                        // no width can turn out to be too small. A [StringSelector] is that
+                        // declaration already -- on the member, or on the property a shadow field
+                        // travels through -- so asking for it again would be the same knowledge in
+                        // two places. An explicit width is how to opt back out.
+                        if (textCapacity <= 0
+                            && (textTable
+                                || _FindAttribute(member, kStringSelectorAttribute) != null
+                                || _FindAttribute(moved, kStringSelectorAttribute) != null))
+                        {
+                            members.Add(new StateMemberInfo(
+                                name, kTextIdType, textCapacity: 0, isProperty: throughProperty,
+                                appliedCallback: appliedCallback, isTextTable: true));
+                            continue;
+                        }
+
                         if (textCapacity <= 0)
                         {
                             problems.Add($"{level.Name}.{name}|text-no-capacity||{laneWasDeclared}");
@@ -495,12 +523,13 @@ namespace Lilium.RemoteControl.SourceGenerator
         /// width its declaration asked for.
         /// </summary>
         static bool _TryReadStateMember(ISymbol member, out ITypeSymbol memberType, out int textCapacity,
-            out string appliedCallback, out bool laneWasDeclared)
+            out string appliedCallback, out bool laneWasDeclared, out bool textTable)
         {
             memberType = null;
             textCapacity = 0;
             appliedCallback = null;
             laneWasDeclared = false;
+            textTable = false;
 
             AttributeData attribute = null;
             var isField = false;
@@ -544,6 +573,7 @@ namespace Lilium.RemoteControl.SourceGenerator
                     isState = value == 1;
                 }
                 else if (named.Key == "textCapacity" && named.Value.Value is int width) textCapacity = width;
+                else if (named.Key == "textTable" && named.Value.Value is bool table) textTable = table;
                 else if (named.Key == "onApplied" && named.Value.Value is string callback
                          && !string.IsNullOrEmpty(callback)) appliedCallback = callback;
             }
@@ -554,6 +584,7 @@ namespace Lilium.RemoteControl.SourceGenerator
             textCapacity = 0;
             appliedCallback = null;
             laneWasDeclared = false;
+            textTable = false;
             return false;
         }
 
@@ -571,6 +602,7 @@ namespace Lilium.RemoteControl.SourceGenerator
         const string kLiveFieldAttribute = "Lilium.RemoteControl.LiveFieldAttribute";
         const string kHideAttribute = "Lilium.RemoteControl.HideAttribute";
         const string kFormerlyNamedAsAttribute = "Lilium.RemoteControl.FormerlyNamedAsAttribute";
+        const string kStringSelectorAttribute = "Lilium.RemoteControl.StringSelectorAttribute";
 
         /// <summary>
         /// Exposed properties of the whole chain, by the name they are exposed under.
@@ -1042,10 +1074,16 @@ namespace Lilium.RemoteControl.SourceGenerator
             string blockRef, string methodName)
         {
             sb.AppendLine($"{indent}[global::System.CodeDom.Compiler.GeneratedCode(\"Lilium.RemoteControl.SourceGenerator\", \"1.0\")]");
-            sb.AppendLine($"{indent}internal static void {methodName}({ownerRef} source, ref {blockRef} block)");
+            sb.AppendLine($"{indent}internal static void {methodName}({ownerRef} source, ref {blockRef} block, {kSymbolTableType} symbols)");
             sb.AppendLine($"{indent}{{");
             foreach (var member in info.Members)
             {
+                if (member.IsTextTable)
+                {
+                    sb.AppendLine($"{indent}    block.{member.Name} = {kTextIdType}.From(source.{member.Name}, symbols);");
+                    continue;
+                }
+
                 if (member.TextCapacity > 0)
                 {
                     sb.AppendLine($"{indent}    block.{member.Name} = {member.BlockTypeName}.From(source.{member.Name});");
@@ -1062,10 +1100,24 @@ namespace Lilium.RemoteControl.SourceGenerator
             string blockRef, string methodName)
         {
             sb.AppendLine($"{indent}[global::System.CodeDom.Compiler.GeneratedCode(\"Lilium.RemoteControl.SourceGenerator\", \"1.0\")]");
-            sb.AppendLine($"{indent}internal static void {methodName}(in {blockRef} block, {ownerRef} target)");
+            sb.AppendLine($"{indent}internal static void {methodName}(in {blockRef} block, {ownerRef} target, {kSymbolTableType} symbols)");
             sb.AppendLine($"{indent}{{");
             foreach (var member in info.Members)
             {
+                if (member.IsTextTable)
+                {
+                    // Asked rather than assigned, for the same two reasons as a fixed width, plus
+                    // one of its own: an id the table cannot resolve says nothing, and writing the
+                    // nothing would clear a member that a short file merely failed to mention.
+                    var idLocal = $"__liveState{member.Name}";
+                    sb.AppendLine($"{indent}    if (block.{member.Name}.TryGetValue(target.{member.Name}, symbols, out var {idLocal}))");
+                    sb.AppendLine($"{indent}    {{");
+                    sb.AppendLine($"{indent}        target.{member.Name} = {idLocal};");
+                    _EmitAppliedCallback(sb, indent, member);
+                    sb.AppendLine($"{indent}    }}");
+                    continue;
+                }
+
                 if (member.TextCapacity > 0)
                 {
                     // Asked rather than assigned, for two reasons that happen to want the same

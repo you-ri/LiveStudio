@@ -204,7 +204,7 @@ namespace Lilium.RemoteControl.Tests
             var restored = new StateWalkDimmer();
             var bridge = StateBridgeRegistry.Find(typeof(StateWalkDimmer));
 
-            Assert.IsTrue(bridge.Apply(restored, FrameGate.symbols.Intern("walk-dimmer"), state));
+            Assert.IsTrue(bridge.Apply(restored, FrameGate.symbols.Intern("walk-dimmer"), state, FrameGate.symbols));
             Assert.AreEqual(0.5f, restored.level);
             Assert.AreEqual(1, restored.applied, "the value was written past the property, so its effect never ran");
         }

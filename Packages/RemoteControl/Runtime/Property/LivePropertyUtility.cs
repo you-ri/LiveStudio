@@ -130,7 +130,7 @@ namespace Lilium.RemoteControl
                     }
                     return new LivePropertyType(e.name, memberInfo, e.isPersistable, shadowField, e.persistScope,
                         controlOverride: e.control, labelOverride: e.label, helpOverride: e.help, sectionOverride: e.section,
-                        readOnlyOverride: e.isReadOnly, lane: e.lane);
+                        readOnlyOverride: e.isReadOnly, lane: e.lane, carriedBy: e.carriedBy);
                 }
 
                 Debug.LogError($"[RemoteControl] Member not found for {type.Name}.{e.path}");

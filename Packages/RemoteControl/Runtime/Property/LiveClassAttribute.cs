@@ -193,17 +193,38 @@ namespace Lilium.RemoteControl
         /// UTF-8 bytes reserved for a <c>string</c> member carried by <see cref="FrameLane.State"/>.
         /// Ignored for every other type and for the other lanes.
         ///
-        /// The state lane holds a fixed width per member, so text needs a bound before it can join.
-        /// There is no default: the bound is a claim about the values this member will hold, and
-        /// only whoever declared it can make that claim. Without one the member stays in the event
-        /// lane and the generator says so (LRC005).
+        /// For text that is typed rather than chosen. The state lane holds a fixed width per member,
+        /// so free text needs a bound before it can join, and there is no default: the bound is a
+        /// claim about the values this member will hold, and only whoever declared it can make it.
         ///
         /// Rounded up to the nearest width the block has (32, 64, 128, 256). A value that outgrows
         /// it at runtime is left out of the frame rather than shortened -- see
         /// <c>Lilium.RemoteControl.Frames.FixedText</c> -- so a member whose length has no ceiling
-        /// (a file path, free text) belongs in the event lane instead.
+        /// (a file path, free text with no limit) belongs in the event lane instead.
+        ///
+        /// Saying this on a member that would otherwise travel as an id (see
+        /// <see cref="textTable"/>) is how to ask for the fixed width anyway.
         /// </summary>
         public int textCapacity { get; set; }
+
+        /// <summary>
+        /// Carries a <c>string</c> member as the id the frame's symbol table gives it, rather than
+        /// as text in the block.
+        ///
+        /// For text drawn from a vocabulary -- a bone path, an owner name, a mesh name, a layer.
+        /// The table holds each distinct value once for the whole recording, so the block costs four
+        /// bytes however long the string is, and there is no width for a value to outgrow.
+        ///
+        /// **A member with a <c>[StringSelector]</c> does this already.** The selector is the
+        /// declaration that the value comes from a set, and both the editor and the frame are
+        /// readers of that one fact; restating it here would be the same knowledge in two places.
+        /// Set this only for a member whose values are bounded without a selector to say so, and set
+        /// <see cref="textCapacity"/> instead to opt a selector member back out.
+        ///
+        /// ⚠ Not for free text. The table is never emptied within a run, so a member whose value
+        /// keeps taking new shapes grows it for as long as the session lasts.
+        /// </summary>
+        public bool textTable { get; set; }
         /// <summary>
         /// Method on this type to call when applying a recording changes this member.
         ///
@@ -220,6 +241,23 @@ namespace Lilium.RemoteControl
         /// live write goes through whatever the write path already does.
         /// </summary>
         public string onApplied { get; set; }
+
+        /// <summary>
+        /// The member whose storage this one is a view of, when two exposed members are two faces of
+        /// one value.
+        ///
+        /// A shadow field and its property are already handled -- the pair inherits the field's lane,
+        /// because they are the same value and recording both would put it in the frame twice. This
+        /// says the same thing for a pair the shadow rule cannot see: a second property over the same
+        /// storage, offering it in a different shape (a bone *name* over a stored *path*).
+        ///
+        /// What it changes: the frame does not record a write to this member -- the carrier already
+        /// says the value -- and a client asking which lane remembers it is told the carrier's answer
+        /// rather than "not recorded at all", which would be the opposite of the truth.
+        ///
+        /// ⚠ Name it as the carrier is exposed, not as the field behind it.
+        /// </summary>
+        public string carriedBy { get; set; }
 
         public LivePropertyAttribute()
         {
@@ -277,17 +315,38 @@ namespace Lilium.RemoteControl
         /// UTF-8 bytes reserved for a <c>string</c> member carried by <see cref="FrameLane.State"/>.
         /// Ignored for every other type and for the other lanes.
         ///
-        /// The state lane holds a fixed width per member, so text needs a bound before it can join.
-        /// There is no default: the bound is a claim about the values this member will hold, and
-        /// only whoever declared it can make that claim. Without one the member stays in the event
-        /// lane and the generator says so (LRC005).
+        /// For text that is typed rather than chosen. The state lane holds a fixed width per member,
+        /// so free text needs a bound before it can join, and there is no default: the bound is a
+        /// claim about the values this member will hold, and only whoever declared it can make it.
         ///
         /// Rounded up to the nearest width the block has (32, 64, 128, 256). A value that outgrows
         /// it at runtime is left out of the frame rather than shortened -- see
         /// <c>Lilium.RemoteControl.Frames.FixedText</c> -- so a member whose length has no ceiling
-        /// (a file path, free text) belongs in the event lane instead.
+        /// (a file path, free text with no limit) belongs in the event lane instead.
+        ///
+        /// Saying this on a member that would otherwise travel as an id (see
+        /// <see cref="textTable"/>) is how to ask for the fixed width anyway.
         /// </summary>
         public int textCapacity { get; set; }
+
+        /// <summary>
+        /// Carries a <c>string</c> member as the id the frame's symbol table gives it, rather than
+        /// as text in the block.
+        ///
+        /// For text drawn from a vocabulary -- a bone path, an owner name, a mesh name, a layer.
+        /// The table holds each distinct value once for the whole recording, so the block costs four
+        /// bytes however long the string is, and there is no width for a value to outgrow.
+        ///
+        /// **A member with a <c>[StringSelector]</c> does this already.** The selector is the
+        /// declaration that the value comes from a set, and both the editor and the frame are
+        /// readers of that one fact; restating it here would be the same knowledge in two places.
+        /// Set this only for a member whose values are bounded without a selector to say so, and set
+        /// <see cref="textCapacity"/> instead to opt a selector member back out.
+        ///
+        /// ⚠ Not for free text. The table is never emptied within a run, so a member whose value
+        /// keeps taking new shapes grows it for as long as the session lasts.
+        /// </summary>
+        public bool textTable { get; set; }
         /// <summary>
         /// Method on this type to call when applying a recording changes this member.
         ///

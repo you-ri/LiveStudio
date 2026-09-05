@@ -64,6 +64,12 @@ namespace Lilium.RemoteControl
         /// place that can tell is where the write resolves.
         /// </summary>
         public FrameLane lane;
+
+        /// <summary>
+        /// Member whose storage this one is a view of, or null.
+        /// See <see cref="LivePropertyAttribute.carriedBy"/>.
+        /// </summary>
+        public string carriedBy;
     }
 
     /// <summary>
@@ -402,11 +408,13 @@ namespace Lilium.RemoteControl
                     string propName;
                     PersistScope persistScope;
                     FrameLane lane;
+                    string carriedBy = null;
                     if (attr is LivePropertyAttribute propAttr)
                     {
                         propName = propAttr.name ?? member.Name;
                         persistScope = propAttr.persistScope;
                         lane = propAttr.lane;
+                        carriedBy = propAttr.carriedBy;
                     }
                     else if (attr is LiveFieldAttribute fieldAttr)
                     {
@@ -441,7 +449,8 @@ namespace Lilium.RemoteControl
                         isPersistable = isPersistable,
                         persistScope = persistScope,
                         shadowFieldPath = shadowFieldPath,
-                        lane = lane
+                        lane = lane,
+                        carriedBy = carriedBy
                     });
                     propertyOrderMap[member.Name] = i;
                 }
@@ -1054,6 +1063,14 @@ namespace Lilium.RemoteControl
         public readonly FrameLane lane;
 
         /// <summary>
+        /// The member whose storage this one is a view of, or null.
+        ///
+        /// Two exposed members can be two faces of one value, and only one of them is in the block.
+        /// See <see cref="LivePropertyAttribute.carriedBy"/>.
+        /// </summary>
+        public readonly string carriedBy;
+
+        /// <summary>
         /// Source Generator が生成した高速 get/set アクセサ。non-null の場合、
         /// <see cref="LivePropertyUtility.GetValueRaw"/> / <see cref="LivePropertyUtility.SetValueRaw"/>
         /// は reflection の代わりにこれを呼ぶ。未登録 (struct 型 / 非アクセスメンバー等) では null で、
@@ -1280,9 +1297,11 @@ namespace Lilium.RemoteControl
 
         public LivePropertyType(string name, MemberInfo info, bool isPersistable = true, FieldInfo shadowField = null, PersistScope persistScope = PersistScope.Scene,
             ControlAttribute controlOverride = null, string labelOverride = null, string helpOverride = null, SectionAttribute sectionOverride = null,
-            bool readOnlyOverride = false, FrameLane lane = FrameLane.Event)
+            bool readOnlyOverride = false, FrameLane lane = FrameLane.Event,
+            string carriedBy = null)
         {
             this.lane = lane;
+            this.carriedBy = carriedBy;
             Debug.Assert(info != null, "PropertyInfo cannot be null");
 
             this.properyInfo = info as PropertyInfo;
@@ -1552,6 +1571,7 @@ namespace Lilium.RemoteControl
             this.isPersistable = true;
             this.persistScope = PersistScope.Scene;
             this.lane = FrameLane.Event;
+            this.carriedBy = null;
             this.isRawJson = false; // 配列要素自体は RawJson 対象外 (要素内の string メンバーが個別に判定される)
             this.isReadOnly = false; // 配列要素は通常書き込み可能
             this.isStatic = false; // 配列要素はstaticではない

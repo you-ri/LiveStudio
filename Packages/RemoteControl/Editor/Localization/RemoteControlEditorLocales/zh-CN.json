@@ -66,5 +66,9 @@
     "LDV_RAW_BYTES": "{0} 字节",
     "LDV_RAW_HINT": "添加 [LiveArray] 后可显示其内容",
     "LDV_TEXT_NULL": "(无)",
-    "LDV_TEXT_TOOLONG": "(过长，未记录)"
+    "LDV_TEXT_TOOLONG": "(过长，未记录)",
+    "LDV_TEXT_UNSET": "(未写入)",
+    "LDV_TEXT_UNRESOLVED": "(符号表中不存在)",
+    "LDV_TEXT_STORAGE_TABLE": "(符号表)",
+    "LDV_TEXT_STORAGE_FIXED": "(定长 {0}B)"
 }

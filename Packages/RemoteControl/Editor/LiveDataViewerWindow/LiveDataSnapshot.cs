@@ -145,6 +145,19 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         public readonly List<StructureRow> structure = new List<StructureRow>();
 
         /// <summary>Bytes of the element the viewer is looking at, or empty.</summary>
+        /// <summary>
+        /// The table the ids in this snapshot's values index.
+        ///
+        /// A member carried as a symbol id (<see cref="Lilium.RemoteControl.Frames.LiveTextId"/>) is
+        /// four bytes in the block and a string only once this has been asked. Held rather than
+        /// resolved at capture, because which fields are ids is not known until the layout of the
+        /// selected type has been worked out, which happens on the drawing side.
+        ///
+        /// ⚠ The frame's own, so a supplied frame reads through the recording's table. Resolving a
+        /// recorded id against the live one names whatever happens to sit in that slot now.
+        /// </summary>
+        public Lilium.RemoteControl.Frames.FrameSymbolTable symbols;
+
         public byte[] selectedValue = Array.Empty<byte>();
 
         public int selectedValueLength;

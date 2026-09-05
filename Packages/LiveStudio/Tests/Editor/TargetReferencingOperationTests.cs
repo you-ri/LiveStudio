@@ -2,6 +2,7 @@
 
 using NUnit.Framework;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Frames;
 
 namespace Lilium.LiveStudio.EditorTests
 {
@@ -129,10 +130,10 @@ namespace Lilium.LiveStudio.EditorTests
             public float carried;
         }
 
-        static void _CaptureTarget(FakeTarget source, ref FakeTargetBlock block)
+        static void _CaptureTarget(FakeTarget source, ref FakeTargetBlock block, FrameSymbolTable symbols)
             => block.carried = source.carried;
 
-        static void _ApplyTarget(in FakeTargetBlock block, FakeTarget target)
+        static void _ApplyTarget(in FakeTargetBlock block, FakeTarget target, FrameSymbolTable symbols)
             => target.carried = block.carried;
 
         /// <summary>

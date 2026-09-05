@@ -58,7 +58,7 @@ namespace Lilium.LiveStudio
     {
         // 安定キー ([LiveKey])。Animator のパラメータ名が要素の識別子なので、住所を位置ではなく
         // これで決める。位置だと配列に 1 つ挿入しただけで、値が隣のパラメータに適用される。
-        [LiveField(lane = FrameLane.State, textCapacity = 64), LiveKey]
+        [LiveField(lane = FrameLane.State), LiveKey]
         [StringSelector(nameof(AvatarController.animationParameters))]
         public string name;
 
@@ -240,7 +240,7 @@ namespace Lilium.LiveStudio
         // 見えないのでムーバーが届かず、黙ってブロックから外れる (LRC009)。同じアセンブリなので
         // internal で足りる (partial 化は不要)。
         [SerializeField]
-        [LiveField(label="AVATAR_LAYER", lane = FrameLane.State, textCapacity = 64), StringSelector(nameof(layerNames))]
+        [LiveField(label="AVATAR_LAYER", lane = FrameLane.State), StringSelector(nameof(layerNames))]
         internal string _avatarLayer = string.Empty;
 
         // _ApplyAvatarLayer で元レイヤーへ戻せるよう、ターゲット差し替え時に一度だけ捕捉する

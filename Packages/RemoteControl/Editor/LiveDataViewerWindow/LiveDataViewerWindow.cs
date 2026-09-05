@@ -60,6 +60,13 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             public int objectId;
         }
 
+        /// <summary>One event row, kept so the highlight can move without rebuilding the ring.</summary>
+        private sealed class EventRowView
+        {
+            public VisualElement root;
+            public long rowId;
+        }
+
         private sealed class DetailRowView
         {
             public VisualElement root;
@@ -137,6 +144,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         private readonly List<LiveDataValueRow> _rows = new List<LiveDataValueRow>();
         private readonly List<StateRowView> _stateRows = new List<StateRowView>();
         private readonly List<StructureRowView> _structureRows = new List<StructureRowView>();
+        private readonly List<EventRowView> _eventRows = new List<EventRowView>();
         private readonly List<DetailRowView> _detailRows = new List<DetailRowView>();
         private readonly StringBuilder _shape = new StringBuilder();
 
@@ -828,14 +836,38 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _selectedType = typeName;
             _selectedOwnerId = ownerId;
             LiveDataTap.Select(typeName, ownerId);
-            _Invalidate();
+            _ApplySelection();
         }
 
         private void _SelectEvent(long rowId)
         {
             _detailKind = DetailKind.Event;
             _selectedEventRowId = rowId;
-            _Invalidate();
+            _ApplySelection();
+        }
+
+        /// <summary>
+        /// Moves the highlight and rewrites the detail pane on the click itself.
+        ///
+        /// Invalidating instead would answer the same two changes -- one class on one row, and the
+        /// contents of one pane -- by tearing down and rebuilding all three lanes, thousands of
+        /// elements between them, and not until the next tick at that. The lanes are left as they
+        /// are; only what the selection actually changed is written.
+        ///
+        /// The pass that follows is asked for anyway: the bytes of a newly selected element are
+        /// copied by the tap on its next frame, so the detail cannot be complete yet. That pass
+        /// compares the shapes and finds them unchanged, so it writes rather than rebuilds.
+        /// </summary>
+        private void _ApplySelection()
+        {
+            var snapshot = LiveDataTap.snapshot;
+
+            _RefreshStateRows(snapshot);
+            _RefreshStructureRows(snapshot);
+            _RefreshEventRows();
+            _DrawDetail();
+
+            _drawnVersion = -1;
         }
 
         // --- structure lane -----------------------------------------------
@@ -964,7 +996,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         {
             _detailKind = DetailKind.StructureEntry;
             _selectedObjectId = objectId;
-            _Invalidate();
+            _ApplySelection();
         }
 
         private void _BuildStructureDetail()
@@ -1095,13 +1127,25 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             var count = LiveDataTap.eventCount;
             var newest = count == 0 ? -1 : LiveDataTap.GetEvent(count - 1).sequence;
 
-            // Events only arrive, so the list is rebuilt when one does and left alone otherwise.
-            var shape = $"{count}:{newest}:{_selectedEventRowId}:{_detailKind}:{RemoteControlEditorFonts.generation}";
+            // Events only arrive, so the list is rebuilt when one does and left alone otherwise. What
+            // is selected is deliberately not part of this: baking the highlight into the shape
+            // rebuilds the whole ring -- up to a few thousand elements -- every time a row anywhere
+            // in the window is clicked.
+            var shape = $"{count}:{newest}:{RemoteControlEditorFonts.generation}";
 
-            if (shape == _eventShape) return;
-            _eventShape = shape;
+            if (shape != _eventShape)
+            {
+                _eventShape = shape;
+                _RebuildEvents(count);
+            }
 
+            _RefreshEventRows();
+        }
+
+        private void _RebuildEvents(int count)
+        {
             _eventList.Clear();
+            _eventRows.Clear();
             _eventCount.text = _Tr("LDV_EVENT_COUNT", count);
 
             if (count == 0)
@@ -1117,13 +1161,21 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             }
         }
 
+        private void _RefreshEventRows()
+        {
+            for (int i = 0; i < _eventRows.Count; i++)
+            {
+                var view = _eventRows[i];
+                view.root.EnableInClassList("ldv-element-selected",
+                    _detailKind == DetailKind.Event && view.rowId == _selectedEventRowId);
+            }
+        }
+
         private VisualElement _BuildEventRow(EventRow evt)
         {
             var line = new VisualElement();
             line.AddToClassList("ldv-evt-row");
             line.EnableInClassList("ldv-evt-faulted", evt.faulted);
-            line.EnableInClassList("ldv-element-selected",
-                _detailKind == DetailKind.Event && evt.rowId == _selectedEventRowId);
 
             // Frame, source and verb share one line; the target takes the next one on its own,
             // since a target path is long enough to crowd out everything beside it.
@@ -1162,6 +1214,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
             var rowId = evt.rowId;
             line.RegisterCallback<MouseDownEvent>(_ => _SelectEvent(rowId));
+
+            _eventRows.Add(new EventRowView { root = line, rowId = rowId });
 
             return line;
         }
@@ -1242,9 +1296,18 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                     {
                         var field = layout[i];
                         var text = LiveDataValueLayout.Read(
-                            snapshot.selectedValue, snapshot.selectedValueLength, field);
+                            snapshot.selectedValue, snapshot.selectedValueLength, field,
+                            snapshot.symbols);
 
-                        _rows.Add(new LiveDataValueRow(field.label, text, field.depth));
+                        // Text says how it travels. The two forms fail differently -- a width has a
+                        // ceiling and a table has none -- and a blank row means different things
+                        // depending on which one this is.
+                        var storage = LiveDataValueLayout.StorageOf(field.type);
+                        var label = string.IsNullOrEmpty(storage)
+                            ? field.label
+                            : field.label + "  " + storage;
+
+                        _rows.Add(new LiveDataValueRow(label, text, field.depth));
                     }
                 }
             }
@@ -1334,6 +1397,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             for (int i = 0; i < layout.Count; i++)
             {
                 var field = layout[i];
+                // No table here: an event payload is a value written into the record, not a row of
+                // the state lane, so nothing in it is carried as a symbol id.
                 var text = LiveDataValueLayout.Read(evt.payload, evt.payload.Length, field);
 
                 _rows.Add(new LiveDataValueRow(field.label, text, field.depth + 1));

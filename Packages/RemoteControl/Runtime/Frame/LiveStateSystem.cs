@@ -122,7 +122,9 @@ namespace Lilium.RemoteControl.Frames
                 return;
             }
 
-            if (bridge.Capture(target, FrameGate.symbols.Intern(address), _walkState, _source, _walkTime))
+            var symbols = FrameGate.symbols;
+
+            if (bridge.Capture(target, symbols.Intern(address), _walkState, _source, _walkTime, symbols))
             {
                 _walkCount++;
             }
@@ -164,7 +166,9 @@ namespace Lilium.RemoteControl.Frames
             var bridge = StateBridgeRegistry.Find(target.GetType());
             if (bridge == null) return;
 
-            if (bridge.Apply(target, _OwnerId(address), _walkState)) _walkCount++;
+            // The frame's table, not this run's: a member carried as an id has to be read back
+            // out of the table that gave it that id.
+            if (bridge.Apply(target, _OwnerId(address), _walkState, _applySymbols)) _walkCount++;
         }
 
         // The table the apply now running reads its ids out of.

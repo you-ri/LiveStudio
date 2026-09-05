@@ -75,7 +75,7 @@ namespace Lilium.RemoteControl.Tests
             Assert.IsNotNull(handle);
 
             using var state = new StateBlockSet();
-            bridge.Capture(subject, 1, state, default, 0);
+            bridge.Capture(subject, 1, state, default, 0, FrameGate.symbols);
 
             var block = state.FindDeclared(typeof(Fixture));
             var value = new byte[block.elementSize - block.metaSize];

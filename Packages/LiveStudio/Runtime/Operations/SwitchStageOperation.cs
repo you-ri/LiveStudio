@@ -18,7 +18,7 @@ namespace Lilium.LiveStudio
     [FormerlyNamedAs("SwitchStageAction")]
     public class SwitchStageOperation : OperationBase
     {
-        [LiveField(lane = FrameLane.State, textCapacity = 128), StringSelector(nameof(stageNames))]
+        [LiveField(lane = FrameLane.State), StringSelector(nameof(stageNames))]
         public string stage = string.Empty;
 
         /// <summary>Names of the known sets (including the bootstrap set) — the dropdown source.</summary>

@@ -84,6 +84,10 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             // and the member is called selectedAvatar, not _utf8.
             typeof(LiveFixedString32), typeof(LiveFixedString64),
             typeof(LiveFixedString128), typeof(LiveFixedString256),
+
+            // Four bytes standing for a string. Walked into it reads as "_state: 6", which is the
+            // storage rather than the value -- and the member is called transformPath.
+            typeof(LiveTextId),
         };
 
         /// <summary>The lines of a type, worked out on first use.</summary>
@@ -413,16 +417,22 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         /// Reads one line out of a value's bytes. Empty when the bytes stop short, which happens
         /// whenever a recording was made by a build whose layout has since moved.
         /// </summary>
-        public static string Read(byte[] bytes, int length, ValueField field)
+        /// <param name="symbols">
+        /// Resolves a member carried as a symbol id. Null reads those as the id itself, which is
+        /// what a reader wants to see rather than a blank: the value is in the file, it is the table
+        /// that is missing.
+        /// </param>
+        public static string Read(byte[] bytes, int length, ValueField field,
+            FrameSymbolTable symbols = null)
         {
             if (bytes == null || field == null) return string.Empty;
             if (field.rawLength > 0) return _Hex(bytes, length, field);
             if (field.isHeading) return string.Empty;
 
-            var text = _ReadOne(bytes, length, field.offset, field.type);
+            var text = _ReadOne(bytes, length, field.offset, field.type, symbols);
             if (field.pairedOffset < 0 || field.pairedType == null) return text;
 
-            var paired = _ReadOne(bytes, length, field.pairedOffset, field.pairedType);
+            var paired = _ReadOne(bytes, length, field.pairedOffset, field.pairedType, symbols);
             return string.IsNullOrEmpty(paired) ? text : $"{text}   ({paired})";
         }
 
@@ -439,6 +449,55 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             // reader working out that the tool has a gap.
             text.Append("  ").Append(RemoteControlEditorLocalization.Tr("LDV_RAW_HINT"));
             return text.ToString();
+        }
+
+        /// <summary>
+        /// Reads a string carried as the id its table gave it.
+        ///
+        /// The three states a slot can be in are worth seeing apart, the way the fixed widths keep
+        /// them apart: nothing was written here, the value was null, the value was the empty string.
+        /// An id the table cannot answer for is shown as the id rather than as blank -- the value is
+        /// in the file, and it is the table that is short.
+        /// </summary>
+        private static string _ReadTextId(byte[] bytes, int length, int offset,
+            FrameSymbolTable symbols)
+        {
+            if (!_Fits(offset, 4, length)) return string.Empty;
+
+            var state = BitConverter.ToInt32(bytes, offset);
+
+            if (state == 0) return RemoteControlEditorLocalization.Tr("LDV_TEXT_UNSET");
+            if (state == -1) return RemoteControlEditorLocalization.Tr("LDV_TEXT_NULL");
+            if (state == -2) return "\"\"";
+
+            var id = state - 1;
+            if (symbols != null && symbols.TryResolve(id, out var value) && value != null)
+            {
+                return "\"" + value + "\"";
+            }
+
+            return "#" + id + "  " + RemoteControlEditorLocalization.Tr("LDV_TEXT_UNRESOLVED");
+        }
+
+        /// <summary>
+        /// How a string member travels, or null for anything that is not text.
+        ///
+        /// Worth saying on the row rather than leaving to whoever remembers the declaration: the two
+        /// forms fail differently. A fixed width has a ceiling, and a value past it is dropped from
+        /// the frame rather than shortened -- so a reader looking at a blank wants to know whether
+        /// the member is one that can do that. A table-backed one cannot.
+        ///
+        /// Derived from the type rather than carried on the field, because the type is already the
+        /// whole of the answer.
+        /// </summary>
+        public static string StorageOf(Type type)
+        {
+            if (type == typeof(LiveTextId)) return RemoteControlEditorLocalization.Tr("LDV_TEXT_STORAGE_TABLE");
+            if (!_IsFixedText(type)) return null;
+
+            var width = UnsafeUtility.SizeOf(type) - kFixedTextHeader;
+            return string.Format(
+                RemoteControlEditorLocalization.Tr("LDV_TEXT_STORAGE_FIXED"), width);
         }
 
         /// <summary>Bytes the length takes at the head of a fixed text value.</summary>
@@ -474,7 +533,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             return "\"" + Encoding.UTF8.GetString(bytes, offset + kFixedTextHeader, count) + "\"";
         }
 
-        private static string _ReadOne(byte[] bytes, int length, int offset, Type type)
+        private static string _ReadOne(byte[] bytes, int length, int offset, Type type,
+            FrameSymbolTable symbols = null)
         {
             if (type == null) return string.Empty;
             if (offset < 0 || offset >= length) return string.Empty;
@@ -506,6 +566,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             {
                 return _ReadFixedText(bytes, length, offset, UnsafeUtility.SizeOf(type) - kFixedTextHeader);
             }
+
+            if (type == typeof(LiveTextId)) return _ReadTextId(bytes, length, offset, symbols);
 
             if (type == typeof(Vector2)) return _Floats(bytes, length, offset, 2);
             if (type == typeof(Vector3)) return _Floats(bytes, length, offset, 3);

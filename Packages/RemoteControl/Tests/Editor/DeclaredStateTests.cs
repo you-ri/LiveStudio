@@ -193,13 +193,13 @@ namespace Lilium.RemoteControl.Tests
             var handle = LiveObjectRegistry.Create(subject, "wide-fixture");
             Assert.IsNotNull(handle);
 
-            bridge.Capture(subject, 1, _state, default, 0);
+            bridge.Capture(subject, 1, _state, default, 0, FrameGate.symbols);
 
             subject.wide = default;
             subject.wider = default;
             subject.intensity = 0f;
 
-            Assert.IsTrue(bridge.Apply(subject, 1, _state));
+            Assert.IsTrue(bridge.Apply(subject, 1, _state, FrameGate.symbols));
 
             Assert.AreEqual(Matrix4x4.identity, subject.wide);
             Assert.AreEqual(Matrix4x4.Scale(new Vector3(2f, 3f, 4f)), subject.wider);
@@ -218,11 +218,11 @@ namespace Lilium.RemoteControl.Tests
             var handle = LiveObjectRegistry.Create(subject, "guarded-fixture");
             Assert.IsNotNull(handle);
 
-            bridge.Capture(subject, 1, _state, default, 0);
+            bridge.Capture(subject, 1, _state, default, 0, FrameGate.symbols);
 
             subject.drivenWrites = 0;
-            Assert.IsTrue(bridge.Apply(subject, 1, _state));
-            Assert.IsTrue(bridge.Apply(subject, 1, _state));
+            Assert.IsTrue(bridge.Apply(subject, 1, _state, FrameGate.symbols));
+            Assert.IsTrue(bridge.Apply(subject, 1, _state, FrameGate.symbols));
 
             Assert.AreEqual(0, subject.drivenWrites, "an unchanged value was written back anyway");
             Assert.AreEqual(3f, subject.driven);
@@ -236,13 +236,13 @@ namespace Lilium.RemoteControl.Tests
             var handle = LiveObjectRegistry.Create(subject, "guarded-fixture");
             Assert.IsNotNull(handle);
 
-            bridge.Capture(subject, 1, _state, default, 0);
+            bridge.Capture(subject, 1, _state, default, 0, FrameGate.symbols);
 
             subject.driven = 8f;
             subject.drivenWrites = 0;
 
-            Assert.IsTrue(bridge.Apply(subject, 1, _state));
-            Assert.IsTrue(bridge.Apply(subject, 1, _state));
+            Assert.IsTrue(bridge.Apply(subject, 1, _state, FrameGate.symbols));
+            Assert.IsTrue(bridge.Apply(subject, 1, _state, FrameGate.symbols));
 
             // Once for the value that had moved, and nothing for the second pass: applying the same
             // frame twice has to land in the same place, which is what a scrub does all day.
@@ -317,14 +317,14 @@ namespace Lilium.RemoteControl.Tests
             Assert.IsNotNull(handle);
 
             var ownerId = 7;
-            bridge.Capture(subject, ownerId, _state, default, 0);
+            bridge.Capture(subject, ownerId, _state, default, 0, FrameGate.symbols);
 
             // Changed underneath, then written back from the frame: this is what a replay does.
             subject.intensity = 0f;
             subject.on = false;
             subject.offset = Vector3.zero;
 
-            Assert.IsTrue(bridge.Apply(subject, ownerId, _state));
+            Assert.IsTrue(bridge.Apply(subject, ownerId, _state, FrameGate.symbols));
 
             Assert.AreEqual(2.5f, subject.intensity, 1e-5f);
             Assert.IsTrue(subject.on, "bool cannot be pinned, so it goes through the marshaller");
@@ -359,7 +359,7 @@ namespace Lilium.RemoteControl.Tests
 
             var subject = new Fixture { intensity = 2.5f, on = true };
             LiveObjectRegistry.Create(subject, "fixture");
-            before.Capture(subject, 7, _state, default, 0);
+            before.Capture(subject, 7, _state, default, 0, FrameGate.symbols);
 
             // The declaration is edited: a member is dropped, so everything after it moves.
             LiveObjectRegistry.ClearAll();
@@ -369,7 +369,7 @@ namespace Lilium.RemoteControl.Tests
             var target = new Fixture();
             LiveObjectRegistry.Create(target, "fixture");
 
-            Assert.IsFalse(after.Apply(target, 7, _state),
+            Assert.IsFalse(after.Apply(target, 7, _state, FrameGate.symbols),
                 "refused rather than read as whatever the bytes happen to say now");
             Assert.IsFalse(target.on, "and nothing was written");
         }

@@ -35,11 +35,22 @@ namespace Lilium.RemoteControl
             Name,
         }
 
-        [SerializeField, LiveField(lane = FrameLane.State, textCapacity = 128), Hide]
+        // Carried as a symbol id: the value is a GameObject name picked from a list (see the
+        // selector on the property below), so the table holds each one once and no width can
+        // turn out to be too small for somebody's rig.
+        [SerializeField, LiveField(lane = FrameLane.State), Hide]
         [FormerlyNamedAs("ownerName")]
         string _ownerName;
 
-        [SerializeField, LiveField, Hide]
+        // The other half of the reference, and it has to travel the same way. Carried only by
+        // the event lane, a seek restored which object this hangs from and not which bone
+        // within it, and Resolve then fell back to the root -- with the local transform put
+        // back exactly, which reads as the object jumping to the wrong place.
+        //
+        // textTable rather than a selector: the list is offered by transformName below, which
+        // is a view over this field rather than this field itself, so nothing on the member
+        // says it. A path has no ceiling worth guessing at, which is the other reason.
+        [SerializeField, LiveField(lane = FrameLane.State, textTable = true), Hide]
         [FormerlyNamedAs("transformPath")]
         string _transformPath;
 
@@ -183,7 +194,16 @@ namespace Lilium.RemoteControl
         ///   スラッシュを含む値は path とみなしてそのまま格納する。
         ///   root 未解決や子孫未発見の場合は生値のまま保持し、Resolve の name fallback に委ねる。
         /// </summary>
-        [LiveProperty]
+        // ⚠ 値そのものは _transformPath が状態レーンで運んでいる。ここは同じ格納を名前で見せる
+        // UI 用のビューなので、書き込みをイベントレーンにも残すと同じ事実が 2 レーンに乗る。
+        // 再生では状態レーンが path を書き戻す一方でイベントが name を書き、後者の setter は
+        // *そのときの* ヒエラルキーを検索して path へ正規化する — オーナーが未解決なら生の name が
+        // 入り、収録したものと違う値になる。
+        //
+        // シャドウフィールドの対 (_transformPath ↔ transformPath) ではないので、名前の照合では
+        // 届かない。carriedBy がそれを言う。lane = None にしないのは、この値は**収録されている**
+        // からで、RemoteApp のバッジもそう出る必要がある。
+        [LiveProperty(carriedBy = nameof(transformPath))]
         [StringSelector(nameof(availableTransformNames))]
         public string transformName
         {

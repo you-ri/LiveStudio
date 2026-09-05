@@ -55,10 +55,11 @@ namespace Lilium.LiveStudio
         //
         // The write is only made when the value actually changed (the generated apply compares
         // first), so the reconcile does not run sixty times a second for an avatar standing still.
-        // ⚠ Its width is a ceiling on the display name: a longer one is not carried at all rather
-        // than shortened, which for this member means a recording that does not say which avatar
-        // was out. 256 bytes is 85 kanji or 256 ASCII characters.
-        [LiveProperty(label = "AVATAR_SELECT", lane = FrameLane.State, textCapacity = 256)]
+        // Carried as the id the frame's table gives the name rather than as text, because the
+        // choice comes from a list (see the selector below). A width here would be a ceiling on the
+        // display name -- a longer one is not carried at all rather than shortened, which for this
+        // member means a recording that does not say which avatar was out.
+        [LiveProperty(label = "AVATAR_SELECT", lane = FrameLane.State)]
         [StringSelector(nameof(avatarOptions))]
         [Help("AVATAR_SELECT_HELP")]
         public string selectedAvatar

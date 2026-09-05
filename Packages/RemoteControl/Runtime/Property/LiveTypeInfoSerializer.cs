@@ -128,6 +128,26 @@ namespace Lilium.RemoteControl
             return _ToJsonCollection(enumTypes, "enums", ToJObject);
         }
 
+        /// <summary>
+        /// Whether a member holding a nested live object is carried by the state lane.
+        ///
+        /// The third way on, after the owner's own block and a collection's inventory: the walk
+        /// follows the member and the object at the end of it gets a block of its own, filed under
+        /// the owner's id and this member's name. None of it is in the owner's block, so asking the
+        /// owner's bridge says no -- and the operator was told that a value written on every frame
+        /// is only kept when it changes.
+        ///
+        /// ⚠ Followed is not the same as carried. A nested type with nothing on the state lane has
+        /// no bridge at all, and the walk then reaches an object that puts nothing in the frame.
+        /// </summary>
+        private static bool _CarriesANestedObject(LivePropertyType propertyType)
+        {
+            if (propertyType == null) return false;
+            if (!LiveObjectWalk.HoldsNestedLiveObject(propertyType)) return false;
+
+            return StateBridgeRegistry.Find(propertyType.valueType) != null;
+        }
+
         internal static string ToJson(LivePropertyType propertyType)
             => LivePropertySerializer.SerializeToJson(ToJObject(propertyType));
 
@@ -254,12 +274,17 @@ namespace Lilium.RemoteControl
                 jObject["lane"] = "none";
             }
             else if (LiveStateCarriage.IsCarriedByState(propertyType, stateBridge)
-                     || LiveStructureSystem.IsRecordedCollection(propertyType))
+                     || LiveStructureSystem.IsRecordedCollection(propertyType)
+                     || _CarriesANestedObject(propertyType))
             {
                 // A collection of exposed objects is the second way onto the state lane, and it
                 // does not go through the owner's block: the inventory carries the shape and each
                 // element's own block carries its values. Nothing about it is ever an event, so
                 // calling it one told the operator the opposite of the truth.
+                //
+                // A nested live object is the third, and it was missing for the same reason: the
+                // owner's bridge is asked, the value is not in the owner's block, and the answer
+                // came back no.
                 jObject["lane"] = "state";
             }
 

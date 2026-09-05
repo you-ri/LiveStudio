@@ -140,6 +140,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _snapshot.structureEpoch = frame.structureEpoch;
             _snapshot.hasSink = FrameGate.sink != null;
             _snapshot.hasSource = FrameGate.source != null;
+            _snapshot.symbols = frame.symbols ?? symbols;
 
             _CaptureState(in frame, resolve);
             _CaptureStructure(in frame, resolve);

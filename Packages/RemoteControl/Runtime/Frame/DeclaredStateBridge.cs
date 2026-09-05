@@ -274,7 +274,7 @@ namespace Lilium.RemoteControl.Frames
             => state?.GetOrCreateDeclared(ownerType, _payloadSize);
 
         public override bool Capture(object owner, int ownerId, StateBlockSet state,
-            FrameSource source, long time)
+            FrameSource source, long time, FrameSymbolTable symbols)
         {
             if (owner == null || state == null) return false;
             if (!_TryHandleFor(owner, out var handle)) return false;
@@ -346,7 +346,8 @@ namespace Lilium.RemoteControl.Frames
             return true;
         }
 
-        public override bool Apply(object owner, int ownerId, StateBlockSet state)
+        public override bool Apply(object owner, int ownerId, StateBlockSet state,
+            FrameSymbolTable symbols)
         {
             if (owner == null || state == null) return false;
             if (!_TryHandleFor(owner, out var handle)) return false;

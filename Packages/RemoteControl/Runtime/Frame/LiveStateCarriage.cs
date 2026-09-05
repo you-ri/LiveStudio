@@ -106,6 +106,12 @@ namespace Lilium.RemoteControl.Frames
         /// the name it is exposed under. Being wrong towards "carried" writes the value twice; being
         /// wrong the other way loses it from the recording, so every spelling is tried before the
         /// answer is no.
+        ///
+        /// The last name tried is the one the member says carries it. Two exposed members can be two
+        /// faces of one value -- a bone name over a stored path -- and only one of them is in the
+        /// block. Without this the other reads as "not recorded", which is the opposite of the truth
+        /// for the operator looking at it, and its writes go into the event lane as well, where a
+        /// replay applies them on top of what the state lane just wrote back.
         /// </summary>
         public static bool IsCarriedByState(LivePropertyType member, StateBridge bridge)
         {
@@ -114,6 +120,7 @@ namespace Lilium.RemoteControl.Frames
             if (member.properyInfo != null && bridge.Carries(member.properyInfo.Name)) return true;
             if (member.fieldInfo != null && bridge.Carries(member.fieldInfo.Name)) return true;
             if (member.shadowField != null && bridge.Carries(member.shadowField.Name)) return true;
+            if (member.carriedBy != null && bridge.Carries(member.carriedBy)) return true;
 
             return bridge.Carries(member.name);
         }

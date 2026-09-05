@@ -110,7 +110,7 @@ namespace Lilium.RemoteControl.Tests
             var bridge = StateBridgeRegistry.Find(typeof(StateLaneProbe));
 
             using var state = new StateBlockSet();
-            bridge.Capture(probe, ownerId: 7, state, default, time: 42);
+            bridge.Capture(probe, ownerId: 7, state, default, time: 42, FrameGate.symbols);
 
             var block = state.Find<StateLaneProbe.LiveStateBlock>();
             Assert.AreEqual(1, block.count);
@@ -130,9 +130,9 @@ namespace Lilium.RemoteControl.Tests
             var bridge = StateBridgeRegistry.Find(typeof(StateLaneProbe));
 
             using var state = new StateBlockSet();
-            bridge.Capture(captured, ownerId: 1, state, default, time: 0);
+            bridge.Capture(captured, ownerId: 1, state, default, time: 0, FrameGate.symbols);
 
-            Assert.IsTrue(bridge.Apply(restored, ownerId: 1, state));
+            Assert.IsTrue(bridge.Apply(restored, ownerId: 1, state, FrameGate.symbols));
 
             Assert.AreEqual(2f, restored.intensity);
             Assert.AreEqual(Vector3.one, restored.position);
@@ -147,7 +147,7 @@ namespace Lilium.RemoteControl.Tests
 
             using var state = new StateBlockSet();
 
-            Assert.IsFalse(bridge.Apply(probe, ownerId: 99, state));
+            Assert.IsFalse(bridge.Apply(probe, ownerId: 99, state, FrameGate.symbols));
         }
 
         [Test]
@@ -170,7 +170,7 @@ namespace Lilium.RemoteControl.Tests
             var bridge = StateBridgeRegistry.Find(typeof(StateLaneProbe));
 
             void Producer(ref Frame frame)
-                => bridge.Capture(probe, ownerId: 3, frame.state, default, frame.frameNumber);
+                => bridge.Capture(probe, ownerId: 3, frame.state, default, frame.frameNumber, FrameGate.symbols);
 
             var stream = new MemoryStream();
             var recorder = new FrameRecorder();
@@ -197,7 +197,7 @@ namespace Lilium.RemoteControl.Tests
                 LiveStateSystem.PrepareBlocks(player.state);
                 while (player.Advance()) { }
 
-                Assert.IsTrue(bridge.Apply(restored, ownerId: 3, player.state));
+                Assert.IsTrue(bridge.Apply(restored, ownerId: 3, player.state, FrameGate.symbols));
             }
 
             Assert.AreEqual(1.5f, restored.intensity);

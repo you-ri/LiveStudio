@@ -18,7 +18,7 @@ namespace Lilium.LiveStudio
     [FormerlyNamedAs("SwitchAvatarAction")]
     public class SwitchAvatarOperation : OperationBase
     {
-        [LiveField(lane = FrameLane.State, textCapacity = 128), StringSelector(nameof(avatarNames))]
+        [LiveField(lane = FrameLane.State), StringSelector(nameof(avatarNames))]
         public string avatar = string.Empty;
 
         /// <summary>Registered avatar names (empty entry = default avatar) — the dropdown source.</summary>
