@@ -52,8 +52,21 @@ namespace Lilium.RemoteControl.SourceGenerator
         /// </summary>
         public bool IsTextTable { get; }
 
+        /// <summary>
+        /// The shape of this member's own fields, or zero when its type name already pins them.
+        ///
+        /// A recording matches its members to a build's by name and type, and for a primitive that
+        /// is the whole story. For a struct declared elsewhere it is not: <c>TransformValue</c> can
+        /// have its fields reordered and keep its name, its size and every appearance of being the
+        /// same forty bytes, and copying it then puts a rotation where a position goes. Carried
+        /// alongside the member so a reader can tell the two apart instead of reading one as the
+        /// other -- which is the failure worth refusing, because it looks like values.
+        /// </summary>
+        public ulong Layout { get; }
+
         public StateMemberInfo(string name, string blockTypeName, int textCapacity = 0,
-            bool isProperty = false, string appliedCallback = null, bool isTextTable = false)
+            bool isProperty = false, string appliedCallback = null, bool isTextTable = false,
+            ulong layout = 0UL)
         {
             Name = name;
             BlockTypeName = blockTypeName;
@@ -61,18 +74,20 @@ namespace Lilium.RemoteControl.SourceGenerator
             IsProperty = isProperty;
             AppliedCallback = appliedCallback;
             IsTextTable = isTextTable;
+            Layout = layout;
         }
 
         public override bool Equals(object obj)
             => obj is StateMemberInfo other && Name == other.Name
                && BlockTypeName == other.BlockTypeName && TextCapacity == other.TextCapacity
                && IsProperty == other.IsProperty && AppliedCallback == other.AppliedCallback
-               && IsTextTable == other.IsTextTable;
+               && IsTextTable == other.IsTextTable && Layout == other.Layout;
 
         public override int GetHashCode()
-            => (((((Name?.GetHashCode() ?? 0) * 397 ^ (BlockTypeName?.GetHashCode() ?? 0)) * 397
+            => ((((((Name?.GetHashCode() ?? 0) * 397 ^ (BlockTypeName?.GetHashCode() ?? 0)) * 397
                 ^ TextCapacity) * 397 ^ (IsProperty ? 1 : 0)) * 397
-                ^ (AppliedCallback?.GetHashCode() ?? 0)) * 397 ^ (IsTextTable ? 1 : 0);
+                ^ (AppliedCallback?.GetHashCode() ?? 0)) * 397 ^ (IsTextTable ? 1 : 0)) * 397
+                ^ Layout.GetHashCode();
     }
 
     /// <summary>
@@ -85,6 +100,12 @@ namespace Lilium.RemoteControl.SourceGenerator
 
         /// <summary>Owner's own name, as it is declared.</summary>
         public string TypeName { get; }
+
+        /// <summary>
+        /// Owner's name with any types it is nested in, joined the way the runtime joins them
+        /// (<c>Outer+Inner</c>). Namespace not included.
+        /// </summary>
+        public string NestedName { get; }
 
         /// <summary>Fully qualified owner, for the registration call.</summary>
         public string FullyQualifiedName { get; }
@@ -115,12 +136,13 @@ namespace Lilium.RemoteControl.SourceGenerator
         /// </summary>
         public bool AnyDeclared { get; }
 
-        public StateInfo(string ns, string typeName, string fullyQualifiedName, string typeKeyword,
-            bool insideOwner, bool anyDeclared, ImmutableArray<StateMemberInfo> members,
-            ImmutableArray<string> problems)
+        public StateInfo(string ns, string typeName, string nestedName, string fullyQualifiedName,
+            string typeKeyword, bool insideOwner, bool anyDeclared,
+            ImmutableArray<StateMemberInfo> members, ImmutableArray<string> problems)
         {
             Namespace = ns;
             TypeName = typeName;
+            NestedName = nestedName;
             FullyQualifiedName = fullyQualifiedName;
             TypeKeyword = typeKeyword;
             InsideOwner = insideOwner;
@@ -131,25 +153,41 @@ namespace Lilium.RemoteControl.SourceGenerator
 
         /// <summary>
         /// Name of the block type as the registration has to spell it: nested in the owner when the
-        /// block is inside it, and a free type in the generated namespace when it is beside it.
+        /// block is inside it, and a free type beside the owner when it is not.
         /// </summary>
         public string BlockReference => InsideOwner
             ? FullyQualifiedName + "." + StateBlockEmitter.kBlockTypeName
-            : StateBlockEmitter.kGeneratedNamespace + "." + MangledName + StateBlockEmitter.kBlockTypeName;
+            : GeneratedNamespacePrefix + LocalName + StateBlockEmitter.kBlockTypeName;
 
         /// <summary>Where the two movers live, by the same rule.</summary>
         public string MoverReference => InsideOwner
             ? FullyQualifiedName
-            : StateBlockEmitter.kGeneratedNamespace + "." + MangledName + "StateMover";
+            : GeneratedNamespacePrefix + LocalName + "StateMover";
 
         /// <summary>
-        /// The owner's full name flattened into one identifier, so two types of the same name in
-        /// different namespaces do not collide in the one generated namespace.
+        /// The owner's runtime <c>Type.FullName</c>: what a recording calls this type's state.
+        ///
+        /// The owner rather than the block, so that where the block had to go -- inside the owner or
+        /// beside it -- does not reach the recording. It used to: adding or removing <c>partial</c>
+        /// renamed the state and dropped the whole type out of takes made by the other build.
         /// </summary>
-        public string MangledName => FullyQualifiedName
-            .Replace("global::", string.Empty)
-            .Replace('.', '_')
-            .Replace('+', '_');
+        public string RuntimeFullName => string.IsNullOrEmpty(Namespace)
+            ? NestedName
+            : Namespace + "." + NestedName;
+
+        /// <summary>
+        /// The name a free type beside the owner is declared under.
+        ///
+        /// The owner's namespace carries the qualification, so only the nesting is flattened -- and
+        /// only because C# has no way to spell a nested type as a namespace. Two types of the same
+        /// name in two namespaces stay apart because their namespaces do.
+        /// </summary>
+        public string LocalName => NestedName.Replace('+', '_');
+
+        /// <summary>Where a free type is addressed from, spelled for the registration line.</summary>
+        public string GeneratedNamespacePrefix => string.IsNullOrEmpty(Namespace)
+            ? "global::"
+            : "global::" + Namespace + ".";
 
         public override bool Equals(object obj)
             => obj is StateInfo other
@@ -171,7 +209,7 @@ namespace Lilium.RemoteControl.SourceGenerator
     /// field assignments.
     ///
     /// The block goes **inside the owner** when the owner is <c>partial</c>, and **beside it** --
-    /// a free type in a generated namespace -- when it is not. Inside is worth having because the
+    /// a free type in the owner's own namespace -- when it is not. Inside is worth having because the
     /// convention in this codebase is a private field with the attribute on it, which only the
     /// inside can read; beside is what keeps <c>partial</c> from being a condition of appearing on
     /// the lane at all, and costs only the members an outsider cannot name (<c>LRC009</c>).
@@ -179,9 +217,6 @@ namespace Lilium.RemoteControl.SourceGenerator
     static class StateBlockEmitter
     {
         public const string kBlockTypeName = "LiveStateBlock";
-
-        /// <summary>Where a block goes when it cannot go inside its owner.</summary>
-        public const string kGeneratedNamespace = "global::Lilium.RemoteControl.Generated";
 
         /// <summary>
         /// Text widths a block can hold, smallest first. A declaration asking for something in
@@ -221,15 +256,6 @@ namespace Lilium.RemoteControl.SourceGenerator
             "Lilium.RemoteControl",
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
-
-        public static readonly DiagnosticDescriptor kTextNeedsCapacity = new DiagnosticDescriptor(
-            "LRC005",
-            "State-lane text needs a width",
-            "'{0}' is a string in the state lane but says nothing about how it should travel, so it was left out of the state block. Text chosen from a set travels as a symbol id -- a [StringSelector] says so already, or set textTable. Text that is typed needs a width: set textCapacity to the longest value in UTF-8 bytes, or leave the member in the event lane.",
-            "Lilium.RemoteControl",
-            DiagnosticSeverity.Warning,
-            isEnabledByDefault: true,
-            description: "There is no default width. A bound is a claim about the values the member will hold, and only its author can make it.");
 
         public static readonly DiagnosticDescriptor kTextTooWide = new DiagnosticDescriptor(
             "LRC006",
@@ -315,7 +341,7 @@ namespace Lilium.RemoteControl.SourceGenerator
                 foreach (var member in level.OriginalDefinition.GetMembers())
                 {
                     if (!_TryReadStateMember(member, out var memberType, out var textCapacity,
-                            out var appliedCallback, out var laneWasDeclared, out var textTable)) continue;
+                            out var appliedCallback, out var laneWasDeclared)) continue;
 
                     // Any member of this type having said "state" out loud makes the type's own
                     // problems (it is a struct, it cannot be named) addressed to someone.
@@ -395,25 +421,25 @@ namespace Lilium.RemoteControl.SourceGenerator
                     // because a reference is the one thing a block cannot hold.
                     if (memberType.SpecialType == SpecialType.System_String)
                     {
-                        // Chosen from a set, so the table holds it once for the whole recording and
-                        // no width can turn out to be too small. A [StringSelector] is that
-                        // declaration already -- on the member, or on the property a shadow field
-                        // travels through -- so asking for it again would be the same knowledge in
-                        // two places. An explicit width is how to opt back out.
-                        if (textCapacity <= 0
-                            && (textTable
-                                || _FindAttribute(member, kStringSelectorAttribute) != null
-                                || _FindAttribute(moved, kStringSelectorAttribute) != null))
+                        // The table is where text goes unless the declaration says otherwise. It
+                        // holds each distinct value once for the whole recording and has no width a
+                        // value can outgrow, so it is the only form that carries every string it is
+                        // given -- which is what a default has to do. A [StringSelector] says the
+                        // value comes from a set, which used to be what put it here; the default
+                        // says the same thing for every string, so nothing has to. The opt-out is
+                        // textCapacity, which buys a fixed slot in the block and with it a ceiling.
+                        //
+                        // What this costs: a member whose value keeps taking new shapes grows the
+                        // table for as long as the session lasts, because it is never emptied within
+                        // a run. Text like that belongs in the event lane, and saying so is now the
+                        // declaration that has to be written -- an undecorated field is on the state
+                        // lane (see the default a few screens down), and text no longer falls out of
+                        // the block for want of a width.
+                        if (textCapacity <= 0)
                         {
                             members.Add(new StateMemberInfo(
                                 name, kTextIdType, textCapacity: 0, isProperty: throughProperty,
                                 appliedCallback: appliedCallback, isTextTable: true));
-                            continue;
-                        }
-
-                        if (textCapacity <= 0)
-                        {
-                            problems.Add($"{level.Name}.{name}|text-no-capacity||{laneWasDeclared}");
                             continue;
                         }
 
@@ -444,7 +470,8 @@ namespace Lilium.RemoteControl.SourceGenerator
                         memberType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                         textCapacity: 0,
                         isProperty: throughProperty,
-                        appliedCallback: appliedCallback));
+                        appliedCallback: appliedCallback,
+                        layout: _StructLayoutHash(memberType)));
                 }
             }
 
@@ -467,9 +494,19 @@ namespace Lilium.RemoteControl.SourceGenerator
                 ? typeSymbol.ContainingNamespace.ToDisplayString()
                 : string.Empty;
 
+            // The nesting chain, spelled the way the runtime spells it. A recording names this
+            // type's state by its owner's Type.FullName, and reflection joins nested types with a
+            // '+' where the compiler joins them with a '.'.
+            var nested = typeSymbol.Name;
+            for (var outer = typeSymbol.ContainingType; outer != null; outer = outer.ContainingType)
+            {
+                nested = outer.Name + "+" + nested;
+            }
+
             return new StateInfo(
                 ns,
                 typeSymbol.Name,
+                nested,
                 typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                 typeSymbol.IsValueType ? "struct" : "class",
                 insideOwner,
@@ -523,13 +560,12 @@ namespace Lilium.RemoteControl.SourceGenerator
         /// width its declaration asked for.
         /// </summary>
         static bool _TryReadStateMember(ISymbol member, out ITypeSymbol memberType, out int textCapacity,
-            out string appliedCallback, out bool laneWasDeclared, out bool textTable)
+            out string appliedCallback, out bool laneWasDeclared)
         {
             memberType = null;
             textCapacity = 0;
             appliedCallback = null;
             laneWasDeclared = false;
-            textTable = false;
 
             AttributeData attribute = null;
             var isField = false;
@@ -573,7 +609,6 @@ namespace Lilium.RemoteControl.SourceGenerator
                     isState = value == 1;
                 }
                 else if (named.Key == "textCapacity" && named.Value.Value is int width) textCapacity = width;
-                else if (named.Key == "textTable" && named.Value.Value is bool table) textTable = table;
                 else if (named.Key == "onApplied" && named.Value.Value is string callback
                          && !string.IsNullOrEmpty(callback)) appliedCallback = callback;
             }
@@ -584,7 +619,6 @@ namespace Lilium.RemoteControl.SourceGenerator
             textCapacity = 0;
             appliedCallback = null;
             laneWasDeclared = false;
-            textTable = false;
             return false;
         }
 
@@ -602,7 +636,6 @@ namespace Lilium.RemoteControl.SourceGenerator
         const string kLiveFieldAttribute = "Lilium.RemoteControl.LiveFieldAttribute";
         const string kHideAttribute = "Lilium.RemoteControl.HideAttribute";
         const string kFormerlyNamedAsAttribute = "Lilium.RemoteControl.FormerlyNamedAsAttribute";
-        const string kStringSelectorAttribute = "Lilium.RemoteControl.StringSelectorAttribute";
 
         /// <summary>
         /// Exposed properties of the whole chain, by the name they are exposed under.
@@ -893,10 +926,6 @@ namespace Lilium.RemoteControl.SourceGenerator
                             split[0], split[2], info.FullyQualifiedName));
                         break;
 
-                    case "text-no-capacity":
-                        context.ReportDiagnostic(Diagnostic.Create(kTextNeedsCapacity, Location.None, severity, null, null, split[0]));
-                        break;
-
                     case "applied-callback":
                         context.ReportDiagnostic(Diagnostic.Create(kAppliedCallbackNotFound, Location.None, severity, null, null,
                             split[0], split[2]));
@@ -1021,22 +1050,28 @@ namespace Lilium.RemoteControl.SourceGenerator
         /// Emits the block and the two movers beside the owner instead of inside it.
         ///
         /// Same three pieces, same bodies -- only the address changes, from members of the owner to
-        /// free types in the generated namespace. What this buys is that the owner needs no second
+        /// free types in the owner's own namespace. What this buys is that the owner needs no second
         /// half, and so needs not be <c>partial</c>. What it costs is reach: everything here is
         /// written as an outsider, so the members that got this far are the ones an outsider can
         /// touch (see <c>LRC009</c>).
         ///
-        /// The names carry the owner's full name flattened, because two types called the same thing
-        /// in different namespaces would otherwise land on one identifier here.
+        /// The owner's namespace rather than a generated one of our own, so the names read as the
+        /// owner's (<c>Lilium.LiveStudio.MeshStateLiveStateBlock</c>) instead of carrying the whole
+        /// namespace flattened into one identifier. Two types of the same name in two namespaces
+        /// stay apart because their namespaces do.
         /// </summary>
         static void _EmitBesideOwner(StringBuilder sb, StateInfo info)
         {
-            const string indent = "    ";
-            var block = info.MangledName + kBlockTypeName;
-            var mover = info.MangledName + "StateMover";
+            var hasNamespace = !string.IsNullOrEmpty(info.Namespace);
+            var indent = hasNamespace ? "    " : string.Empty;
+            var block = info.LocalName + kBlockTypeName;
+            var mover = info.LocalName + "StateMover";
 
-            sb.AppendLine($"namespace {kGeneratedNamespace.Replace("global::", string.Empty)}");
-            sb.AppendLine("{");
+            if (hasNamespace)
+            {
+                sb.AppendLine($"namespace {info.Namespace}");
+                sb.AppendLine("{");
+            }
 
             _EmitBlockStruct(sb, info, indent, block);
             sb.AppendLine();
@@ -1051,7 +1086,7 @@ namespace Lilium.RemoteControl.SourceGenerator
             _EmitApply(sb, info, indent + "    ", info.FullyQualifiedName, block, kApplyMethodName);
 
             sb.AppendLine($"{indent}}}");
-            sb.AppendLine("}");
+            if (hasNamespace) sb.AppendLine("}");
             sb.AppendLine();
         }
 
@@ -1100,58 +1135,97 @@ namespace Lilium.RemoteControl.SourceGenerator
             string blockRef, string methodName)
         {
             sb.AppendLine($"{indent}[global::System.CodeDom.Compiler.GeneratedCode(\"Lilium.RemoteControl.SourceGenerator\", \"1.0\")]");
-            sb.AppendLine($"{indent}internal static void {methodName}(in {blockRef} block, {ownerRef} target, {kSymbolTableType} symbols)");
+
+            // The mask says which members the block was actually filled for. Every one of them,
+            // unless a recording made before this type changed filled it -- there, a member the take
+            // never carried has nothing but zero sitting in its place, and zero is a value like any
+            // other. Writing it would empty a name, put a field of view at zero, and turn an
+            // override whose "none" is minus one into an override with zero. Not writing it is the
+            // one rule that gets all of those right at once.
+            sb.AppendLine($"{indent}internal static void {methodName}(in {blockRef} block, {ownerRef} target, {kSymbolTableType} symbols, ulong mask)");
             sb.AppendLine($"{indent}{{");
+
+            // Sixty-four is what one mask can speak for, and no type in practice comes near it. A
+            // member past that is written unconditionally, which stays correct because the reader
+            // refuses to build a partial plan for a type this wide and falls back to all-or-nothing.
+            if (info.Members.Length > StateReadPlanMaskWidth)
+            {
+                sb.AppendLine($"{indent}#warning This type has more than {StateReadPlanMaskWidth} state-lane members. A recording made from a different build is refused whole rather than read member by member.");
+            }
+
+            var memberIndex = -1;
             foreach (var member in info.Members)
             {
-                if (member.IsTextTable)
+                memberIndex++;
+
+                var masked = memberIndex < StateReadPlanMaskWidth;
+                var indent2 = masked ? indent + "    " : indent;
+
+                if (masked)
                 {
-                    // Asked rather than assigned, for the same two reasons as a fixed width, plus
-                    // one of its own: an id the table cannot resolve says nothing, and writing the
-                    // nothing would clear a member that a short file merely failed to mention.
-                    var idLocal = $"__liveState{member.Name}";
-                    sb.AppendLine($"{indent}    if (block.{member.Name}.TryGetValue(target.{member.Name}, symbols, out var {idLocal}))");
+                    sb.AppendLine($"{indent}    if ((mask & 0x{(1UL << memberIndex):x}UL) != 0)");
                     sb.AppendLine($"{indent}    {{");
-                    sb.AppendLine($"{indent}        target.{member.Name} = {idLocal};");
-                    _EmitAppliedCallback(sb, indent, member);
-                    sb.AppendLine($"{indent}    }}");
-                    continue;
                 }
 
-                if (member.TextCapacity > 0)
-                {
-                    // Asked rather than assigned, for two reasons that happen to want the same
-                    // call: a value that outgrew its width says nothing and must not overwrite what
-                    // is there, and a value that has not changed must not run the setter again --
-                    // sixty times a second, a setter behind an asset reference answers by loading.
-                    var local = $"__liveState{member.Name}";
-                    sb.AppendLine($"{indent}    if (block.{member.Name}.TryGetValue(target.{member.Name}, out var {local}))");
-                    sb.AppendLine($"{indent}    {{");
-                    sb.AppendLine($"{indent}        target.{member.Name} = {local};");
-                    _EmitAppliedCallback(sb, indent, member);
-                    sb.AppendLine($"{indent}    }}");
-                    continue;
-                }
+                _EmitApplyMember(sb, member, indent2);
 
-                if (member.IsProperty || member.AppliedCallback != null)
-                {
-                    // Guarded for two overlapping reasons. A setter can do anything -- pair a
-                    // device, load an asset, tell whatever watches -- and the state lane says this
-                    // value every frame whether or not it moved, so asking first is what keeps a
-                    // replay from running all of that sixty times a second for a value standing
-                    // still. A declared reaction wants the same question answered: it is the frame
-                    // the value moved on that it is interested in, not every frame after.
-                    sb.AppendLine($"{indent}    if (!global::Lilium.RemoteControl.Frames.LiveStateValue.SameBytes(target.{member.Name}, block.{member.Name}))");
-                    sb.AppendLine($"{indent}    {{");
-                    sb.AppendLine($"{indent}        target.{member.Name} = block.{member.Name};");
-                    _EmitAppliedCallback(sb, indent, member);
-                    sb.AppendLine($"{indent}    }}");
-                    continue;
-                }
-
-                sb.AppendLine($"{indent}    target.{member.Name} = block.{member.Name};");
+                if (masked) sb.AppendLine($"{indent}    }}");
             }
+
             sb.AppendLine($"{indent}}}");
+        }
+
+        /// <summary>Most members one mask can speak for. Matches StateReadPlan.kMaxMaskedMembers.</summary>
+        const int StateReadPlanMaskWidth = 64;
+
+        static void _EmitApplyMember(StringBuilder sb, StateMemberInfo member, string indent)
+        {
+            if (member.IsTextTable)
+            {
+                // Asked rather than assigned, for the same two reasons as a fixed width, plus
+                // one of its own: an id the table cannot resolve says nothing, and writing the
+                // nothing would clear a member that a short file merely failed to mention.
+                var idLocal = $"__liveState{member.Name}";
+                sb.AppendLine($"{indent}    if (block.{member.Name}.TryGetValue(target.{member.Name}, symbols, out var {idLocal}))");
+                sb.AppendLine($"{indent}    {{");
+                sb.AppendLine($"{indent}        target.{member.Name} = {idLocal};");
+                _EmitAppliedCallback(sb, indent, member);
+                sb.AppendLine($"{indent}    }}");
+                return;
+            }
+
+            if (member.TextCapacity > 0)
+            {
+                // Asked rather than assigned, for two reasons that happen to want the same
+                // call: a value that outgrew its width says nothing and must not overwrite what
+                // is there, and a value that has not changed must not run the setter again --
+                // sixty times a second, a setter behind an asset reference answers by loading.
+                var local = $"__liveState{member.Name}";
+                sb.AppendLine($"{indent}    if (block.{member.Name}.TryGetValue(target.{member.Name}, out var {local}))");
+                sb.AppendLine($"{indent}    {{");
+                sb.AppendLine($"{indent}        target.{member.Name} = {local};");
+                _EmitAppliedCallback(sb, indent, member);
+                sb.AppendLine($"{indent}    }}");
+                return;
+            }
+
+            if (member.IsProperty || member.AppliedCallback != null)
+            {
+                // Guarded for two overlapping reasons. A setter can do anything -- pair a
+                // device, load an asset, tell whatever watches -- and the state lane says this
+                // value every frame whether or not it moved, so asking first is what keeps a
+                // replay from running all of that sixty times a second for a value standing
+                // still. A declared reaction wants the same question answered: it is the frame
+                // the value moved on that it is interested in, not every frame after.
+                sb.AppendLine($"{indent}    if (!global::Lilium.RemoteControl.Frames.LiveStateValue.SameBytes(target.{member.Name}, block.{member.Name}))");
+                sb.AppendLine($"{indent}    {{");
+                sb.AppendLine($"{indent}        target.{member.Name} = block.{member.Name};");
+                _EmitAppliedCallback(sb, indent, member);
+                sb.AppendLine($"{indent}    }}");
+                return;
+            }
+
+            sb.AppendLine($"{indent}    target.{member.Name} = block.{member.Name};");
         }
 
         static void _EmitAppliedCallback(StringBuilder sb, string indent, StateMemberInfo member)
@@ -1190,54 +1264,80 @@ namespace Lilium.RemoteControl.SourceGenerator
 
             sb.AppendLine(");");
 
-            // What the layout is, beside what it weighs. A recording has only ever checked the
-            // width of an element, and width does not say what is inside: swapping two floats in a
-            // declaration leaves every element the same size, so a take from the other build reads
-            // each value into the wrong member and looks like values. Named here so the reader can
-            // refuse instead.
-            sb.Append("            global::Lilium.RemoteControl.Frames.StateLayoutRegistry.Declare(\"");
-            sb.Append(_BlockTypeFullName(info));
-            sb.Append("\", ");
-            sb.Append(_LayoutHash(info).ToString());
-            sb.AppendLine("UL);");
-        }
+            // What the block holds, member by member, so a recording made before this type changed
+            // can still be read: the members both builds have are put back where they now live, and
+            // the ones only one build has are left out rather than taking the whole type down.
+            //
+            // Only the names and the shapes go out from here. Where each member sits and how wide it
+            // is are read off the block struct at load (see StateSchemaBuilder), because the struct
+            // decides those and asking it cannot disagree with it -- and because working them out
+            // here would mean emitting pointer arithmetic into assemblies that do not all allow it.
+            sb.Append("            global::Lilium.RemoteControl.Frames.StateSchemaRegistry.Declare(\"");
+            sb.Append(info.RuntimeFullName);
+            sb.AppendLine("\",");
+            sb.Append("                global::Lilium.RemoteControl.Frames.StateSchemaBuilder.For<");
+            sb.Append(info.BlockReference);
+            sb.AppendLine(">(");
+            sb.AppendLine("                    new global::Lilium.RemoteControl.Frames.StateSchemaMemberSpec[]");
+            sb.AppendLine("                    {");
 
-        /// <summary>
-        /// The block type's runtime <c>Type.FullName</c>, which is how a recording names it.
-        ///
-        /// A type nested in its owner is spelled with a <c>+</c> there, not a dot -- the same
-        /// difference the mangling above already has to undo.
-        /// </summary>
-        static string _BlockTypeFullName(StateInfo info)
-        {
-            var owner = info.FullyQualifiedName.Replace("global::", string.Empty);
-
-            return info.InsideOwner
-                ? owner + "+" + kBlockTypeName
-                : kGeneratedNamespace.Replace("global::", string.Empty) + "." + info.MangledName + kBlockTypeName;
-        }
-
-        /// <summary>
-        /// A number for the members, their types and their order.
-        ///
-        /// FNV-1a over the text of the declaration rather than anything the runtime could compute:
-        /// this has to be the same number in two builds that agree and a different one in two that
-        /// do not, and it is fixed at compile time so no reflection walk is paid for it. The index
-        /// is mixed in because moving a member is as much a change of layout as adding one -- two
-        /// float members swapped are the case a width check cannot see.
-        /// </summary>
-        static ulong _LayoutHash(StateInfo info)
-        {
-            var hash = 14695981039346656037UL;
-
-            for (int i = 0; i < info.Members.Length; i++)
+            foreach (var member in info.Members)
             {
-                hash = _Mix(hash, info.Members[i].Name);
-                hash = _Mix(hash, info.Members[i].BlockTypeName);
-                hash = _Mix(hash, i.ToString());
+                sb.Append("                        new global::Lilium.RemoteControl.Frames.StateSchemaMemberSpec(\"");
+                sb.Append(member.Name);
+                sb.Append("\", 0x");
+                sb.Append(member.Layout.ToString("x"));
+                sb.AppendLine("UL),");
             }
 
+            sb.AppendLine("                    }));");
+        }
+
+        /// <summary>
+        /// The shape of a struct's own fields, or zero when its name already pins them.
+        ///
+        /// Zero for the types whose layout cannot move without their name moving too: the
+        /// primitives, and an enum, which is its underlying integer however many names it has. For
+        /// anything else the fields are walked in order -- recursively, because a struct of structs
+        /// hides the same change one level further down.
+        ///
+        /// This exists because the match a recording makes is by name and type, and for these types
+        /// that is not enough to be safe. Two builds that disagree about the order of two fields
+        /// inside <c>TransformValue</c> produce a member of the same name, the same type name and
+        /// the same size; copying one as the other lands each field on its neighbour and looks like
+        /// values rather than like an error.
+        /// </summary>
+        static ulong _StructLayoutHash(ITypeSymbol type)
+        {
+            if (type == null) return 0UL;
+            if (type.TypeKind == TypeKind.Enum) return 0UL;
+            if (type.SpecialType != SpecialType.None) return 0UL;
+            if (type.TypeKind != TypeKind.Struct) return 0UL;
+
+            var hash = 14695981039346656037UL;
+            _MixStruct(ref hash, type, depth: 0);
             return hash;
+        }
+
+        static void _MixStruct(ref ulong hash, ITypeSymbol type, int depth)
+        {
+            // A struct cannot contain itself, so this cannot run away on a well-formed type. The
+            // bound is for a symbol graph that is not well formed -- a half-typed edit, a reference
+            // that did not resolve -- where the generator still has to finish.
+            if (depth > 8) return;
+
+            foreach (var member in type.GetMembers())
+            {
+                if (!(member is IFieldSymbol field) || field.IsStatic || field.IsConst) continue;
+
+                hash = _Mix(hash, field.Name);
+                hash = _Mix(hash, field.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+
+                if (field.Type.TypeKind == TypeKind.Struct && field.Type.SpecialType == SpecialType.None)
+                {
+                    _MixStruct(ref hash, field.Type, depth + 1);
+                }
+            }
         }
 
         static ulong _Mix(ulong hash, string text)

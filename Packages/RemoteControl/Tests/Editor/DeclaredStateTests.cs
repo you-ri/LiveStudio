@@ -182,7 +182,7 @@ namespace Lilium.RemoteControl.Tests
             var bridge = DeclaredStateBridge.Build(liveClass);
 
             Assert.AreEqual(3, bridge.slotCount, "a member fell off the end of the block");
-            Assert.AreEqual(DeclaredStateBridge.kLayoutSize + 64 + 64 + 4, bridge.payloadSize);
+            Assert.AreEqual(64 + 64 + 4, bridge.payloadSize);
 
             var subject = new Fixture
             {
@@ -263,9 +263,9 @@ namespace Lilium.RemoteControl.Tests
             var bridge = DeclaredStateBridge.Build(liveClass);
             var block = (DeclaredStateBlock)bridge.EnsureBlock(_state);
 
-            Assert.AreEqual(DeclaredStateBridge.kLayoutSize + 4 + 4 + 12, bridge.payloadSize);
+            Assert.AreEqual(4 + 4 + 12, bridge.payloadSize);
             Assert.AreEqual(DeclaredStateBlock.StrideFor(bridge.payloadSize), block.elementSize);
-            Assert.AreEqual(48, block.elementSize, "16 meta + 8 layout + 20 values, padded to 8");
+            Assert.AreEqual(40, block.elementSize, "16 meta + 20 values, padded to 8");
         }
 
         [Test]
@@ -364,7 +364,8 @@ namespace Lilium.RemoteControl.Tests
             // The declaration is edited: a member is dropped, so everything after it moves.
             LiveObjectRegistry.ClearAll();
             var after = DeclaredStateBridge.Build(Declare(Member("on", FrameLane.State)));
-            Assert.AreNotEqual(before.layout, after.layout, "the hash has to notice the move");
+            Assert.AreNotEqual(before.schemaSignature, after.schemaSignature,
+                "the description has to notice the move");
 
             var target = new Fixture();
             LiveObjectRegistry.Create(target, "fixture");
@@ -388,7 +389,7 @@ namespace Lilium.RemoteControl.Tests
                 Member("offset", FrameLane.State),
                 Member("intensity", FrameLane.State)));
 
-            Assert.AreNotEqual(a.layout, b.layout);
+            Assert.AreNotEqual(a.schemaSignature, b.schemaSignature);
         }
     }
 }

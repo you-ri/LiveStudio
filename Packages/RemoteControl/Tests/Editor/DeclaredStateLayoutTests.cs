@@ -83,11 +83,12 @@ namespace Lilium.RemoteControl.Tests
 
             var layout = LiveDataValueLayout.For(typeof(Fixture));
 
-            // The hash leads the payload and is part of what a recording holds. Shown rather than
-            // hidden: when a take will not apply, this is the number that says why.
-            Assert.AreEqual("layout", layout[0].label);
+            // Nothing leads the payload. The first declared member sits at offset zero now that the
+            // hash of the declaration is gone -- the description says what the block holds, member
+            // by member, and says it for a generated block the same way.
+            Assert.AreEqual("intensity", layout[0].label);
             Assert.AreEqual(0, layout[0].offset);
-            Assert.AreEqual(bridge.layout, System.BitConverter.ToUInt64(value, 0));
+            Assert.IsNotNull(bridge.schemaSignature);
 
             Assert.AreEqual(2.75f, System.BitConverter.ToSingle(value, _OffsetOf(layout, "intensity")));
             Assert.AreNotEqual(0, System.BitConverter.ToInt32(value, _OffsetOf(layout, "on")));
@@ -116,11 +117,11 @@ namespace Lilium.RemoteControl.Tests
             // open. A cache kept across that points every row at the wrong bytes, which reads as
             // values rather than as a stale cache.
             Declare("intensity");
-            Assert.AreEqual(2, LiveDataValueLayout.For(typeof(Fixture)).Count, "layout hash + one value");
+            Assert.AreEqual(1, LiveDataValueLayout.For(typeof(Fixture)).Count, "one declared value");
 
             Declare("intensity", "on", "tint");
 
-            Assert.AreEqual(4, LiveDataValueLayout.For(typeof(Fixture)).Count,
+            Assert.AreEqual(3, LiveDataValueLayout.For(typeof(Fixture)).Count,
                 "the rows still describe the declaration that has been replaced");
         }
 

@@ -45,12 +45,16 @@ namespace Lilium.RemoteControl.Frames
         /// Call this from a producer that publishes a type by hand, at load rather than on first
         /// use, so a machine that only ever replays can still receive it.
         /// </summary>
-        public static void Register<T>() where T : unmanaged
+        /// <param name="typeName">
+        /// The name a recording calls the block by -- the owner's, where a bridge carries this
+        /// struct for one. Null for a struct published by hand, which is named after itself.
+        /// </param>
+        public static void Register<T>(string typeName = null) where T : unmanaged
         {
-            var name = typeof(T).FullName;
+            var name = string.IsNullOrEmpty(typeName) ? typeof(T).FullName : typeName;
             if (name == null || _factories.ContainsKey(name)) return;
 
-            _factories[name] = set => set.GetOrCreate<T>();
+            _factories[name] = set => set.GetOrCreate<T>(name);
         }
 
         /// <summary>

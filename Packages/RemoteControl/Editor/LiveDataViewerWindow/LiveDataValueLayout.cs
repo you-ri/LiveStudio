@@ -70,7 +70,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         // Declaration a cached declared layout was built from. A declaration can be edited while
         // the window is open, and a layout kept from the previous one would point every row at the
         // wrong bytes -- which reads as values rather than as a stale cache.
-        private static readonly Dictionary<Type, ulong> _declaredLayouts = new Dictionary<Type, ulong>();
+        private static readonly Dictionary<Type, string> _declaredLayouts = new Dictionary<Type, string>();
 
         // Read as one line rather than walked into: three floats named x, y, z are more legible
         // together than as three rows, and everything here is a value everyone already pictures.
@@ -104,14 +104,14 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             {
                 if (_cache.TryGetValue(type, out var cachedDeclared)
                     && _declaredLayouts.TryGetValue(type, out var builtFrom)
-                    && builtFrom == declared.layout)
+                    && builtFrom == declared.schemaSignature)
                 {
                     return cachedDeclared;
                 }
 
                 var described = _DescribeDeclared(declared);
                 _cache[type] = described;
-                _declaredLayouts[type] = declared.layout;
+                _declaredLayouts[type] = declared.schemaSignature;
                 return described;
             }
 
@@ -145,21 +145,13 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         /// <summary>
         /// The lines of a declared type, taken from the declaration instead of from reflection.
         ///
-        /// The layout hash leads the payload and is a real part of what a recording holds, so it is
-        /// shown rather than hidden: when a take will not apply, this is the number that says why.
+        /// Nothing leads the payload any more. The eight bytes that used to hold a hash of the
+        /// declaration went with the hash itself, now that the description says the same thing
+        /// member by member and says it for both kinds of block.
         /// </summary>
         private static List<ValueField> _DescribeDeclared(DeclaredStateBridge bridge)
         {
-            var fields = new List<ValueField>
-            {
-                new ValueField
-                {
-                    label = "layout",
-                    path = "layout",
-                    offset = 0,
-                    type = typeof(ulong),
-                },
-            };
+            var fields = new List<ValueField>();
 
             foreach (var field in bridge.fields)
             {

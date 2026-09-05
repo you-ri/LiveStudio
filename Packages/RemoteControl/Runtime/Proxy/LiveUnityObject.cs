@@ -257,7 +257,11 @@ namespace Lilium.RemoteControl
         // serialization reads/writes this field directly. OnBeforeLiveSerialize
         // refreshes _name from the live state before save; OnAfterLiveDeserialize
         // applies _name to _reference.name and _fallbackName after load.
-        [LiveField(lane = FrameLane.State, textCapacity = 128), Hide]
+        //
+        // No width: object names are a vocabulary -- the same handful repeated on every frame of a
+        // take -- so the symbol table holds each once and there is no ceiling for a long name to
+        // outgrow. The 128 that used to be here was a guess at how long anyone's names get.
+        [LiveField(lane = FrameLane.State), Hide]
         [FormerlyNamedAs("name")]
         private string _name;
 
@@ -589,7 +593,35 @@ namespace Lilium.RemoteControl
             TransformStructureService.onStructureChanged -= _OnStructureChanged;
         }
 
-        void _OnParentChanged() => _UpdateAttachment();
+        // ⚠ Deferred rather than done here, and to the *end* of the frame rather than the first
+        // call. The state lane writes a TransformRef one member at a time -- owner, then path, then
+        // search type -- and each write used to re-attach. Two costs, one of them wrong: the resolve
+        // walks the rig (Transform.Find, then GetComponentsInChildren when that misses), and the
+        // first of the three runs with the *new owner and the old path*, which cannot resolve and
+        // falls back to the root. So a replayed frame parented the object to the root and only then
+        // to the bone it recorded.
+        //
+        // Taking the first call and dropping the rest would keep exactly the wrong one. What is
+        // wanted is the last, which is what a flag flushed later gives.
+        [NonSerialized] bool _attachPending;
+
+        void _OnParentChanged() => _attachPending = true;
+
+        /// <summary>
+        /// Runs at the end of the frame, after the state lane has written every member it carries.
+        ///
+        /// SetParent keeps the local transform (worldPositionStays: false), so the pose the same
+        /// frame put back is the pose the object keeps.
+        /// </summary>
+        public override void Update()
+        {
+            base.Update();
+
+            if (!_attachPending) return;
+
+            _attachPending = false;
+            _UpdateAttachment();
+        }
 
         /// <summary>
         /// owner GameObject の内部 hierarchy 変化通知を受けて、ownerName 一致時に再 attach する。
@@ -599,7 +631,7 @@ namespace Lilium.RemoteControl
         {
             if (owner == null) return;
             if (_parent.ownerName != owner.name) return;
-            _UpdateAttachment();
+            _attachPending = true;
         }
 
         /// <summary>
@@ -644,8 +676,8 @@ namespace Lilium.RemoteControl
 
         private string _fallbackName;
 
-        // Shadow Field for name. See LiveUnityObjectProxy for the same pattern.
-        [LiveField(lane = FrameLane.State, textCapacity = 128), Hide]
+        // Shadow Field for name. See LiveUnityObjectProxy for the same pattern, the symbol table included.
+        [LiveField(lane = FrameLane.State), Hide]
         [FormerlyNamedAs("name")]
         private string _name;
 

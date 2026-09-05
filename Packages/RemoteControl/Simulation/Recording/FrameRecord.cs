@@ -74,8 +74,12 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// only name objects with a registry id, so the elements of an exposed collection were in
         /// neither lane -- the state lane carried their values and nothing carried the fact that they
         /// existed, which left a seek unable to stand one back up or take one away.
+        /// 8 replaced the layout hash on a state entry with the id of a description of the block:
+        /// what it holds, member by member. The hash could only say "these two builds disagree",
+        /// which cost the whole type its state whenever one member was added or taken away; the
+        /// description says which members they still agree on, so the rest of the take plays.
         /// </summary>
-        public const int kVersion = 7;
+        public const int kVersion = 8;
 
         /// <summary>
         /// Bytes a chunk spends before its compressed body: what it takes on disk, and what it

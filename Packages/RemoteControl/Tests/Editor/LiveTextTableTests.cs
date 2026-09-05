@@ -8,14 +8,19 @@ using Lilium.RemoteControl.Frames;
 namespace Lilium.RemoteControl.Tests
 {
     /// <summary>
-    /// A value chosen from a list. The selector is what says the value comes from a set, and that
-    /// is the whole declaration -- nothing here asks for a width or for a table.
+    /// A value chosen from a list, and one that says nothing at all. Neither declaration asks for
+    /// the table: the selector says the value comes from a set, the bare member says nothing, and
+    /// the table is where both end up because it is what the lane does with text by default.
     /// </summary>
     [LiveClass("TextTablePicker")]
     public class TextTablePicker
     {
         [LiveField(lane = FrameLane.State), StringSelector(nameof(choices))]
         public string pick = string.Empty;
+
+        /// <summary>No selector, no width. The declaration a member gets when nobody thought about it.</summary>
+        [LiveField(lane = FrameLane.State)]
+        public string bare = string.Empty;
 
         /// <summary>Text of the same kind, kept to a width. The contrast the fixture is about.</summary>
         [LiveField(lane = FrameLane.State, textCapacity = 32)]
@@ -81,6 +86,30 @@ namespace Lilium.RemoteControl.Tests
             LiveStateSystem.ApplyFrom(state, FrameGate.symbols);
 
             Assert.AreEqual("two", _subject.pick);
+        }
+
+        [Test]
+        public void TextThatSaysNothing_TravelsAsAnId()
+        {
+            // The default. A string in the state lane used to need a selector or a width before it
+            // could join, and a member that said neither was left out of the frame -- silently, as
+            // far as anyone reading the object was concerned. The table carries any value it is
+            // given, so it is the only form that can be handed to a member whose author said nothing.
+            Assert.AreEqual(
+                typeof(LiveTextId),
+                typeof(TextTablePickerLiveStateBlock).GetField("bare")?.FieldType,
+                "a bare state-lane string did not reach the block as a symbol id");
+
+            _subject.bare = _TooLongForAnyWidth();
+
+            using var state = new StateBlockSet();
+            LiveStateSystem.CaptureInto(state, time: 0);
+
+            var written = _subject.bare;
+            _subject.bare = string.Empty;
+            LiveStateSystem.ApplyFrom(state, FrameGate.symbols);
+
+            Assert.AreEqual(written, _subject.bare);
         }
 
         [Test]

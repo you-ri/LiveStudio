@@ -17,9 +17,13 @@ namespace Lilium.RemoteControl.Frames
     /// The block is a <see cref="DeclaredStateBlock"/> sized from the declaration, so a type pays
     /// for the values it declared and nothing more. What it does not get is the check a generated
     /// block gets for free: an element's width no longer says what is inside it, because two
-    /// declarations of the same total size can lay their members out differently. That is what
-    /// <see cref="layout"/> is for -- it leads the payload of every element and is checked before
-    /// anything is written back.
+    /// declarations of the same total size can lay their members out differently.
+    ///
+    /// That used to be answered by a hash of the declaration led into every element's payload. It is
+    /// answered by <see cref="StateSchema"/> now, which says the same thing for both kinds of block
+    /// and says it member by member rather than as one number -- so a recording made before the
+    /// declaration moved is read for the members it still shares instead of being refused whole.
+    /// The eight bytes an element spent saying it are gone with it.
     /// </summary>
     public sealed class DeclaredStateBridge : StateBridge
     {
@@ -40,7 +44,7 @@ namespace Lilium.RemoteControl.Frames
             /// <summary>The value's type.</summary>
             public readonly Type valueType;
 
-            /// <summary>Byte offset from the start of the payload (past the layout hash).</summary>
+            /// <summary>Byte offset from the start of the payload.</summary>
             public readonly int offset;
 
             /// <summary>Bytes the value occupies.</summary>
@@ -85,12 +89,20 @@ namespace Lilium.RemoteControl.Frames
             }
         }
 
-        /// <summary>Bytes the layout hash takes at the head of every element's payload.</summary>
-        public const int kLayoutSize = 8;
-
         private readonly Slot[] _slots;
-        private readonly ulong _layout;
         private readonly int _payloadSize;
+
+        /// <summary>
+        /// The description this bridge declared, as the text it is interned by.
+        ///
+        /// Held so a block can be told apart from one built for an earlier version of the same
+        /// declaration. Width alone cannot do it -- two declarations of the same total size lay
+        /// their members out differently -- and that used to be the job of the hash inside each
+        /// element. Asking once when the block is fetched is cheaper than asking per element, and it
+        /// catches the case the per-element hash never could: a block still holding values captured
+        /// under the old declaration.
+        /// </summary>
+        private readonly string _schemaSignature;
 
         /// <summary>Widest slot, which is all the scratch the comparison below ever needs.</summary>
         private readonly int _widestSlot;
@@ -106,12 +118,13 @@ namespace Lilium.RemoteControl.Frames
         // the slots -- so it stays unbuilt in a run where nobody is looking at the lane.
         private Field[] _fields;
 
-        private DeclaredStateBridge(Type owner, LiveClass liveClass, Slot[] slots, ulong layout, int payloadSize)
+        private DeclaredStateBridge(Type owner, LiveClass liveClass, Slot[] slots,
+            string schemaSignature, int payloadSize)
         {
             ownerType = owner;
             _liveClass = liveClass;
             _slots = slots;
-            _layout = layout;
+            _schemaSignature = schemaSignature;
             _payloadSize = payloadSize;
 
             for (int i = 0; i < slots.Length; i++)
@@ -150,14 +163,14 @@ namespace Lilium.RemoteControl.Frames
 
         public override Type blockType => typeof(DeclaredStateBlock);
 
-        /// <summary>Bytes one object of this type carries, the layout hash included.</summary>
+        /// <summary>Bytes one object of this type carries.</summary>
         public int payloadSize => _payloadSize;
 
         /// <summary>How many declared values this carries.</summary>
         public int slotCount => _slots.Length;
 
-        /// <summary>The declaration's hash, which a recording is checked against.</summary>
-        public ulong layout => _layout;
+        /// <summary>The description this bridge declared, as a recording interns it.</summary>
+        public string schemaSignature => _schemaSignature;
 
         /// <inheritdoc/>
         public override bool Carries(string memberName)
@@ -209,9 +222,7 @@ namespace Lilium.RemoteControl.Frames
 
             var slots = new List<Slot>();
 
-            // The values start after the layout hash, which leads every element's payload.
-            var offset = kLayoutSize;
-            var hash = 14695981039346656037UL;
+            var offset = 0;
 
             foreach (var member in liveClass.propertyTypes)
             {
@@ -255,23 +266,37 @@ namespace Lilium.RemoteControl.Frames
                 var size = SizeOf(valueType);
                 slots.Add(new Slot(member.name, valueType, offset, size, member));
 
-                // Name, type and position all go into the hash: moving a member is as much a change
-                // of layout as adding one, and a recording written before the move must not be read
-                // after it.
-                hash = _Mix(hash, member.name);
-                hash = _Mix(hash, valueType.FullName);
-                hash = _Mix(hash, offset.ToString());
-
                 offset += size;
             }
 
-            return slots.Count == 0
-                ? null
-                : new DeclaredStateBridge(liveClass.type, liveClass, slots.ToArray(), hash, offset);
+            if (slots.Count == 0) return null;
+
+            // What this declaration holds, in the same terms the generated path publishes, so a
+            // recording made before it changed can be read member by member rather than refused
+            // whole. Re-declared on every build, because an asset's declaration can move while the
+            // application is running and the description has to move with it.
+            //
+            // The bit each slot answers to in a mask is its position here, which is its position in
+            // _slots -- the two are built from the same walk and must stay in step.
+            var described = new StateSchemaMember[slots.Count];
+            for (int i = 0; i < slots.Count; i++)
+            {
+                var slot = slots[i];
+                described[i] = new StateSchemaMember(slot.name, slot.valueType?.FullName,
+                    slot.offset, slot.size);
+            }
+
+            var schema = StateSchemaBuilder.ForDeclared(DeclaredStateBlock.kMetaSize,
+                DeclaredStateBlock.StrideFor(offset), described);
+
+            StateSchemaRegistry.Declare(liveClass.type.FullName, schema);
+
+            return new DeclaredStateBridge(liveClass.type, liveClass, slots.ToArray(),
+                schema.ToText(), offset);
         }
 
         public override StateBlock EnsureBlock(StateBlockSet state)
-            => state?.GetOrCreateDeclared(ownerType, _payloadSize);
+            => state?.GetOrCreateDeclared(ownerType, _payloadSize, _schemaSignature);
 
         public override bool Capture(object owner, int ownerId, StateBlockSet state,
             FrameSource source, long time, FrameSymbolTable symbols)
@@ -319,7 +344,7 @@ namespace Lilium.RemoteControl.Frames
         {
             if (state == null) return false;
 
-            var block = state.GetOrCreateDeclared(ownerType, _payloadSize);
+            var block = state.GetOrCreateDeclared(ownerType, _payloadSize, _schemaSignature);
             var index = block.GetOrCreate(ownerId);
             block.SetMeta(index, source, time);
 
@@ -327,8 +352,6 @@ namespace Lilium.RemoteControl.Frames
 
             fixed (byte* bytes = payload)
             {
-                *(ulong*)bytes = _layout;
-
                 for (int i = 0; i < _slots.Length; i++)
                 {
                     var slot = _slots[i];
@@ -369,18 +392,33 @@ namespace Lilium.RemoteControl.Frames
             var payload = block.Payload(index);
             if (payload.Length < _payloadSize) return false;
 
+            // The block was filled under a declaration that is no longer this one. Refused rather
+            // than read as whatever the bytes happen to say under the current offsets, which would
+            // land each value in the wrong member and look like values.
+            //
+            // Not asked when a plan filled the block: there the two descriptions are known to
+            // differ, the members that survived have already been put where they belong, and the
+            // ones that did not are outside the mask.
+            if (!block.readThroughPlan
+                && block.schemaSignature != null
+                && _schemaSignature != null
+                && !ReferenceEquals(block.schemaSignature, _schemaSignature)
+                && !string.Equals(block.schemaSignature, _schemaSignature, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            var mask = block.appliedMemberMask;
+
             fixed (byte* bytes = payload)
             {
-                if (*(ulong*)bytes != _layout)
-                {
-                    // The declaration moved since the recording was made. Refused rather than read
-                    // as whatever the bytes happen to say under the current layout, which would land
-                    // each value in the wrong member and look like a value.
-                    return false;
-                }
-
                 for (int i = 0; i < _slots.Length; i++)
                 {
+                    // Outside the mask means the recording never carried this member. The bytes in
+                    // its place are zero, and zero is a value -- writing it would empty a name or
+                    // turn "no override" into "override with nothing".
+                    if (i < StateReadPlan.kMaxMaskedMembers && (mask & 1UL << i) == 0) continue;
+
                     var slot = _slots[i];
                     if (!_TryBind(in handle, in slot, out var property)) continue;
                     if (_AlreadyHolds(in property, in slot, bytes)) continue;
@@ -496,19 +534,6 @@ namespace Lilium.RemoteControl.Frames
             {
                 return false;
             }
-        }
-
-        private static ulong _Mix(ulong hash, string value)
-        {
-            if (string.IsNullOrEmpty(value)) return hash;
-
-            for (int i = 0; i < value.Length; i++)
-            {
-                hash ^= value[i];
-                hash *= 1099511628211UL;
-            }
-
-            return hash;
         }
     }
 }

@@ -8,7 +8,6 @@ using UnityEngine;
 
 using Lilium.RemoteControl;
 using Lilium.RemoteControl.Frames;
-using Lilium.RemoteControl.Generated;
 
 namespace Lilium.LiveStudio.Tests
 {
@@ -69,7 +68,7 @@ namespace Lilium.LiveStudio.Tests
             using var state = new StateBlockSet();
             LiveStateSystem.CaptureInto(state, time: 0);
 
-            var block = state.Find<Lilium_LiveStudio_MeshStateLiveStateBlock>();
+            var block = state.Find<MeshStateLiveStateBlock>();
             Assert.IsNotNull(block, "no mesh override reached the state lane");
             Assert.AreEqual(1, block.count);
         }
@@ -147,7 +146,7 @@ namespace Lilium.LiveStudio.Tests
             using var structure = new StructureBlock();
             LiveStructureSystem.CaptureInto(structure, symbols);
 
-            var block = state.Find<Lilium_LiveStudio_MeshStateLiveStateBlock>();
+            var block = state.Find<MeshStateLiveStateBlock>();
             Assert.IsNotNull(block, "no mesh override reached the state lane");
 
             var checkedAny = false;

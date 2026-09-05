@@ -16,8 +16,15 @@ namespace Lilium.RemoteControl.Frames
 
     /// <summary>Writes a block back onto the object it came from.</summary>
     /// <inheritdoc cref="StateCapture{TOwner,TBlock}" path="/param[@name='symbols']"/>
+    /// <param name="mask">
+    /// Which members the block was actually filled for, one bit each in declaration order. Every
+    /// one of them for a block filled by capture; fewer when a recording made from a build that
+    /// declared this type differently filled it, and a member it never carried has nothing but zero
+    /// sitting in its place. Zero is a value like any other -- it empties a name and puts a field of
+    /// view at nothing -- so the members outside the mask are not written at all.
+    /// </param>
     public delegate void StateApply<in TOwner, TBlock>(in TBlock block, TOwner target,
-        FrameSymbolTable symbols)
+        FrameSymbolTable symbols, ulong mask)
         where TBlock : unmanaged;
 
     /// <summary>
@@ -80,6 +87,13 @@ namespace Lilium.RemoteControl.Frames
         private readonly StateApply<TOwner, TBlock> _apply;
         private readonly string[] _memberNames;
 
+        /// <summary>
+        /// The name this type's state goes by in a recording. The owner's, so that where the
+        /// generator had to put the block -- inside the owner or beside it -- stays out of the
+        /// recording.
+        /// </summary>
+        private static readonly string _typeName = typeof(TOwner).FullName;
+
         public StateBridge(StateCapture<TOwner, TBlock> capture, StateApply<TOwner, TBlock> apply,
             string[] memberNames = null)
         {
@@ -97,7 +111,7 @@ namespace Lilium.RemoteControl.Frames
 
         public override Type blockType => typeof(TBlock);
 
-        public override StateBlock EnsureBlock(StateBlockSet state) => state.GetOrCreate<TBlock>();
+        public override StateBlock EnsureBlock(StateBlockSet state) => state.GetOrCreate<TBlock>(_typeName);
 
         /// <inheritdoc/>
         public override bool Carries(string memberName)
@@ -115,7 +129,7 @@ namespace Lilium.RemoteControl.Frames
         {
             if (!(owner is TOwner typed) || state == null) return false;
 
-            ref var element = ref state.GetOrCreate<TBlock>().GetOrCreate(ownerId);
+            ref var element = ref state.GetOrCreate<TBlock>(_typeName).GetOrCreate(ownerId);
             element.source = source;
             element.time = time;
 
@@ -136,7 +150,11 @@ namespace Lilium.RemoteControl.Frames
             var index = block.IndexOf(ownerId);
             if (index < 0) return false;
 
-            _apply(in block[index].value, typed, symbols);
+            // The mask comes off the block rather than through this call, because the thing that
+            // knows it is whatever filled the block and the thing that needs it is the mover. A
+            // parameter here would have to be threaded through every caller of Apply to say
+            // something none of them decide.
+            _apply(in block[index].value, typed, symbols, block.appliedMemberMask);
             return true;
         }
     }

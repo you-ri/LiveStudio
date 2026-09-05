@@ -158,7 +158,7 @@ namespace Lilium.RemoteControl.Frames
             for (int i = 0; i < expected.blocks.Count; i++)
             {
                 var expectedBlock = expected.blocks[i];
-                var typeName = expectedBlock.elementType.FullName;
+                var typeName = expectedBlock.typeName;
                 var actualBlock = actual.FindByTypeName(typeName);
 
                 if (actualBlock == null)
@@ -180,7 +180,7 @@ namespace Lilium.RemoteControl.Frames
                 var actualBlock = actual.blocks[i];
                 if (actualBlock.count == 0) continue;
 
-                var typeName = actualBlock.elementType.FullName;
+                var typeName = actualBlock.typeName;
                 if (expected.FindByTypeName(typeName) != null) continue;
 
                 _report.comparedElements += actualBlock.count;

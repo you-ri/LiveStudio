@@ -193,38 +193,17 @@ namespace Lilium.RemoteControl
         /// UTF-8 bytes reserved for a <c>string</c> member carried by <see cref="FrameLane.State"/>.
         /// Ignored for every other type and for the other lanes.
         ///
-        /// For text that is typed rather than chosen. The state lane holds a fixed width per member,
-        /// so free text needs a bound before it can join, and there is no default: the bound is a
-        /// claim about the values this member will hold, and only whoever declared it can make it.
+        /// The opt-out, not the norm. A state-lane string travels by default as the id the frame's
+        /// symbol table gives it, which costs four bytes however long the text is and has no width
+        /// a value can outgrow. Set this only for text that is typed rather than chosen and changes
+        /// on most frames, where a fixed slot in the block beats growing the table.
         ///
         /// Rounded up to the nearest width the block has (32, 64, 128, 256). A value that outgrows
         /// it at runtime is left out of the frame rather than shortened -- see
-        /// <c>Lilium.RemoteControl.Frames.FixedText</c> -- so a member whose length has no ceiling
-        /// (a file path, free text with no limit) belongs in the event lane instead.
-        ///
-        /// Saying this on a member that would otherwise travel as an id (see
-        /// <see cref="textTable"/>) is how to ask for the fixed width anyway.
+        /// <c>Lilium.RemoteControl.Frames.FixedText</c> -- so declaring a width is a claim about
+        /// every value this member will ever hold, and getting it wrong loses the value silently.
         /// </summary>
         public int textCapacity { get; set; }
-
-        /// <summary>
-        /// Carries a <c>string</c> member as the id the frame's symbol table gives it, rather than
-        /// as text in the block.
-        ///
-        /// For text drawn from a vocabulary -- a bone path, an owner name, a mesh name, a layer.
-        /// The table holds each distinct value once for the whole recording, so the block costs four
-        /// bytes however long the string is, and there is no width for a value to outgrow.
-        ///
-        /// **A member with a <c>[StringSelector]</c> does this already.** The selector is the
-        /// declaration that the value comes from a set, and both the editor and the frame are
-        /// readers of that one fact; restating it here would be the same knowledge in two places.
-        /// Set this only for a member whose values are bounded without a selector to say so, and set
-        /// <see cref="textCapacity"/> instead to opt a selector member back out.
-        ///
-        /// ⚠ Not for free text. The table is never emptied within a run, so a member whose value
-        /// keeps taking new shapes grows it for as long as the session lasts.
-        /// </summary>
-        public bool textTable { get; set; }
         /// <summary>
         /// Method on this type to call when applying a recording changes this member.
         ///
@@ -315,38 +294,17 @@ namespace Lilium.RemoteControl
         /// UTF-8 bytes reserved for a <c>string</c> member carried by <see cref="FrameLane.State"/>.
         /// Ignored for every other type and for the other lanes.
         ///
-        /// For text that is typed rather than chosen. The state lane holds a fixed width per member,
-        /// so free text needs a bound before it can join, and there is no default: the bound is a
-        /// claim about the values this member will hold, and only whoever declared it can make it.
+        /// The opt-out, not the norm. A state-lane string travels by default as the id the frame's
+        /// symbol table gives it, which costs four bytes however long the text is and has no width
+        /// a value can outgrow. Set this only for text that is typed rather than chosen and changes
+        /// on most frames, where a fixed slot in the block beats growing the table.
         ///
         /// Rounded up to the nearest width the block has (32, 64, 128, 256). A value that outgrows
         /// it at runtime is left out of the frame rather than shortened -- see
-        /// <c>Lilium.RemoteControl.Frames.FixedText</c> -- so a member whose length has no ceiling
-        /// (a file path, free text with no limit) belongs in the event lane instead.
-        ///
-        /// Saying this on a member that would otherwise travel as an id (see
-        /// <see cref="textTable"/>) is how to ask for the fixed width anyway.
+        /// <c>Lilium.RemoteControl.Frames.FixedText</c> -- so declaring a width is a claim about
+        /// every value this member will ever hold, and getting it wrong loses the value silently.
         /// </summary>
         public int textCapacity { get; set; }
-
-        /// <summary>
-        /// Carries a <c>string</c> member as the id the frame's symbol table gives it, rather than
-        /// as text in the block.
-        ///
-        /// For text drawn from a vocabulary -- a bone path, an owner name, a mesh name, a layer.
-        /// The table holds each distinct value once for the whole recording, so the block costs four
-        /// bytes however long the string is, and there is no width for a value to outgrow.
-        ///
-        /// **A member with a <c>[StringSelector]</c> does this already.** The selector is the
-        /// declaration that the value comes from a set, and both the editor and the frame are
-        /// readers of that one fact; restating it here would be the same knowledge in two places.
-        /// Set this only for a member whose values are bounded without a selector to say so, and set
-        /// <see cref="textCapacity"/> instead to opt a selector member back out.
-        ///
-        /// ⚠ Not for free text. The table is never emptied within a run, so a member whose value
-        /// keeps taking new shapes grows it for as long as the session lasts.
-        /// </summary>
-        public bool textTable { get; set; }
         /// <summary>
         /// Method on this type to call when applying a recording changes this member.
         ///

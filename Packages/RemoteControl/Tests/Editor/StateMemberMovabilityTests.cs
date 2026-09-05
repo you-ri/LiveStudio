@@ -43,7 +43,7 @@ namespace Lilium.RemoteControl.Tests
     /// replay -- and the generated movers assign in both directions with no ceremony. A member that
     /// can only do one half used to reach them anyway, so the refusal arrived as a compile error in
     /// code the author never wrote. It is now a diagnostic (LRC008) and the member stays where it
-    /// was, which is the same shape every other refusal takes (LRC002, LRC005, LRC006).
+    /// was, which is the same shape every other refusal takes (LRC002, LRC006).
     /// </summary>
     [TestFixture]
     public class StateMemberMovabilityTests

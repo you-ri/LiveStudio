@@ -7,6 +7,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using Lilium.RemoteControl.Frames;
 using Lilium.RemoteControl.Frames.Recording;
+using Lilium.RemoteControl.Editor;
 
 namespace Lilium.RemoteControl.Editor.LiveDataViewer
 {
@@ -102,6 +103,12 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         private int _selectedOwnerId = FrameSymbolTable.kNone;
         private long _selectedEventRowId = -1;
         private int _selectedObjectId = FrameSymbolTable.kNone;
+
+        /// <summary>
+        /// Tap version when the state element was picked. While it still matches, no frame has gone
+        /// by since the click, so the value bytes are on their way rather than missing.
+        /// </summary>
+        private long _stateSelectVersion = -1;
 
         /// <summary>
         /// Whether the position reads as a timecode rather than a frame number.
@@ -561,6 +568,16 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                 {
                     _bannerText.Add(_Tr("LD_UNKNOWN_STATE_TYPES", string.Join(", ", unknown)));
                 }
+
+                // Quieter than the one above, and deliberately so: this take is playing. What it
+                // says is which members are being left as the world already has them, because the
+                // recording was made before this build had them.
+                var drift = replayer.player.stateSchemaDrift;
+                if (drift.Count > 0)
+                {
+                    _bannerText.Add(_Tr("LD_STATE_SCHEMA_DRIFT",
+                        string.Join(", ", LiveDataDrift.Describe(drift))));
+                }
             }
 
             var shape = string.Join("|", _bannerText);
@@ -835,6 +852,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _detailKind = DetailKind.StateElement;
             _selectedType = typeName;
             _selectedOwnerId = ownerId;
+            _stateSelectVersion = LiveDataTap.version;
             LiveDataTap.Select(typeName, ownerId);
             _ApplySelection();
         }
@@ -867,7 +885,11 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _RefreshEventRows();
             _DrawDetail();
 
+            // Redraw at the first opportunity rather than at the next tenth of a second: the values
+            // of a newly picked element land one frame later, and waiting out the interval is what
+            // makes that gap long enough to be read as a blank pane.
             _drawnVersion = -1;
+            _nextRedraw = 0;
         }
 
         // --- structure lane -----------------------------------------------
@@ -1264,20 +1286,36 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _WriteDetailRows();
         }
 
+        /// <summary>
+        /// The selected element, drawn in its own shape from the moment it is clicked.
+        ///
+        /// The bytes are a frame behind the click -- the tap copies them the next time a frame goes
+        /// by -- so the pane cannot be complete on the click itself. It is drawn anyway: the same
+        /// rows, with the values left blank until they arrive. Reporting the gap instead put a
+        /// notice in the pane that was never true, visible for exactly one redraw, which read as the
+        /// window flashing something else before settling on the answer.
+        /// </summary>
         private void _BuildStateDetail()
         {
             var snapshot = LiveDataTap.snapshot;
-            _detailTitle.text = $"{_ShortTypeName(_selectedType)}  ({snapshot.selectedValueLength} B)";
+            var row = _FindType(snapshot, _selectedType);
 
-            if (snapshot.selectedType != _selectedType ||
-                snapshot.selectedOwnerId != _selectedOwnerId ||
-                snapshot.selectedValueLength == 0)
+            // Sized from the block rather than from the copied bytes, which still belong to the
+            // previous selection while the copy is pending.
+            var size = row != null ? row.elementSize : snapshot.selectedValueLength;
+            _detailTitle.text = $"{_ShortTypeName(_selectedType)}  ({size} B)";
+
+            var hasValue = snapshot.selectedType == _selectedType &&
+                snapshot.selectedOwnerId == _selectedOwnerId &&
+                snapshot.selectedValueLength != 0;
+
+            // Once a frame has gone by without carrying it, the absence is real and worth saying.
+            if (!hasValue && LiveDataTap.version != _stateSelectVersion)
             {
                 _rows.Add(new LiveDataValueRow(string.Empty, _Tr("LDV_ELEMENT_NOT_IN_FRAME")));
                 return;
             }
 
-            var row = _FindType(snapshot, _selectedType);
             var elementType = row?.elementType;
 
             // A reading provided by whoever owns the type comes first: it is the only thing that can
@@ -1285,7 +1323,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             var presenter = LiveDataValuePresenters.Find(elementType);
             if (presenter != null)
             {
-                presenter(snapshot.selectedValue, snapshot.selectedValueLength, _rows);
+                if (hasValue) presenter(snapshot.selectedValue, snapshot.selectedValueLength, _rows);
             }
             else
             {
@@ -1295,9 +1333,11 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                     for (int i = 0; i < layout.Count; i++)
                     {
                         var field = layout[i];
-                        var text = LiveDataValueLayout.Read(
-                            snapshot.selectedValue, snapshot.selectedValueLength, field,
-                            snapshot.symbols);
+                        var text = hasValue
+                            ? LiveDataValueLayout.Read(
+                                snapshot.selectedValue, snapshot.selectedValueLength, field,
+                                snapshot.symbols)
+                            : string.Empty;
 
                         // Text says how it travels. The two forms fail differently -- a width has a
                         // ceiling and a table has none -- and a blank row means different things

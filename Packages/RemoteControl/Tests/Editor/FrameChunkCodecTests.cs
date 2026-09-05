@@ -28,10 +28,10 @@ namespace Lilium.RemoteControl.Tests
         /// <summary>A state payload of <paramref name="count"/> elements, filled by the caller.</summary>
         private static byte[] State(int typeId, int elementSize, int count, Func<int, int, byte> value)
         {
-            // type, element width, element count, layout hash -- the shape a state entry names
-            // before its elements. The hash is left zero: what is under test is the transposition,
-            // and the codec copies the header through without reading past the shape.
-            const int header = 4 + 4 + 4 + 8;
+            // type, element width, element count, description -- the shape a state entry names
+            // before its elements. The description id is left zero: what is under test is the
+            // transposition, and the codec copies the header through without reading past the shape.
+            const int header = 4 + 4 + 4 + 4;
 
             var payload = new byte[header + elementSize * count];
             Buffer.BlockCopy(BitConverter.GetBytes(typeId), 0, payload, 0, 4);
@@ -189,7 +189,7 @@ namespace Lilium.RemoteControl.Tests
                                + (Next() % 64) * 0.0000001f;
                 }
 
-                const int header = 4 + 4 + 4 + 8;
+                const int header = 4 + 4 + 4 + 4;
 
                 var payload = new byte[header + kFloats * 4];
                 Buffer.BlockCopy(BitConverter.GetBytes(3), 0, payload, 0, 4);

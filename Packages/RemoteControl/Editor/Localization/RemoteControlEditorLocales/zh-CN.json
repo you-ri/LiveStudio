@@ -1,10 +1,10 @@
 {
     "LD_POSITION_TOOLTIP": "点击可在帧号与时间码之间切换",
     "LD_UNKNOWN_STATE_TYPES": "此录制携带的状态中，有一部分没有接收方: {0}  → 这部分不会被回放。",
+    "LD_STATE_SCHEMA_DRIFT": "此录制是在部分类型发生变化之前制作的: {0}  → 这些成员将保持当前的值。",
     "LD_INCOMPLETE": "(未完成)",
     "LD_WAITING": "待机中",
     "LD_NONE": "(无)",
-
     "LDS_RECORD": "● 录制",
     "LDS_STOP": "■ 停止",
     "LDS_PLAY": "▶ 播放",
@@ -35,7 +35,6 @@
     "LDS_BANNER_PLAY_MODE_ONLY": "录制与播放仅在运行模式下有效 (帧闸由播放器循环驱动)。",
     "LDS_BANNER_NO_CONTROLLER": "场景中没有 FrameRecorderController。请将其添加到用于录制和播放的应用 GameObject 上。",
     "LDS_BANNER_NO_INDEX": "此录制没有索引 (录制可能没有正常结束)。可以从头播放，但无法拖动定位。",
-
     "LDV_DISCONNECTED": "未连接",
     "LDV_STATE_SUMMARY": "{0} 个类型 / {1} 个元素 / 每帧 {2}",
     "LDV_EMPTY_FILTERED": "没有可显示的项目。{0} 个空类型已被筛选隐藏。",
@@ -68,7 +67,7 @@
     "LDV_TEXT_NULL": "(无)",
     "LDV_TEXT_TOOLONG": "(过长，未记录)",
     "LDV_TEXT_UNSET": "(未写入)",
-    "LDV_TEXT_UNRESOLVED": "(符号表中不存在)",
-    "LDV_TEXT_STORAGE_TABLE": "(符号表)",
+    "LDV_TEXT_UNRESOLVED": "(表格中不存在)",
+    "LDV_TEXT_STORAGE_TABLE": "(表格)",
     "LDV_TEXT_STORAGE_FIXED": "(定长 {0}B)"
 }

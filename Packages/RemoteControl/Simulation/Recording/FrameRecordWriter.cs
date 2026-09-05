@@ -259,7 +259,15 @@ namespace Lilium.RemoteControl.Frames.Recording
             {
                 if (blocks[i].count == 0) continue;
 
-                symbols.Intern(blocks[i].elementType.FullName);
+                symbols.Intern(blocks[i].typeName);
+
+                // The description of the block goes into the same table as its name, and for the
+                // same reasons the table exists: it only ever grows, it is written into the stream
+                // as it grows so a take a crash cut short still resolves what it reached, and the
+                // tail carries it in full so a seek can adopt it whole. A table of its own beside
+                // this one would have to reproduce all three to say the same thing.
+                var schema = StateSchemaRegistry.Find(blocks[i].typeName);
+                if (schema != null) symbols.Intern(schema.ToText());
             }
 
             _WriteSymbolsSince(symbols);
@@ -269,20 +277,24 @@ namespace Lilium.RemoteControl.Frames.Recording
                 var block = blocks[i];
                 if (block.count == 0) continue;
 
-                var typeId = symbols.Intern(block.elementType.FullName);
+                var typeId = symbols.Intern(block.typeName);
                 var bytes = block.AsBytes();
 
-                // The width and the layout, because the width alone was never enough: two builds
-                // that disagree about the order of two float members produce elements of the same
-                // size, and reading one as the other puts each value in the wrong member without
-                // anything noticing. Zero when nothing declared a layout for this type.
-                var layoutHash = StateLayoutRegistry.HashFor(block.elementType.FullName);
+                // What the block holds, member by member. The width beside it is not redundant: it
+                // is what lets a reader step over the entry, and what the chunk codec transposes by,
+                // neither of which can wait for a description that may have been named in an
+                // earlier chunk. kNone when nothing described this type -- a producer that
+                // hand-registers a struct still travels on width alone, as it always did.
+                var schema = StateSchemaRegistry.Find(block.typeName);
+                var schemaId = schema == null
+                    ? FrameSymbolTable.kNone
+                    : symbols.Intern(schema.ToText());
 
-                _BeginEntry(FrameEntryKind.State, 4 + 4 + 4 + 8 + bytes.Length);
+                _BeginEntry(FrameEntryKind.State, 4 + 4 + 4 + 4 + bytes.Length);
                 _writer.Write(typeId);
                 _writer.Write(block.elementSize);
                 _writer.Write(block.count);
-                _writer.Write(layoutHash);
+                _writer.Write(schemaId);
                 _writer.Write(bytes);
             }
         }

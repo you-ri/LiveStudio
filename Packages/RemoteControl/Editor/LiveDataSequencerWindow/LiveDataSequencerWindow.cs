@@ -8,6 +8,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using Lilium.RemoteControl.Frames;
 using Lilium.RemoteControl.Frames.Recording;
+using Lilium.RemoteControl.Editor;
 
 namespace Lilium.RemoteControl.Editor.LiveDataSequencer
 {
@@ -621,6 +622,16 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
                 if (unknown.Count > 0)
                 {
                     _bannerText.Add("#" + _Tr("LD_UNKNOWN_STATE_TYPES", string.Join(", ", unknown)));
+                }
+
+                // "!" rather than "#": the take is playing. This says which members it is not
+                // speaking for, so a value that stops moving during a replay reads as a member the
+                // recording predates rather than as a bug.
+                var drift = replayer.player.stateSchemaDrift;
+                if (drift.Count > 0)
+                {
+                    _bannerText.Add("!" + _Tr("LD_STATE_SCHEMA_DRIFT",
+                        string.Join(", ", LiveDataDrift.Describe(drift))));
                 }
             }
 

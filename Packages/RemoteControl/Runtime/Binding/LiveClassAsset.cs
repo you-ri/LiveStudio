@@ -120,7 +120,7 @@ namespace Lilium.RemoteControl
 
                 if (values == 0) return 0;
 
-                return Frames.DeclaredStateBlock.StrideFor(Frames.DeclaredStateBridge.kLayoutSize + values);
+                return Frames.DeclaredStateBlock.StrideFor(values);
             }
 
             /// <summary>

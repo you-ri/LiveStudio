@@ -25,6 +25,16 @@ namespace Lilium.RemoteControl.Frames.Recording
         private readonly List<EventRecord> _events = new List<EventRecord>();
         private readonly HashSet<string> _reportedUnknownTypes = new HashSet<string>();
 
+        // Descriptions this recording carries, by the id it names them with, and the plan for
+        // reading each one. Both are cleared by Rewind, because the ids belong to the mapping table
+        // and that is reset with it.
+        private readonly Dictionary<int, StateSchema> _schemaById = new Dictionary<int, StateSchema>();
+
+        private readonly Dictionary<int, (StateBlock block, StateReadPlan plan)> _planBySchemaId =
+            new Dictionary<int, (StateBlock, StateReadPlan)>();
+
+        private readonly Dictionary<string, StateReadPlan> _drift = new Dictionary<string, StateReadPlan>();
+
         private long _frameNumber = -1;
         private bool _atEnd;
 
@@ -63,6 +73,13 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// the replay is missing part of the world rather than reproducing it.
         /// </summary>
         public IReadOnlyCollection<string> unknownStateTypes => _reportedUnknownTypes;
+
+        /// <summary>
+        /// Types the recording lays out differently than this build does, and how each one was
+        /// bridged. Not empty means part of the world is being left as it stands rather than being
+        /// put back -- which is the take still playing, not the take failing.
+        /// </summary>
+        public IReadOnlyDictionary<string, StateReadPlan> stateSchemaDrift => _drift;
 
         /// <summary>True when the recording carries a tail index and can be jumped around in.</summary>
         public bool canSeek => _reader.hasIndex;
@@ -221,6 +238,8 @@ namespace Lilium.RemoteControl.Frames.Recording
         {
             _reader.Rewind();
             symbols.Reset();
+            _schemaById.Clear();
+            _planBySchemaId.Clear();
             _events.Clear();
             structure.Reset();
             state.Reset();
@@ -353,39 +372,125 @@ namespace Lilium.RemoteControl.Frames.Recording
                 return;
             }
 
-            if (block.elementSize != elementSize)
+            // What the recording says this block holds, member by member. Absent for a producer
+            // that publishes a struct by hand, where the width is still the whole of the check.
+            var schemaId = BitConverter.ToInt32(payload.Slice(12, 4));
+            var recorded = schemaId == FrameSymbolTable.kNone
+                ? null
+                : _SchemaOf(schemaId);
+            var mine = StateSchemaRegistry.Find(typeName);
+
+            if (recorded == null || mine == null)
             {
-                // The layout moved, which means the build moved. Refused rather than read as
-                // garbage: the bytes would land in the wrong fields and look like a value.
+                if (block.elementSize != elementSize)
+                {
+                    // Neither side described itself, so the width is all there is to go on and it
+                    // does not agree. Refused rather than read as garbage: the bytes would land in
+                    // the wrong fields and look like values.
+                    if (_reportedUnknownTypes.Add(typeName))
+                    {
+                        Debug.LogError(
+                            $"[RemoteControl] Recording stores '{typeName}' at {elementSize} bytes but this " +
+                            $"build uses {block.elementSize}, and neither says what it holds. " +
+                            "The recording is from a different build.");
+                    }
+
+                    return;
+                }
+
+                block.ReadFrom(payload.Slice(kStateHeaderSize), count);
+                return;
+            }
+
+            var plan = _PlanFor(schemaId, block, recorded, mine, typeName);
+            if (plan == null)
+            {
                 if (_reportedUnknownTypes.Add(typeName))
                 {
                     Debug.LogError(
-                        $"[RemoteControl] Recording stores '{typeName}' at {elementSize} bytes but this build " +
-                        $"uses {block.elementSize}. The recording is from a different build.");
+                        $"[RemoteControl] '{typeName}' carries more than {StateReadPlan.kMaxMaskedMembers} " +
+                        "state-lane members, which is more than can be tracked member by member. " +
+                        "A recording from a different build cannot be read for this type.");
                 }
 
                 return;
             }
 
-            // The case the width cannot see. Two builds that disagree about the order of two
-            // members of the same size produce elements that measure alike, and reading one as the
-            // other lands each value in the wrong member -- which looks like values, not like an
-            // error, and is the one failure worth refusing loudly.
-            var layoutHash = BitConverter.ToUInt64(payload.Slice(12, 8));
-            if (!StateLayoutRegistry.Matches(typeName, layoutHash))
-            {
-                if (_reportedUnknownTypes.Add(typeName))
-                {
-                    Debug.LogError(
-                        $"[RemoteControl] Recording stores '{typeName}' with a different layout than this " +
-                        "build has. The elements are the same width, so reading them would put each value " +
-                        "in the wrong member. The recording is from a different build.");
-                }
+            block.ReadFrom(payload.Slice(kStateHeaderSize), count, plan);
+        }
 
-                return;
+        /// <summary>
+        /// Bytes a state entry spends before its elements: type, element width, element count,
+        /// description. ⚠ Matches what the writer lays down and what the chunk codec steps over.
+        /// </summary>
+        private const int kStateHeaderSize = 4 + 4 + 4 + 4;
+
+        /// <summary>
+        /// The description behind a symbol id, parsed once.
+        ///
+        /// Cached because the id repeats on every state entry of every frame, and parsing it there
+        /// would put a string split on the path that runs sixty times a second.
+        /// </summary>
+        private StateSchema _SchemaOf(int schemaId)
+        {
+            if (_schemaById.TryGetValue(schemaId, out var found)) return found;
+
+            var parsed = StateSchema.TryParse(Resolve(schemaId));
+            _schemaById[schemaId] = parsed;
+            return parsed;
+        }
+
+        /// <summary>
+        /// How to read a recorded element of this description as one of ours, worked out once.
+        ///
+        /// Keyed by the recorded description rather than by the type, because a recording can carry
+        /// two of them for the same type -- an asset whose declaration moved mid-take -- and a plan
+        /// built for one puts values in the wrong place when run against the other. The block is
+        /// held alongside for the same reason from the other side: a declared block is rebuilt when
+        /// its declaration is, and a plan aimed at the old one is no longer aimed at anything.
+        /// </summary>
+        private StateReadPlan _PlanFor(int schemaId, StateBlock block, StateSchema recorded,
+            StateSchema mine, string typeName)
+        {
+            if (_planBySchemaId.TryGetValue(schemaId, out var cached)
+                && ReferenceEquals(cached.block, block))
+            {
+                return cached.plan;
             }
 
-            block.ReadFrom(payload.Slice(20), count);
+            var plan = StateReadPlan.Build(recorded, mine);
+            _planBySchemaId[schemaId] = (block, plan);
+
+            if (plan != null && !plan.isIdentical) _ReportDrift(typeName, plan);
+
+            return plan;
+        }
+
+        /// <summary>
+        /// Says once, per type, which members did not line up.
+        ///
+        /// A warning rather than an error, because the take is being read: what it carries is going
+        /// back, and what it does not carry is being left alone. Said at all because "left alone" is
+        /// invisible from the outside -- a member that stopped moving during replay looks like a
+        /// member nobody wrote, and this is the difference.
+        /// </summary>
+        private void _ReportDrift(string typeName, StateReadPlan plan)
+        {
+            if (_drift.ContainsKey(typeName)) return;
+
+            _drift.Add(typeName, plan);
+
+            var dropped = plan.droppedMembers.Length == 0
+                ? "nothing"
+                : string.Join(", ", plan.droppedMembers);
+            var unwritten = plan.unwrittenMembers.Length == 0
+                ? "nothing"
+                : string.Join(", ", plan.unwrittenMembers);
+
+            Debug.LogWarning(
+                $"[RemoteControl] '{typeName}' is laid out differently than the recording has it. " +
+                $"Carried across: {plan.runs.Length} run(s). In the recording but not here: {dropped}. " +
+                $"Here but not in the recording, so left as the object already has them: {unwritten}.");
         }
 
         private void _ApplyEvent(ReadOnlySpan<byte> payload)

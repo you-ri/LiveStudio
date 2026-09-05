@@ -1,10 +1,10 @@
 {
     "LD_POSITION_TOOLTIP": "クリックでフレーム番号とタイムコードを切り替えます",
     "LD_UNKNOWN_STATE_TYPES": "この収録が運んでいる状態のうち、受け皿が無いものがあります: {0}  → その分は再生されません。",
+    "LD_STATE_SCHEMA_DRIFT": "いくつかの型が変わる前に収録されています: {0}  → それらのメンバーは現在の値のままになります。",
     "LD_INCOMPLETE": "(未完了)",
     "LD_WAITING": "待機中",
     "LD_NONE": "(なし)",
-
     "LDS_RECORD": "● 収録",
     "LDS_STOP": "■ 停止",
     "LDS_PLAY": "▶ 再生",
@@ -35,7 +35,6 @@
     "LDS_BANNER_PLAY_MODE_ONLY": "収録と再生は再生モード中のみ動作します (ゲートはプレイヤーループから回ります)。",
     "LDS_BANNER_NO_CONTROLLER": "シーンに FrameRecorderController がありません。収録・再生するアプリの GameObject に追加してください。",
     "LDS_BANNER_NO_INDEX": "この収録には索引がありません (収録が正常に終了していない可能性があります)。先頭から再生はできますが、スクラブはできません。",
-
     "LDV_DISCONNECTED": "未接続",
     "LDV_STATE_SUMMARY": "{0} 型 / {1} 要素 / フレームあたり {2}",
     "LDV_EMPTY_FILTERED": "表示できる項目がありません。空の型 {0} 件がフィルターで隠れています。",
@@ -68,7 +67,7 @@
     "LDV_TEXT_NULL": "(なし)",
     "LDV_TEXT_TOOLONG": "(長すぎて記録されていません)",
     "LDV_TEXT_UNSET": "(未書き込み)",
-    "LDV_TEXT_UNRESOLVED": "(記号表にありません)",
-    "LDV_TEXT_STORAGE_TABLE": "(記号表)",
-    "LDV_TEXT_STORAGE_FIXED": "(固定長 {0}B)"
+    "LDV_TEXT_UNRESOLVED": "(テーブルにありません)",
+    "LDV_TEXT_STORAGE_TABLE": "(テーブル)",
+    "LDV_TEXT_STORAGE_FIXED": "(固定 {0}B)"
 }

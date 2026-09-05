@@ -60,6 +60,8 @@ namespace Lilium.RemoteControl.Frames
 
         public override Type elementType => _ownerType;
 
+        public override string typeName => _ownerType.FullName;
+
         public override int count => _count;
 
         public override int elementSize => _stride;
@@ -68,6 +70,13 @@ namespace Lilium.RemoteControl.Frames
 
         /// <summary>Bytes of declared state one object carries, excluding the metadata.</summary>
         public int payloadSize => _payloadSize;
+
+        /// <summary>
+        /// The declaration this block was made for, as a recording interns it, or null when nothing
+        /// has said. Told apart from the width because two declarations of the same size lay their
+        /// members out differently. See <see cref="StateBlockSet.GetOrCreateDeclared"/>.
+        /// </summary>
+        public string schemaSignature { get; set; }
 
         /// <summary>
         /// The payload of one element, to read or write in place.
@@ -169,11 +178,37 @@ namespace Lilium.RemoteControl.Frames
 
             _EnsureCapacity(elementCount);
             _count = elementCount;
+            appliedMemberMask = StateReadPlan.kAllMembers;
+            readThroughPlan = false;
 
             if (elementCount == 0) return;
 
             bytes.Slice(0, elementCount * _stride)
                 .CopyTo(new Span<byte>(_storage.GetUnsafePtr(), elementCount * _stride));
+        }
+
+        public override void ReadFrom(ReadOnlySpan<byte> bytes, int elementCount, StateReadPlan plan)
+        {
+            if (plan == null || plan.isIdentical)
+            {
+                ReadFrom(bytes, elementCount);
+                return;
+            }
+
+            if (elementCount < 0 || (long)elementCount * plan.sourceStride > bytes.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(elementCount),
+                    $"[RemoteControl] {elementCount} elements of {plan.sourceStride} bytes do not fit in {bytes.Length}.");
+            }
+
+            _EnsureCapacity(elementCount);
+            _count = elementCount;
+            appliedMemberMask = plan.appliedMemberMask;
+            readThroughPlan = true;
+
+            if (elementCount == 0) return;
+
+            RunPlan(bytes, elementCount, plan, (byte*)_storage.GetUnsafePtr(), _stride);
         }
 
         public override int OwnerIdAt(int index) => *(int*)_ElementAt(index);

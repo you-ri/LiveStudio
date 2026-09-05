@@ -122,47 +122,165 @@ namespace Lilium.RemoteControl.Tests
         }
 
         /// <summary>
-        /// The failure a width check cannot see.
+        /// The whole point of the mask, seen from the object.
         ///
-        /// Two builds that disagree about the order of two members of the same size produce
-        /// elements that measure alike, so the width check passes and every value lands in the
-        /// wrong member -- which looks like values rather than like an error. The declared path has
-        /// hashed its layout since it was built; the generated path had only the width until now.
+        /// A take made before a member existed says nothing about it, and the bytes in its place are
+        /// zero. Writing that zero is not "leaving it at its default" -- a struct default is zero,
+        /// and zero is a real value: it empties a name, puts a field of view at nothing, turns an
+        /// override whose "none" is minus one into an override with zero. So the members the take
+        /// did not carry are not written at all, and what the object already holds survives the
+        /// replay.
         /// </summary>
         [Test]
-        public void StateWrittenWithADifferentLayout_IsRefusedEvenAtTheSameWidth()
+        public void AMemberAddedAfterTheTake_KeepsWhatTheObjectAlreadyHas()
         {
-            StateLayoutRegistry.Declare(typeof(Beam).FullName, 0xAAAA_BBBB_CCCC_DDDDUL);
+            var name = typeof(Lantern).FullName;
+            var mine = StateSchemaRegistry.Find(name);
+            Assert.IsNotNull(mine, "the generator declared no description, so there is nothing to test");
+
+            byte[] bytes;
+            try
+            {
+                // The recording is made by a build that had only the first member.
+                StateSchemaRegistry.Declare(name,
+                    new StateSchema(mine.metaSize, mine.stride, new[] { mine.members[0] }));
+
+                bytes = Record(1, (ref Frame frame) =>
+                {
+                    ref var element = ref frame.state
+                        .GetOrCreate<Lantern.LiveStateBlock>(name).GetOrCreate(7);
+                    element.value.intensity = 3f;
+                });
+            }
+            finally
+            {
+                StateSchemaRegistry.Declare(name, mine);
+            }
+
+            LogAssert.Expect(LogType.Warning, new Regex("laid out differently"));
+
+            using var player = new FrameRecordPlayer(new MemoryStream(bytes));
+            player.state.GetOrCreate<Lantern.LiveStateBlock>(name);
+
+            Assert.IsTrue(player.Advance());
+
+            var lantern = new Lantern { intensity = 0f, range = 12f };
+            var bridge = StateBridgeRegistry.Find(typeof(Lantern));
+            Assert.IsNotNull(bridge);
+            Assert.IsTrue(bridge.Apply(lantern, 7, player.state, player.symbols));
+
+            Assert.AreEqual(3f, lantern.intensity, "the member the take carried was not put back");
+            Assert.AreEqual(12f, lantern.range,
+                "a member the take never carried was written with the zero standing in for it");
+        }
+
+        /// <summary>Two members of the same width, which is the case a width check cannot see.</summary>
+        private struct Lamp
+        {
+            public float intensity;
+            public float range;
+        }
+
+        private static StateSchema LampSchema(params StateSchemaMember[] members)
+            => new StateSchema(16, 16 + 8, members);
+
+        private static StateSchemaMember Member(string name, int offset)
+            => new StateSchemaMember(name, typeof(float).FullName, offset, 4);
+
+        /// <summary>
+        /// A member that moved is followed by its name, not by where it used to sit.
+        ///
+        /// This is the failure a width check cannot see: two builds that disagree about the order of
+        /// two members of the same size produce elements that measure alike, so the width passes and
+        /// every value lands in the wrong member -- which looks like values rather than like an
+        /// error. It used to be refused, which cost the whole type its state. Described member by
+        /// member, it does not have to be either.
+        /// </summary>
+        [Test]
+        public void AMemberThatMoved_IsReadBackByItsName()
+        {
+            StateSchemaRegistry.Declare(typeof(Lamp).FullName,
+                LampSchema(Member("intensity", 0), Member("range", 4)));
 
             byte[] bytes;
             try
             {
                 bytes = Record(1, (ref Frame frame) =>
-                    frame.state.GetOrCreate<Beam>().GetOrCreate(1).value.intensity = 5f);
+                {
+                    ref var element = ref frame.state.GetOrCreate<Lamp>().GetOrCreate(1);
+                    element.value.intensity = 5f;
+                    element.value.range = 9f;
+                });
             }
             finally
             {
-                StateLayoutRegistry.Clear();
+                StateSchemaRegistry.Remove(typeof(Lamp).FullName);
             }
 
-            // The same width, a different arrangement: what a member swap between two builds looks
-            // like from here.
-            StateLayoutRegistry.Declare(typeof(Beam).FullName, 0x1111_2222_3333_4444UL);
+            // The same two members, the other way round: what a swap between two builds looks like.
+            // The struct itself has not moved, so what lands in the field at offset zero is the
+            // member this build calls "range" -- which is the recorded 9, proving the copy followed
+            // the name rather than the position.
+            StateSchemaRegistry.Declare(typeof(Lamp).FullName,
+                LampSchema(Member("range", 0), Member("intensity", 4)));
 
             try
             {
-                LogAssert.Expect(LogType.Error, new Regex("different layout"));
-
                 using var player = new FrameRecordPlayer(new MemoryStream(bytes));
-                var block = player.state.GetOrCreate<Beam>();
+                var block = player.state.GetOrCreate<Lamp>();
 
                 Assert.IsTrue(player.Advance());
-                Assert.AreEqual(0f, block.count == 0 ? 0f : block[0].value.intensity,
-                    "nothing was read into the block");
+                Assert.AreEqual(1, block.count, "the type was refused instead of being rearranged");
+                Assert.AreEqual(9f, block[0].value.intensity, "the member at offset zero is not the one named there");
+                Assert.AreEqual(5f, block[0].value.range);
             }
             finally
             {
-                StateLayoutRegistry.Clear();
+                StateSchemaRegistry.Remove(typeof(Lamp).FullName);
+            }
+        }
+
+        /// <summary>
+        /// A member added after the take was made is left out of the mask, so nothing writes it.
+        ///
+        /// The bytes in its place are zero, and zero is a value like any other -- it would empty a
+        /// name and put a field of view at nothing. What the object already holds is the only
+        /// honest answer, and saying so is the mask's whole job.
+        /// </summary>
+        [Test]
+        public void AMemberTheRecordingNeverCarried_IsLeftOutOfTheMask()
+        {
+            StateSchemaRegistry.Declare(typeof(Lamp).FullName, LampSchema(Member("intensity", 0)));
+
+            byte[] bytes;
+            try
+            {
+                bytes = Record(1, (ref Frame frame) =>
+                    frame.state.GetOrCreate<Lamp>().GetOrCreate(1).value.intensity = 5f);
+            }
+            finally
+            {
+                StateSchemaRegistry.Remove(typeof(Lamp).FullName);
+            }
+
+            StateSchemaRegistry.Declare(typeof(Lamp).FullName,
+                LampSchema(Member("intensity", 0), Member("range", 4)));
+
+            try
+            {
+                LogAssert.Expect(LogType.Warning, new Regex("laid out differently"));
+
+                using var player = new FrameRecordPlayer(new MemoryStream(bytes));
+                var block = player.state.GetOrCreate<Lamp>();
+
+                Assert.IsTrue(player.Advance());
+                Assert.AreEqual(5f, block[0].value.intensity, "the member both builds have was not put back");
+                Assert.AreEqual(0b01UL, block.appliedMemberMask,
+                    "the member the recording never carried is inside the mask, so it would be written");
+            }
+            finally
+            {
+                StateSchemaRegistry.Remove(typeof(Lamp).FullName);
             }
         }
 

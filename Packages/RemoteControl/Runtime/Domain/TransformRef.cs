@@ -47,10 +47,9 @@ namespace Lilium.RemoteControl
         // within it, and Resolve then fell back to the root -- with the local transform put
         // back exactly, which reads as the object jumping to the wrong place.
         //
-        // textTable rather than a selector: the list is offered by transformName below, which
-        // is a view over this field rather than this field itself, so nothing on the member
-        // says it. A path has no ceiling worth guessing at, which is the other reason.
-        [SerializeField, LiveField(lane = FrameLane.State, textTable = true), Hide]
+        // No width: a path has no ceiling worth guessing at, so it travels as a symbol id like
+        // any other state-lane string that does not ask for a slot.
+        [SerializeField, LiveField(lane = FrameLane.State), Hide]
         [FormerlyNamedAs("transformPath")]
         string _transformPath;
 

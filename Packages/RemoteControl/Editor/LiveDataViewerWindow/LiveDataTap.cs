@@ -173,7 +173,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                 var row = _snapshot.GetOrAddType(i);
 
                 row.elementType = block.elementType;
-                row.typeName = block.elementType?.FullName ?? "?";
+                row.typeName = block.typeName ?? "?";
                 row.elementSize = block.elementSize;
                 row.elements.Clear();
 

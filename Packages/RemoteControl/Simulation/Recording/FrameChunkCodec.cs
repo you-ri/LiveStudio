@@ -48,10 +48,14 @@ namespace Lilium.RemoteControl.Frames.Recording
 
         /// <summary>
         /// Bytes a state payload spends naming its shape before the elements: type, element width,
-        /// element count, layout hash. Copied through verbatim -- only the elements are transposed,
+        /// element count, description. Copied through verbatim -- only the elements are transposed,
         /// and the header is the same bytes in every frame of a group, which deflate crushes.
+        ///
+        /// ⚠ The element width has to stay in this header even though the description also implies
+        /// it. This runs over one chunk with nothing else in hand, and the description that would
+        /// give the width may have been named in a chunk that came before.
         /// </summary>
-        private const int kStateHeader = 4 + 4 + 4 + 8;
+        private const int kStateHeader = 4 + 4 + 4 + 4;
 
         // Reused across calls. A chunk is built about once a second, but it is built on the frame
         // thread, so these are buffers to refill rather than allocations to make.

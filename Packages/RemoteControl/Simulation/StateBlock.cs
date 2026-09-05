@@ -55,6 +55,17 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>Element type this block carries.</summary>
         public abstract Type elementType { get; }
 
+        /// <summary>
+        /// The name a recording calls this block by: the exposed type whose state it holds.
+        ///
+        /// The owner's name rather than the block's own. A block is an implementation detail -- a
+        /// struct written by the generator inside its owner or beside it, or a stride read from a
+        /// declaration -- and each of those spelled the same state differently, so a take made from
+        /// a <c>partial</c> owner could not be read by a build where that type was not partial. The
+        /// owner has one name in every case, and it is the name an author would recognise.
+        /// </summary>
+        public abstract string typeName { get; }
+
         /// <summary>Number of elements currently held.</summary>
         public abstract int count { get; }
 
@@ -85,6 +96,78 @@ namespace Lilium.RemoteControl.Frames
         /// state at that frame, not the state at that frame layered over whatever came before.
         /// </summary>
         public abstract void ReadFrom(ReadOnlySpan<byte> bytes, int elementCount);
+
+        /// <summary>
+        /// Reads elements a build laid out differently, member by member.
+        ///
+        /// The plan says which members the two builds agree on and where each one moved to. What it
+        /// cannot say is what a member the recording never carried should be -- so those are left
+        /// out of <see cref="appliedMemberMask"/> instead of being invented here.
+        ///
+        /// A null or identical plan is the ordinary read, so a caller does not have to ask which
+        /// case it is in.
+        /// </summary>
+        public abstract void ReadFrom(ReadOnlySpan<byte> bytes, int elementCount, StateReadPlan plan);
+
+        /// <summary>
+        /// Which members of this block were actually spoken for by whatever last filled it.
+        ///
+        /// Every member, unless a recording made from a different build filled it. Read by the
+        /// bridge on the way back to the object, so a member the recording did not carry keeps
+        /// whatever the object already had rather than being written with the zero sitting in its
+        /// place.
+        /// </summary>
+        public ulong appliedMemberMask { get; protected set; } = StateReadPlan.kAllMembers;
+
+        /// <summary>
+        /// Whether what last filled this block described itself differently than this build does.
+        ///
+        /// The declared path keeps a hash of its layout at the head of every element and refuses an
+        /// element that does not match it. That check is right for bytes copied verbatim and wrong
+        /// for bytes a plan rearranged, where disagreeing about the layout is the premise rather
+        /// than the fault. ⚠ Two mechanisms saying the same thing, which is one more than there
+        /// should be -- the hash is on its way out, and until it goes this is what keeps it from
+        /// refusing the reads it was never asked about.
+        /// </summary>
+        public bool readThroughPlan { get; protected set; }
+
+        /// <summary>
+        /// Runs a plan into raw element storage. Shared by the typed and the declared block, which
+        /// differ in how they hold their elements and not at all in how a plan is run.
+        /// </summary>
+        protected static unsafe void RunPlan(ReadOnlySpan<byte> bytes, int elementCount,
+            StateReadPlan plan, byte* destination, int destinationStride)
+        {
+            fixed (byte* source = bytes)
+            {
+                for (int i = 0; i < elementCount; i++)
+                {
+                    var from = source + (long)i * plan.sourceStride;
+                    var to = destination + (long)i * destinationStride;
+
+                    // Who and when, which every element carries in the same shape whatever its
+                    // value looks like.
+                    UnsafeUtility.MemCpy(to, from, Math.Min(plan.sourceMetaSize, plan.destinationMetaSize));
+
+                    // Cleared rather than left standing. Nothing reads these bytes on the way to the
+                    // object -- the mask stops that -- but the block is also what the viewer shows
+                    // and what a comparison walks, and there the honest answer for a member the take
+                    // never carried is nothing, not the value the element at this index held for a
+                    // different owner one frame ago.
+                    UnsafeUtility.MemClear(to + plan.destinationMetaSize, plan.destinationPayloadSize);
+
+                    var runs = plan.runs;
+                    for (int r = 0; r < runs.Length; r++)
+                    {
+                        var run = runs[r];
+                        UnsafeUtility.MemCpy(
+                            to + plan.destinationMetaSize + run.destinationOffset,
+                            from + plan.sourceMetaSize + run.sourceOffset,
+                            run.length);
+                    }
+                }
+            }
+        }
 
         /// <summary>Owner of the element at an index, so two runs can be lined up by owner.</summary>
         public abstract int OwnerIdAt(int index);
@@ -146,8 +229,21 @@ namespace Lilium.RemoteControl.Frames
     {
         private NativeArray<StateElement<T>> _elements;
         private int _count;
+        private readonly string _typeName;
+
+        /// <param name="typeName">
+        /// The name a recording calls this block by -- the owner's, where a bridge made the block
+        /// for one. Null for a struct a producer publishes by hand, which has no owner and so is
+        /// named after itself.
+        /// </param>
+        public StateBlock(string typeName = null)
+        {
+            _typeName = string.IsNullOrEmpty(typeName) ? typeof(T).FullName : typeName;
+        }
 
         public override Type elementType => typeof(T);
+
+        public override string typeName => _typeName;
 
         public override int count => _count;
 
@@ -252,11 +348,37 @@ namespace Lilium.RemoteControl.Frames
 
             _EnsureCapacity(elementCount);
             _count = elementCount;
+            appliedMemberMask = StateReadPlan.kAllMembers;
+            readThroughPlan = false;
 
             if (elementCount == 0) return;
 
             source.Slice(0, elementCount)
                 .CopyTo(new Span<StateElement<T>>(_elements.GetUnsafePtr(), elementCount));
+        }
+
+        public override void ReadFrom(ReadOnlySpan<byte> bytes, int elementCount, StateReadPlan plan)
+        {
+            if (plan == null || plan.isIdentical)
+            {
+                ReadFrom(bytes, elementCount);
+                return;
+            }
+
+            if (elementCount < 0 || (long)elementCount * plan.sourceStride > bytes.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(elementCount),
+                    $"[RemoteControl] {elementCount} elements of {plan.sourceStride} bytes do not fit in {bytes.Length}.");
+            }
+
+            _EnsureCapacity(elementCount);
+            _count = elementCount;
+            appliedMemberMask = plan.appliedMemberMask;
+            readThroughPlan = true;
+
+            if (elementCount == 0) return;
+
+            RunPlan(bytes, elementCount, plan, (byte*)_elements.GetUnsafePtr(), sizeof(StateElement<T>));
         }
 
         public override int OwnerIdAt(int index) => this[index].ownerId;
@@ -357,7 +479,7 @@ namespace Lilium.RemoteControl.Frames
         public IReadOnlyList<StateBlock> blocks => _ordered;
 
         /// <summary>The block for an element type, creating it on first use.</summary>
-        public StateBlock<T> GetOrCreate<T>() where T : unmanaged
+        public StateBlock<T> GetOrCreate<T>(string typeName = null) where T : unmanaged
         {
             // Making a block is also how a type announces that it belongs on the lane, so a player
             // meeting the name in a recording can make one too. Guarded per type rather than by a
@@ -369,12 +491,12 @@ namespace Lilium.RemoteControl.Frames
             if (_Announced<T>.generation != StateTypeRegistry.generation)
             {
                 _Announced<T>.generation = StateTypeRegistry.generation;
-                StateTypeRegistry.Register<T>();
+                StateTypeRegistry.Register<T>(typeName);
             }
 
             if (_blocks.TryGetValue(typeof(T), out var existing)) return (StateBlock<T>)existing;
 
-            var created = new StateBlock<T>();
+            var created = new StateBlock<T>(typeName);
             _blocks.Add(typeof(T), created);
             _ordered.Add(created);
             return created;
@@ -388,7 +510,18 @@ namespace Lilium.RemoteControl.Frames
         /// declaration, so two builds that disagree about it produce blocks of different sizes --
         /// which is the mismatch a recording is already checked for.
         /// </summary>
-        public DeclaredStateBlock GetOrCreateDeclared(Type ownerType, int payloadSize)
+        /// <param name="schemaSignature">
+        /// The declaration this block is being asked for, as a recording interns it, or null when
+        /// the caller does not know.
+        ///
+        /// ⚠ Width alone is not enough to tell two declarations apart. Two of the same total size
+        /// lay their members out differently, and reusing a block across that hands back values
+        /// captured under one layout and read under another -- which looks like values rather than
+        /// like an error. It used to be caught per element by a hash led into every payload; the
+        /// description catches it here instead, once, where the block is fetched.
+        /// </param>
+        public DeclaredStateBlock GetOrCreateDeclared(Type ownerType, int payloadSize,
+            string schemaSignature = null)
         {
             if (ownerType == null) throw new ArgumentNullException(nameof(ownerType));
 
@@ -399,14 +532,26 @@ namespace Lilium.RemoteControl.Frames
                 // The declaration changed under a block that is already carrying values. Replaced
                 // rather than reused: the stride is the layout, and reading the old elements at the
                 // new stride would hand back values sliced out of the middle of their neighbours.
-                if (found.payloadSize == payloadSize) return found;
+                var sameShape = found.payloadSize == payloadSize
+                                && (schemaSignature == null
+                                    || found.schemaSignature == null
+                                    || string.Equals(found.schemaSignature, schemaSignature, StringComparison.Ordinal));
+
+                if (sameShape)
+                {
+                    // Remembered rather than ignored, so a block first made by a replay -- which
+                    // knows the width and not the declaration -- takes on the description the first
+                    // producer to write it names.
+                    if (schemaSignature != null) found.schemaSignature = schemaSignature;
+                    return found;
+                }
 
                 _blocks.Remove(ownerType);
                 _ordered.Remove(found);
                 found.Dispose();
             }
 
-            var created = new DeclaredStateBlock(ownerType, payloadSize);
+            var created = new DeclaredStateBlock(ownerType, payloadSize) { schemaSignature = schemaSignature };
             StateTypeRegistry.RegisterDeclared(ownerType, payloadSize);
 
             _blocks.Add(ownerType, created);
@@ -449,7 +594,7 @@ namespace Lilium.RemoteControl.Frames
 
             for (int i = 0; i < _ordered.Count; i++)
             {
-                if (_ordered[i].elementType.FullName == fullName) return _ordered[i];
+                if (_ordered[i].typeName == fullName) return _ordered[i];
             }
 
             return null;

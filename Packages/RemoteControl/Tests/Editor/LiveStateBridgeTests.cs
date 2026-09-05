@@ -25,8 +25,10 @@ namespace Lilium.RemoteControl.Tests
         [LiveField(lane = FrameLane.State)]
         private ProbeMode _mode;
 
-        // Ordinary lane: changes when someone asks, so it is recorded as an event.
-        [LiveField]
+        // The event lane, said out loud. A field left undecorated is on the state lane -- text
+        // included, since it travels as a symbol id -- so keeping a member out of the block is
+        // now something a declaration has to ask for.
+        [LiveField(lane = FrameLane.Event)]
         private string _label = "probe";
 
         public float intensity { get => _intensity; set => _intensity = value; }
@@ -84,8 +86,8 @@ namespace Lilium.RemoteControl.Tests
             var fields = typeof(StateLaneProbe.LiveStateBlock).GetFields();
 
             // The label is in the event lane, so it is recorded when it changes rather than carried
-            // every frame. Text can join the other lane now (see LiveFixedStringStateTests), but
-            // only where a declaration claims a width for it; this one claims none.
+            // every frame. Text is no longer what keeps it out -- a string reaches the block as a
+            // symbol id (see LiveTextTableTests) -- its declaration is.
             CollectionAssert.AreEquivalent(
                 new[] { "_intensity", "_position", "_mode" },
                 System.Array.ConvertAll(fields, f => f.Name));
@@ -158,7 +160,7 @@ namespace Lilium.RemoteControl.Tests
             using var state = new StateBlockSet();
             LiveStateSystem.PrepareBlocks(state);
 
-            Assert.IsNotNull(state.FindByTypeName(typeof(StateLaneProbe.LiveStateBlock).FullName));
+            Assert.IsNotNull(state.FindByTypeName(typeof(StateLaneProbe).FullName));
         }
 
         [Test]

@@ -133,7 +133,8 @@ namespace Lilium.LiveStudio.EditorTests
         static void _CaptureTarget(FakeTarget source, ref FakeTargetBlock block, FrameSymbolTable symbols)
             => block.carried = source.carried;
 
-        static void _ApplyTarget(in FakeTargetBlock block, FakeTarget target, FrameSymbolTable symbols)
+        static void _ApplyTarget(in FakeTargetBlock block, FakeTarget target, FrameSymbolTable symbols,
+            ulong mask)
             => target.carried = block.carried;
 
         /// <summary>

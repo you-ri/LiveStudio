@@ -62,12 +62,31 @@ internal static void CaptureLiveState(Lamp source, ref LiveStateBlock block) { .
 internal static void ApplyLiveState(in LiveStateBlock block, Lamp target) { ... }
 ```
 
+### Where the block goes, and what a recording calls it
+
+Inside the owner when it is `partial` — which is what reaches its private members — and **beside it**
+when it is not: a free type in the owner's own namespace, named after the owner.
+
+```csharp
+namespace Lilium.LiveStudio          // the owner's namespace, not one of the generator's
+{
+    internal struct MeshStateLiveStateBlock { ... }
+    internal static class MeshStateStateMover { ... }   // CaptureLiveState / ApplyLiveState
+}
+```
+
+Either way a recording names the state after the **owner type** (`Lilium.LiveStudio.MeshState`),
+never after the block. Where the block had to go is a property of how the owner is declared, and for
+as long as that reached the recording, adding or removing `partial` renamed the state and dropped
+the type out of every take made by the other build.
+
 ### Rules
 
 | | |
 |---|---|
-| The owner must be `partial` | The block is emitted **inside** the type. The convention here is a private field with the attribute on it, and a free function could not read one. Not partial → `LRC001`, and nothing is emitted for that type |
-| The owner must not be nested | Not supported yet → `LRC003` |
+| The owner need not be `partial` | `partial` puts the block inside the type, where it reaches private members. Without it the block goes beside the type and reaches only what the rest of the assembly can see; a member out of reach → `LRC009`, and that member is left out |
+| The owner must be nameable | A block beside its owner has to spell the owner's name, including every type it is nested in. Nesting is fine; a `private` type in the chain is not → `LRC003` |
+| The owner must be a class | The bridge that carries a block is declared for reference types → `LRC012` |
 | A member's type must be unmanaged | Asked of the compiler rather than kept as a list of blessed types, so enums, `Vector3`, `Color` and anyone's own struct all work without being named. `string`, arrays, classes and `Nullable<T>` are refused → `LRC002`, and the member is left out |
 
 A refused member is a warning rather than an error: leaving it in the input lane is a legitimate

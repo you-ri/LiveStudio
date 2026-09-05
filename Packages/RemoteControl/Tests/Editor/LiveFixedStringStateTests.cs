@@ -119,11 +119,12 @@ namespace Lilium.RemoteControl.Tests
     /// <summary>
     /// Text in the state lane.
     ///
-    /// There is deliberately no fixture for the two declarations the generator refuses -- a state
-    /// string with no <c>textCapacity</c> (LRC005) and one asking for more than the widest block
-    /// text (LRC006). Both are warnings raised while compiling the assembly that holds them, so a
-    /// fixture would put a permanent warning in the package's console for everyone. What they do is
-    /// leave the member where it was, which is the same outcome the event lane has always had.
+    /// There is deliberately no fixture for the declaration the generator refuses -- a width past
+    /// the widest block text (LRC006). It is a warning raised while compiling the assembly that
+    /// holds it, so a fixture would put a permanent warning in the package's console for everyone.
+    /// What it does is leave the member where it was, which is the same outcome the event lane has
+    /// always had. A string that asks for no width at all is not refused: it travels as a symbol
+    /// id, which is what <see cref="LiveTextTableTests"/> is about.
     /// </summary>
     public class LiveFixedStringStateTests
     {

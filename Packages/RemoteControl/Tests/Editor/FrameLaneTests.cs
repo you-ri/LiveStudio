@@ -92,7 +92,8 @@ namespace Lilium.RemoteControl.Tests
             block.undeclared = source.undeclared;
         }
 
-        private static void _ApplyFixture(in FixtureBlock block, Fixture target, FrameSymbolTable symbols)
+        private static void _ApplyFixture(in FixtureBlock block, Fixture target, FrameSymbolTable symbols,
+            ulong mask)
         {
             target.carried = block.carried;
             target.shadowed = block.shadowed;

@@ -161,6 +161,8 @@ namespace Lilium.LiveStudio
         {
             if (camera == null) return;
 
+            _FlushTarget();
+
             camera.transform.position = _position;
             if (_rotationComposer == null)
             {
@@ -190,7 +192,27 @@ namespace Lilium.LiveStudio
             return angle;
         }
 
-        void _OnTargetChanged() => _ApplyTarget();
+        // ⚠ Deferred rather than done here, and to the *end* of the frame rather than the first
+        // call. The state lane writes a TransformRef one member at a time -- owner, then path, then
+        // search type -- and each write used to re-attach. Two costs, one of them wrong: the resolve
+        // walks the rig (Transform.Find, then GetComponentsInChildren when that misses), and the
+        // first of the three runs with the *new owner and the old path*, which cannot resolve and
+        // falls back to the root. So a replayed frame parented the object to the root and only then
+        // to the bone it recorded.
+        //
+        // Taking the first call and dropping the rest would keep exactly the wrong one. What is
+        // wanted is the last, which is what a flag flushed later gives.
+        [NonSerialized] bool _targetPending;
+
+        void _OnTargetChanged() => _targetPending = true;
+
+        void _FlushTarget()
+        {
+            if (!_targetPending) return;
+
+            _targetPending = false;
+            _ApplyTarget();
+        }
 
         /// <summary>
         /// owner GameObject の内部 hierarchy 変化通知。ownerName 一致時のみ target を再 resolve する。
@@ -199,7 +221,7 @@ namespace Lilium.LiveStudio
         {
             if (owner == null) return;
             if (_target.ownerName != owner.name) return;
-            _ApplyTarget();
+            _targetPending = true;
         }
 
         void _ApplyTarget()

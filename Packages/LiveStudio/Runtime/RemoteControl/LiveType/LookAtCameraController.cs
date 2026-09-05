@@ -60,10 +60,32 @@ namespace Lilium.LiveStudio
 
         public override void Update(CinemachineCamera camera)
         {
-            // Event-driven: the look-at target is assigned in _ApplyTarget, not every frame.
+            // Event-driven: the look-at target is assigned in _ApplyTarget, not every frame. What
+            // runs here is only the flush of a change that arrived since the last one.
+            _FlushTarget();
         }
 
-        void _OnTargetChanged() => _ApplyTarget();
+        // ⚠ Deferred rather than done here, and to the *end* of the frame rather than the first
+        // call. The state lane writes a TransformRef one member at a time -- owner, then path, then
+        // search type -- and each write used to re-attach. Two costs, one of them wrong: the resolve
+        // walks the rig (Transform.Find, then GetComponentsInChildren when that misses), and the
+        // first of the three runs with the *new owner and the old path*, which cannot resolve and
+        // falls back to the root. So a replayed frame parented the object to the root and only then
+        // to the bone it recorded.
+        //
+        // Taking the first call and dropping the rest would keep exactly the wrong one. What is
+        // wanted is the last, which is what a flag flushed later gives.
+        [NonSerialized] bool _targetPending;
+
+        void _OnTargetChanged() => _targetPending = true;
+
+        void _FlushTarget()
+        {
+            if (!_targetPending) return;
+
+            _targetPending = false;
+            _ApplyTarget();
+        }
 
         /// <summary>
         /// Internal hierarchy change notification for an owner GameObject. Re-resolves only when the
@@ -73,7 +95,7 @@ namespace Lilium.LiveStudio
         {
             if (owner == null) return;
             if (_target.ownerName != owner.name) return;
-            _ApplyTarget();
+            _targetPending = true;
         }
 
         void _ApplyTarget()

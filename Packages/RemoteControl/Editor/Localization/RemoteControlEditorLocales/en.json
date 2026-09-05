@@ -1,10 +1,10 @@
 {
     "LD_POSITION_TOOLTIP": "Click to switch between frame number and timecode.",
     "LD_UNKNOWN_STATE_TYPES": "Some of the state this recording carries has nowhere to land: {0}  → that part will not play back.",
+    "LD_STATE_SCHEMA_DRIFT": "This recording was made before some types changed shape: {0}  → those members keep whatever the world already has.",
     "LD_INCOMPLETE": "(incomplete)",
     "LD_WAITING": "waiting",
     "LD_NONE": "(none)",
-
     "LDS_RECORD": "● Record",
     "LDS_STOP": "■ Stop",
     "LDS_PLAY": "▶ Play",
@@ -35,7 +35,6 @@
     "LDS_BANNER_PLAY_MODE_ONLY": "Recording and playback only work in play mode (the gate is pumped from the player loop).",
     "LDS_BANNER_NO_CONTROLLER": "No FrameRecorderController in the scene. Add one to a GameObject of the app that records and plays back.",
     "LDS_BANNER_NO_INDEX": "This recording has no index (it may not have been closed properly). It plays from the start, but cannot be scrubbed.",
-
     "LDV_DISCONNECTED": "not connected",
     "LDV_STATE_SUMMARY": "{0} types / {1} elements / {2} per frame",
     "LDV_EMPTY_FILTERED": "Nothing to show. {0} empty types are hidden by the filter.",
