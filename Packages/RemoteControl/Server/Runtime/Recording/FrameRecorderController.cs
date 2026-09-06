@@ -76,6 +76,10 @@ namespace Lilium.RemoteControl
         [LiveField(persistable = false)]
         private string _replayFilename = string.Empty;
 
+        [SerializeField]
+        [LiveField(persistable = false)]
+        private bool _loop = false;
+
         private readonly FrameRecorder _recorder = new FrameRecorder();
         private FrameReplayer _replayer;
         private bool _holdsStateSystems;
@@ -182,6 +186,22 @@ namespace Lilium.RemoteControl
 
         /// <summary>Recording to play, chosen from <see cref="GetAvailableRecordings"/>.</summary>
         public string replayFilename { get => _replayFilename; set => _replayFilename = value; }
+
+        /// <summary>
+        /// Plays the take over and over instead of stopping at the end.
+        ///
+        /// Takes effect while a replay is running, not only on the next one: this is the switch an
+        /// operator reaches for on the last few frames.
+        /// </summary>
+        public bool loop
+        {
+            get => _loop;
+            set
+            {
+                _loop = value;
+                if (_replayer != null) _replayer.loop = value;
+            }
+        }
 
         [LiveProperty]
         public bool isRecording => _recorder.isRecording;
@@ -371,7 +391,7 @@ namespace Lilium.RemoteControl
             }
 
             var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            _replayer = new FrameReplayer(stream, new LiveEventApplier());
+            _replayer = new FrameReplayer(stream, new LiveEventApplier()) { loop = _loop };
 
             // Every registered type gets a block up front. Without it the recording reports each type
             // as unknown until something happens to write it live first, which on a machine that is

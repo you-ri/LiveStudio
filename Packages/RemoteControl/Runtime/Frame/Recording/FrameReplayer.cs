@@ -158,6 +158,18 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// </summary>
         public bool isPaused { get; set; }
 
+        /// <summary>
+        /// Starts the take again instead of running out.
+        ///
+        /// The rewind is a seek to the first frame, so it restores the shape of the world from the
+        /// keyframe there the way any other jump does -- a take that spawned something on the way
+        /// through does not accumulate a second copy of it on the next pass.
+        ///
+        /// A recording with no tail index cannot be sought, so it plays once and ends whatever this
+        /// says. Same limitation as scrubbing, and for the same reason.
+        /// </summary>
+        public bool loop { get; set; }
+
         public FrameReplayer(Stream stream, IEventApplier applier, bool leaveOpen = false)
             : this(new FrameRecordPlayer(stream, leaveOpen), applier)
         {
@@ -211,7 +223,20 @@ namespace Lilium.RemoteControl.Frames.Recording
                 return true;
             }
 
-            if (!_player.Advance()) return false;
+            if (!_player.Advance())
+            {
+                // Ran out. Looping starts the take again rather than letting the gate detach the
+                // source -- the world going back live mid-take is the one thing a loop must not do.
+                if (!loop || !_RewindToStart()) return false;
+
+                // The rewind is a seek, which already restored the frame and put its events back.
+                // Advancing again here would skip the first frame of every pass but the first.
+                frame.structure = _player.structure;
+                frame.state = _player.state;
+                frame.symbols = _player.symbols;
+                _PublishReplayed(frame.events);
+                return true;
+            }
 
             // Structure before state, the same way round a keyframe is applied: the container has to
             // exist before the values that belong in it.
@@ -315,6 +340,17 @@ namespace Lilium.RemoteControl.Frames.Recording
 
             _ApplyCollapsed();
             return _player.frameNumber == frame;
+        }
+
+        /// <summary>
+        /// Jumps back to the first frame of the recording. False when there is no index to seek by,
+        /// which is what ends a loop over a take that was cut short.
+        /// </summary>
+        private bool _RewindToStart()
+        {
+            var first = _player.FrameNumberAt(0);
+
+            return first >= 0 && TrySeek(first);
         }
 
         public void Dispose() => _player.Dispose();

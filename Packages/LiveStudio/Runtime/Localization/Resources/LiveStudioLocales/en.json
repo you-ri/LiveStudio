@@ -61,9 +61,9 @@
   "STOP_REPLAY": "Stop Replay",
   "FRAME_RECORDER_KEYFRAMEINTERVAL": "Frames between keyframes. Only affects how far a seek walks back for the shape of the world; values are complete on every frame either way. 60 is once a second at 60fps.",
   "FRAME_RECORDER_COMPRESS": "Compresses the recording, measured about five times smaller. Turn it off to read a take while it is still being recorded, or when losing the last second to a crash matters more than size.",
+  "FRAME_RECORDER_SEEKPROGRESS": "Position in the take, 0 at the first frame and 1 at the last. Moving it jumps there and the replay carries on from that point. A take with no tail index (one that was cut short) cannot be scrubbed.",
+  "FRAME_RECORDER_LOOP": "Starts the take again when it reaches the end. Off, the replay stops there.",
   "MENU_FRAME_RECORDER": "Live Data",
-  "SECTION_FRAME_RECORD_TITLE": "Record",
-  "SECTION_FRAME_RECORD_SUBTITLE": "Capture a take of live data",
-  "SECTION_FRAME_REPLAY_TITLE": "Replay",
-  "SECTION_FRAME_REPLAY_SUBTITLE": "Play a recorded take back"
+  "SECTION_FRAME_RECORDER_TITLE": "Recording / Playback",
+  "SECTION_FRAME_RECORDER_SUBTITLE": "Capture a take of live data and play it back"
 }

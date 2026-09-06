@@ -107,6 +107,27 @@ namespace Lilium.RemoteControl.Tests
         }
 
         // -------------------------------------------------------
+        // 型テーブル (/live/types) の persistScope
+        // -------------------------------------------------------
+
+        // Scene は既定なので出さない。Project / Custom だけがキーを持つ — クライアントはこれで
+        // 「シーンファイルに載るメンバーか」を判定する (ライブシーンページ / プロジェクトページの振り分け)。
+        [Test]
+        public void TypeInfo_PersistScope_SaysProjectAndCustom_LeavesSceneUnsaid()
+        {
+            LiveClass.RegisterFromAttributes<TestScopeClass>();
+            var liveClass = LiveClass.Find(typeof(TestScopeClass));
+
+            var jType = JObject.Parse(LiveTypeInfoSerializer.ToJson(liveClass));
+            var props = ((JArray)jType["properties"]).Cast<JObject>()
+                .ToDictionary(p => p["name"].Value<string>(), p => p);
+
+            Assert.IsNull(props["sceneValue"]["persistScope"], "Scene is the default and must stay unsaid.");
+            Assert.AreEqual("project", props["projectValue"]["persistScope"]?.Value<string>());
+            Assert.AreEqual("custom", props["customValue"]["persistScope"]?.Value<string>());
+        }
+
+        // -------------------------------------------------------
         // scopeFilter による振り分け
         // -------------------------------------------------------
 

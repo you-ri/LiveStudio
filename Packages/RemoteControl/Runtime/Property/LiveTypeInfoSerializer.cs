@@ -246,13 +246,21 @@ namespace Lilium.RemoteControl
                 ["order"] = propertyType.order
             };
 
-            // Say so when the value is written to the project settings rather than to the live
-            // scene. An editor session runs neither write, so the client treats it as out of reach.
+            // Say so when the value is written somewhere other than the live scene: the project
+            // settings, or a file the owner keeps itself. An editor session runs neither write, so
+            // the client treats a project member as out of reach; and a client that sorts objects
+            // by where they are saved (the live scene page shows what the scene file holds, the
+            // project page what the machine holds) needs both answers, or an owner-saved member
+            // would pass for a scene one.
             // ⚠ Scene is left unsaid: it is the default destination, and spelling it out on every
             // member would only make the table bigger.
-            if (propertyType.isPersistable && propertyType.persistScope == PersistScope.Project)
+            if (propertyType.isPersistable)
             {
-                jObject["persistScope"] = "project";
+                switch (propertyType.persistScope)
+                {
+                    case PersistScope.Project: jObject["persistScope"] = "project"; break;
+                    case PersistScope.Custom: jObject["persistScope"] = "custom"; break;
+                }
             }
 
             // Which lane of the live data carries this member, so a client can say whether a take

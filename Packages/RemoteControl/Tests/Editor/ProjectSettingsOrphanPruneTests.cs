@@ -33,6 +33,9 @@ namespace Lilium.RemoteControl.Tests
         [SetUp]
         public void SetUp()
         {
+            // Pruning asks the registry whether a file's class still exists, so the class this fixture
+            // relies on is registered here rather than borrowed from whichever fixture ran before.
+            LiveClass.RegisterFromAttributes<OrphanPruneNew>();
             _proj = Path.Combine(Path.GetTempPath(), "lsprojsettings_" + Guid.NewGuid().ToString("N"));
             // Pre-create the Settings dir so we can drop fixture files before WriteAll.
             var dir = Path.GetDirectoryName(ProjectSettingsStore.GetSettingsFilePath(_proj, "x"));
@@ -71,14 +74,14 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void WriteAll_KeepsCurrentClassFileForAbsentObject()
         {
-            // TestScopeShadowClass is a registered class but is not in the write set (object not loaded).
+            // OrphanPruneNew is a registered class but is not in the write set (object not loaded).
             // Its settings file must NOT be deleted, or an absent object would lose its project settings.
-            Drop("TestScopeShadowClass");
+            Drop("OrphanPruneNew");
 
             ProjectSettingsStore.WriteAll(_proj,
                 new Dictionary<string, string> { { "TestScopeClass", SettingsJson("TestScopeClass") } });
 
-            Assert.IsTrue(Exists("TestScopeShadowClass"), "a current class's file must be kept even when absent this session");
+            Assert.IsTrue(Exists("OrphanPruneNew"), "a current class's file must be kept even when absent this session");
         }
 
         [Test]
