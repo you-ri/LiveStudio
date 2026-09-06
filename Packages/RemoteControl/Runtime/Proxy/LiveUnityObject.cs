@@ -793,7 +793,12 @@ namespace Lilium.RemoteControl
             LiveUnityObjectFactory.Register<ScriptableObject>("Asset", (asset) => new LiveAsset(asset));
         }
 
-        [LiveProperty]
+        // The lane is said out loud because the persistence cannot speak for this one. The live
+        // scene does save which asset this wrapper points at -- as the entry's own reference, not as
+        // a property of it -- so the member reads as "saved nowhere" and would fall off the frame
+        // (FrameLaneRules) even though re-pointing the wrapper is a change in the world. A reference
+        // is the one thing a block cannot hold, so it is the event lane or nothing.
+        [LiveProperty(lane = FrameLane.Event)]
         public ScriptableObject asset
         {
             get => _reference;

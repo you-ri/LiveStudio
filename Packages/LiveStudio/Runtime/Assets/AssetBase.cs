@@ -119,7 +119,7 @@ namespace Lilium.LiveStudio
         /// be claiming an asset is loaded that nothing loaded. What loads it is <see cref="enabled"/>
         /// above, and whatever does the loading sets this when it is true.
         /// </summary>
-        [LiveField(lane = FrameLane.None, persistable = false), Hide]
+        [LiveField(persistable = false), Hide]
         public bool isLoaded;
 
         /// <summary>

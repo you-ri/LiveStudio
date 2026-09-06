@@ -105,7 +105,7 @@ namespace Lilium.LiveStudio
     [Serializable]
     [LiveClass(Icon = "public", Category = "Stage", HideInScene = true)]
     [MovedFrom(false, null, null, "WorldManager")]
-    public class StageManager : ILiveObject
+    public class StageManager : ILiveObject, ILiveDeserializeCallback
     {
         const string kId = "b2f7c9a1-3d4e-4f8a-9c1b-7e2d5a6f8c30";
 
@@ -181,34 +181,64 @@ namespace Lilium.LiveStudio
         [StringSelector(nameof(setNames))]
         public string activeSet
         {
-            get
-            {
-                for (int i = 0; i < sets.Length; i++)
-                {
-                    if (sets[i].isActive) return sets[i].name ?? string.Empty;
-                }
-
-                return string.Empty;
-            }
+            // 意図を返す。投影 (sets) を読まないのは、カタログがまだ揃っていない起動直後に
+            // 「立っているステージは無い」と答えてしまい、その答えが保存にも記録にも入るため。
+            // 実体が別経路で動いたときは _SyncStageFromAssets がこの値を追従させる。
+            get => _activeSet ?? string.Empty;
             set
             {
-                if (string.IsNullOrEmpty(value)) return;
-                if (string.Equals(value, activeSet, StringComparison.Ordinal)) return;
+                var name = value ?? string.Empty;
+                if (string.Equals(name, _activeSet, StringComparison.Ordinal)) return;
 
-                for (int i = 0; i < sets.Length; i++)
-                {
-                    if (sets[i].name != value) continue;
-
-                    // Not the complete switch SwitchToSetByName does. What the value says is which
-                    // stage is up, and unloading the others says something it did not -- on a replay
-                    // that would take down sets the operator had deliberately kept loaded.
-                    _ActivateSet(sets[i].id, unloadOthers: false);
-                    return;
-                }
-
-                Debug.LogWarning($"[LiveStudio] No stage named '{value}' to make active.");
+                _activeSet = name;
+                _ApplyStageIntent();
             }
         }
+
+        /// <summary>
+        /// 読み込まれているステージの集合 (立っているものを含む)、表示名で。
+        ///
+        /// <see cref="activeSet"/> が「どれが立っているか」しか言わないので、複数セットを同時に
+        /// 読み込んでいる状態はこれが言う。⚠ イベントレーン (保存先から導出) — 値の配列は状態
+        /// ブロックに載らないため。したがってテイクの途中から再生した場合、ここまでの読み込み履歴を
+        /// 辿らないと集合は復元されない。立っているステージだけは <see cref="activeSet"/> が
+        /// 状態レーンで運ぶので、どのフレームからでも分かる。
+        ///
+        /// ⚠ 投影 (<see cref="sets"/>) の enabled は非永続なので、保存も収録もこちらが担う。
+        /// </summary>
+        [LiveProperty]
+        public string[] loadedSets
+        {
+            get => _loadedSets ?? Array.Empty<string>();
+            set
+            {
+                _loadedSets = value ?? Array.Empty<string>();
+                _ApplyStageIntent();
+            }
+        }
+
+        // 「何が出ているか」の意図。ライブシーンに保存され、同じ宣言から収録レーンも決まる
+        // (FrameLaneRules)。カタログ (ExternalAssetManager) はこの機械のディスクにある物なので
+        // 保存も収録もしない — どれが立っているかはショーなので、シーン側のここが持つ。
+        [SerializeField, LiveField(lane = FrameLane.State), Hide]
+        [FormerlyNamedAs("activeSet")]
+        // private ではなく internal。ブロックは型の外側に生成されるので (この型は partial ではない)、
+        // private だとムーバーから見えず黙って落ちる (LRC009)。AvatarController._avatarLayer と同じ。
+        internal string _activeSet = string.Empty;
+
+        [SerializeField, LiveField, Hide]
+        [FormerlyNamedAs("loadedSets")]
+        internal string[] _loadedSets = Array.Empty<string>();
+
+        // 意図がまだカタログに無くて適用できていない状態。立っている間は実体からの同期を止める
+        // — 起動直後のカタログは空で、そこから同期すると復元した意図をその場で消す。
+        [NonSerialized]
+        private bool _stagePending;
+
+        // 適用中の再入ガード。SetAssetEnabled / _ActivateSet は onAssetsChanged を同期に発火するので、
+        // これが無いと適用の途中の状態を「実体」として意図に書き戻してしまう。
+        [NonSerialized]
+        private bool _applyingStage;
 
         /// <summary>Dropdown source for <see cref="activeSet"/>.</summary>
         [LiveProperty, Hide]
@@ -584,11 +614,135 @@ namespace Lilium.LiveStudio
         }
 
         // The asset list changed (load/unload completed, entry added/removed): reconcile the active
-        // scene and rebuild the projected view.
+        // scene and rebuild the projected view, then bring the intent and the world back together.
         private void _OnAssetsChanged()
         {
             _ReconcileActiveScene();
             _RebuildSetsView();
+
+            // 適用の途中。ここで同期すると、まだ半分しか動いていない世界を意図として採る。
+            if (_applyingStage) return;
+
+            // 待っていた意図が通せるようになったかもしれない。通るまで実体からの同期はしない。
+            if (_stagePending)
+            {
+                _ApplyStageIntent();
+                return;
+            }
+
+            _SyncStageFromAssets();
+        }
+
+        /// <summary>
+        /// 意図 (<see cref="_activeSet"/> / <see cref="_loadedSets"/>) を実体へ適用する。
+        /// まだカタログに無い名前があれば待ち状態にし、次の変化で再試行する。
+        /// </summary>
+        private void _ApplyStageIntent()
+        {
+            if (!_initialized || _applyingStage) return;
+
+            _applyingStage = true;
+            try
+            {
+                _stagePending = !_TryApplyStage();
+            }
+            finally
+            {
+                _applyingStage = false;
+            }
+
+            _RebuildSetsView();
+        }
+
+        private bool _TryApplyStage()
+        {
+            var manager = ExternalAssetManager.current;
+            if (manager == null) return false;
+
+            var wanted = _loadedSets ?? Array.Empty<string>();
+            var complete = true;
+
+            // 読み込みの集合をそのまま実体へ。ここに無い名前は「まだ来ていない」で、次の変化を待つ。
+            var view = manager.assetsView;
+            for (int i = 0; i < wanted.Length; i++)
+            {
+                if (string.IsNullOrEmpty(wanted[i])) continue;
+                if (_FindSetAssetIdByName(manager, wanted[i]) == null) complete = false;
+            }
+
+            for (int i = 0; i < view.Count; i++)
+            {
+                var asset = view[i];
+                if (!(asset is ISetAsset) || string.IsNullOrEmpty(asset.id)) continue;
+
+                manager.SetAssetEnabled(asset.id, Array.IndexOf(wanted, asset.name) >= 0);
+            }
+
+            // 立っているステージ。空 = 何も言っていないので触らない (起動直後の既定)。
+            if (!string.IsNullOrEmpty(_activeSet))
+            {
+                var activeId = _FindSetIdByName(_activeSet);
+                if (activeId == null) complete = false;
+                // 完全な切り替え (SwitchToSetByName) ではない。値が言っているのは「どれが立って
+                // いるか」だけで、他を降ろすのはそれ以上のことを言う。
+                else _ActivateSet(activeId, unloadOthers: false);
+            }
+
+            return complete;
+        }
+
+        // 実体が別経路で動いたとき (アセットページのトグル、SwitchToSetByName、ロード完了) に
+        // 意図を追従させる。これが保存され、記録に載る値になる。
+        private void _SyncStageFromAssets()
+        {
+            var active = string.Empty;
+            var loaded = new List<string>();
+
+            for (int i = 0; i < sets.Length; i++)
+            {
+                if (sets[i].isActive) active = sets[i].name ?? string.Empty;
+                if (sets[i].isPersistent) continue;
+                if (sets[i].enabled) loaded.Add(sets[i].name ?? string.Empty);
+            }
+
+            _activeSet = active;
+            _loadedSets = loaded.ToArray();
+        }
+
+        // 投影 (sets) 上の表示名から id を引く。ブートストラップの合成エントリも含むので、
+        // activeSet が持ち回るのはこちら。
+        private string _FindSetIdByName(string setName)
+        {
+            for (int i = 0; i < sets.Length; i++)
+            {
+                if (sets[i].name == setName) return sets[i].id;
+            }
+
+            return null;
+        }
+
+        // カタログ上のセットアセットの id。ブートストラップは含まない (アセットではない)。
+        private static string _FindSetAssetIdByName(ExternalAssetManager manager, string setName)
+        {
+            var view = manager.assetsView;
+            for (int i = 0; i < view.Count; i++)
+            {
+                if (view[i] is ISetAsset && view[i].name == setName) return view[i].id;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// ライブシーンの復元後。意図はシャドウフィールドへ直接書かれるのでセッターを通らず、
+        /// 適用されないまま残る。⚠ このコールバックはプロパティ書き込みでも発火するので、
+        /// 適用は冪等 (SetAssetEnabled / _ActivateSet はどちらも変化が無ければ何もしない)。
+        /// </summary>
+        public void OnAfterLiveDeserialize()
+        {
+            if (!Application.isPlaying) return;
+
+            _ApplyStageIntent();
         }
 
         /// <summary>

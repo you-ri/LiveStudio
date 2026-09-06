@@ -816,7 +816,7 @@ namespace Lilium.RemoteControl.Tests
             [LiveField(lane = FrameLane.State)]
             public Vector3 position;
 
-            [LiveField(lane = FrameLane.None)]
+            [LiveField(persistScope = PersistScope.Project)]
             public Vector2Int windowPosition;
 
             [LiveProperty(lane = FrameLane.State)]
@@ -824,12 +824,15 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void UntaggedMember_DefaultsToTheInputLane()
+        public void UntaggedMember_DefaultsToTheEventLane_AndSaysSo()
         {
             var field = typeof(Declared).GetField(nameof(Declared.untagged));
             var attribute = (LiveFieldAttribute)Attribute.GetCustomAttribute(field, typeof(LiveFieldAttribute));
 
             Assert.AreEqual(FrameLane.Event, attribute.lane);
+            // "Said nothing" is readable apart from "asked for Event": the registration derives the
+            // lane from the persistence only when nothing was said (FrameLaneRules).
+            Assert.IsNull(attribute.declaredLane);
         }
 
         [Test]
@@ -840,11 +843,12 @@ namespace Lilium.RemoteControl.Tests
             var intensity = typeof(Declared).GetProperty(nameof(Declared.intensity));
 
             Assert.AreEqual(FrameLane.State,
-                ((LiveFieldAttribute)Attribute.GetCustomAttribute(position, typeof(LiveFieldAttribute))).lane);
-            Assert.AreEqual(FrameLane.None,
-                ((LiveFieldAttribute)Attribute.GetCustomAttribute(window, typeof(LiveFieldAttribute))).lane);
+                ((LiveFieldAttribute)Attribute.GetCustomAttribute(position, typeof(LiveFieldAttribute))).declaredLane);
+            // A project setting says nothing about its lane; None is what it gets, not what it wrote.
+            Assert.IsNull(
+                ((LiveFieldAttribute)Attribute.GetCustomAttribute(window, typeof(LiveFieldAttribute))).declaredLane);
             Assert.AreEqual(FrameLane.State,
-                ((LivePropertyAttribute)Attribute.GetCustomAttribute(intensity, typeof(LivePropertyAttribute))).lane);
+                ((LivePropertyAttribute)Attribute.GetCustomAttribute(intensity, typeof(LivePropertyAttribute))).declaredLane);
         }
     }
 }

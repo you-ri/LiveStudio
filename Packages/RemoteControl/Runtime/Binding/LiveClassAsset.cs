@@ -58,6 +58,12 @@ namespace Lilium.RemoteControl
                 /// <summary>Its value cannot be moved as bytes (see DeclaredStateBridge.CanCarry).</summary>
                 UnsupportedType = 1,
 
+                /// <summary>
+                /// It asked to be off the frame while the live scene saves it. A saved member is
+                /// carried (see <see cref="FrameLaneRules"/>); to take it off the frame, stop
+                /// saving it (<see cref="LiveClassAssetMember.persistable"/> = false).
+                /// </summary>
+                NoneRefused = 2,
             }
 
             /// <summary>
@@ -85,8 +91,27 @@ namespace Lilium.RemoteControl
 
                 ownerType = ownerType ?? ResolveType();
 
-                var asked = member.ResolveLane(ownerType);
-                if (member.isFunction || asked != FrameLane.State) return asked;
+                // A function has no persistence to derive from, so what it asks for is what it gets.
+                if (member.isFunction) return member.ResolveLane(ownerType);
+
+                // The same rule the attribute path applies (FrameLaneRules): a member the scene does
+                // not save is off the frame unless it says otherwise, and a saved member cannot ask
+                // to be off it -- that is the one combination the rule exists to forbid.
+                var declared = member.lane == LiveClassAssetLane.Auto ? (FrameLane?)null : member.ResolveLane(ownerType);
+                if (declared == FrameLane.None)
+                {
+                    if (member.persistable) refusal = LaneRefusal.NoneRefused;
+                    declared = null;
+                }
+
+                var asked = FrameLaneRules.Resolve(declared, member.persistable, PersistScope.Scene, typeIsOffFrame: false);
+                if (asked == FrameLane.Event && declared == null && member.persistable)
+                {
+                    // Nothing said and saved to the scene: the member's own default applies (field
+                    // to the state lane, property to the event lane).
+                    asked = member.ResolveLane(ownerType);
+                }
+                if (asked != FrameLane.State) return asked;
 
                 if (Frames.DeclaredStateBridge.CanCarry(member.ResolveValueType(ownerType)))
                 {

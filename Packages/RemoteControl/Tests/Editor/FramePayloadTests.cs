@@ -213,7 +213,10 @@ namespace Lilium.RemoteControl.Tests
             /// <summary>What the getter reports until something else catches up.</summary>
             public string reported = "old";
 
-            [LiveProperty]
+            // A view over state held elsewhere: nothing saves it, so it is off the frame unless it
+            // says otherwise (FrameLaneRules). Said here, as ExternalAvatarSource.selectedAvatar
+            // says it in production -- the record this test reads exists only because of it.
+            [LiveProperty(lane = FrameLane.Event)]
             public string selection
             {
                 get => reported;

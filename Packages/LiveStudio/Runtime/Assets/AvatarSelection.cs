@@ -58,6 +58,26 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
+        /// Whether an avatar by this display name is in the catalog.
+        ///
+        /// Asked before applying a restored or replayed selection: the catalog is built by a crawl
+        /// that finishes after the live scene is restored, so "not there" usually means "not there
+        /// yet" and the intent has to be held rather than dropped.
+        /// </summary>
+        public static bool Contains(ExternalAssetManager manager, string avatarName)
+        {
+            if (manager == null || string.IsNullOrEmpty(avatarName)) return false;
+
+            var view = manager.assetsView;
+            for (int i = 0; i < view.Count; i++)
+            {
+                if (_IsAvatar(view[i]) && view[i].name == avatarName) return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Selects the avatar with the given display name (empty resets to the default avatar), driving
         /// the same reconcile as toggling the asset's <see cref="AssetBase.enabled"/> flag directly.
         /// Turning the others off is the group reconcile's job, so this only raises the chosen one.

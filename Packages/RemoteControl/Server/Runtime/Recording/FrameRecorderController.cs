@@ -50,28 +50,30 @@ namespace Lilium.RemoteControl
         // that keeps the value, the dirty flag and the persistence in one place. Only how they are
         // presented moved to the page.
         //
-        // All of them are off the live data (lane = None). They are the recorder's own settings, and
+        // All of them are off the live data, and where they are saved is what says so
+        // (FrameLaneRules): the interval and the compression are project settings, the take number
+        // and the replay file are values nothing persists. They are the recorder's own settings, and
         // <see cref="excludeObjectIds"/> is not enough on its own: that excludes by this component's
         // registry id, while any client writing through the owning GameObject addresses the same
         // members as `{gameObject}/components/{n}/_take`. The two
         // never meet, so a take was carrying the take number and the compression setting it was
         // written with, and a replay of it wrote them back over the operator's own.
         [SerializeField]
-        [LiveField(persistable = false, lane = FrameLane.None)]
+        [LiveField(persistable = false)]
         private int _take = 1;
 
         [SerializeField]
-        [LiveField(lane = FrameLane.None)]
+        [LiveField(persistScope = PersistScope.Project)]
         private int _keyframeInterval = FrameRecorder.kDefaultKeyframeInterval;
 
         [SerializeField]
-        [LiveField(lane = FrameLane.None)]
+        [LiveField(persistScope = PersistScope.Project)]
         private bool _compress = true;
 
         // ---- Replay ----
 
         [SerializeField]
-        [LiveField(persistable = false, lane = FrameLane.None)]
+        [LiveField(persistable = false)]
         private string _replayFilename = string.Empty;
 
         private readonly FrameRecorder _recorder = new FrameRecorder();
@@ -216,7 +218,7 @@ namespace Lilium.RemoteControl
         /// Off the live data for the same reason as the settings above, and more sharply: this drives
         /// the replay itself, so a recorded pause would pause the replay that is playing it back.
         /// </summary>
-        [LiveProperty(lane = FrameLane.None)]
+        [LiveProperty]
         public bool replayPaused
         {
             get => _replayer != null && _replayer.isPaused;

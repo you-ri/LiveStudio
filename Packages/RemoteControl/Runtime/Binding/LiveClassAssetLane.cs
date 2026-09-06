@@ -20,7 +20,12 @@ namespace Lilium.RemoteControl
         /// <summary>Copied every frame at a fixed size.</summary>
         State = 2,
 
-        /// <summary>Not carried by the frame at all.</summary>
+        /// <summary>
+        /// Not carried by the frame at all. For a function. On a value member the lane follows from
+        /// whether the live scene saves it (<see cref="FrameLaneRules"/>): unticking
+        /// <c>persistable</c> takes it off the frame, and asking for None while it is saved is
+        /// refused (<c>LaneRefusal.NoneRefused</c>).
+        /// </summary>
         None = 3,
     }
 }

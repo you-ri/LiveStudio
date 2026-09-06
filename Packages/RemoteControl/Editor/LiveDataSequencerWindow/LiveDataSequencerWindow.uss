@@ -217,19 +217,18 @@
 }
 
 /* Fixed columns so the numbers line up down the list rather than following the names. */
+.lds-col-duration {
+    min-width: 86px;
+    max-width: 86px;
+    -unity-text-align: middle-right;
+    margin-left: 8px;
+}
+
 .lds-col-size {
     min-width: 74px;
     max-width: 74px;
     -unity-text-align: middle-right;
     margin-left: 8px;
-}
-
-.lds-col-date {
-    min-width: 118px;
-    max-width: 118px;
-    -unity-text-align: middle-right;
-    margin-left: 8px;
-    opacity: 0.6;
 }
 
 /* Removes the take on its row.

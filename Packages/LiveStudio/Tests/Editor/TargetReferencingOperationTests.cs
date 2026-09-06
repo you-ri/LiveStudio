@@ -32,7 +32,7 @@ namespace Lilium.LiveStudio.EditorTests
             [LiveField(lane = FrameLane.State)] public float uncarried;
 
             // A setting of the machine. No lane carries it and none ever will.
-            [LiveField(lane = FrameLane.None)] public float setting;
+            [LiveField(persistScope = PersistScope.Project)] public float setting;
             public int invokeCount;
 
             // Records the last argument received by SetValue so an argument-bearing invoke can be asserted.

@@ -371,7 +371,7 @@ namespace Lilium.RemoteControl
 
             // shadowField マップ: Property のメンバー名 (path) -> Shadow Field のメンバー名 (path)
             // および Field 側の persistable / persistScope 値 (Property に継承)
-            var shadowFieldByPropertyPath = new Dictionary<string, (string fieldPath, bool fieldPersistable, PersistScope fieldScope, FrameLane fieldLane)>(StringComparer.Ordinal);
+            var shadowFieldByPropertyPath = new Dictionary<string, (string fieldPath, bool fieldPersistable, PersistScope fieldScope, FrameLane? fieldLane)>(StringComparer.Ordinal);
             var shadowFieldMembers = new HashSet<MemberInfo>();
             for (int i = 0; i < allMembers.Count; i++)
             {
@@ -398,7 +398,7 @@ namespace Lilium.RemoteControl
                 if (targetPropertyPath == null) continue;
 
                 shadowFieldByPropertyPath[targetPropertyPath] =
-                    (fi.Name, fieldAttr.persistable, fieldAttr.persistScope, fieldAttr.lane);
+                    (fi.Name, fieldAttr.persistable, fieldAttr.persistScope, fieldAttr.declaredLane);
                 shadowFieldMembers.Add(fi);
             }
 
@@ -419,27 +419,27 @@ namespace Lilium.RemoteControl
                     // LivePropertyAttribute または LiveFieldAttribute から name / persistScope を取得
                     string propName;
                     PersistScope persistScope;
-                    FrameLane lane;
+                    FrameLane? declaredLane;
                     string carriedBy = null;
                     if (attr is LivePropertyAttribute propAttr)
                     {
                         propName = propAttr.name ?? member.Name;
                         persistScope = propAttr.persistScope;
-                        lane = propAttr.lane;
+                        declaredLane = propAttr.declaredLane;
                         carriedBy = propAttr.carriedBy;
                     }
                     else if (attr is LiveFieldAttribute fieldAttr)
                     {
                         propName = fieldAttr.name ?? member.Name;
                         persistScope = fieldAttr.persistScope;
-                        lane = fieldAttr.lane;
+                        declaredLane = fieldAttr.declaredLane;
                         carriedBy = fieldAttr.carriedBy;
                     }
                     else
                     {
                         propName = member.Name;
                         persistScope = PersistScope.Scene;
-                        lane = FrameLane.Event;
+                        declaredLane = null;
                     }
 
                     string shadowFieldPath = null;
@@ -452,10 +452,23 @@ namespace Lilium.RemoteControl
                         // 載っているのにプロパティが入力レーンだと、同じ値が両方に記録される。
                         isPersistable = shadowInfo.fieldPersistable;
                         persistScope = shadowInfo.fieldScope;
-                        lane = shadowInfo.fieldLane;
+                        declaredLane = shadowInfo.fieldLane;
                     }
 
-                    if (typeIsOffFrame) lane = FrameLane.None;
+                    // None is derived from the persistence, never declared on a member: a saved
+                    // member declared off the frame would leave the scene file describing a world
+                    // the recording disagrees with. The generator refuses it too (LRC013); this is
+                    // the runtime half, for a member the generator never saw.
+                    if (declaredLane == FrameLane.None)
+                    {
+                        Debug.LogError($"[RemoteControl] {typeName}.{propName}: lane = FrameLane.None is not " +
+                            "accepted on a member. The lane follows from where the member is saved -- declare " +
+                            "persistScope = Project / Custom or persistable = false instead (see FrameLaneRules).");
+                        declaredLane = null;
+                    }
+
+                    // 継承の後で導出する: shadow が言った保存先からプロパティのレーンが決まる。
+                    var lane = FrameLaneRules.Resolve(declaredLane, isPersistable, persistScope, typeIsOffFrame);
 
                     properties.Add(new LivePropertyDefine
                     {
@@ -477,6 +490,28 @@ namespace Lilium.RemoteControl
                         laneOverride: typeIsOffFrame ? FrameLane.None : (FrameLane?)null);
                     funcType.order = i;
                     functions.Add(funcType);
+                }
+            }
+
+            // A member that is a view of another member's storage takes that member's lane. Its own
+            // persistence says nothing about the frame -- the carrier is what the frame holds -- so
+            // deriving from it would report a value that *is* carried as one that is not. The write
+            // path already knows better (LiveStateCarriage.IsCarriedByState follows carriedBy into
+            // the block), and the two answers have to agree or the badge contradicts the recording.
+            //
+            // A second pass because the carrier may be registered after the view.
+            for (int i = 0; i < properties.Count; i++)
+            {
+                var define = properties[i];
+                if (string.IsNullOrEmpty(define.carriedBy)) continue;
+
+                for (int j = 0; j < properties.Count; j++)
+                {
+                    if (properties[j].name != define.carriedBy) continue;
+
+                    define.lane = properties[j].lane;
+                    properties[i] = define;
+                    break;
                 }
             }
 

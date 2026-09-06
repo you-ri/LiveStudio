@@ -5,31 +5,8 @@ using Newtonsoft.Json.Linq;
 
 namespace Lilium.RemoteControl
 {
-    /// <summary>
-    /// 永続化メンバーの保存先を指定する。
-    /// <see cref="Scene"/> はシーンファイル (*.scene.json) に、<see cref="Project"/> は
-    /// プロジェクト全体の設定ファイル ({projectPath}/Settings/{クラス名}.settings.json) に保存する。
-    /// <see cref="Custom"/> はどちらにも書かず、所有者が自前のファイルへ書き出す。
-    /// 既定は <see cref="Scene"/> (=0) のため、未指定時は従来どおりシーンに保存される。
-    /// </summary>
-    public enum PersistScope
-    {
-        Scene = 0,
-        Project = 1,
-
-        /// <summary>
-        /// The owner persists these members into its own file, so neither the live scene nor the
-        /// project settings write them. Serialization is still available — the owner asks for this
-        /// scope explicitly (see <c>LiveObjectSnapshot.Capture(handle, scope)</c>) — but the built-in
-        /// writers (scene / project settings) and the dirty comparison, which both filter on
-        /// <see cref="Scene"/> or <see cref="Project"/>, skip them. Such an owner is therefore
-        /// responsible for its own save and unsaved-state reporting; see
-        /// <c>LiveSceneSaveSystem.onAfterSave</c> / <c>unsavedChangesProbe</c>.
-        /// Deserialization ignores the scope, so a legacy file that still holds these members inline
-        /// keeps restoring them.
-        /// </summary>
-        Custom = 2,
-    }
+    // PersistScope lives in Lilium.RemoteControl.Core (PersistScope.cs) beside FrameLane, because the
+    // lane is derived from it (FrameLaneRules) and the rule has to be statable without this assembly.
 
     /// <summary>
     /// structのカスタムデフォルト値を提供するstaticプロパティに付与するAttribute。
@@ -197,19 +174,33 @@ namespace Lilium.RemoteControl
         /// プロパティが実際に保存されるのは shadow field とのペアまたは [InlineReference] で
         /// persistable になっている場合のみで、その場合に本値が保存先を決める
         /// (shadow field を持つ場合は field 側の persistScope が優先される)。
+        /// 保存先はレーンも決める — シーンに保存されないメンバーは収録もされない (<see cref="FrameLaneRules"/>)。
         /// </summary>
         public PersistScope persistScope { get; set; } = PersistScope.Scene;
 
         /// <summary>
-        /// Which lane of the live data carries this member. Default
-        /// <see cref="FrameLane.Event"/>, which records it only when it changes.
+        /// Which lane of the live data carries this member, when that is not what the persistence
+        /// already says.
         ///
-        /// Set <see cref="FrameLane.State"/> for a member that changes many times a second, or one
-        /// that is also written from inside the application without passing through the frame gate
-        /// -- such writes are not events and leave no trace in the event lane.
-        /// Set <see cref="FrameLane.None"/> to keep it out of the frame entirely.
+        /// Unsaid, the lane follows from where the member is saved (<see cref="FrameLaneRules"/>): a
+        /// member the live scene saves is recorded when it changes, and a member saved to the project
+        /// settings, to an owner's file, or nowhere is off the frame. Say it out loud for the two
+        /// things the persistence cannot tell:
+        /// <list type="bullet">
+        /// <item><see cref="FrameLane.State"/> -- copy it every frame. For a member that changes many
+        /// times a second, or one also written from inside the application without passing through
+        /// the frame gate, whose writes are not events and leave no trace in the event lane.</item>
+        /// <item>Either lane on a member the scene does <b>not</b> save -- a pose, an expression
+        /// weight, which avatar is out. Carried by the take, not by the file.</item>
+        /// </list>
+        /// ⚠ <see cref="FrameLane.None"/> is not accepted here (<c>LRC013</c>). Say where the member is
+        /// saved instead (<see cref="persistScope"/>, or no shadow field), and the lane follows.
         /// </summary>
-        public FrameLane lane { get; set; } = FrameLane.Event;
+        public FrameLane lane { get => _lane ?? FrameLane.Event; set => _lane = value; }
+        private FrameLane? _lane;
+
+        /// <summary>The lane as written, or null when the attribute said nothing about it.</summary>
+        public FrameLane? declaredLane => _lane;
         /// <summary>
         /// UTF-8 bytes reserved for a <c>string</c> member carried by <see cref="FrameLane.State"/>.
         /// Ignored for every other type and for the other lanes.
@@ -298,19 +289,29 @@ namespace Lilium.RemoteControl
         /// <see cref="PersistScope.Project"/> を指定すると、このフィールドはシーンファイルではなく
         /// プロジェクト全体の設定ファイル ({クラス名}.settings.json) に保存される。
         /// shadow field として使う場合、ペアとなる property の保存先も本値を継承する。
+        /// 保存先はレーンも決める — シーンに保存されないメンバーは収録もされない (<see cref="FrameLaneRules"/>)。
         /// </summary>
         public PersistScope persistScope { get; set; } = PersistScope.Scene;
 
         /// <summary>
-        /// Which lane of the live data carries this member. Default
-        /// <see cref="FrameLane.Event"/>, which records it only when it changes.
+        /// Which lane of the live data carries this member, when that is not what the persistence
+        /// already says. Same meaning as <see cref="LivePropertyAttribute.lane"/>, said on a field.
         ///
-        /// Set <see cref="FrameLane.State"/> for a member that changes many times a second, or one
-        /// that is also written from inside the application without passing through the frame gate
-        /// -- such writes are not events and leave no trace in the event lane.
-        /// Set <see cref="FrameLane.None"/> to keep it out of the frame entirely.
+        /// Unsaid, the lane follows from where the field is saved (<see cref="FrameLaneRules"/>): a
+        /// field the live scene saves is carried (the generated block copies it every frame; see
+        /// <c>LiveStateCarriage</c>), and a field saved to the project settings, to an owner's file,
+        /// or not at all (<see cref="persistable"/> = false) is off the frame. Say it out loud to put
+        /// a field the scene does not save onto the frame anyway (<see cref="FrameLane.State"/> or
+        /// <see cref="FrameLane.Event"/>), or to ask for the dense lane explicitly.
+        ///
+        /// ⚠ <see cref="FrameLane.None"/> is not accepted here (<c>LRC013</c>). Say where the field is
+        /// saved instead, and the lane follows.
         /// </summary>
-        public FrameLane lane { get; set; } = FrameLane.Event;
+        public FrameLane lane { get => _lane ?? FrameLane.Event; set => _lane = value; }
+        private FrameLane? _lane;
+
+        /// <summary>The lane as written, or null when the attribute said nothing about it.</summary>
+        public FrameLane? declaredLane => _lane;
         /// <summary>
         /// UTF-8 bytes reserved for a <c>string</c> member carried by <see cref="FrameLane.State"/>.
         /// Ignored for every other type and for the other lanes.

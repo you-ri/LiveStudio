@@ -23,9 +23,9 @@ namespace Lilium.LiveStudio
     public class ScreenController : MonoBehaviour, ILiveDeserializeCallback
     {
         // 出力解像度はどのシーンを開いても共通の出力設定なので Project scope で永続化する。
-        // ライブデータには載せない (lane = None): 出力先の解像度は機材ごとの設定であり、
+        // Project scope なので収録もされない (FrameLaneRules): 出力先の解像度は機材ごとの設定であり、
         // 予備機が違っていて当然のもの。収録して再生時に戻すと、見ている人の画面を勝手に変えてしまう。
-        [LiveField(persistScope = PersistScope.Project, lane = FrameLane.None), Hide]
+        [LiveField(persistScope = PersistScope.Project), Hide]
         [FormerlyNamedAs("width")]
         private int _width = 1920;
 
@@ -47,7 +47,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [LiveField(persistScope = PersistScope.Project, lane = FrameLane.None), Hide]
+        [LiveField(persistScope = PersistScope.Project), Hide]
         [FormerlyNamedAs("height")]
         private int _height = 1080;
 
@@ -69,7 +69,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [LiveField(persistScope = PersistScope.Project, lane = FrameLane.None), Hide]
+        [LiveField(persistScope = PersistScope.Project), Hide]
         [FormerlyNamedAs("isFullScreen")]
         private bool _isFullScreen;
 
@@ -152,8 +152,8 @@ namespace Lilium.LiveStudio
 #endif
 
         // Spout 送出の有無も機材ごとの設定。何が映るかはシーン側が決めており、それをどこへ出すかは
-        // その機械の都合なので、収録も再生もしない (lane = None)。
-        [SerializeField, LiveField(persistScope = PersistScope.Project, lane = FrameLane.None), Hide]
+        // その機械の都合なので、収録も再生もしない (Project scope から導出)。
+        [SerializeField, LiveField(persistScope = PersistScope.Project), Hide]
         [FormerlyNamedAs("useSpout")]
         private bool _useSpout;
 

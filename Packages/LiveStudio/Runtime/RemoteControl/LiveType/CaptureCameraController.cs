@@ -44,7 +44,13 @@ namespace Lilium.LiveStudio
 
         // トラッカーは Setup/Teardown で transient に再生成されるため、channelIndex の
         // 信頼できる保存先はコントローラー側のこのフィールド。Setup でトラッカーへ焼き込む。
+        //
+        // ⚠ [FormerlyNamedAs] があって初めて上のプロパティとシャドウの対になる (_lockRoll と同じ形)。
+        // 無いと 2 つの独立したメンバーとして公開され、保存するのはフィールド・書き込みを受けるのは
+        // プロパティ、という食い違いになる。プロパティ側は何も保存しないので収録もされず
+        // (FrameLaneRules)、チャンネルの切り替えがテイクに残らなかった。
         [UnityEngine.SerializeField, LiveField, Hide]
+        [FormerlyNamedAs("channelIndex")]
         private int _channelIndex = 0;
 
         public override void Setup(CinemachineCamera camera)

@@ -54,11 +54,12 @@ namespace Lilium.LiveStudio.Virgo
         /// <summary>UDP 受信ソケットが開いているか。</summary>
         public bool isOpened => _udpConnection.isOpened;
 
-        // Off the live data (lane = None): which UDP port this machine listens on is part of how the
-        // rig is wired, not of what was performed. A spare machine may well listen elsewhere, and a
-        // replay that wrote this back would reopen the socket on a port nobody is sending to.
+        // A project setting, and off the live data because of it (FrameLaneRules): which UDP port
+        // this machine listens on is part of how the rig is wired, not of what was performed. A
+        // spare machine may well listen elsewhere, and a replay that wrote this back would reopen
+        // the socket on a port nobody is sending to.
         [SerializeField]
-        [LiveField(lane = FrameLane.None)]
+        [LiveField(persistScope = PersistScope.Project)]
         private int _port = 0;
 
         private UDPConnection _udpConnection = new UDPConnection();
@@ -72,10 +73,10 @@ namespace Lilium.LiveStudio.Virgo
         // 受信フレームより何秒遅延させて再生するか。補間先 (i0+1) を在庫させるための余裕。
         // 大きいほど最新フレームを追い越して hold する頻度が減るが、表示レイテンシは増える。
         //
-        // ライブデータには載せない (lane = None)。この値が効くのは受信したフレームをどう食うかであって、
+        // Project scope なのでライブデータには載らない。この値が効くのは受信したフレームをどう食うかであって、
         // 記録に残るのは食った結果のポーズなので、再生時にはそもそも出番がない。
         [SerializeField]
-        [LiveField(lane = FrameLane.None)]
+        [LiveField(persistScope = PersistScope.Project)]
         private float _delaySeconds = 0.0167f; // 約1フレーム (60fps)
 
         // Height (meters) the capture camera sits above the subject (the warp mark). With cameraDistance it
@@ -83,19 +84,19 @@ namespace Lilium.LiveStudio.Virgo
         // at the assumed real camera location. When both match the real rig, the avatar — placed at its
         // captured offset from the camera — lands on the mark.
         //
-        // 収録しない (lane = None)。これは撮影リグの実寸で、機材の設置がそうなっているという事実。
+        // Project scope なので収録されない。これは撮影リグの実寸で、機材の設置がそうなっているという事実。
         // ⚠ 予備機や再生機のリグ設定が違えば、同じ記録でもアバターの立ち位置は変わる。
         [SerializeField]
-        [LiveField(lane = FrameLane.None)]
+        [LiveField(persistScope = PersistScope.Project)]
         private float _cameraHeight = 1.3f;
 
         // Horizontal distance (meters) from the subject anchor to the capture camera, along the anchor's
         // forward (+Z) axis. With cameraHeight this fully specifies the capture-camera origin
         // geometrically, so this GameObject's position is determined even before/without capture pose data.
         //
-        // cameraHeight と対で 1 つの設定なので、レーンも揃える (lane = None)。
+        // cameraHeight と対で 1 つの設定なので、保存先も揃える (Project)。
         [SerializeField]
-        [LiveField(lane = FrameLane.None)]
+        [LiveField(persistScope = PersistScope.Project)]
         private float _cameraDistance = 0.7f;
 
         [SerializeField]

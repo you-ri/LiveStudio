@@ -60,6 +60,9 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
             /// </summary>
             public int frames;
 
+            /// <summary>How long the take runs, from its frame count and the rate it was written at.</summary>
+            public double seconds;
+
             /// <summary>True when the file carries a tail, so it was closed rather than cut short.</summary>
             public bool complete;
 
@@ -793,6 +796,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
                 {
                     take.complete = reader.hasIndex;
                     take.frames = reader.indexedFrameCount;
+                    take.seconds = reader.header.frameRate.AsSecounds(take.frames);
                 }
             }
             catch (InvalidDataException exception)
@@ -921,11 +925,16 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
                 : take.path + Environment.NewLine + take.problem;
             row.Add(view.name);
 
-            // A take that could not be read says so on its name rather than in a column of its own.
+            // A take that could not be read has no length to show, and one that was cut short has no
+            // tail to count from -- both are unknown rather than zero, which the column is the only
+            // place on the row to say. A take that closed properly with nothing in it is a different
+            // thing and says 00:00.000.
             var unreadable = take.problem != null;
+            var counted = !unreadable && take.complete;
+
+            _Column(row, "lds-col-duration", counted ? _Duration(take.seconds) : "—");
 
             view.size = _Column(row, "lds-col-size", _Bytes(take.bytes));
-            _Column(row, "lds-col-date", take.modified.ToString("MM/dd HH:mm:ss"));
 
             view.delete = new Button(() => _DeleteTake(take)) { text = "✕", tooltip = _Tr("LDS_DELETE") };
             view.delete.AddToClassList("lds-delete");
@@ -979,6 +988,15 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
         {
             var info = new FileInfo(path);
             return info.Exists ? info.Length : 0;
+        }
+
+        private static string _Duration(double seconds)
+        {
+            var span = TimeSpan.FromSeconds(seconds);
+
+            return span.TotalHours >= 1
+                ? $"{(int)span.TotalHours}:{span.Minutes:00}:{span.Seconds:00}"
+                : $"{span.Minutes:00}:{span.Seconds:00}.{span.Milliseconds:000}";
         }
 
         /// <summary>Bytes in the unit that reads at a glance.</summary>

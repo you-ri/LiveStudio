@@ -22,7 +22,7 @@ namespace Lilium.LiveStudio
     [DefaultExecutionOrder(250)]
     [LiveClass("ExternalAvatarSource", Category = "Avatar", Icon = "deployed_code")]
     [FormerlyNamedAs("VRMAvatarSource")]
-    public partial class ExternalAvatarSource : MonoBehaviour, IAvatarSource
+    public partial class ExternalAvatarSource : MonoBehaviour, IAvatarSource, ILiveDeserializeCallback
     {
         public event Action<GameObject> onAvatarReady;
 
@@ -42,8 +42,30 @@ namespace Lilium.LiveStudio
                 ? AvatarSelection.GetNames(ExternalAssetManager.current)
                 : Array.Empty<string>();
 
+        // 「どのアバターが出ているか」の意図。シーンに保存され、状態レーンで運ばれる
+        // (`selectedAvatar` のシャドウフィールド)。
+        //
+        // ⚠ カタログ (`ExternalAssetManager.assets`) はこの機械のディスクにある物なので保存も収録も
+        // しない。舞台に出ているものはショーなので、こちら側が持つ。保存と収録が同じ 1 つの宣言から
+        // 決まる (FrameLaneRules) ので、「ファイルには残るがテイクには残らない」は起こらない。
+        //
+        // ⚠ 実体との同期は _SyncFromManager / _TryApplySelection が持つ。アセットページから
+        // 直接 enabled を触られてもここが実体に追従し、復元直後でカタログがまだ無い間は
+        // 意図を保持したまま到着を待つ。
+        [SerializeField, LiveField(lane = FrameLane.State), Hide]
+        [FormerlyNamedAs("selectedAvatar")]
+        private string _selectedAvatar = string.Empty;
+
+        // 復元 (または再生の適用) で受け取った意図が、まだカタログに無くて適用できていない状態。
+        // 立っている間は実体からの同期を止める — 空のカタログが意図を消してしまうため。
+        [NonSerialized]
+        private bool _selectionPending;
+
+        [NonSerialized]
+        private ExternalAssetManager _subscribedManager;
+
         // ライブシーンページ等のインスペクタから、ExternalAssetManager に登録済みのアバターを
-        // ドロップダウンで選択する。get/set とも manager に委譲する（backing field なし = 非永続）。
+        // ドロップダウンで選択する。値は意図、ロードは効果。
         //
         // State lane rather than the event lane, which is not a choice about how often it changes --
         // it changes a few times a take -- but about what is the source of truth. The value is the
@@ -64,15 +86,85 @@ namespace Lilium.LiveStudio
         [Help("AVATAR_SELECT_HELP")]
         public string selectedAvatar
         {
-            get =>
-                ExternalAssetManager.current != null
-                    ? AvatarSelection.GetSelectedName(ExternalAssetManager.current)
-                    : string.Empty;
+            // 意図を返す。実体を直接読まないのは、選択の反映が 1 フレーム遅れる (SelectByName は
+            // 選んだ方を上げるだけで、他を下ろすのは後のリコンサイル) 間に「ひとつ前のアバター」を
+            // 答えてしまうため。その値が記録に載ると、切り替えたのと違うアバターへの切り替えとして
+            // 残る。実体が別経路で動いたときは _SyncFromManager がこの値を追従させる。
+            get => _selectedAvatar ?? string.Empty;
             set
             {
-                Debug.Log($"[LiveStudio] ExternalAvatarSource.selectedAvatar = {value}");
-                AvatarSelection.SelectByName(ExternalAssetManager.current, value);
+                var name = value ?? string.Empty;
+                if (string.Equals(name, _selectedAvatar, StringComparison.Ordinal)) return;
+
+                Debug.Log($"[LiveStudio] ExternalAvatarSource.selectedAvatar = {name}");
+                _selectedAvatar = name;
+                _selectionPending = !_TryApplySelection();
             }
+        }
+
+        /// <summary>
+        /// 意図をカタログへ適用する。まだそのアバターがカタログに無ければ false を返し、
+        /// 到着を待つ (<see cref="_OnAssetsChanged"/> が再試行する)。
+        /// </summary>
+        private bool _TryApplySelection()
+        {
+            var manager = ExternalAssetManager.current;
+            if (manager == null) return false;
+
+            // 空 = 既定アバターへ戻す。カタログの中身に関わらず必ず適用できる。
+            if (string.IsNullOrEmpty(_selectedAvatar))
+            {
+                AvatarSelection.SelectByName(manager, string.Empty);
+                return true;
+            }
+
+            if (!AvatarSelection.Contains(manager, _selectedAvatar)) return false;
+
+            AvatarSelection.SelectByName(manager, _selectedAvatar);
+            return true;
+        }
+
+        // 実体が別経路で動いたとき (アセットページの enabled トグル、排他リコンサイル) に意図を
+        // 追従させる。⚠ 待ち状態の間は動かさない — 起動直後のカタログはまだ空で、そこから
+        // 同期すると復元した意図をその場で消す。
+        private void _SyncFromManager()
+        {
+            var manager = ExternalAssetManager.current;
+            if (manager == null) return;
+
+            _selectedAvatar = AvatarSelection.GetSelectedName(manager);
+        }
+
+        private void _OnAssetsChanged()
+        {
+            if (_selectionPending)
+            {
+                if (!_TryApplySelection()) return;
+                _selectionPending = false;
+                return;
+            }
+
+            _SyncFromManager();
+        }
+
+        /// <summary>
+        /// ライブシーンの復元後。シャドウフィールドへ直接書かれるのでセッターを通らず、意図が
+        /// 適用されないまま残る。⚠ このコールバックはプロパティ書き込みでも発火するので、
+        /// 実体と食い違っているときだけ動く。
+        /// </summary>
+        public void OnAfterLiveDeserialize()
+        {
+            if (!Application.isPlaying) return;
+
+            var manager = ExternalAssetManager.current;
+            if (manager != null
+                && string.Equals(AvatarSelection.GetSelectedName(manager), selectedAvatar, StringComparison.Ordinal))
+            {
+                _selectionPending = false;
+                return;
+            }
+
+            _selectionPending = !_TryApplySelection();
         }
 
         public void RequestLoad(string filepath)
@@ -85,12 +177,41 @@ namespace Lilium.LiveStudio
         {
             VRMLoader.onLoaded += _OnVRMLoaded;
             VRMLoader.onLoadError += _OnVRMLoadError;
+            _EnsureSubscribed();
         }
 
         void OnDisable()
         {
             VRMLoader.onLoaded -= _OnVRMLoaded;
             VRMLoader.onLoadError -= _OnVRMLoadError;
+
+            if (_subscribedManager != null)
+            {
+                _subscribedManager.onAssetsChanged -= _OnAssetsChanged;
+                _subscribedManager = null;
+            }
+        }
+
+        void Update()
+        {
+            // マネージャは OnEnable の時点ではまだ居ないことがある (ロード順)。購読を遅らせる。
+            // 掴んだインスタンスを持つのは、先に壊されても確実に解除するため (StageManager と同形)。
+            _EnsureSubscribed();
+        }
+
+        private void _EnsureSubscribed()
+        {
+            if (_subscribedManager != null) return;
+
+            var manager = ExternalAssetManager.current;
+            if (manager == null) return;
+
+            _subscribedManager = manager;
+            manager.onAssetsChanged += _OnAssetsChanged;
+
+            // 購読した時点のカタログで 1 度確かめる。復元がこれより先に走っていれば待ち状態の
+            // 意図がここで通り、そうでなければ実体から意図を採る。
+            _OnAssetsChanged();
         }
 
         void _LoadIfFileExists()

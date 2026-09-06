@@ -937,7 +937,14 @@ namespace Lilium.RemoteControl.Editor
                     break;
             }
 
-            if (refusal != LiveClassAsset.TypeDefinition.LaneRefusal.None)
+            if (refusal == LiveClassAsset.TypeDefinition.LaneRefusal.NoneRefused)
+            {
+                text += " ⚠";
+                tooltip = "Asks to be off the frame, but the live scene saves this member, and what the "
+                    + "scene saves a recording carries. Untick Persistable to take it off the frame.";
+                badge.AddToClassList(LiveClassAssetStyles.kWarning);
+            }
+            else if (refusal != LiveClassAsset.TypeDefinition.LaneRefusal.None)
             {
                 text += " ⚠";
                 tooltip = $"Asks for the state lane, but {member.ResolveValueType(ownerType)?.Name ?? "this member"} "

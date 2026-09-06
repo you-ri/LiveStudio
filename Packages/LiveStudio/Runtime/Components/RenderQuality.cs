@@ -39,15 +39,16 @@ namespace Lilium.LiveStudio
         [LiveProperty, Hide]
         public string[] qualityNames => QualitySettings.names;
 
-        // Off the live data (lane = None): how hard this machine is willing to work for a frame is
-        // exactly the kind of thing a spare machine is expected to differ on. Declared on both the
-        // field and the property because the field carries no [FormerlyNamedAs], so it is exposed in
-        // its own right rather than as the property's shadow.
-        [LiveField(persistScope = PersistScope.Project, lane = FrameLane.None), Hide]
+        // Off the live data: how hard this machine is willing to work for a frame is exactly the kind
+        // of thing a spare machine is expected to differ on. The field is a project setting and the
+        // property below persists nothing of its own (the field carries no [FormerlyNamedAs], so it is
+        // exposed in its own right rather than as the property's shadow), and the lane follows from
+        // both (FrameLaneRules) without either saying so.
+        [LiveField(persistScope = PersistScope.Project), Hide]
         private string _quality;
 
         [Section("high_quality", "SECTION_QUALITY_TITLE", "SECTION_QUALITY_SUBTITLE")]
-        [LiveProperty(lane = FrameLane.None)]
+        [LiveProperty]
         [StringSelector(nameof(qualityNames))]
         public string quality
         {

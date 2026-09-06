@@ -29,8 +29,24 @@ namespace Lilium.RemoteControl.Tests
             [LiveField] public float undeclared;
 
             /// <summary>A setting of the machine: the resolution it renders at, the language it
-            /// reads in. Not part of the world, so no lane carries it.</summary>
-            [LiveField(lane = FrameLane.None)] public float setting;
+            /// reads in. Saved to the project settings rather than the scene, and off the frame for
+            /// that reason alone (FrameLaneRules) -- nothing here says "None".</summary>
+            [LiveField(persistScope = PersistScope.Project)] public float setting;
+
+            /// <summary>
+            /// Saved nowhere and saying nothing: a readout, a runtime status. Not in the file, so not
+            /// in the take either.
+            /// </summary>
+            [LiveField(persistable = false)] public float transient;
+
+            /// <summary>
+            /// The exception, said out loud: saved nowhere -- a pose is not something a scene file
+            /// holds -- but carried by the take because it asked to be.
+            /// </summary>
+            [LiveField(persistable = false, lane = FrameLane.State)] public float pose;
+
+            /// <summary>The same exception on the sparse lane.</summary>
+            [LiveField(persistable = false, lane = FrameLane.Event)] public float cue;
 
             // The convention this codebase uses for a property with side effects: the value lives
             // in a hidden field and the property pushes it somewhere on write.
@@ -45,7 +61,7 @@ namespace Lilium.RemoteControl.Tests
                 set => _shadowed = value;
             }
 
-            [LiveField(lane = FrameLane.None), Hide]
+            [LiveField(persistScope = PersistScope.Project), Hide]
             [FormerlyNamedAs("shadowedSetting")]
             private float _shadowedSetting;
 
@@ -60,13 +76,13 @@ namespace Lilium.RemoteControl.Tests
             [LiveField] public float[] tracked = new float[0];
 
             /// <summary>A collection of the machine, off the live data like any other setting.</summary>
-            [LiveField(lane = FrameLane.None)] public float[] settings = new float[0];
+            [LiveField(persistScope = PersistScope.Project)] public float[] settings = new float[0];
 
             /// <summary>
             /// A setting of the machine held as an object rather than as a scalar. What it holds is
             /// a setting field by field, so nothing under it belongs in the take either.
             /// </summary>
-            [LiveField(lane = FrameLane.None)] public MachineSettings machine = new MachineSettings();
+            [LiveField(persistScope = PersistScope.Project)] public MachineSettings machine = new MachineSettings();
 
             /// <summary>The same shape, on the live data. The control for the member above.</summary>
             [LiveField] public WorldPart part = new WorldPart();
@@ -194,6 +210,19 @@ namespace Lilium.RemoteControl.Tests
             Assert.AreEqual(FrameLane.Event, Member("requested").lane);
             Assert.AreNotEqual(FrameLane.Event, Member("carried").lane);
             Assert.AreNotEqual(FrameLane.Event, Member("setting").lane);
+        }
+
+        /// <summary>
+        /// The lane follows from the persistence. A member nothing saves is off the frame without
+        /// saying so; one that asks for a lane anyway gets it, whatever its persistence -- that is the
+        /// one exception, and it is always written out loud.
+        /// </summary>
+        [Test]
+        public void TheLaneFollowsThePersistence_UnlessTheMemberSaysOtherwise()
+        {
+            Assert.AreEqual(FrameLane.None, Member("transient").lane);
+            Assert.AreEqual(FrameLane.State, Member("pose").lane);
+            Assert.AreEqual(FrameLane.Event, Member("cue").lane);
         }
 
         [Test]

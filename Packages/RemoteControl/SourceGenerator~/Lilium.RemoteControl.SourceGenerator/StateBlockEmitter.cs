@@ -292,6 +292,15 @@ namespace Lilium.RemoteControl.SourceGenerator
             isEnabledByDefault: true,
             description: "Being nested is no longer a reason on its own -- a nested type is named through the types that contain it, and each of those has to be nameable too.");
 
+        public static readonly DiagnosticDescriptor kMemberLaneNone = new DiagnosticDescriptor(
+            "LRC013",
+            "lane = FrameLane.None is not declared on a member",
+            "'{0}' declares lane = FrameLane.None. Which lane a member is on follows from where it is saved (FrameLaneRules): declare persistScope = PersistScope.Project / Custom, or persistable = false, and the member leaves the frame with its persistence. A member the live scene saves cannot be off the frame -- the scene file would describe a world the recording disagrees with.",
+            "Lilium.RemoteControl",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true,
+            description: "The runtime refuses the same declaration (LiveClass.RegisterProperties). Said at compile time as well so the two halves cannot be made to disagree by a declaration one of them ignores.");
+
         public static readonly DiagnosticDescriptor kMissingSimulationReference = new DiagnosticDescriptor(
             "LRC004",
             "State lane needs a reference to Lilium.RemoteControl.Simulation",
@@ -347,8 +356,16 @@ namespace Lilium.RemoteControl.SourceGenerator
             {
                 foreach (var member in level.OriginalDefinition.GetMembers())
                 {
-                    if (!_TryReadStateMember(member, out var memberType, out var textCapacity,
-                            out var appliedCallback, out var laneWasDeclared)) continue;
+                    var isState = _TryReadStateMember(member, out var memberType, out var textCapacity,
+                        out var appliedCallback, out var laneWasDeclared, out var declaredNone);
+
+                    // Refused whether or not the member would otherwise have been carried: None is
+                    // derived from the persistence, and a declaration of it is either redundant or
+                    // a saved member trying to leave the frame. Always addressed to someone -- it
+                    // was written out loud.
+                    if (declaredNone) problems.Add($"{level.Name}.{member.Name}|lane-none||True");
+
+                    if (!isState) continue;
 
                     // Any member of this type having said "state" out loud makes the type's own
                     // problems (it is a struct, it cannot be named) addressed to someone.
@@ -482,7 +499,10 @@ namespace Lilium.RemoteControl.SourceGenerator
                 }
             }
 
-            if (!any) return null;
+            // Nothing to carry and nothing to say: the common case. A type with no state members but
+            // a refused declaration still comes back, so the refusal is reported (CanEmit keeps a
+            // memberless block from being written).
+            if (!any && problems.Count == 0) return null;
 
             // A block beside the owner has to be able to say the owner's name, which for a nested
             // type means saying every name it is nested inside. Being nested is not the question --
@@ -563,16 +583,18 @@ namespace Lilium.RemoteControl.SourceGenerator
         }
 
         /// <summary>
-        /// True when a member is declared in the state lane; hands back its type and, for text, the
-        /// width its declaration asked for.
+        /// True when a member is on the state lane; hands back its type and, for text, the width its
+        /// declaration asked for. <paramref name="declaredNone"/> says the member wrote
+        /// <c>lane = FrameLane.None</c>, which is refused (LRC013) whatever else is true of it.
         /// </summary>
         static bool _TryReadStateMember(ISymbol member, out ITypeSymbol memberType, out int textCapacity,
-            out string appliedCallback, out bool laneWasDeclared)
+            out string appliedCallback, out bool laneWasDeclared, out bool declaredNone)
         {
             memberType = null;
             textCapacity = 0;
             appliedCallback = null;
             laneWasDeclared = false;
+            declaredNone = false;
 
             AttributeData attribute = null;
             var isField = false;
@@ -597,28 +619,45 @@ namespace Lilium.RemoteControl.SourceGenerator
                 return false;
             }
 
-            // A field with nothing said about its lane goes on the state lane: a field usually holds
-            // a value something else drives, which is what the lane is for, and it is the same
-            // default the asset-declared path has had since it was built. A property is usually
-            // written from outside and stays where it was.
+            // The same rule the runtime applies (FrameLaneRules.Resolve), read off the attribute's
+            // arguments. A member the live scene does not save -- persistScope other than Scene, or
+            // persistable = false -- is off the frame unless its lane is said out loud, so it does not
+            // get a block slot for want of a declaration. Saved and unsaid, a field goes on the state
+            // lane: a field usually holds a value something else drives, which is what the lane is
+            // for, and it is the same default the asset-declared path has had since it was built. A
+            // property is usually written from outside and stays on the event lane.
             //
             // ⚠ Whether the lane was said out loud is carried out of here, because it decides who a
             // diagnostic is addressed to. "Your declaration is not being carried" is the right thing
             // to tell someone who declared; to everyone else it is noise about a request they never
             // made, and every exposed member would make one.
-            var isState = isField;
+            var savedToScene = true;
+            int? declaredLane = null;
 
             foreach (var named in attribute.NamedArguments)
             {
                 if (named.Key == "lane" && named.Value.Value is int value)
                 {
                     laneWasDeclared = true;
-                    isState = value == 1;
+                    declaredLane = value;
                 }
+                else if (named.Key == "persistScope" && named.Value.Value is int scope && scope != 0) savedToScene = false;
+                else if (named.Key == "persistable" && named.Value.Value is bool persistable && !persistable) savedToScene = false;
                 else if (named.Key == "textCapacity" && named.Value.Value is int width) textCapacity = width;
                 else if (named.Key == "onApplied" && named.Value.Value is string callback
                          && !string.IsNullOrEmpty(callback)) appliedCallback = callback;
             }
+
+            // FrameLane: Event == 0, State == 1, None == 2. Compared as the numbers the attribute
+            // stores, because a generator sees the constant's value rather than its name.
+            if (declaredLane == 2)
+            {
+                declaredNone = true;
+                declaredLane = null;
+                laneWasDeclared = false;
+            }
+
+            var isState = declaredLane.HasValue ? declaredLane.Value == 1 : savedToScene && isField;
 
             if (isState) return true;
 
@@ -973,6 +1012,12 @@ namespace Lilium.RemoteControl.SourceGenerator
                     case "not-movable":
                         context.ReportDiagnostic(Diagnostic.Create(kMemberNotMovable, Location.None, severity, null, null,
                             split[0], split[2]));
+                        break;
+
+                    case "lane-none":
+                        // Its own severity: the descriptor is an error, and the declaration was
+                        // always written out loud, so the declared/undeclared rule does not apply.
+                        context.ReportDiagnostic(Diagnostic.Create(kMemberLaneNone, Location.None, split[0]));
                         break;
 
                     default:
