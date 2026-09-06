@@ -27,7 +27,7 @@ namespace Lilium.LiveStudio
     /// time is an invariant StageManager enforces.
     /// </summary>
     [Serializable]
-    [LiveClass("BuiltinSetAsset", Category = "Asset", Icon = "public")]
+    [LiveClass("BuiltinSetAsset", Category = "Asset", Icon = "public", lane = FrameLane.None)]
     public class BuiltinSetAsset : AssetBase, ISetAsset
     {
         /// <summary>

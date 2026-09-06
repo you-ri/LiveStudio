@@ -15,7 +15,7 @@ namespace Lilium.LiveStudio
     /// applications: a static class is registered wherever this assembly is linked, but only a host
     /// whose UI definition lists this entry grows the menu item.
     /// </summary>
-    [LiveClass(Icon = "fiber_manual_record")]
+    [LiveClass(Icon = "fiber_manual_record", lane = FrameLane.None)]
     public static class FrameRecorderPage
     {
         // Order is explicit throughout. A member with no [Section] joins the section above it, and
@@ -29,12 +29,18 @@ namespace Lilium.LiveStudio
         // goes through plain properties, which cost nothing here because the component marks them
         // as not persisted anyway.
 
+        // lane = None on the class: nothing on this page is of the world being recorded. It is the
+        // recorder's own controls, and a take that held them would, on replay, start and stop
+        // recordings on the machine playing it back. Said on the type so a member added later
+        // inherits the answer -- which is what the two per-member declarations here used to say,
+        // one member at a time, while the calls next to them said nothing at all.
+
         // === Record ===
 
         [Section("fiber_manual_record", "SECTION_FRAME_RECORD_TITLE", "SECTION_FRAME_RECORD_SUBTITLE")]
-        // lane = None: 収録機自身の設定であって世界の状態ではない。excludeObjectIds でもこのページは
-        // 外れるが、除外リストに頼らず宣言でも言う (コンポーネント側の _take も None)。
-        [LiveProperty(order = 10, lane = FrameLane.None)]
+        // excludeObjectIds でもこのページは外れるが、除外リストに頼らず宣言でも言う
+        // (コンポーネント側の _take も None)。宣言はクラス属性側にある。
+        [LiveProperty(order = 10)]
         public static int take
         {
             get => FrameRecorderController.instance?.take ?? 1;
@@ -77,7 +83,7 @@ namespace Lilium.LiveStudio
         // === Replay ===
 
         [Section("play_circle", "SECTION_FRAME_REPLAY_TITLE", "SECTION_FRAME_REPLAY_SUBTITLE")]
-        [LiveProperty(order = 20, lane = FrameLane.None)]
+        [LiveProperty(order = 20)]
         [StringSelector(nameof(availableRecordings))]
         public static string replayFilename
         {

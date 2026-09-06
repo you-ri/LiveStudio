@@ -20,7 +20,7 @@ namespace Lilium.LiveStudio
     /// <see cref="ExternalAssetManager.OpenLiveScene"/> also invokes <see cref="Open"/> to switch scenes.
     /// </summary>
     [System.Serializable]
-    [LiveClass("LiveSceneAsset", Category = "Asset", Icon = "movie")]
+    [LiveClass("LiveSceneAsset", Category = "Asset", Icon = "movie", lane = FrameLane.None)]
     public class LiveSceneAsset : AssetBase
     {
         // Additive group, but never enabled: opening is a one-shot action, not a sticky load state.

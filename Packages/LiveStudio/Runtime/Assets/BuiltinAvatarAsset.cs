@@ -30,7 +30,7 @@ namespace Lilium.LiveStudio
     /// are shared with <see cref="AvatarAsset"/> through <see cref="AvatarAssetSupport"/>.
     /// </summary>
     [Serializable]
-    [LiveClass("BuiltinAvatarAsset", Category = "Asset", Icon = "person")]
+    [LiveClass("BuiltinAvatarAsset", Category = "Asset", Icon = "person", lane = FrameLane.None)]
     public class BuiltinAvatarAsset : AvatarAssetBase
     {
         // Selectable service id of the avatar slot to drive (the id AvatarController registers under).

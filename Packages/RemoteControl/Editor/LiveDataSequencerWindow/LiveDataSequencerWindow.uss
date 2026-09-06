@@ -211,26 +211,12 @@
 .lds-take-name {
     flex-grow: 1;
     flex-shrink: 1;
-    min-width: 60px;
+    min-width: 160px;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
 /* Fixed columns so the numbers line up down the list rather than following the names. */
-.lds-col-frames {
-    min-width: 78px;
-    max-width: 78px;
-    -unity-text-align: middle-right;
-    margin-left: 8px;
-}
-
-.lds-col-duration {
-    min-width: 86px;
-    max-width: 86px;
-    -unity-text-align: middle-right;
-    margin-left: 8px;
-}
-
 .lds-col-size {
     min-width: 74px;
     max-width: 74px;

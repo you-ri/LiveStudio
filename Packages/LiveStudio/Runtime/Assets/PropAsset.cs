@@ -24,7 +24,7 @@ namespace Lilium.LiveStudio
     /// </list>
     /// </summary>
     [Serializable]
-    [LiveClass("PropAsset", Category = "Asset", Icon = "deployed_code")]
+    [LiveClass("PropAsset", Category = "Asset", Icon = "deployed_code", lane = FrameLane.None)]
     public class PropAsset : AssetBase, IInstantiableProp
     {
         /// <summary>

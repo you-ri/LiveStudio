@@ -52,10 +52,13 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
             public long bytes;
             public DateTime modified;
 
-            /// <summary>Frames the tail index knows about, or 0 when there is no index to ask.</summary>
+            /// <summary>
+            /// Frames the tail index knows about, or 0 when there is no index to ask.
+            ///
+            /// Not shown on the row any more, but still what tells a take that has grown from the
+            /// one the list was built from, so the list is rebuilt when it moves.
+            /// </summary>
             public int frames;
-
-            public double seconds;
 
             /// <summary>True when the file carries a tail, so it was closed rather than cut short.</summary>
             public bool complete;
@@ -68,7 +71,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
         {
             public VisualElement root;
             public Label name;
-            public Label frames;
             public Label size;
             public Button delete;
             public string path;
@@ -791,7 +793,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
                 {
                     take.complete = reader.hasIndex;
                     take.frames = reader.indexedFrameCount;
-                    take.seconds = reader.header.frameRate.AsSecounds(take.frames);
                 }
             }
             catch (InvalidDataException exception)
@@ -865,7 +866,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
                 // numbers are worth rewriting on every redraw.
                 if (!recordingThis) continue;
 
-                view.frames.text = controller.recordedFrames.ToString();
                 view.size.text = _Bytes(_Length(view.path));
             }
         }
@@ -921,16 +921,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
                 : take.path + Environment.NewLine + take.problem;
             row.Add(view.name);
 
-            // A take that could not be read says so where its numbers would have been, and one that
-            // was cut short has no tail to count from -- both are unknown rather than zero, which is
-            // a distinction the columns are the only place on the row to make. A take that closed
-            // properly with nothing in it is a different thing and says 0.
+            // A take that could not be read says so on its name rather than in a column of its own.
             var unreadable = take.problem != null;
-            var counted = !unreadable && take.complete;
-
-            view.frames = _Column(row, "lds-col-frames", counted ? take.frames.ToString() : "—");
-
-            _Column(row, "lds-col-duration", counted ? _Duration(take.seconds) : "—");
 
             view.size = _Column(row, "lds-col-size", _Bytes(take.bytes));
             _Column(row, "lds-col-date", take.modified.ToString("MM/dd HH:mm:ss"));
@@ -987,15 +979,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
         {
             var info = new FileInfo(path);
             return info.Exists ? info.Length : 0;
-        }
-
-        private static string _Duration(double seconds)
-        {
-            var span = TimeSpan.FromSeconds(seconds);
-
-            return span.TotalHours >= 1
-                ? $"{(int)span.TotalHours}:{span.Minutes:00}:{span.Seconds:00}"
-                : $"{span.Minutes:00}:{span.Seconds:00}.{span.Milliseconds:000}";
         }
 
         /// <summary>Bytes in the unit that reads at a glance.</summary>

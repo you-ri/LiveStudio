@@ -269,7 +269,8 @@ namespace Lilium.LiveStudio
         // RemoteControl のシリアライズ (live.json 等) にはアセット GUID が保存される。候補は
         // GET /live/assets?type=AnimationClip (組み込み Resources + 外部バンドル) から供給される。
         [SerializeField]
-        [LiveField(label="AVATAR_BODYOVERRIDECLIP"), AssetSelector(refPropertyName: nameof(_bodyOverrideClipRef))]
+        [LiveField(label="AVATAR_BODYOVERRIDECLIP", carriedBy = nameof(bodyOverrideClipKey)),
+         AssetSelector(refPropertyName: nameof(_bodyOverrideClipRef))]
         private AnimationClip _bodyOverrideClip;
 
         // このコントローラからクリップを転送済みか。「変更しない」(空文字) では転送しないが、
@@ -282,13 +283,82 @@ namespace Lilium.LiveStudio
         // Object でなくキー文字列で保持し、PackBundleLoader がロード→AssetRegistry 登録→解決する。
         // 旧シーンにこのフィールドは無い (=空=既存挙動) ので live.json はバイト不変。Hide でジェネリック
         // インスペクタから隠し、RemoteApp の専用 2 段セレクタが読み書きする。
-        [LiveField, Hide]
+        [LiveField(carriedBy = nameof(bodyOverrideClipKey)), Hide]
         private string _bodyOverrideClipRef = string.Empty;
 
         // _bodyOverrideClipRef の非同期解決状態 (解決済みクリップ / 適用済みキー / 解決中キー / supersede)
         // をまとめて持つ。キーが変わるたび Sync で解決を回し、完了時に再適用する。
         private readonly ExternalAssetRef<AnimationClip> _bodyOverrideExternal =
             new ExternalAssetRef<AnimationClip>(PackBundleLoader.ResolveAsync<AnimationClip>);
+
+        /// <summary>
+        /// Which clip overrides the untracked body, as the one key that names it either way.
+        ///
+        /// The choice is stored in two members -- a baked <see cref="AnimationClip"/> reference and a
+        /// key into an external pack -- and neither can go in a frame: a block cannot hold a
+        /// reference, and both are private on a type that is not <c>partial</c>, so the movers
+        /// generated beside it cannot name them (<c>LRC009</c>, reported quietly because neither
+        /// asked for the lane). The pose the avatar falls back to for everything the capture does not
+        /// track was therefore absent from a recording entirely.
+        ///
+        /// This is the two of them as one string, in the key space
+        /// <see cref="ExternalAssetKey"/> already defines: a bare GUID (or <c>guid:localId</c>) for
+        /// something baked in, <c>file:path#name</c> for a member of a pack, both resolvable through
+        /// <see cref="AssetRegistry"/>. State lane for the reason
+        /// <see cref="ExternalAvatarSource.selectedAvatar"/> is -- the value is the intent ("this clip
+        /// is driving the untracked parts"), the loading is the effect, and the setter produces it --
+        /// so any frame of a take says which clip should be on rather than only the moment it changed.
+        ///
+        /// No <c>textCapacity</c>: the symbol table gives the value an id, and a pack key is a
+        /// project-relative path whose length nobody can promise. A width here would mean a deep path
+        /// is not carried at all, which for this member is a recording that does not say what the
+        /// body was doing.
+        ///
+        /// internal, not private, for the reason <see cref="_avatarLayer"/> is: the block is
+        /// generated outside the type.
+        /// </summary>
+        [LiveProperty(lane = FrameLane.State), Hide]
+        internal string bodyOverrideClipKey
+        {
+            get
+            {
+                if (!string.IsNullOrEmpty(_bodyOverrideClipRef)) return _bodyOverrideClipRef;
+                if (_bodyOverrideClip == null) return string.Empty;
+
+                // Asked of the registry rather than read off _bodyOverrideClipGuid: that field is
+                // baked by OnValidate, so a clip chosen at run time through the selector leaves it
+                // holding the previous choice. The registry knows the key the clip is registered
+                // under, whoever registered it.
+                return AssetRegistry.TryFindGuid(_bodyOverrideClip, out var guid)
+                    ? guid
+                    : _bodyOverrideClipGuid ?? string.Empty;
+            }
+            set
+            {
+                var key = value ?? string.Empty;
+                if (string.Equals(key, bodyOverrideClipKey, StringComparison.Ordinal)) return;
+
+                if (ExternalAssetKey.IsFileKey(key))
+                {
+                    // The pack member wins while it is set, so the baked reference is left alone --
+                    // clearing the key falls back to it, which is the existing behaviour.
+                    _bodyOverrideClipRef = key;
+                }
+                else
+                {
+                    _bodyOverrideClipRef = string.Empty;
+                    _bodyOverrideClip = !string.IsNullOrEmpty(key)
+                        && AssetRegistry.TryFind(key, out var asset)
+                        ? asset as AnimationClip
+                        : null;
+                }
+
+                // Both halves of what a write through the selector would have done: start resolving
+                // a pack key, and put whatever is now effective onto the avatar.
+                _OnOverrideRefMaybeChanged();
+                _ReapplyOverrideToTarget();
+            }
+        }
 
         // 下半身の位置をロックするフラグ。ON の間、AvatarBodyDriver を使う対応アバター
         // (VRM1Avatar / VRCFTAvatar / VRCAvatar) は hips を body override クリップの腰位置

@@ -24,7 +24,7 @@ namespace Lilium.LiveStudio
     /// actually drills into is opened, to enumerate its members (<see cref="GetMembersAsync"/>).
     /// </summary>
     [Serializable]
-    [LiveClass("PackBundleAsset", Category = "Asset", Icon = "animation")]
+    [LiveClass("PackBundleAsset", Category = "Asset", Icon = "animation", lane = FrameLane.None)]
     [FormerlyNamedAs("AnimationBundleAsset")]
     public class PackBundleAsset : AssetBase
     {

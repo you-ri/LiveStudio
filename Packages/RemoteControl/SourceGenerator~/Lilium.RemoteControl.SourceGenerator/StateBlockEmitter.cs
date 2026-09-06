@@ -309,6 +309,13 @@ namespace Lilium.RemoteControl.SourceGenerator
             IEnumerable<INamedTypeSymbol> chain)
         {
             var levels = chain as IList<INamedTypeSymbol> ?? chain.ToList();
+
+            // The whole type is off the frame, so there is nothing here to carry. Asked before the
+            // members rather than after, because the answer is about the type: an undeclared field
+            // would otherwise land in a block that the runtime has already decided is off the lane,
+            // and the block and the declaration disagreeing is the failure this area keeps having.
+            if (_DeclaresTypeOffFrame(typeSymbol)) return null;
+
             var members = ImmutableArray.CreateBuilder<StateMemberInfo>();
             var problems = ImmutableArray.CreateBuilder<string>();
             var seen = new HashSet<string>();
@@ -622,6 +629,32 @@ namespace Lilium.RemoteControl.SourceGenerator
             return false;
         }
 
+        /// <summary>
+        /// Whether the type's own <c>[LiveClass]</c> says the whole type is off the frame.
+        ///
+        /// Read from the type and its bases: a base that is a setting does not stop being one in a
+        /// derived type. The runtime reads the same declaration the same way
+        /// (<c>LiveClass.RegisterProperties</c>), which is what keeps the block and the lane
+        /// agreeing about what is carried.
+        /// </summary>
+        static bool _DeclaresTypeOffFrame(INamedTypeSymbol typeSymbol)
+        {
+            for (var level = typeSymbol; level != null; level = level.BaseType)
+            {
+                var attribute = _FindAttribute(level.OriginalDefinition, kLiveClassAttribute);
+                if (attribute == null) continue;
+
+                foreach (var named in attribute.NamedArguments)
+                {
+                    // FrameLane.None == 2. Compared as the number the attribute stores, because a
+                    // generator sees the constant's value rather than the name it was written with.
+                    if (named.Key == "lane" && named.Value.Value is int lane && lane == 2) return true;
+                }
+            }
+
+            return false;
+        }
+
         static AttributeData _FindAttribute(ISymbol member, string attributeName)
         {
             foreach (var attr in member.GetAttributes())
@@ -634,6 +667,7 @@ namespace Lilium.RemoteControl.SourceGenerator
 
         const string kLivePropertyAttribute = "Lilium.RemoteControl.LivePropertyAttribute";
         const string kLiveFieldAttribute = "Lilium.RemoteControl.LiveFieldAttribute";
+        const string kLiveClassAttribute = "Lilium.RemoteControl.LiveClassAttribute";
         const string kHideAttribute = "Lilium.RemoteControl.HideAttribute";
         const string kFormerlyNamedAsAttribute = "Lilium.RemoteControl.FormerlyNamedAsAttribute";
 

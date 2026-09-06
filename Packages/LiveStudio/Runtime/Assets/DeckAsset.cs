@@ -17,7 +17,7 @@ namespace Lilium.LiveStudio
     /// writes it, following the project crawl.
     /// </summary>
     [System.Serializable]
-    [LiveClass("DeckAsset", Category = "Asset", Icon = "grid_view")]
+    [LiveClass("DeckAsset", Category = "Asset", Icon = "grid_view", lane = FrameLane.None)]
     public class DeckAsset : AssetBase
     {
         /// <summary>A deck file is written by the app, so the app may delete it.</summary>

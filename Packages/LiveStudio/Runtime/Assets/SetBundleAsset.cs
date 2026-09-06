@@ -21,7 +21,7 @@ namespace Lilium.LiveStudio
     /// <c>state</c> snapshot machinery of <see cref="AssetBase"/> is unused here.
     /// </summary>
     [Serializable]
-    [LiveClass("SetBundleAsset", Category = "Asset", Icon = "public")]
+    [LiveClass("SetBundleAsset", Category = "Asset", Icon = "public", lane = FrameLane.None)]
     public class SetBundleAsset : AssetBase, ISetAsset
     {
         public override bool reloadsOnAvatarChange => false;

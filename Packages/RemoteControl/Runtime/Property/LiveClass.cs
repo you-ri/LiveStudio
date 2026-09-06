@@ -254,6 +254,18 @@ namespace Lilium.RemoteControl
             // typeNameがnullの場合はクラス名を使用
             var typeName = classAttribute.typeName ?? type.Name;
 
+            // The type is one thing all the way through and that thing is off the frame, so every
+            // member and every call below is too, whatever it declares for itself. Absorbing rather
+            // than a default -- see LiveClassAttribute.lane for why a default cannot be told from a
+            // member that asked for the event lane out loud.
+            var typeIsOffFrame = classAttribute.lane == FrameLane.None;
+
+            if (classAttribute.lane == FrameLane.State)
+            {
+                Debug.LogWarning($"[RemoteControl] {typeName}: FrameLane.State means nothing on a type " +
+                    "-- a type is not a value to copy every frame. Declare it on the members that need it.");
+            }
+
             // プロパティ、フィールド、メソッドを統合して収集（定義順を保持するため）
             // MemberType: 0=Property/Field, 1=Method
             var allMembers = new List<(MemberInfo member, int token, int memberType, object attr, bool isPersistable)>();
@@ -421,6 +433,7 @@ namespace Lilium.RemoteControl
                         propName = fieldAttr.name ?? member.Name;
                         persistScope = fieldAttr.persistScope;
                         lane = fieldAttr.lane;
+                        carriedBy = fieldAttr.carriedBy;
                     }
                     else
                     {
@@ -442,6 +455,8 @@ namespace Lilium.RemoteControl
                         lane = shadowInfo.fieldLane;
                     }
 
+                    if (typeIsOffFrame) lane = FrameLane.None;
+
                     properties.Add(new LivePropertyDefine
                     {
                         name = propName,
@@ -458,7 +473,8 @@ namespace Lilium.RemoteControl
                 {
                     var funcAttr = (LiveFunctionAttribute)attr;
                     var functionName = funcAttr.name ?? member.Name;
-                    var funcType = new LiveFunctionType(functionName, (MethodInfo)member);
+                    var funcType = new LiveFunctionType(functionName, (MethodInfo)member,
+                        laneOverride: typeIsOffFrame ? FrameLane.None : (FrameLane?)null);
                     funcType.order = i;
                     functions.Add(funcType);
                 }

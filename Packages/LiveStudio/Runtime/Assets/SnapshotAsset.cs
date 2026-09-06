@@ -17,7 +17,7 @@ namespace Lilium.LiveStudio
     /// <c>GET /live/asset/{key}/@image</c> every other asset's preview comes from.
     /// </summary>
     [System.Serializable]
-    [LiveClass("SnapshotAsset", Category = "Asset", Icon = "photo_library")]
+    [LiveClass("SnapshotAsset", Category = "Asset", Icon = "photo_library", lane = FrameLane.None)]
     public class SnapshotAsset : AssetBase
     {
         /// <summary>A snapshot is taken by the app, so the app may delete it.</summary>

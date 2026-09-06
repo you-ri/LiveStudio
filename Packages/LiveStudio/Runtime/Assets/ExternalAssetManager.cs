@@ -38,9 +38,27 @@ namespace Lilium.LiveStudio
     /// holds no persisted file path of its own — it is just the loader the selected avatar asset drives.
     /// </summary>
     [Serializable]
-    [LiveClass(Icon = "deployed_code", Category = "Asset", HideInScene = true)]
+    [LiveClass(Icon = "deployed_code", Category = "Asset", HideInScene = true, lane = FrameLane.None)]
     public class ExternalAssetManager : ILiveObject, ILiveDeserializeCallback, ILiveSerializeCallback
     {
+        // lane = None on the class: the project's assets are what this machine has on disk, not what
+        // the show did. The calls are the operator's housekeeping -- adding, removing, deleting a
+        // file, saving a preset, opening a live scene -- and a take that held them would, on replay,
+        // reach over and rewrite (DeleteAssetFile: delete) files on the machine playing it back.
+        //
+        // ⚠ Absorbing, so `assets` goes with it: the writes into `assets[i]/enabled` are no longer
+        // recorded either (see LiveProperty.offFrame). Deliberate, and it has a cost worth knowing.
+        // Avatar selection is unaffected -- ExternalAvatarSource.selectedAvatar carries it as a view
+        // on the state lane whoever writes it -- but **a take no longer says which props or which
+        // stage were up**, because those writes were the only thing that said so. The entries are
+        // not registered under ids of their own, so this collection was their only path into a frame.
+        //
+        // ⚠ Related, and older than this decision: the entries were never on the *state* lane
+        // either. LiveObjectWalk.HoldsLiveObjectCollection asks LiveClass.Find about the *declared*
+        // element type, and AssetBase deliberately carries no [LiveClass] (see its own remarks), so
+        // the walk refuses the collection. The generator still emits a block for each concrete asset
+        // type and nothing ever feeds it -- which is why AssetBase.OnEnabledApplied, written for
+        // exactly that, does not run.
         const string kId = "a7d3f1e2-9c4b-4e85-b6a1-2f8c5d3e7b91";
 
         // Runtime singleton (one manager per scene, fixed id). Lets loaders / inspectors such as

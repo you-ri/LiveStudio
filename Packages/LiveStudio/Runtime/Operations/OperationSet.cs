@@ -16,7 +16,12 @@ namespace Lilium.LiveStudio
     /// <c>@type</c> discriminator, exactly like <see cref="LiveCamera.controller"/>.
     /// </summary>
     [Serializable]
-    [LiveClass(Category = "Operation", Icon = "bolt")]
+    // lane = None with the rest of the desk (see OperationManager). Said here as well as inherited
+    // through the collection that holds these, because this type declares members that ask for the
+    // state lane -- and a declaration nothing is carrying is the one shape of this that goes wrong
+    // quietly. The slider value and the hold below are the operator's own controls: what they drove
+    // is recorded against whatever they wrote to, and the desk itself is not part of the take.
+    [LiveClass(Category = "Operation", Icon = "bolt", lane = FrameLane.None)]
     // Renamed from ActionSet: MovedFrom restores old [SerializeReference] YAML, FormerlyNamedAs the @type.
     [MovedFrom(false, null, null, "ActionSet")]
     [FormerlyNamedAs("ActionSet")]

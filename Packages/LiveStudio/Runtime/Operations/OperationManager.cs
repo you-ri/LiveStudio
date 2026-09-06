@@ -27,7 +27,7 @@ namespace Lilium.LiveStudio
     /// through its <c>[SerializeReference]</c> list, so the authored sets persist in the scene.
     /// </summary>
     [Serializable]
-    [LiveClass(Icon = "bolt", Category = "Operation", HideInScene = true)]
+    [LiveClass(Icon = "bolt", Category = "Operation", HideInScene = true, lane = FrameLane.None)]
     // Renamed from ActionManager (and earlier TriggerManager). MovedFrom restores the
     // [SerializeReference] managed type in old scene/prefab YAML; FormerlyNamedAs restores the
     // RemoteControl @type discriminator from old *.scene.json. MovedFrom allows only one source, so it
@@ -37,6 +37,18 @@ namespace Lilium.LiveStudio
     [FormerlyNamedAs("TriggerManager")]
     public class OperationManager : ILiveObject, ILiveDeserializeCallback
     {
+        // lane = None on the class: nothing here is of the world being recorded. The operation sets
+        // and decks are what the operator wired their own controls to, authored in the deck files
+        // (PersistScope.Custom) and belonging to the machine that has those files -- a spare machine
+        // or a replay is free to have different ones, and writing these back would rebuild the
+        // operator's own desk. Said on the type rather than on each member so that a function added
+        // later does not quietly rejoin the take, and it reaches the operation sets and decks through
+        // the two collections (see LiveProperty.offFrame).
+        //
+        // ⚠ What a deck key *does* is still recorded -- against whatever property or function it
+        // drove, which is where that change belongs. What stops being recorded is the desk itself:
+        // the fader positions and held buttons (OperationSet._manualValue / _held) no longer move on
+        // replay, though their effect does.
         const string kId = "c4e8b2d6-7a91-4f53-8e0c-1d9a6b3f2e74";
 
         // The active manager, so operations / sources can reach it. Set in OnEnable, cleared in OnDisable.

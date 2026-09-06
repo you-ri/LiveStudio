@@ -69,6 +69,27 @@ namespace Lilium.RemoteControl
         /// </summary>
         public bool HideInScene { get; set; }
 
+        /// <summary>
+        /// Which lane carries this type as a whole, for a type that is one thing all the way through.
+        ///
+        /// Only <see cref="FrameLane.None"/> is meaningful here, and it is **absorbing**: every
+        /// member and every call on the type is off the frame, whatever its own declaration says.
+        /// For an object that is a setting of the operator's machine rather than part of the world
+        /// being recorded -- the operation desk, the recorder's own controls -- where saying it once
+        /// is both shorter and safer than saying it on each member: a member added later inherits
+        /// the answer instead of quietly rejoining the take.
+        ///
+        /// It is not a *default* that members can override. The attribute's own <c>lane</c> reads
+        /// <see cref="FrameLane.Event"/> whether or not it was written, so "the member said nothing"
+        /// cannot be told from "the member asked for Event" -- a default would be guesswork. And the
+        /// thing worth saying at type level is the absolute one anyway: a member of something the
+        /// frame does not carry is not carried either.
+        ///
+        /// ⚠ <see cref="FrameLane.State"/> here is refused (a type is not a value to copy every
+        /// frame); say it on the members that need it.
+        /// </summary>
+        public FrameLane lane { get; set; } = FrameLane.Event;
+
         public LiveClassAttribute()
         {
             this.typeName = null;
@@ -321,6 +342,19 @@ namespace Lilium.RemoteControl
         /// live write goes through whatever the write path already does.
         /// </summary>
         public string onApplied { get; set; }
+
+        /// <summary>
+        /// The member whose storage this one is a view of, when two exposed members are two faces of
+        /// one value. Same meaning as <see cref="LivePropertyAttribute.carriedBy"/>, said on a field.
+        ///
+        /// The pair a shadow field forms with its property is already handled without this. What this
+        /// is for is a pair the shadow rule cannot see: two members offering one choice in different
+        /// shapes -- a baked asset reference and the key that names it -- where a third member carries
+        /// the value for both.
+        ///
+        /// ⚠ Name it as the carrier is exposed, not as the field behind it.
+        /// </summary>
+        public string carriedBy { get; set; }
 
         public LiveFieldAttribute()
         {

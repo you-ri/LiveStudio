@@ -154,6 +154,66 @@ namespace Lilium.LiveStudio
         [LiveField(persistable = false)]
         private SetBundleEntry[] sets = Array.Empty<SetBundleEntry>();
 
+        /// <summary>
+        /// Which stage is up, by display name.
+        ///
+        /// State lane rather than the event lane, and for the same reason
+        /// <see cref="ExternalAvatarSource.selectedAvatar"/> is: what belongs in a recording is the
+        /// intent ("this stage is up"), not the loading that produces it. Carried as state, any frame
+        /// of a take says which stage should be standing, and the setter below produces it -- loading
+        /// the set on demand if the machine playing back does not have it up yet. Carried as events,
+        /// a take holds the moments someone switched and nothing else, so a replay that starts or
+        /// seeks anywhere but the beginning shows whatever stage happened to be loaded.
+        ///
+        /// ⚠ This is the half that the asset side cannot carry. The sets themselves live in
+        /// <see cref="ExternalAssetManager"/>, which is off the frame: which bundles this machine has
+        /// on disk and has loaded into memory is a setting of the machine, not something the show
+        /// did. Which one is *up* is the show, and it belongs here -- in the scene -- rather than on
+        /// the catalog. Props reach a recording the same way without needing a member of their own:
+        /// an instance is a registered live object, so the structure lane carries it being brought
+        /// out and taken away.
+        ///
+        /// Carried as the id the frame's symbol table gives the name rather than as fixed-width text,
+        /// so there is no length a set name can outgrow (a width here would mean a longer name is not
+        /// carried at all, i.e. a take that does not say which stage was up).
+        /// </summary>
+        [LiveProperty(lane = FrameLane.State)]
+        [StringSelector(nameof(setNames))]
+        public string activeSet
+        {
+            get
+            {
+                for (int i = 0; i < sets.Length; i++)
+                {
+                    if (sets[i].isActive) return sets[i].name ?? string.Empty;
+                }
+
+                return string.Empty;
+            }
+            set
+            {
+                if (string.IsNullOrEmpty(value)) return;
+                if (string.Equals(value, activeSet, StringComparison.Ordinal)) return;
+
+                for (int i = 0; i < sets.Length; i++)
+                {
+                    if (sets[i].name != value) continue;
+
+                    // Not the complete switch SwitchToSetByName does. What the value says is which
+                    // stage is up, and unloading the others says something it did not -- on a replay
+                    // that would take down sets the operator had deliberately kept loaded.
+                    _ActivateSet(sets[i].id, unloadOthers: false);
+                    return;
+                }
+
+                Debug.LogWarning($"[LiveStudio] No stage named '{value}' to make active.");
+            }
+        }
+
+        /// <summary>Dropdown source for <see cref="activeSet"/>.</summary>
+        [LiveProperty, Hide]
+        public string[] setNames => GetSetNames();
+
         // The scene that was active when this manager started (the bootstrap / persistent set).
         // When an active set's scene is unloaded, the active scene is restored to this.
         [NonSerialized]
@@ -384,15 +444,29 @@ namespace Lilium.LiveStudio
         }
 
         // Complete-switch core: flag only the target active, unload every other set bundle, and load the
-        // target on demand. _ReconcileActiveScene finishes activation once the target's scene is ready (or
-        // restores the bootstrap scene when switching to the persistent set). SetAssetEnabled is a no-op
-        // when the enabled flag is unchanged, so already-unloaded sets are skipped cheaply.
-        private void _SwitchToSet(string setId)
+        // target on demand.
+        private void _SwitchToSet(string setId) => _ActivateSet(setId, unloadOthers: true);
+
+        /// <summary>
+        /// Makes one set the active stage, loading it on demand. <paramref name="unloadOthers"/> is
+        /// the difference between the two ways of asking: a complete switch (the deck's switch-stage
+        /// operation) takes every other set down, while making a set active
+        /// (<see cref="activeSet"/>) leaves whatever else the operator has loaded alone.
+        ///
+        /// <see cref="_ReconcileActiveScene"/> finishes activation once the target's scene is ready
+        /// (or restores the bootstrap scene when switching to the persistent set). SetAssetEnabled is
+        /// a no-op when the enabled flag is unchanged, so already-unloaded sets are skipped cheaply.
+        ///
+        /// One loop for both, rather than two spellings of it: the flags and the unloading are set in
+        /// the same pass because a reconcile triggered part-way through must not see a set that is
+        /// unloaded and still flagged active.
+        /// </summary>
+        private void _ActivateSet(string setId, bool unloadOthers)
         {
             var manager = ExternalAssetManager.current;
             if (manager == null) return;
 
-            // null target = switch to the bootstrap (persistent) scene: no set asset stays loaded.
+            // null target = the bootstrap (persistent) scene: no set asset stays flagged.
             ISetAsset target = null;
             if (setId != kPersistentSetId)
             {
@@ -411,7 +485,7 @@ namespace Lilium.LiveStudio
                 if (asset is not ISetAsset s) continue;
                 bool isTarget = ReferenceEquals(s, target);
                 s.isActive = isTarget;
-                if (!isTarget) manager.SetAssetEnabled(asset.id, false);
+                if (unloadOthers && !isTarget) manager.SetAssetEnabled(asset.id, false);
             }
 
             if (target != null && !target.hasScene)

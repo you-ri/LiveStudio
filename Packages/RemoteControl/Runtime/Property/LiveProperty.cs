@@ -34,23 +34,53 @@ namespace Lilium.RemoteControl
 
         public readonly PropertyPath path;
 
-        public LiveProperty(LivePropertyType type, LiveObjectHandle owner, object obj, string path = null)
+        /// <summary>
+        /// True when something on the way to this member is off the frame
+        /// (<see cref="FrameLane.None"/>), which takes this member off it as well.
+        ///
+        /// A member of something the frame does not carry is not carried either: a machine setting
+        /// held as an object is a machine setting field by field, and recording its parts would
+        /// replay them onto the operator's own settings -- the very thing the lane exists to
+        /// prevent. The declaration cannot say this, because a lane is declared on a type's member
+        /// and the same type is reached through many owners; only the path knows which owner.
+        ///
+        /// Carried on the property rather than re-derived at each write, because the rule would
+        /// otherwise have to be written once per caller -- which is how the lane rules drifted apart
+        /// before (see <c>LiveStateCarriage.OmitsRecord</c>).
+        ///
+        /// ⚠ Inheritance stops at an object registered in its own right. Such an object is
+        /// addressed by its own id and carried under it, so its own declarations govern -- the same
+        /// reason <c>LiveObjectWalk.HoldsNestedLiveObject</c> does not follow one.
+        /// </summary>
+        public readonly bool offFrame;
+
+        public LiveProperty(LivePropertyType type, LiveObjectHandle owner, object obj, string path = null,
+            bool offFrame = false)
         {
             this.type = type;
             this.owner = owner;
             this.obj = obj;
             this.path = new PropertyPath(path ?? type?.name);
             this.isArray = LivePropertyUtility.IsArrayType(type?.valueType);
+            this.offFrame = offFrame;
         }
 
-        public LiveProperty(LivePropertyType type, LiveObjectHandle owner, object obj, PropertyPath path)
+        public LiveProperty(LivePropertyType type, LiveObjectHandle owner, object obj, PropertyPath path,
+            bool offFrame = false)
         {
             this.type = type;
             this.owner = owner;
             this.obj = obj;
             this.path = path;
             this.isArray = LivePropertyUtility.IsArrayType(type?.valueType);
+            this.offFrame = offFrame;
         }
+
+        /// <summary>
+        /// What <see cref="offFrame"/> is for a member reached through this one: this member's own
+        /// declaration, or whatever it inherited.
+        /// </summary>
+        private bool _childOffFrame => offFrame || type?.lane == FrameLane.None;
 
         /// <summary>
         /// パスに指定されたメンバ名が含まれているかどうか
@@ -252,7 +282,9 @@ namespace Lilium.RemoteControl
                 {
                     // 取得子 path は属性解決後の canonical な name を使う
                     string childPath = propertyType.name;
-                    return new LiveProperty(propertyType, newOwner, this.GetValue(), childPath);
+                    // 登録済みのオブジェクトへ移ったら、そこから先は自分の id で運ばれるので継承は切れる。
+                    return new LiveProperty(propertyType, newOwner, this.GetValue(), childPath,
+                        existingLive != null ? false : _childOffFrame);
                 }
                 return null;
             }
@@ -270,6 +302,8 @@ namespace Lilium.RemoteControl
                 // 参照型で既存のLiveObjectがあればオーナーを切り替え
                 // (object[]などの宣言型がUnityEngine.Objectでなくても、実体が登録済みLiveObjectなら正しいオーナーを使用)
                 bool ownerSwitched = false;
+                // 登録済みのオブジェクトへ移ったら、そこから先は自分の id で運ばれるので継承は切れる。
+                bool childOffFrame = _childOffFrame;
                 if (!polymorphicType.IsValueType)
                 {
                     var value = this.GetValue();
@@ -278,6 +312,7 @@ namespace Lilium.RemoteControl
                     {
                         newOwner = existingLive.Value;
                         ownerSwitched = true;
+                        childOffFrame = false;
                     }
                     // UnityEngine.Object（MonoBehaviour/ScriptableObject等）でレジストリ未登録だが
                     // LiveClassが存在する場合は一時的なLiveObjectを生成する。
@@ -300,7 +335,8 @@ namespace Lilium.RemoteControl
                         string childPath = ownerSwitched
                             ? propertyType.name
                             : new PropertyPath(this.path).Append(propertyType.name);
-                        return new LiveProperty(propertyType, newOwner, this.GetValue(), childPath);
+                        return new LiveProperty(propertyType, newOwner, this.GetValue(), childPath,
+                            childOffFrame);
                     }
                 }
 
@@ -326,7 +362,7 @@ namespace Lilium.RemoteControl
             var arrayElementEntity = LivePropertyType.GetArrayElement(type.valueType, index);
             var childPath = this.path.AppendIndex(index);
 
-            return new LiveProperty(arrayElementEntity, owner, collection, childPath);
+            return new LiveProperty(arrayElementEntity, owner, collection, childPath, _childOffFrame);
         }
 
         public object GetValue()

@@ -63,12 +63,47 @@ namespace Lilium.RemoteControl.Tests
             [LiveField(lane = FrameLane.None)] public float[] settings = new float[0];
 
             /// <summary>
+            /// A setting of the machine held as an object rather than as a scalar. What it holds is
+            /// a setting field by field, so nothing under it belongs in the take either.
+            /// </summary>
+            [LiveField(lane = FrameLane.None)] public MachineSettings machine = new MachineSettings();
+
+            /// <summary>The same shape, on the live data. The control for the member above.</summary>
+            [LiveField] public WorldPart part = new WorldPart();
+
+            /// <summary>
             /// Asks for the state lane and never reaches a block. The real causes are compile-time
             /// -- text with no declared width, a type that is not unmanaged, an owner that is not
             /// partial -- and all of them end the same way: the declaration says state and nothing
             /// is carrying it. Left out of the bridge below to stand for all of them.
             /// </summary>
             [LiveField(lane = FrameLane.State)] public float uncarried;
+        }
+
+        /// <summary>
+        /// What a machine setting looks like once it is more than one number: the port it listens
+        /// on, the intervals it polls at. Nothing here is of the world being recorded.
+        /// </summary>
+        [LiveClass]
+        public class MachineSettings
+        {
+            /// <summary>
+            /// On the event lane by its own declaration, so nothing but the member holding it can
+            /// take it out of the take. That is what makes the test below say something: an
+            /// undeclared field would be carried by a block (the generator reaches these fixtures
+            /// too, and a field it says nothing about goes on the state lane), and the record would
+            /// be omitted for that reason instead.
+            /// </summary>
+            [LiveField(lane = FrameLane.Event)] public float rate;
+
+            [LiveField(lane = FrameLane.Event)] public float[] ports = new float[0];
+        }
+
+        /// <summary>Something of the world, held the same way and declared the same way.</summary>
+        [LiveClass]
+        public class WorldPart
+        {
+            [LiveField(lane = FrameLane.Event)] public float value;
         }
 
         /// <summary>
@@ -105,6 +140,8 @@ namespace Lilium.RemoteControl.Tests
         {
             LiveObjectRegistry.ClearAll();
             LiveClass.RegisterFromAttributes<Fixture>();
+            LiveClass.RegisterFromAttributes<MachineSettings>();
+            LiveClass.RegisterFromAttributes<WorldPart>();
 
             // Named as reflection spells them: the shadowed pair is carried under the field's name,
             // which is what the generated block would assign to.
@@ -565,6 +602,128 @@ namespace Lilium.RemoteControl.Tests
 
             Assert.AreEqual(0, frame.eventCount, "a setting is not part of the take");
             Assert.AreEqual(before + 1, FrameGate.omittedRecordCount);
+        }
+
+        /// <summary>
+        /// A write inside a member that is off the live data is off it too.
+        ///
+        /// The member being written says nothing about its lane, so on its own account it would be
+        /// recorded; what takes it out of the take is what holds it. The declaration cannot say
+        /// this, because a lane is declared on a type's member and the same type is reached through
+        /// many owners -- only the path knows which owner this one came through.
+        ///
+        /// Before this, declaring a container off the frame kept the container out of the take and
+        /// recorded everything inside it, which is the opposite of what the declaration asked for.
+        /// </summary>
+        [Test]
+        public void AWriteInsideAMemberOffTheLane_LeavesNoRecord()
+        {
+            var fixture = new Fixture();
+            var handle = LiveObjectRegistry.Create(typeof(Fixture), fixture, kResetFixtureId);
+
+            using var session = new LiveEditorSession.Override(editorSession: false);
+
+            try
+            {
+                var before = FrameGate.omittedRecordCount;
+
+                _EnqueueSet("/live/object/" + kResetFixtureId + "/machine/rate", "{\"value\":2.5}");
+                FrameGate.Pump();
+
+                using var frame = new EventFrame();
+                Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
+
+                Assert.AreEqual(2.5f, fixture.machine.rate, 1e-5f, "the write still lands");
+                Assert.AreEqual(0, frame.eventCount, "a setting is a setting field by field");
+                Assert.AreEqual(before + 1, FrameGate.omittedRecordCount);
+            }
+            finally
+            {
+                handle?.Unregister();
+            }
+        }
+
+        /// <summary>
+        /// The same write one member over, where nothing above it is off the frame. The control:
+        /// without it the test above passes for a nested write that was never recorded at all.
+        /// </summary>
+        [Test]
+        public void AWriteInsideAMemberOnTheLiveData_IsRecorded()
+        {
+            var fixture = new Fixture();
+            var handle = LiveObjectRegistry.Create(typeof(Fixture), fixture, kResetFixtureId);
+
+            using var session = new LiveEditorSession.Override(editorSession: false);
+
+            try
+            {
+                var before = FrameGate.omittedRecordCount;
+
+                _EnqueueSet("/live/object/" + kResetFixtureId + "/part/value", "{\"value\":2.5}");
+                FrameGate.Pump();
+
+                using var frame = new EventFrame();
+                Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
+
+                Assert.AreEqual(2.5f, fixture.part.value, 1e-5f);
+                Assert.AreEqual(before, FrameGate.omittedRecordCount,
+                    "nothing above it asked for the omit");
+                Assert.AreEqual(1, frame.eventCount,
+                    "nothing else in the file says this member changed");
+            }
+            finally
+            {
+                handle?.Unregister();
+            }
+        }
+
+        /// <summary>
+        /// Shape follows the same rule as value. A collection held inside a setting is part of that
+        /// setting, so growing it is not something the take remembers.
+        /// </summary>
+        [Test]
+        public void AddingToACollectionInsideAMemberOffTheLane_LeavesNoRecord()
+        {
+            var fixture = new Fixture();
+            var handle = LiveObjectRegistry.Create(typeof(Fixture), fixture, kResetFixtureId);
+
+            using var session = new LiveEditorSession.Override(editorSession: false);
+
+            try
+            {
+                var before = FrameGate.omittedRecordCount;
+
+                _EnqueueAdd("/live/object/" + kResetFixtureId + "/machine/ports");
+                FrameGate.Pump();
+
+                using var frame = new EventFrame();
+                Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
+
+                Assert.AreEqual(0, frame.eventCount, "a setting's collection is not part of the take");
+                Assert.AreEqual(before + 1, FrameGate.omittedRecordCount);
+                Assert.AreEqual(1, fixture.machine.ports.Length, "the element was still added");
+            }
+            finally
+            {
+                handle?.Unregister();
+            }
+        }
+
+        /// <summary>
+        /// The other half of the same rule: the walk does not go inside a member that is off the
+        /// frame, so the state lane does not copy what a write is no longer allowed to record.
+        ///
+        /// Said for a single nested object as well as for a collection. The collection half has held
+        /// since the inventory was built; the single-object half is the one that was missing, and
+        /// without it a machine setting held as an object was copied into every frame.
+        /// </summary>
+        [Test]
+        public void TheWalkDoesNotGoInsideAMemberOffTheLane()
+        {
+            Assert.IsFalse(LiveObjectWalk.HoldsNestedLiveObject(Member(nameof(Fixture.machine))),
+                "a setting held as an object is a setting all the way down");
+            Assert.IsTrue(LiveObjectWalk.HoldsNestedLiveObject(Member(nameof(Fixture.part))),
+                "the control: an object of the world is still followed");
         }
 
         [Test]

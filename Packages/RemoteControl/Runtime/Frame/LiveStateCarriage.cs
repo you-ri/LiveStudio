@@ -18,6 +18,26 @@ namespace Lilium.RemoteControl.Frames
     public static class LiveStateCarriage
     {
         /// <summary>
+        /// Whether a write to this member should be kept out of the recording, asked of a resolved
+        /// property so that the ancestors it was reached through are part of the answer.
+        ///
+        /// ⚠ Prefer this over the pair below wherever a <see cref="LiveProperty"/> is at hand. A
+        /// member of something that is off the frame is off it too (see
+        /// <see cref="LiveProperty.offFrame"/>), and the pair below cannot see that: it is handed a
+        /// member and its immediate owner, and the lane of what held *that* is a question about the
+        /// path rather than about either of them.
+        /// </summary>
+        public static bool OmitsRecord(in LiveProperty property)
+            => property.offFrame || OmitsRecord(property.type, property.obj);
+
+        /// <summary>
+        /// The same question for a collection's shape, asked of a resolved property so the ancestors
+        /// it was reached through are part of the answer.
+        /// </summary>
+        public static bool OmitsShapeRecord(in LiveProperty property)
+            => property.offFrame || OmitsShapeRecord(property.type);
+
+        /// <summary>
         /// Whether a write to this member should be kept out of the recording.
         ///
         /// Neither of the other two lanes wants a record, for opposite reasons. State copies the

@@ -25,7 +25,7 @@ namespace Lilium.LiveStudio
     /// wiring are shared with <see cref="PropAsset"/> through <see cref="LoadedProp"/>.
     /// </summary>
     [Serializable]
-    [LiveClass("BuiltinPropAsset", Category = "Asset", Icon = "deployed_code")]
+    [LiveClass("BuiltinPropAsset", Category = "Asset", Icon = "deployed_code", lane = FrameLane.None)]
     public class BuiltinPropAsset : AssetBase, IInstantiableProp
     {
         /// <summary>

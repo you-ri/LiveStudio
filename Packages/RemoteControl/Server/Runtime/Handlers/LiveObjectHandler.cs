@@ -860,10 +860,14 @@ namespace Lilium.RemoteControl
         /// declaration left the value in neither lane: the block does not hold it and the file does
         /// not say it changed. Omitting only what something is actually carrying makes the failure
         /// "the member did not migrate" rather than "the member stopped being recorded".
+        ///
+        /// ⚠ Asked of the resolved property rather than of its member and owner, so that the path
+        /// the write took is part of the answer: a member of something that is off the frame is off
+        /// it too, and only the resolved property knows what it was reached through.
         /// </summary>
         private static bool _OmitRecordForLane(in LiveProperty prop, string requestPath)
         {
-            if (!LiveStateCarriage.OmitsRecord(prop.type, prop.obj)) return false;
+            if (!LiveStateCarriage.OmitsRecord(in prop)) return false;
 
             FrameGate.OmitAppliedRecord(requestPath);
             return true;
@@ -881,7 +885,7 @@ namespace Lilium.RemoteControl
         /// </summary>
         private static bool _OmitShapeChangeForLane(in LiveProperty prop, string requestPath)
         {
-            if (!LiveStateCarriage.OmitsShapeRecord(prop.type)) return false;
+            if (!LiveStateCarriage.OmitsShapeRecord(in prop)) return false;
 
             FrameGate.OmitAppliedRecord(requestPath);
             return true;

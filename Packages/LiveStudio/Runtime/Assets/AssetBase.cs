@@ -64,6 +64,16 @@ namespace Lilium.LiveStudio
         [LiveField(persistable = false), Hide]
         public string id;
 
+        // ⚠ The state lane asked for here is not granted, and has not been since it was written:
+        // every concrete asset type declares lane = None on the class, which absorbs this. The
+        // catalog is a setting of this machine -- which bundles it has on disk and has loaded -- so
+        // nothing under it belongs in a take. What is *out* is carried elsewhere: the avatar by
+        // ExternalAvatarSource.selectedAvatar, the stage by StageManager.activeSet, a prop by the
+        // instance itself being a registered live object.
+        //
+        // Left as it stands rather than changed to None, because the declaration is inherited by
+        // every asset type and this is the one place the width is stated; the class-level answer is
+        // what decides, and it says no.
         [LiveField(lane = FrameLane.State, textCapacity = 128)]
         public string name;
 

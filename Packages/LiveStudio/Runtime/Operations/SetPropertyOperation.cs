@@ -190,8 +190,10 @@ namespace Lilium.LiveStudio
 
                 // A deck key and a remote write are the same write, so they ask the same question --
                 // through the same code, because a second copy of the rule is how the two came to
-                // disagree. The write still took its place in the order either way.
-                if (LiveStateCarriage.OmitsRecord(property.Value.type, property.Value.obj))
+                // disagree. The write still took its place in the order either way. Asked of the
+                // resolved property so that an ancestor being off the frame takes this write off it
+                // as well, which is the half a member and its owner cannot answer between them.
+                if (LiveStateCarriage.OmitsRecord(property.Value))
                 {
                     FrameGate.OmitAppliedRecord(target);
                 }

@@ -456,6 +456,14 @@ namespace Lilium.RemoteControl.Frames
             if (member.isArrayElement || member.isStatic) return false;
             if (member.isLivePropertyReference) return false;
 
+            // Declared off the frame, which takes what it holds off the frame with it: a machine
+            // setting held as an object is a machine setting field by field. Said here rather than
+            // left to the members inside, which are declared on a type that other owners reach too
+            // -- only the walk knows which owner this one came from. The collection case has said
+            // this since the inventory was built (LiveStructureSystem.IsRecordedCollection); this is
+            // the same rule for a single nested object, which was the half that never had it.
+            if (member.lane == FrameLane.None) return false;
+
             var valueType = member.valueType;
             if (valueType == null || !valueType.IsClass) return false;
             if (valueType == typeof(string) || valueType.IsArray) return false;
@@ -492,6 +500,12 @@ namespace Lilium.RemoteControl.Frames
         public static bool HoldsLiveObjectCollection(LivePropertyType member)
         {
             if (member.isArrayElement || member.isStatic) return false;
+
+            // Off the frame, elements and all -- the same rule as for a single nested object above.
+            // The inventory already refused such a collection; the state lane walks with no
+            // collection visitor at all, so without this it carried the elements of a collection
+            // nothing was recording the shape of.
+            if (member.lane == FrameLane.None) return false;
 
             var valueType = member.valueType;
             if (valueType == null) return false;
