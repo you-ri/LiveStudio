@@ -22,9 +22,11 @@ namespace Lilium.LiveStudio
     [RequireComponent(typeof(CinemachineBrain))]
     public class ScreenController : MonoBehaviour, ILiveDeserializeCallback
     {
-        // 出力解像度はどのシーンを開いても共通の出力設定なので Project scope で永続化する。
-        // Project scope なので収録もされない (FrameLaneRules): 出力先の解像度は機材ごとの設定であり、
-        // 予備機が違っていて当然のもの。収録して再生時に戻すと、見ている人の画面を勝手に変えてしまう。
+        // Screen のメンバーはすべて Project scope で永続化する。ここにあるのは「どこへ何を出すか」—
+        // 解像度・全画面・Spout・背景の抜き方といった、その機械の出力設定だけで、舞台の中身は 1 つも無い。
+        // どのシーンを開いても同じであってほしく、予備機が違っていて当然のもの。
+        // Project scope なので収録もされない (FrameLaneRules): 収録して再生時に戻すと、
+        // 見ている人の画面を勝手に変えてしまう。
         [LiveField(persistScope = PersistScope.Project), Hide]
         [FormerlyNamedAs("width")]
         private int _width = 1920;
@@ -84,7 +86,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [LiveField, Hide]
+        [LiveField(persistScope = PersistScope.Project), Hide]
         [FormerlyNamedAs("backgroundType")]
         private BackgroundType _backgroundType = BackgroundType.Skybox;
 
@@ -99,7 +101,7 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [LiveField, Hide]
+        [LiveField(persistScope = PersistScope.Project), Hide]
         [FormerlyNamedAs("backgroundColor")]
         private Color _backgroundColor = Color.black;
 
@@ -151,8 +153,6 @@ namespace Lilium.LiveStudio
         SpoutSender _spoutSender;
 #endif
 
-        // Spout 送出の有無も機材ごとの設定。何が映るかはシーン側が決めており、それをどこへ出すかは
-        // その機械の都合なので、収録も再生もしない (Project scope から導出)。
         [SerializeField, LiveField(persistScope = PersistScope.Project), Hide]
         [FormerlyNamedAs("useSpout")]
         private bool _useSpout;
