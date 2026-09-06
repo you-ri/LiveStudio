@@ -232,7 +232,8 @@ namespace Lilium.LiveStudio
             });
 
             // Snapshots (*.snapshot.json) hold a full capture of the live scene. Launcher entries like
-            // live scenes; the dedicated snapshot page reads the same folder for its thumbnails.
+            // live scenes; the recordings page lists them beside the takes below, reading both
+            // pictures through the asset image route this registration puts them on.
             Register(new AssetTypeDescriptor
             {
                 priority = 35,
@@ -240,6 +241,18 @@ namespace Lilium.LiveStudio
                 matches = SnapshotManager.IsSnapshotFile,
                 create = _ => new SnapshotAsset(),
                 importSubfolder = SnapshotManager.kSnapshotDirName,
+            });
+
+            // Takes of live data (*.live.bin, plus the legacy *.livedata). Launcher entries like
+            // snapshots — a take is the same recording at a greater length — and the page that lists
+            // both reads their pictures through the asset image route this registration puts them on.
+            Register(new AssetTypeDescriptor
+            {
+                priority = 35,
+                suffixes = new[] { RecordingManager.kFileExtension, RecordingManager.kLegacyFileExtension },
+                matches = RecordingManager.IsRecordingFile,
+                create = _ => new RecordingAsset(),
+                importSubfolder = RecordingManager.kFolderName,
             });
 
             // Live scenes (*.scene.json / legacy *.live.json) are launcher entries, not loadable resources.

@@ -157,6 +157,19 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
+        /// Raised once a take has started, with the file it is being written to.
+        ///
+        /// For whatever wants to put something beside a take that this package has no business
+        /// knowing about -- an application filing a picture of what was on screen when it began, say.
+        /// Raised after the file is open, so a handler that writes next to it finds the take there.
+        ///
+        /// Static because a subscriber installs its answer from an initializer, before anything is
+        /// placed in the scene (the same reason <see cref="recordingFolderProvider"/> is). Subscribe
+        /// with a <c>-=</c> first: with Domain Reload off, handlers survive into the next play.
+        /// </summary>
+        public static event Action<string> onRecordingStarted;
+
+        /// <summary>
         /// Leaves an exposed object's events out of every take, on top of this component's own.
         ///
         /// Whatever drives the recording belongs here -- a remote page carrying the buttons, say. Its
@@ -362,6 +375,9 @@ namespace Lilium.RemoteControl
             FrameGate.sink = _recorder;
 
             Debug.Log($"[RemoteControl] Recording frames to {path}");
+
+            // Last, so a handler that files something beside the take finds the take already there.
+            onRecordingStarted?.Invoke(path);
         }
 
         public void Stop()

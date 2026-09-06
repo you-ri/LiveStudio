@@ -39,7 +39,8 @@ namespace Lilium.LiveStudio
     /// A snapshot is a FULL serialization of the live scene (every exposed value, including
     /// prop/avatar instances), not the delta a scene save writes — so restoring one reproduces
     /// the captured state regardless of what changed since. Files are stored in the open
-    /// project's "Snapshots" folder as "&lt;name&gt;.snapshot.json", with an optional camera
+    /// project's "Recordings" folder as "&lt;name&gt;.snapshot.json" — beside the takes, since a
+    /// snapshot is live data that lasts one frame — with an optional camera
     /// screenshot "&lt;name&gt;.snapshot.png" taken from the live camera at capture time
     /// (served to remote apps by the generic <c>GET /live/asset/{key}/@image</c>, since a snapshot file is a
     /// project asset like any other — see <see cref="SnapshotAsset"/>).
@@ -51,12 +52,18 @@ namespace Lilium.LiveStudio
     [LiveClass(Icon = "photo_library")]
     public static class SnapshotManager
     {
-        public const string kSnapshotDirName = "Snapshots";
+        /// <summary>
+        /// Subfolder of the project that holds the snapshots — the same one the takes are in
+        /// (<see cref="RecordingManager.kFolderName"/>). A snapshot is live data that lasts one
+        /// frame, so it is filed where the rest of the recordings are.
+        /// </summary>
+        public const string kSnapshotDirName = RecordingManager.kFolderName;
+
         public const string kSnapshotFileExtension = ".snapshot.json";
         public const string kThumbnailFileExtension = ".snapshot.png";
 
         /// <summary>
-        /// Snapshots in the open project's "Snapshots" folder, newest first. Listed by path only
+        /// Snapshots in the open project's recordings folder, newest first. Listed by path only
         /// (file contents are not read here).
         /// </summary>
         [LiveProperty, Hide]
@@ -79,10 +86,10 @@ namespace Lilium.LiveStudio
                         name = name,
                         timestamp = File.GetLastWriteTime(file).ToString("o"),
                         hasThumbnail = File.Exists(Path.Combine(dir, name + kThumbnailFileExtension)),
-                        // The snapshot folder is always "{project}/Snapshots", so the project-relative
-                        // reference is this one concat — no need to relativize path-by-path (this getter is
-                        // polled while the snapshot page is open, and Uri-based relativization would
-                        // allocate per entry, per poll).
+                        // The folder is always "{project}/Recordings", so the project-relative
+                        // reference is this one concat — no need to relativize path-by-path (this getter
+                        // is polled while the page is open, and Uri-based relativization would allocate
+                        // per entry, per poll).
                         reference = kSnapshotDirName + "/" + name + kSnapshotFileExtension,
                     });
                 }
@@ -116,7 +123,7 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
-        /// "{projectPath}/Snapshots", or null when no project is open. Does not create the folder.
+        /// "{projectPath}/Recordings", or null when no project is open. Does not create the folder.
         /// </summary>
         public static string GetSnapshotDirectory()
         {
@@ -157,7 +164,7 @@ namespace Lilium.LiveStudio
             var name = _GenerateSnapshotName(dir);
             File.WriteAllText(Path.Combine(dir, name + kSnapshotFileExtension), json);
 
-            _TryWriteThumbnail(Path.Combine(dir, name + kThumbnailFileExtension));
+            LiveCameraThumbnail.TryWrite(Path.Combine(dir, name + kThumbnailFileExtension));
 
             Debug.Log($"[Studio] Snapshot saved: '{Path.Combine(dir, name + kSnapshotFileExtension)}'");
             LivePropertyBroadcast.BroadcastStaticProperty(typeof(SnapshotManager), nameof(snapshots));
@@ -212,7 +219,7 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
-        /// Resolves a snapshot name to "{Snapshots}/{name}{extension}", or null when no project is
+        /// Resolves a snapshot name to "{Recordings}/{name}{extension}", or null when no project is
         /// open or the name is not a plain file name (path separators / ".." are rejected — names
         /// arrive from remote apps, so they must never escape the snapshot folder).
         /// </summary>
@@ -251,29 +258,6 @@ namespace Lilium.LiveStudio
                 name = baseName + "_" + suffix++;
             }
             return name;
-        }
-
-        // Renders the live camera into its (synchronously captured) preview texture and writes it
-        // as the snapshot thumbnail. Skipped silently when no live camera exists — the snapshot
-        // itself is still valid, the card just shows a placeholder icon.
-        private static void _TryWriteThumbnail(string thumbnailPath)
-        {
-            ILiveCamera liveCamera = null;
-            var cameras = CameraService.cameras;
-            if (cameras != null)
-            {
-                foreach (var camera in cameras)
-                {
-                    if (camera != null && camera.isLive) { liveCamera = camera; break; }
-                }
-            }
-            if (liveCamera == null) return;
-
-            liveCamera.RequestCameraImage();
-            var image = liveCamera.image;
-            if (image == null) return;
-
-            File.WriteAllBytes(thumbnailPath, image.EncodeToPNG());
         }
 
 #if UNITY_2022_3_OR_NEWER

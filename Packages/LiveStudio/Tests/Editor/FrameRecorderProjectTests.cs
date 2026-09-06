@@ -21,7 +21,7 @@ namespace Lilium.LiveStudio.EditorTests
         public void TheOpenProjectWins()
         {
             Assert.AreEqual(
-                Path.Combine(kOpen, FrameRecorderController.kFolderName),
+                Path.Combine(kOpen, RecordingManager.kFolderName),
                 FrameRecorderProject.ResolveRecordingFolder(kOpen, kPersisted, kFallback));
         }
 
@@ -31,7 +31,7 @@ namespace Lilium.LiveStudio.EditorTests
             // The page is served in the editor too, where no runtime callback has filled the open
             // project in. The picker still has to list the right project's takes.
             Assert.AreEqual(
-                Path.Combine(kPersisted, FrameRecorderController.kFolderName),
+                Path.Combine(kPersisted, RecordingManager.kFolderName),
                 FrameRecorderProject.ResolveRecordingFolder("", kPersisted, kFallback));
         }
 
@@ -41,7 +41,7 @@ namespace Lilium.LiveStudio.EditorTests
             // A first launch opens the default project folder without persisting it. Reading only the
             // persisted value would drop takes somewhere else than everything else in that project.
             Assert.AreEqual(
-                Path.Combine(kOpen, FrameRecorderController.kFolderName),
+                Path.Combine(kOpen, RecordingManager.kFolderName),
                 FrameRecorderProject.ResolveRecordingFolder(kOpen, "", kFallback));
         }
 
@@ -51,7 +51,7 @@ namespace Lilium.LiveStudio.EditorTests
             // The caller passes the project that would be opened next, so a take never lands outside
             // a project at all.
             Assert.AreEqual(
-                Path.Combine(kFallback, FrameRecorderController.kFolderName),
+                Path.Combine(kFallback, RecordingManager.kFolderName),
                 FrameRecorderProject.ResolveRecordingFolder("", "", kFallback));
         }
     }

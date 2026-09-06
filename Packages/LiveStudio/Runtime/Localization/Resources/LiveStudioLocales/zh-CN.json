@@ -58,12 +58,9 @@
   "RECORD": "录制",
   "STOP": "停止",
   "REPLAY": "回放",
+  "RECORDING_DELETE": "删除录制",
+  "NOTIFY_RECORDING_STARTED": "已开始录制",
   "STOP_REPLAY": "停止回放",
   "FRAME_RECORDER_KEYFRAMEINTERVAL": "关键帧间隔（帧数）。只影响跳转时回溯世界结构的距离；数值在每一帧都是完整的。60fps 下设为 60 即每秒一次。",
-  "FRAME_RECORDER_COMPRESS": "压缩录制文件，实测约为原来的五分之一。若需在录制过程中读取文件，或崩溃时丢失最后一秒比文件大小更要紧，请关闭此项。",
-  "FRAME_RECORDER_SEEKPROGRESS": "回放位置，0 为开头、1 为结尾。拖动即跳转到该位置并继续播放。没有尾部索引的录制（录制中断的文件）无法拖动。",
-  "FRAME_RECORDER_LOOP": "播放到结尾后从头重新开始。关闭时回放将在结尾停止。",
-  "MENU_FRAME_RECORDER": "实时数据",
-  "SECTION_FRAME_RECORDER_TITLE": "录制 / 回放",
-  "SECTION_FRAME_RECORDER_SUBTITLE": "录制一段实时数据并回放"
+  "FRAME_RECORDER_COMPRESS": "压缩录制文件，实测约为原来的五分之一。若需在录制过程中读取文件，或崩溃时丢失最后一秒比文件大小更要紧，请关闭此项。"
 }

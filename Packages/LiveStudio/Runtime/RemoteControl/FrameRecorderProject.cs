@@ -27,13 +27,38 @@ namespace Lilium.LiveStudio
         {
             FrameRecorderController.recordingFolderProvider = RecordingFolder;
 
-            // The page carries the buttons and the settings; the component carries the values they
+            // The manager carries the buttons and the listing; the component carries the values they
             // write. Both are exposed objects, and neither is part of the world being recorded.
-            FrameRecorderController.ExcludeControlObject(nameof(FrameRecorderPage));
+            FrameRecorderController.ExcludeControlObject(nameof(RecordingManager));
+
+            // Detached first: with Domain Reload off this runs again over handlers that survived the
+            // last play, and a take would get its picture written once per run since.
+            FrameRecorderController.onRecordingStarted -= _WriteRecordingThumbnail;
+            FrameRecorderController.onRecordingStarted += _WriteRecordingThumbnail;
         }
 
         /// <summary>
-        /// Where this application's takes go: <c>&lt;open project&gt;/LiveData</c>.
+        /// Files a picture of what was on screen when a take began, beside the take.
+        ///
+        /// At the start rather than the end because that is the frame the take is of — a picture
+        /// taken when recording stopped shows whatever the last frame happened to be, which is the
+        /// least representative one. It is also the only moment that works for a take that is still
+        /// being recorded: the listing shows the file while it is being written.
+        ///
+        /// Installed from here rather than from the recorder, which files takes for any application
+        /// and has no camera to point at. See <see cref="LiveCameraThumbnail"/>.
+        /// </summary>
+        private static void _WriteRecordingThumbnail(string recordingPath)
+        {
+            var thumbnailPath = RecordingManager.ResolveThumbnailPath(recordingPath);
+            if (thumbnailPath == null) return;
+
+            LiveCameraThumbnail.TryWrite(thumbnailPath);
+        }
+
+        /// <summary>
+        /// Where this application's takes go: <c>&lt;open project&gt;/Recordings</c> — the same
+        /// folder its snapshots are in, since a snapshot is a take one frame long.
         ///
         /// A take replays by rebuilding the world it was recorded against, so it only means anything
         /// in the project it came from -- it belongs to the project the same way scenes, decks and
@@ -65,7 +90,7 @@ namespace Lilium.LiveStudio
             if (string.IsNullOrEmpty(projectPath)) projectPath = persistedProjectPath;
             if (string.IsNullOrEmpty(projectPath)) projectPath = fallbackPath;
 
-            return Path.Combine(projectPath, FrameRecorderController.kFolderName);
+            return Path.Combine(projectPath, RecordingManager.kFolderName);
         }
     }
 }

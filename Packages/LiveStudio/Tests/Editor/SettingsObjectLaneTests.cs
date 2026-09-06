@@ -89,10 +89,15 @@ namespace Lilium.LiveStudio.Tests
             Assert.IsNull(StateBridgeRegistry.Find(typeof(OperationManager)));
         }
 
+        /// <summary>
+        /// The recordings manager: the transport an operator drives, and the listing behind it.
+        /// Everything on it starts, stops or picks a take, so a recorded call would be pressed again
+        /// by the replay running it.
+        /// </summary>
         [Test]
-        public void NothingOnTheRecorderPage_IsRecorded()
+        public void NothingOnTheRecordingManager_IsRecorded()
         {
-            _AssertNothingIsRecorded(LiveClass.Get(typeof(FrameRecorderPage)));
+            _AssertNothingIsRecorded(LiveClass.Get(typeof(RecordingManager)));
         }
 
         /// <summary>
