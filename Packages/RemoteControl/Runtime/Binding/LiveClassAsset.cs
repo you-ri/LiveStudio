@@ -92,12 +92,12 @@ namespace Lilium.RemoteControl
                 ownerType = ownerType ?? ResolveType();
 
                 // A function has no persistence to derive from, so what it asks for is what it gets.
-                if (member.isFunction) return member.ResolveLane(ownerType);
+                if (member.isFunction) return member.declaredLane ?? FrameLane.Event;
 
                 // The same rule the attribute path applies (FrameLaneRules): a member the scene does
                 // not save is off the frame unless it says otherwise, and a saved member cannot ask
                 // to be off it -- that is the one combination the rule exists to forbid.
-                var declared = member.lane == LiveClassAssetLane.Auto ? (FrameLane?)null : member.ResolveLane(ownerType);
+                var declared = member.declaredLane;
                 if (declared == FrameLane.None)
                 {
                     if (member.persistable) refusal = LaneRefusal.NoneRefused;
@@ -107,9 +107,11 @@ namespace Lilium.RemoteControl
                 var asked = FrameLaneRules.Resolve(declared, member.persistable, PersistScope.Scene, typeIsOffFrame: false);
                 if (asked == FrameLane.Event && declared == null && member.persistable)
                 {
-                    // Nothing said and saved to the scene: the member's own default applies (field
-                    // to the state lane, property to the event lane).
-                    asked = member.ResolveLane(ownerType);
+                    // Saved to the scene with nothing said: the state lane, if the value can be
+                    // moved as bytes. Same default as the attribute path (StateBlockEmitter), and
+                    // for the same reason -- the event lane only holds writes that came through the
+                    // gate, so anything driving the value from elsewhere leaves no trace at all.
+                    asked = FrameLane.State;
                 }
                 if (asked != FrameLane.State) return asked;
 
@@ -118,7 +120,10 @@ namespace Lilium.RemoteControl
                     return FrameLane.State;
                 }
 
-                refusal = LaneRefusal.UnsupportedType;
+                // Only a refusal when there was a request. Falling back from the default is the
+                // ordinary way a reference-typed member reaches the event lane, and marking every
+                // one of them would be a complaint about a request nobody made.
+                if (declared == FrameLane.State) refusal = LaneRefusal.UnsupportedType;
                 return FrameLane.Event;
             }
 
@@ -242,7 +247,7 @@ namespace Lilium.RemoteControl
         [Tooltip("Explicit display order. Negative moves earlier, positive later, 0 keeps list order")]
         public int order;
 
-        [Tooltip("Which lane of the live data carries this member. Auto puts fields on the state lane and properties on the event lane")]
+        [Tooltip("Which lane of the live data carries this member. Auto follows the persistence: a saved member goes on the state lane where its value fits, the event lane where it does not")]
         public LiveClassAssetLane lane = LiveClassAssetLane.Auto;
 
         [Tooltip("Controller used to render the member in RemoteApp. None = default for the value type")]
@@ -250,33 +255,32 @@ namespace Lilium.RemoteControl
         public LiveBindingControl control;
 
         /// <summary>
-        /// The lane this member asks for, resolving <see cref="LiveClassAssetLane.Auto"/> against
-        /// what the member actually is.
+        /// The lane this member asked for, or null when it said nothing
+        /// (<see cref="LiveClassAssetLane.Auto"/>).
         ///
-        /// A field defaults to the state lane and a property to the event lane, because that is what
-        /// the two usually are: a field holds a value that something else drives every frame, and a
-        /// property is written from outside. Either can be said explicitly when it is not.
+        /// Only what was written. Where an unsaid lane lands follows from the persistence
+        /// (<see cref="FrameLaneRules"/>) and from whether the value can be moved as bytes, which is
+        /// <see cref="TypeDefinition.EffectiveLaneOf"/>'s answer to give.
         ///
-        /// What the member asks for. <see cref="EffectiveLane"/> is what it gets.
+        /// ⚠ Until 2026-09-06 an unsaid lane was resolved here against the member being a field or a
+        /// property. That split says something about a type you wrote -- a field holds a value
+        /// something else drives, a property is written from outside -- and nothing at all about
+        /// someone else's, which is the only kind this asset declares. On a Unity type it made the
+        /// answer "event" every time, because Unity's API is properties all the way down.
         /// </summary>
-        public FrameLane ResolveLane(Type ownerType)
+        public FrameLane? declaredLane
         {
-            switch (lane)
+            get
             {
-                case LiveClassAssetLane.Event: return FrameLane.Event;
-                case LiveClassAssetLane.State: return FrameLane.State;
-                case LiveClassAssetLane.None: return FrameLane.None;
+                switch (lane)
+                {
+                    case LiveClassAssetLane.Event: return FrameLane.Event;
+                    case LiveClassAssetLane.State: return FrameLane.State;
+                    case LiveClassAssetLane.None: return FrameLane.None;
+                }
+
+                return null;
             }
-
-            if (ownerType == null || string.IsNullOrEmpty(path)) return FrameLane.Event;
-
-            const System.Reflection.BindingFlags flags =
-                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
-                | System.Reflection.BindingFlags.Instance;
-
-            return ownerType.GetField(path, flags) != null
-                ? FrameLane.State
-                : FrameLane.Event;
         }
 
         /// <summary>
@@ -331,9 +335,10 @@ namespace Lilium.RemoteControl
                 help = string.IsNullOrEmpty(help) ? null : help,
                 icon = string.IsNullOrEmpty(icon) ? null : icon,
                 section = section?.ToSectionAttribute(),
-                // A function has no owner type to resolve against, and State would mean nothing on
-                // one anyway, so the declared value is taken as it stands.
-                lane = ResolveLane(null),
+                // A call is not a value, so there is no persistence to derive a lane from and
+                // nothing to copy every frame: the declared value is taken as it stands, and an
+                // unsaid one is the event lane.
+                lane = declaredLane ?? FrameLane.Event,
             };
         }
 

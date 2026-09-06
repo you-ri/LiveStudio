@@ -597,7 +597,6 @@ namespace Lilium.RemoteControl.SourceGenerator
             declaredNone = false;
 
             AttributeData attribute = null;
-            var isField = false;
 
             switch (member)
             {
@@ -609,7 +608,6 @@ namespace Lilium.RemoteControl.SourceGenerator
                 case IFieldSymbol field when !field.IsConst:
                     attribute = _FindAttribute(field, kLiveFieldAttribute);
                     memberType = field.Type;
-                    isField = true;
                     break;
             }
 
@@ -622,10 +620,18 @@ namespace Lilium.RemoteControl.SourceGenerator
             // The same rule the runtime applies (FrameLaneRules.Resolve), read off the attribute's
             // arguments. A member the live scene does not save -- persistScope other than Scene, or
             // persistable = false -- is off the frame unless its lane is said out loud, so it does not
-            // get a block slot for want of a declaration. Saved and unsaid, a field goes on the state
-            // lane: a field usually holds a value something else drives, which is what the lane is
-            // for, and it is the same default the asset-declared path has had since it was built. A
-            // property is usually written from outside and stays on the event lane.
+            // get a block slot for want of a declaration. Saved and unsaid, it goes on the state
+            // lane, whether it is a field or a property.
+            //
+            // ⚠ Until 2026-09-06 that default was fields only, on the reading that a field holds a
+            // value something else drives while a property is written from outside. It does not
+            // hold: the event lane keeps only writes that came through the gate, so a property an
+            // Animator, a Timeline or the type's own internals drives leaves no trace in either
+            // lane -- a D1 hole opened by how the author happened to spell the member. Where the
+            // value genuinely only ever arrives through the gate, the two lanes are equivalent for
+            // determinism and the choice is frequency and cost, so defaulting to the lane that
+            // cannot lose a change is the safe half of the trade. What cannot be moved as bytes
+            // falls back to events below, quietly (see _SeverityFor).
             //
             // ⚠ Whether the lane was said out loud is carried out of here, because it decides who a
             // diagnostic is addressed to. "Your declaration is not being carried" is the right thing
@@ -657,7 +663,7 @@ namespace Lilium.RemoteControl.SourceGenerator
                 laneWasDeclared = false;
             }
 
-            var isState = declaredLane.HasValue ? declaredLane.Value == 1 : savedToScene && isField;
+            var isState = declaredLane.HasValue ? declaredLane.Value == 1 : savedToScene;
 
             if (isState) return true;
 

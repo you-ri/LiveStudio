@@ -11,7 +11,11 @@ namespace Lilium.RemoteControl
     /// </summary>
     public enum LiveClassAssetLane
     {
-        /// <summary>Field to the state lane, property to the event lane. See ResolveLane.</summary>
+        /// <summary>
+        /// Nothing said: the lane follows from the persistence (<see cref="FrameLaneRules"/>). A
+        /// member the live scene saves is carried, on the state lane where its value can be moved
+        /// as bytes and on the event lane where it cannot.
+        /// </summary>
         Auto = 0,
 
         /// <summary>Recorded when it changes, one entry at a time.</summary>

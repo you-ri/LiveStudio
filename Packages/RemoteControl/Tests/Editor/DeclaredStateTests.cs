@@ -84,15 +84,26 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void AFieldWithNoLaneSaid_GoesOnTheStateLane()
+        public void ASavedMemberWithNoLaneSaid_GoesOnTheStateLane()
         {
-            // A field usually holds a value something else drives every frame, which is what the
-            // state lane is for. A property is usually written from outside, which is not.
-            var member = new LiveClassAssetMember { path = "intensity" };
+            // Whether the member is spelled as a field or as a property says nothing about who
+            // drives it -- least of all on the types this asset exists to declare, which are
+            // someone else's. What decides is that the live scene saves it.
+            var field = new LiveClassAssetMember { path = "intensity" };
             var property = new LiveClassAssetMember { path = "driven" };
+            var definition = DefineAsset(field, property);
 
-            Assert.AreEqual(FrameLane.State, member.ResolveLane(typeof(Fixture)));
-            Assert.AreEqual(FrameLane.Event, property.ResolveLane(typeof(Fixture)));
+            Assert.AreEqual(FrameLane.State, definition.EffectiveLaneOf(field, typeof(Fixture)));
+            Assert.AreEqual(FrameLane.State, definition.EffectiveLaneOf(property, typeof(Fixture)));
+        }
+
+        [Test]
+        public void AnUnsavedMemberWithNoLaneSaid_IsOffTheFrame()
+        {
+            var member = new LiveClassAssetMember { path = "intensity", persistable = false };
+            var definition = DefineAsset(member);
+
+            Assert.AreEqual(FrameLane.None, definition.EffectiveLaneOf(member, typeof(Fixture)));
         }
 
         [Test]
@@ -103,8 +114,9 @@ namespace Lilium.RemoteControl.Tests
                 path = "intensity",
                 lane = LiveClassAssetLane.Event,
             };
+            var definition = DefineAsset(member);
 
-            Assert.AreEqual(FrameLane.Event, member.ResolveLane(typeof(Fixture)));
+            Assert.AreEqual(FrameLane.Event, definition.EffectiveLaneOf(member, typeof(Fixture)));
         }
 
         /// <summary>
@@ -143,19 +155,32 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void AValueTheLaneCannotMove_IsCarriedAsEvents()
         {
-            // A string field: the default puts it on the state lane and the lane cannot move it.
-            // What matters is that the answer is the lane something actually carries it on -- the
-            // write path omits the event record whenever the registration says State, so a member
-            // registered State that the block leaves out is a member nothing carries at all.
-            var member = new LiveClassAssetMember { path = "label" };
+            // A string asking for the state lane outright: the lane cannot move it. What matters is
+            // that the answer is the lane something actually carries it on -- the write path omits
+            // the event record whenever the registration says State, so a member registered State
+            // that the block leaves out is a member nothing carries at all.
+            var member = new LiveClassAssetMember { path = "label", lane = LiveClassAssetLane.State };
             var definition = DefineAsset(member);
-
-            Assert.AreEqual(FrameLane.State, member.ResolveLane(typeof(Fixture)));
 
             var lane = definition.EffectiveLaneOf(member, typeof(Fixture), out var refusal);
 
             Assert.AreEqual(FrameLane.Event, lane);
             Assert.AreEqual(LiveClassAsset.TypeDefinition.LaneRefusal.UnsupportedType, refusal);
+        }
+
+        [Test]
+        public void AValueTheLaneCannotMove_FallsBackQuietlyWhenNobodyAskedForTheLane()
+        {
+            // Same fallback, reached by the default rather than by a declaration. There is no
+            // refusal to report, because there was no request: a complaint here would be addressed
+            // to someone who wrote nothing, and every reference-typed member would draw one.
+            var member = new LiveClassAssetMember { path = "label" };
+            var definition = DefineAsset(member);
+
+            var lane = definition.EffectiveLaneOf(member, typeof(Fixture), out var refusal);
+
+            Assert.AreEqual(FrameLane.Event, lane);
+            Assert.AreEqual(LiveClassAsset.TypeDefinition.LaneRefusal.None, refusal);
         }
 
         [Test]

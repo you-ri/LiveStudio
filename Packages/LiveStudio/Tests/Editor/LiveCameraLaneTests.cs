@@ -36,8 +36,14 @@ namespace Lilium.LiveStudio.Tests
             // The property, not the shadow field: its getter reads the CinemachineCamera, so the
             // block records the priority the Brain is actually acting on rather than whatever was
             // last written to the field.
+            //
+            // 'name' rides along, as it does on every other proxy (LiveGameObject, LiveAsset,
+            // LiveComponent). It did not here until 2026-09-06: the base declares it through a
+            // private '_name' field, which the block generated inside this type cannot reach, and
+            // the public property that could was passed over for being a property. With the lane's
+            // default no longer asking which of the two a member is, the reachable half carries it.
             CollectionAssert.AreEquivalent(
-                new[] { "priority" },
+                new[] { "name", "priority" },
                 System.Array.ConvertAll(
                     typeof(LiveCamera.LiveStateBlock).GetFields(), f => f.Name));
         }

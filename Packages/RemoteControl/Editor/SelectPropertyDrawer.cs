@@ -10,8 +10,12 @@ namespace Lilium.RemoteControl
     [CustomPropertyDrawer(typeof(SelectAttribute))]
     public class SelectPropertyDrawer : PropertyDrawer
     {
-        /// <summary>Instantiable choices for one managed reference field type, plus the popup labels.</summary>
-        private sealed class TypeChoices
+        /// <summary>
+        /// Instantiable choices for one managed reference field type, plus the popup labels.
+        /// <see cref="names"/> leads with "None" (a null reference), so <see cref="types"/>[i]
+        /// is the choice labelled <see cref="names"/>[i + 1].
+        /// </summary>
+        internal sealed class TypeChoices
         {
             public Type[] types;
             public string[] names;
@@ -160,7 +164,12 @@ namespace Lilium.RemoteControl
             return null;
         }
 
-        private static TypeChoices GetChoices(Type baseType)
+        /// <summary>
+        /// The concrete types a [SerializeReference] field of <paramref name="baseType"/> can hold,
+        /// as the popup offers them. Shared with UI Toolkit windows that draw the same choice
+        /// themselves rather than through this IMGUI drawer.
+        /// </summary>
+        internal static TypeChoices GetChoices(Type baseType)
         {
             if (_choicesByBaseType.TryGetValue(baseType, out var cached))
             {

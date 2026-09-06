@@ -862,10 +862,7 @@ namespace Lilium.RemoteControl.Editor
 
             if (!member.isFunction)
             {
-                // The polymorphic controller goes through a PropertyField so the
-                // [SerializeReference, Select] drawer provides the type dropdown and the
-                // per-control fields.
-                body.Add(_MakeBoundField(memberProperty.FindPropertyRelative("control"), "Control"));
+                body.Add(_MakeControlField(memberProperty.FindPropertyRelative("control")));
             }
 
             // Help text is documentation rather than a setting, so it trails the fields that
@@ -881,7 +878,7 @@ namespace Lilium.RemoteControl.Editor
             body.Add(_MakeBoundField(sectionTitleProperty, "Section Title"));
 
             var sectionDetail = new VisualElement();
-            sectionDetail.AddToClassList(LiveClassAssetStyles.kMemberSectionDetail);
+            sectionDetail.AddToClassList(LiveClassAssetStyles.kMemberNested);
             sectionDetail.Add(_MakeBoundField(sectionProperty.FindPropertyRelative("subtitle"), "Subtitle"));
             sectionDetail.Add(_MakeBoundField(sectionProperty.FindPropertyRelative("icon"), "Icon"));
             sectionDetail.style.display = _SectionDetailDisplay(sectionTitleProperty);
@@ -897,6 +894,81 @@ namespace Lilium.RemoteControl.Editor
         private static DisplayStyle _SectionDetailDisplay(SerializedProperty sectionTitleProperty)
         {
             return string.IsNullOrEmpty(sectionTitleProperty.stringValue) ? DisplayStyle.None : DisplayStyle.Flex;
+        }
+
+        /// <summary>
+        /// The member's controller: a dropdown over the <see cref="LiveBindingControl"/> types on
+        /// the row itself, and the chosen control's own fields stepped in under it.
+        ///
+        /// Built here rather than through a PropertyField over the [SerializeReference, Select]
+        /// drawer. That drawer is IMGUI, and outside an InspectorElement a PropertyField leaves
+        /// IMGUI's label column at its own default width, which put the dropdown a column to the
+        /// right of every other field on the card. Giving the drawer a UI Toolkit side is not open
+        /// to this package either: on 2022.3, PropertyField dereferences a field it only sets for
+        /// its default drawing when a managed reference comes with a custom CreatePropertyGUI.
+        /// </summary>
+        private VisualElement _MakeControlField(SerializedProperty controlProperty)
+        {
+            var host = new VisualElement();
+
+            var choices = SelectPropertyDrawer.GetChoices(typeof(LiveBindingControl));
+            var names = new List<string>(choices.names);
+            var dropdown = new DropdownField("Control", names, _ControlChoiceIndex(controlProperty, choices));
+            dropdown.AddToClassList(BaseField<string>.alignedFieldUssClassName);
+            dropdown.tooltip = controlProperty.tooltip;
+            dropdown.RegisterValueChangedCallback(evt =>
+            {
+                int typeIndex = names.IndexOf(evt.newValue) - 1;
+                controlProperty.managedReferenceValue = typeIndex >= 0 && typeIndex < choices.types.Length
+                    ? Activator.CreateInstance(choices.types[typeIndex])
+                    : null;
+                controlProperty.serializedObject.ApplyModifiedProperties();
+                _ApplyChanges();
+            });
+            host.Add(dropdown);
+
+            var detail = new VisualElement();
+            detail.AddToClassList(LiveClassAssetStyles.kMemberNested);
+            _FillControlDetail(detail, controlProperty);
+            host.Add(detail);
+
+            // Rebuilt only when the reference changes type, whichever side changed it. The fields
+            // under it are bound, so a value edit reaches them on its own -- and tearing them down
+            // for one would take the field being typed into with it.
+            var typeName = controlProperty.managedReferenceFullTypename;
+            host.TrackPropertyValue(controlProperty, property =>
+            {
+                if (string.Equals(property.managedReferenceFullTypename, typeName, StringComparison.Ordinal)) return;
+                typeName = property.managedReferenceFullTypename;
+                dropdown.SetValueWithoutNotify(names[_ControlChoiceIndex(property, choices)]);
+                _FillControlDetail(detail, property);
+                detail.Bind(property.serializedObject);
+            });
+
+            return host;
+        }
+
+        private static int _ControlChoiceIndex(SerializedProperty controlProperty, SelectPropertyDrawer.TypeChoices choices)
+        {
+            var type = controlProperty.managedReferenceValue?.GetType();
+            return type != null ? Array.IndexOf(choices.types, type) + 1 : 0;
+        }
+
+        // One field per visible member of the control, or nothing for None. The fields carry
+        // their binding path only; whoever rebuilds them binds them.
+        private void _FillControlDetail(VisualElement detail, SerializedProperty controlProperty)
+        {
+            detail.Clear();
+            if (controlProperty.managedReferenceValue == null) return;
+
+            var child = controlProperty.Copy();
+            var end = controlProperty.GetEndProperty();
+            bool enterChildren = true;
+            while (child.NextVisible(enterChildren) && !SerializedProperty.EqualContents(child, end))
+            {
+                enterChildren = false;
+                detail.Add(_MakeBoundField(child.Copy(), null));
+            }
         }
 
         /// <summary>
@@ -954,11 +1026,16 @@ namespace Lilium.RemoteControl.Editor
             else if (isAuto)
             {
                 // Dimmed and marked: nothing was said about this member, and the answer would move
-                // on its own if the member it points at changed from a field to a property.
+                // on its own if the persistence did -- or, for the fallback below, if the value's
+                // type did.
                 text += " (auto)";
-                tooltip += " Auto, from the member being "
-                    + (carriedBy == FrameLane.State ? "a field." : "a property.")
-                    + " Set Lane to say otherwise.";
+                tooltip += carriedBy == FrameLane.State
+                    ? " Auto, because the live scene saves this member. Set Lane to say otherwise."
+                    : carriedBy == FrameLane.Event && member.persistable
+                        ? " Auto: the live scene saves this member, but its value cannot be moved as "
+                          + "bytes, so it is carried as events. Set Lane to say otherwise."
+                        : " Auto, because the live scene does not save this member. Tick Persistable "
+                          + "to carry it, or set Lane to carry it anyway.";
                 badge.AddToClassList(LiveClassAssetStyles.kSubtle);
             }
 

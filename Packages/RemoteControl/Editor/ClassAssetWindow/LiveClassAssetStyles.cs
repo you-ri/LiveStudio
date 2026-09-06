@@ -50,7 +50,7 @@ namespace Lilium.RemoteControl.Editor
         public const string kMemberTitle = "lca-member__title";
         public const string kMemberLane = "lca-member__lane";
         public const string kStateBudget = "lca-state-budget";
-        public const string kMemberSectionDetail = "lca-member__section-detail";
+        public const string kMemberNested = "lca-member__nested";
         public const string kFooter = "lca-footer";
         public const string kFooterTitle = "lca-footer__title";
         public const string kBindingRow = "lca-binding-row";

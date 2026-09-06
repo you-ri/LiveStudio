@@ -96,6 +96,29 @@ namespace Lilium.LiveStudio.Tests
         }
 
         /// <summary>
+        /// The machinery behind the page, by the same argument: what it holds is the state of the
+        /// take being made, not of the world being taken.
+        ///
+        /// The controller does exclude its own object from the recording, but that exclusion is
+        /// applied to events only -- the state walk never consults it. So a member of this type
+        /// reaching the state lane leaves the exclusion behind without saying anything, which is
+        /// what happened to <c>replayPaused</c> when the lane's default stopped depending on
+        /// whether a member was spelled as a field.
+        /// </summary>
+        [Test]
+        public void NothingOnTheRecorder_IsRecorded()
+        {
+            _AssertNothingIsRecorded(LiveClass.Get(typeof(FrameRecorderController)));
+        }
+
+        [Test]
+        public void TheRecorderHasNoStateBlock()
+        {
+            Assert.IsNull(StateBridgeRegistry.Find(typeof(FrameRecorderController)),
+                "a replayed pause would pause the replay that is playing it back");
+        }
+
+        /// <summary>
         /// The desk is not reached by the walk either, so the state lane does not copy what a write
         /// is no longer allowed to record. Asked of the walk rather than of the frame, because the
         /// answer has to hold whether or not anything is recording.

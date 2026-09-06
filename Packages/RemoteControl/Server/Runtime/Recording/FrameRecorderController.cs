@@ -23,8 +23,18 @@ namespace Lilium.RemoteControl
     /// not something each application should have to rediscover. The one thing it does not know is
     /// where an application files its work -- see <see cref="recordingFolderProvider"/>.
     /// </summary>
+    /// <remarks>
+    /// Declared off the frame whole. Everything on it is the recorder's own machinery -- a setting
+    /// of the machine running the take, never of the world in it -- so a recorded value here is one
+    /// the replay would press: a pause that pauses the replay playing it back.
+    ///
+    /// Said in the declaration rather than left to <see cref="_excludeIds"/>, because that exclusion
+    /// is applied to events only. A member on the state lane is copied by the walk, which does not
+    /// consult it, so the exclusion silently stops covering a member the moment its lane changes.
+    /// </remarks>
     [DefaultExecutionOrder(10000)]
-    [LiveClass(kLiveClassName, Icon = "fiber_manual_record", Category = "Recorder")]
+    [LiveClass(kLiveClassName, Icon = "fiber_manual_record", Category = "Recorder",
+        lane = FrameLane.None)]
     public class FrameRecorderController : MonoBehaviour
     {
         /// <summary>

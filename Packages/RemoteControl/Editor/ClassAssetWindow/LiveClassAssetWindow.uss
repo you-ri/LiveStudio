@@ -213,7 +213,9 @@
     -unity-text-align: middle-right;
 }
 
-.lca-member__section-detail {
+/* Fields that belong to the row above them - a section's subtitle and icon, a control's own
+ * settings - stepped in under it, while the row itself stays in the card's column. */
+.lca-member__nested {
     margin-left: 12px;
 }
 
