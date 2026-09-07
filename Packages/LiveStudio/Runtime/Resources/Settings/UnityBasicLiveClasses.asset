@@ -10,7 +10,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b0c2418b01756824b832ec273be0e79f, type: 3}
-  m_Name: LiveStudioLiveClasses
+  m_Name: UnityBasicLiveClasses
   m_EditorClassIdentifier: 
   typeDefinitions:
   - typeName: UnityEngine.Light, UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral,
@@ -143,12 +143,39 @@ MonoBehaviour:
       lane: 0
       control:
         rid: -2
-  bindings: []
+  prefabs:
+  - category: Camera
+    factory:
+      rid: 3556020863686148240
+  - category: 
+    factory:
+      rid: 3556020863686148241
+  - category: 
+    factory:
+      rid: 3556020863686148242
   references:
     version: 2
     RefIds:
     - rid: -2
       type: {class: , ns: , asm: }
+    - rid: 3556020863686148240
+      type: {class: LiveCameraFactory, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      data:
+        prefab: {fileID: 8328178207827300682, guid: 2907bfc9e9731a644b71686de80b9d52, type: 3}
+        _prefabGuid: 2907bfc9e9731a644b71686de80b9d52
+        _accessLevel: 0
+    - rid: 3556020863686148241
+      type: {class: LiveGameObjectWithTransformFactory, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl}
+      data:
+        prefab: {fileID: 1380209117773144308, guid: 613b142a679f53f4f975a8edd10806c2, type: 3}
+        _prefabGuid: 613b142a679f53f4f975a8edd10806c2
+        _accessLevel: 1
+    - rid: 3556020863686148242
+      type: {class: LiveGameObjectWithTransformFactory, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl}
+      data:
+        prefab: {fileID: 87923789013685897, guid: c380008e51e47824fa964133a5c1aa5b, type: 3}
+        _prefabGuid: c380008e51e47824fa964133a5c1aa5b
+        _accessLevel: 2
     - rid: 7801357924000000001
       type: {class: SliderControl, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl}
       data:

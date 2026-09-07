@@ -25,6 +25,9 @@ namespace Lilium.RemoteControl.Tests
         public void Setup()
         {
             LiveClass.Clear();
+
+            // A test that failed before its cleanup must not leave prefabs on offer for the next one.
+            LivePrefabCatalog.Clear();
         }
 
         #region MenuItem Tests
@@ -124,60 +127,84 @@ namespace Lilium.RemoteControl.Tests
 
         #region StandardObjectFactory Tests
 
-        [Test]
-        public void StandardObjectFactory_NullFactories_ReturnsEmptyObjects()
+        /// <summary>
+        /// Applies a live class asset offering one factory per prefab, all under the same category.
+        /// The caller disposes it with <see cref="_DropCatalogAsset"/>.
+        /// </summary>
+        static LiveClassAsset _ApplyCatalogAsset(string category, params GameObject[] prefabs)
         {
-            var factory = new StandardObjectFactory { factories = null };
-            Assert.AreEqual(0, factory.objects.Length);
+            var asset = ScriptableObject.CreateInstance<LiveClassAsset>();
+            for (int i = 0; i < prefabs.Length; i++)
+            {
+                asset.prefabs.Add(new LiveClassAsset.PrefabDefinition
+                {
+                    category = category,
+                    factory = new LiveGameObjectFactory { prefab = prefabs[i] },
+                });
+            }
+            LivePrefabCatalog.Register(asset);
+            return asset;
+        }
+
+        static void _DropCatalogAsset(LiveClassAsset asset)
+        {
+            LivePrefabCatalog.Clear();
+            if (asset != null) UnityEngine.Object.DestroyImmediate(asset);
+        }
+
+        /// <summary>A factory on a page showing <paramref name="category"/> (empty: the scene page).</summary>
+        static StandardObjectFactory _PageFactory(string category = null)
+        {
+            var factory = new StandardObjectFactory();
+            factory.Initialize(null, category);
+            return factory;
         }
 
         [Test]
-        public void StandardObjectFactory_NullFactories_ReturnsEmptyNames()
+        public void StandardObjectFactory_EmptyCatalog_ReturnsEmptyObjects()
         {
-            var factory = new StandardObjectFactory { factories = null };
-            Assert.AreEqual(0, factory.objectNames.Length);
+            Assert.AreEqual(0, _PageFactory().objects.Length);
         }
 
         [Test]
-        public void StandardObjectFactory_WithFactories_ReturnsCorrectObjects()
+        public void StandardObjectFactory_EmptyCatalog_ReturnsEmptyNames()
+        {
+            Assert.AreEqual(0, _PageFactory().objectNames.Length);
+        }
+
+        [Test]
+        public void StandardObjectFactory_DeclaredPrefabs_ReturnsCorrectObjects()
         {
             var go1 = new GameObject("Prefab1");
             var go2 = new GameObject("Prefab2");
+            LiveClassAsset asset = null;
             try
             {
-                var f1 = new LiveGameObjectFactory { prefab = go1 };
-                var f2 = new LiveGameObjectFactory { prefab = go2 };
-                var factory = new StandardObjectFactory
-                {
-                    factories = new ILiveObjectFactory[] { f1, f2 }
-                };
-                var objects = factory.objects;
+                asset = _ApplyCatalogAsset(null, go1, go2);
+                var objects = _PageFactory().objects;
 
                 Assert.AreEqual(2, objects.Length);
-                Assert.AreEqual(f1, objects[0]);
-                Assert.AreEqual(f2, objects[1]);
+                Assert.AreEqual(asset.prefabs[0].factory, objects[0]);
+                Assert.AreEqual(asset.prefabs[1].factory, objects[1]);
             }
             finally
             {
+                _DropCatalogAsset(asset);
                 GameObject.DestroyImmediate(go1);
                 GameObject.DestroyImmediate(go2);
             }
         }
 
         [Test]
-        public void StandardObjectFactory_WithFactories_ReturnsCorrectNames()
+        public void StandardObjectFactory_DeclaredPrefabs_ReturnsCorrectNames()
         {
             var go1 = new GameObject("Alpha");
             var go2 = new GameObject("Beta");
+            LiveClassAsset asset = null;
             try
             {
-                var f1 = new LiveGameObjectFactory { prefab = go1 };
-                var f2 = new LiveGameObjectFactory { prefab = go2 };
-                var factory = new StandardObjectFactory
-                {
-                    factories = new ILiveObjectFactory[] { f1, f2 }
-                };
-                var names = factory.objectNames;
+                asset = _ApplyCatalogAsset(null, go1, go2);
+                var names = _PageFactory().objectNames;
 
                 Assert.AreEqual(2, names.Length);
                 Assert.AreEqual("Alpha", names[0]);
@@ -185,30 +212,88 @@ namespace Lilium.RemoteControl.Tests
             }
             finally
             {
+                _DropCatalogAsset(asset);
                 GameObject.DestroyImmediate(go1);
                 GameObject.DestroyImmediate(go2);
             }
         }
 
+        /// <summary>
+        /// A declaration with no maker is dropped at registration rather than listed as a blank
+        /// entry, so an index into the list always names something that can be created.
+        /// </summary>
         [Test]
-        public void StandardObjectFactory_WithNullFactoryEntry_ReturnsEmptyName()
+        public void StandardObjectFactory_DeclarationWithoutFactory_IsNotOffered()
         {
             var go = new GameObject("Valid");
+            LiveClassAsset asset = null;
             try
             {
-                var f1 = new LiveGameObjectFactory { prefab = go };
-                var factory = new StandardObjectFactory
-                {
-                    factories = new ILiveObjectFactory[] { f1, null }
-                };
-                var names = factory.objectNames;
+                asset = _ApplyCatalogAsset(null, go);
+                asset.prefabs.Add(new LiveClassAsset.PrefabDefinition());
+                LivePrefabCatalog.Register(asset);
 
-                Assert.AreEqual(2, names.Length);
+                var names = _PageFactory().objectNames;
+
+                Assert.AreEqual(1, names.Length);
                 Assert.AreEqual("Valid", names[0]);
-                Assert.AreEqual("", names[1]);
             }
             finally
             {
+                _DropCatalogAsset(asset);
+                GameObject.DestroyImmediate(go);
+            }
+        }
+
+        /// <summary>
+        /// The category on a declaration decides which category page offers it; the scene page
+        /// (no category) offers every declared prefab.
+        /// </summary>
+        [Test]
+        public void StandardObjectFactory_Category_SelectsWhichPageOffersThePrefab()
+        {
+            var camera = new GameObject("CameraPrefab");
+            var prop = new GameObject("PropPrefab");
+            LiveClassAsset cameraAsset = null;
+            LiveClassAsset propAsset = null;
+            try
+            {
+                cameraAsset = _ApplyCatalogAsset("Camera", camera);
+                propAsset = _ApplyCatalogAsset("Prop", prop);
+
+                CollectionAssert.AreEqual(
+                    new[] { "CameraPrefab" }, _PageFactory("Camera").objectNames);
+                CollectionAssert.AreEqual(
+                    new[] { "PropPrefab" }, _PageFactory("Prop").objectNames);
+                CollectionAssert.AreEqual(
+                    new[] { "CameraPrefab", "PropPrefab" }, _PageFactory().objectNames);
+            }
+            finally
+            {
+                _DropCatalogAsset(cameraAsset);
+                if (propAsset != null) UnityEngine.Object.DestroyImmediate(propAsset);
+                GameObject.DestroyImmediate(camera);
+                GameObject.DestroyImmediate(prop);
+            }
+        }
+
+        /// <summary>An asset that is dropped stops offering what it declared.</summary>
+        [Test]
+        public void StandardObjectFactory_UnregisteredAsset_NoLongerOffersItsPrefabs()
+        {
+            var go = new GameObject("Gone");
+            LiveClassAsset asset = null;
+            try
+            {
+                asset = _ApplyCatalogAsset(null, go);
+                Assert.AreEqual(1, _PageFactory().objectNames.Length);
+
+                LivePrefabCatalog.Unregister(asset);
+                Assert.AreEqual(0, _PageFactory().objectNames.Length);
+            }
+            finally
+            {
+                _DropCatalogAsset(asset);
                 GameObject.DestroyImmediate(go);
             }
         }
@@ -216,27 +301,10 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void StandardObjectFactory_CreateObject_InvalidIndex_DoesNotThrow()
         {
-            var factory = new StandardObjectFactory { factories = new ILiveObjectFactory[0] };
+            var factory = _PageFactory();
             Assert.DoesNotThrow(() => factory.CreateObject(-1));
             Assert.DoesNotThrow(() => factory.CreateObject(0));
             Assert.DoesNotThrow(() => factory.CreateObject(100));
-        }
-
-        [Test]
-        public void StandardObjectFactory_CreateObject_NullFactories_DoesNotThrow()
-        {
-            var factory = new StandardObjectFactory { factories = null };
-            Assert.DoesNotThrow(() => factory.CreateObject(0));
-        }
-
-        [Test]
-        public void StandardObjectFactory_CreateObject_NullFactoryEntry_DoesNotThrow()
-        {
-            var factory = new StandardObjectFactory
-            {
-                factories = new ILiveObjectFactory[] { null }
-            };
-            Assert.DoesNotThrow(() => factory.CreateObject(0));
         }
 
         [Test]
@@ -274,35 +342,118 @@ namespace Lilium.RemoteControl.Tests
             }
         }
 
+        /// <summary>
+        /// An object held by a source -- which is where a live scene puts what it stands up, the
+        /// list belonging to the container that restored it -- is deletable: it leaves that list,
+        /// is unregistered, and its GameObject goes with it.
+        ///
+        /// It used to be looked for in the container's own list only, so it fell through to the id
+        /// lookup, which unregistered it and left both the entry and the GameObject standing: the
+        /// object came straight back in the next listing and could never be deleted.
+        /// </summary>
         [Test]
-        public void StandardObjectFactory_RegisterPrefabs_NullFactories_DoesNotThrow()
+        public void StandardObjectFactory_DestroyObject_RemovesAnObjectHeldByASource()
         {
-            var factory = new StandardObjectFactory { factories = null };
-            Assert.DoesNotThrow(() => factory.RegisterPrefabs());
-        }
-
-        [Test]
-        public void StandardObjectFactory_RegisterPrefabs_WithFactories_RegistersAll()
-        {
-            var go1 = new GameObject("RegPrefab1");
-            var go2 = new GameObject("RegPrefab2");
+            var undoGroup = UnityEditor.Undo.GetCurrentGroup();
+            var instance = new GameObject("RestoredInstance");
+            LiveObjectContainer container = null;
             try
             {
-                var factory = new StandardObjectFactory
-                {
-                    factories = new ILiveObjectFactory[]
-                    {
-                        new LiveGameObjectFactory { prefab = go1 },
-                        new LiveGameObjectFactory { prefab = go2 }
-                    }
-                };
-                // Asset でない生成 GameObject は GUID を持てないため、Warning が出ることを期待する。
-                LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(".*RegPrefab1.*no guid.*"));
-                LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(".*RegPrefab2.*no guid.*"));
-                Assert.DoesNotThrow(() => factory.RegisterPrefabs());
+                LiveClass.RegisterFromAttributes<LiveGameObjectWithTransform>();
+                LiveClass.RegisterFromAttributes<LiveObjectContainer>();
+
+                container = new LiveObjectContainer("SourceProbe", new List<ILiveObject>());
+                container.Initialize();
+
+                // The source is initialized while still empty, the way a scene's container is
+                // before the live scene is restored into it: an object appended afterwards is not
+                // one of the scene's own, so it is not persistent and may be deleted.
+                var sourceList = new List<ILiveObject>();
+                var owner = new object();
+                container.AddSource(sourceList, owner);
+                container.InitializeSource(owner);
+
+                var restored = new LiveGameObjectWithTransform(instance);
+                sourceList.Add(restored);
+                restored.OnEnable();
+
+                var id = restored.liveObject?.id;
+                Assert.IsFalse(string.IsNullOrEmpty(id), "Precondition: the restored object is registered");
+
+                var factory = new StandardObjectFactory();
+                factory.Initialize(container, null);
+                factory.DestroyObject(id);
+
+                Assert.AreEqual(0, sourceList.Count, "The source list should no longer hold the object");
+                Assert.IsNull(LiveObjectRegistry.FindById(id), "The object should be unregistered");
+                Assert.IsTrue(instance == null, "The GameObject should be destroyed with it");
             }
             finally
             {
+                container?.Shutdown();
+                if (instance != null) GameObject.DestroyImmediate(instance);
+                UnityEditor.Undo.RevertAllDownToGroup(undoGroup);
+            }
+        }
+
+        /// <summary>
+        /// An object in no container at all is still deleted whole: the id lookup finds the wrapper
+        /// and has to ask it for the scene object it drives, rather than only accepting a target
+        /// that is itself a GameObject or a Component.
+        /// </summary>
+        [Test]
+        public void StandardObjectFactory_DestroyObject_UnwrapsAWrapperFoundById()
+        {
+            var undoGroup = UnityEditor.Undo.GetCurrentGroup();
+            var instance = new GameObject("OrphanInstance");
+            try
+            {
+                LiveClass.RegisterFromAttributes<LiveGameObjectWithTransform>();
+
+                var orphan = new LiveGameObjectWithTransform(instance);
+                orphan.OnEnable();
+                var id = orphan.liveObject?.id;
+                Assert.IsFalse(string.IsNullOrEmpty(id), "Precondition: the object is registered");
+
+                _PageFactory().DestroyObject(id);
+
+                Assert.IsNull(LiveObjectRegistry.FindById(id), "The object should be unregistered");
+                Assert.IsTrue(instance == null, "Its GameObject should be destroyed too");
+            }
+            finally
+            {
+                if (instance != null) GameObject.DestroyImmediate(instance);
+                UnityEditor.Undo.RevertAllDownToGroup(undoGroup);
+            }
+        }
+
+        [Test]
+        public void LivePrefabCatalog_RegisterNullAsset_DoesNotThrow()
+        {
+            Assert.DoesNotThrow(() => LivePrefabCatalog.Register(null));
+            Assert.DoesNotThrow(() => LivePrefabCatalog.Unregister(null));
+        }
+
+        /// <summary>
+        /// Applying an asset also puts every declared prefab in the PrefabRegistry, which is what
+        /// lets a saved @prefab entry be rebuilt.
+        /// </summary>
+        [Test]
+        public void LivePrefabCatalog_Register_RegistersDeclaredPrefabs()
+        {
+            var go1 = new GameObject("RegPrefab1");
+            var go2 = new GameObject("RegPrefab2");
+            LiveClassAsset asset = null;
+            try
+            {
+                // Asset でない生成 GameObject は GUID を持てないため、Warning が出ることを期待する。
+                LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(".*RegPrefab1.*no guid.*"));
+                LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(".*RegPrefab2.*no guid.*"));
+                Assert.DoesNotThrow(() => asset = _ApplyCatalogAsset(null, go1, go2));
+            }
+            finally
+            {
+                _DropCatalogAsset(asset);
                 GameObject.DestroyImmediate(go1);
                 GameObject.DestroyImmediate(go2);
             }
@@ -386,6 +537,45 @@ namespace Lilium.RemoteControl.Tests
         }
 
         #endregion
+
+        [Test]
+        public void TheCreateButton_IsOffTheLiveData()
+        {
+            // What a "+" produces is carried by the inventory: the spawned object names the prefab it
+            // came from and the structure lane rebuilds it under its recorded id. Recording the press
+            // as well stands up a second one -- the call takes an index, so replaying it mints a fresh
+            // id next to the one the inventory already rebuilt.
+            LiveClass.RegisterFromAttributes<ObjectFactoryBase>();
+            var liveClass = LiveClass.Find(typeof(ObjectFactoryBase));
+
+            Assert.IsNotNull(liveClass);
+            Assert.AreEqual(FrameLane.None, _LaneOf(liveClass, nameof(ObjectFactoryBase.CreateObject)));
+        }
+
+        [Test]
+        public void TheDeleteButton_StaysOnTheLiveData()
+        {
+            // Unlike the "+": it is addressed by an id that means the same thing on replay, applying
+            // it twice is harmless, and it reaches what the inventory cannot -- the structure lane
+            // only takes away what it stood up itself.
+            LiveClass.RegisterFromAttributes<ObjectFactoryBase>();
+            var liveClass = LiveClass.Find(typeof(ObjectFactoryBase));
+
+            Assert.IsNotNull(liveClass);
+            Assert.AreEqual(FrameLane.Event, _LaneOf(liveClass, nameof(ObjectFactoryBase.DestroyObject)));
+        }
+
+        private static FrameLane _LaneOf(LiveClass liveClass, string methodName)
+        {
+            var functions = liveClass.functionTypes;
+            for (int i = 0; i < functions.Length; i++)
+            {
+                if (functions[i].methodInfo?.Name == methodName) return functions[i].lane;
+            }
+
+            Assert.Fail($"{methodName} is not exposed at all");
+            return FrameLane.Event;
+        }
 
         #region UIHandler Registration Tests
 

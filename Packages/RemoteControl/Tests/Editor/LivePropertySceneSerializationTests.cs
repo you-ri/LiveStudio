@@ -2362,7 +2362,7 @@ namespace Lilium.RemoteControl.Tests
                 GameObject.DestroyImmediate(instance);
                 instance = null;
 
-                // UI Designer Reset 相当: Factory の _prefabGuid を AssetDatabase から再解決
+                // LiveClassAsset.OnValidate 相当: Factory の _prefabGuid を AssetDatabase から再解決
                 factory.RefreshPrefabKey();
                 Assert.AreEqual(expectedGuid, factory.prefabGuid,
                     "RefreshPrefabKey should populate _prefabGuid from AssetDatabase");
@@ -2389,17 +2389,15 @@ namespace Lilium.RemoteControl.Tests
         }
 
         /// <summary>
-        /// UI Designer Reset (= UIDefinitionPrefabKeyRefresher.Refresh) は渡された UIDefinition
-        /// のみ更新し、それ以外の UIDefinition アセットには影響しないことを検証する。
-        /// Play 中に呼ばれても PrefabRegistry に即座に登録されることも併せて確認する。
+        /// LiveClassAsset.RefreshPrefabKeys は自身が宣言したプレハブの GUID だけを解決し、
+        /// 他の LiveClassAsset には影響しないことを検証する。
+        /// 適用 (LivePrefabCatalog.Register) で PrefabRegistry に載ることも併せて確認する。
         /// </summary>
         [Test]
-        public void Refresh_TargetsOnlyGivenDefinition_AndRegistersPrefab()
+        public void RefreshPrefabKeys_TargetsOnlyGivenAsset_AndApplyRegistersPrefab()
         {
             const string prefabTargetPath = "Assets/_TmpPrefab_Refresher_Target.prefab";
             const string prefabOtherPath = "Assets/_TmpPrefab_Refresher_Other.prefab";
-            const string defTargetPath = "Assets/_TmpUIDef_Refresher_Target.asset";
-            const string defOtherPath = "Assets/_TmpUIDef_Refresher_Other.asset";
 
             var seedT = new GameObject("RefresherPrefabTarget");
             var prefabTarget = UnityEditor.PrefabUtility.SaveAsPrefabAsset(seedT, prefabTargetPath);
@@ -2412,104 +2410,45 @@ namespace Lilium.RemoteControl.Tests
             var expectedGuidTarget = UnityEditor.AssetDatabase.AssetPathToGUID(prefabTargetPath);
             var expectedGuidOther = UnityEditor.AssetDatabase.AssetPathToGUID(prefabOtherPath);
 
-            UIDefinition defTarget = null;
-            UIDefinition defOther = null;
+            LiveClassAsset defTarget = null;
+            LiveClassAsset defOther = null;
 
             try
             {
                 var factoryTarget = new LiveGameObjectFactory { prefab = prefabTarget };
                 var factoryOther = new LiveGameObjectFactory { prefab = prefabOther };
 
-                defTarget = ScriptableObject.CreateInstance<UIDefinition>();
-                defTarget.menuItems.Add(new MenuItem
-                {
-                    id = "target",
-                    page = new CategoryPage { factory = new StandardObjectFactory { factories = new ILiveObjectFactory[] { factoryTarget } } }
-                });
-                UnityEditor.AssetDatabase.CreateAsset(defTarget, defTargetPath);
+                // アセット化しないのは OnValidate を発火させないため (発火すると両方が解決されてしまい、
+                // 「対象だけ」を検証できない)。プレハブ側が AssetDatabase 上にあれば GUID は解決できる。
+                defTarget = ScriptableObject.CreateInstance<LiveClassAsset>();
+                defTarget.prefabs.Add(new LiveClassAsset.PrefabDefinition { factory = factoryTarget });
 
-                defOther = ScriptableObject.CreateInstance<UIDefinition>();
-                defOther.menuItems.Add(new MenuItem
-                {
-                    id = "other",
-                    page = new CategoryPage { factory = new StandardObjectFactory { factories = new ILiveObjectFactory[] { factoryOther } } }
-                });
-                UnityEditor.AssetDatabase.CreateAsset(defOther, defOtherPath);
+                defOther = ScriptableObject.CreateInstance<LiveClassAsset>();
+                defOther.prefabs.Add(new LiveClassAsset.PrefabDefinition { factory = factoryOther });
 
                 Assert.IsTrue(string.IsNullOrEmpty(factoryTarget.prefabGuid), "Precondition: target factory guid empty");
                 Assert.IsTrue(string.IsNullOrEmpty(factoryOther.prefabGuid), "Precondition: other factory guid empty");
 
-                // Act: Simulator が設定している _definition だけを対象に Refresh
-                var updated = UIDefinitionPrefabKeyRefresher.Refresh(defTarget);
-                Assert.IsTrue(updated);
+                // Act: 対象アセットだけを解決して適用する
+                defTarget.RefreshPrefabKeys();
+                LivePrefabCatalog.Register(defTarget);
 
-                // Target は更新される
-                var reloadedTarget = UnityEditor.AssetDatabase.LoadAssetAtPath<UIDefinition>(defTargetPath);
-                var rfTarget = ((StandardObjectFactory)((CategoryPage)reloadedTarget.menuItems[0].page).factory).factories[0] as LiveGameObjectFactory;
-                Assert.AreEqual(expectedGuidTarget, rfTarget.prefabGuid, "Target definition factory GUID should be refreshed");
+                Assert.AreEqual(expectedGuidTarget, factoryTarget.prefabGuid,
+                    "Target asset factory GUID should be refreshed");
                 Assert.IsTrue(PrefabRegistry.TryFind(expectedGuidTarget, out var regTarget), "PrefabRegistry should have target prefab");
                 Assert.AreEqual(prefabTarget, regTarget);
 
                 // Other は一切触られない
-                var reloadedOther = UnityEditor.AssetDatabase.LoadAssetAtPath<UIDefinition>(defOtherPath);
-                var rfOther = ((StandardObjectFactory)((CategoryPage)reloadedOther.menuItems[0].page).factory).factories[0] as LiveGameObjectFactory;
-                Assert.IsTrue(string.IsNullOrEmpty(rfOther.prefabGuid), "Other definition factory GUID must remain empty");
+                Assert.IsTrue(string.IsNullOrEmpty(factoryOther.prefabGuid), "Other asset factory GUID must remain empty");
                 Assert.IsFalse(PrefabRegistry.TryFind(expectedGuidOther, out _), "PrefabRegistry must not contain other prefab");
             }
             finally
             {
-                UnityEditor.AssetDatabase.DeleteAsset(defTargetPath);
-                UnityEditor.AssetDatabase.DeleteAsset(defOtherPath);
+                LivePrefabCatalog.Clear();
+                if (defTarget != null) UnityEngine.Object.DestroyImmediate(defTarget);
+                if (defOther != null) UnityEngine.Object.DestroyImmediate(defOther);
                 UnityEditor.AssetDatabase.DeleteAsset(prefabTargetPath);
                 UnityEditor.AssetDatabase.DeleteAsset(prefabOtherPath);
-            }
-        }
-
-        /// <summary>
-        /// ScenePage のように CategoryPage 以外の IPage 実装が StandardObjectFactory を持つ場合でも
-        /// Refresh が Factory の prefab GUID を再解決することを検証する。
-        /// ユーザーの Studio UI Definition で ScenePage 側の Factory が更新されなかった症状の再発防止。
-        /// </summary>
-        [Test]
-        public void Refresh_SupportsScenePageInAdditionToCategoryPage()
-        {
-            const string prefabPath = "Assets/_TmpPrefab_ScenePage.prefab";
-            const string defPath = "Assets/_TmpUIDef_ScenePage.asset";
-
-            var seed = new GameObject("ScenePagePrefab");
-            var prefab = UnityEditor.PrefabUtility.SaveAsPrefabAsset(seed, prefabPath);
-            GameObject.DestroyImmediate(seed);
-
-            var expectedGuid = UnityEditor.AssetDatabase.AssetPathToGUID(prefabPath);
-
-            UIDefinition def = null;
-            try
-            {
-                var factory = new LiveGameObjectFactory { prefab = prefab };
-
-                def = ScriptableObject.CreateInstance<UIDefinition>();
-                def.menuItems.Add(new MenuItem
-                {
-                    id = "scene",
-                    page = new ScenePage { factory = new StandardObjectFactory { factories = new ILiveObjectFactory[] { factory } } }
-                });
-                UnityEditor.AssetDatabase.CreateAsset(def, defPath);
-
-                Assert.IsTrue(string.IsNullOrEmpty(factory.prefabGuid), "Precondition: factory guid empty");
-
-                var updated = UIDefinitionPrefabKeyRefresher.Refresh(def);
-                Assert.IsTrue(updated);
-
-                var reloaded = UnityEditor.AssetDatabase.LoadAssetAtPath<UIDefinition>(defPath);
-                var rf = ((StandardObjectFactory)((ScenePage)reloaded.menuItems[0].page).factory).factories[0] as LiveGameObjectFactory;
-                Assert.AreEqual(expectedGuid, rf.prefabGuid, "ScenePage-hosted factory should also be refreshed");
-                Assert.IsTrue(PrefabRegistry.TryFind(expectedGuid, out var reg));
-                Assert.AreEqual(prefab, reg);
-            }
-            finally
-            {
-                UnityEditor.AssetDatabase.DeleteAsset(defPath);
-                UnityEditor.AssetDatabase.DeleteAsset(prefabPath);
             }
         }
 

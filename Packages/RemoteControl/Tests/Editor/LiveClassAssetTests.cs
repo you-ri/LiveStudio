@@ -10,9 +10,9 @@ using Lilium.RemoteControl.LiveScene;
 namespace Lilium.RemoteControl.Tests
 {
     /// <summary>
-    /// Attribute-less exposure: define-based registration metadata overrides and the
-    /// LiveClassAsset / RemoteControlContainer flow that exposes arbitrary components
-    /// through preset assets + the standard IExposedPropertyTable scene reference table.
+    /// Attribute-less exposure: define-based registration metadata overrides, and the
+    /// LiveClassAsset / RemoteControlContainer flow that exposes arbitrary components — the asset
+    /// declares the type, the container's own object list names the instances.
     /// </summary>
     public class LiveClassAssetTests
     {
@@ -33,23 +33,22 @@ namespace Lilium.RemoteControl.Tests
             return preset;
         }
 
-        private static LiveClassAsset.InstanceBinding _AddBinding(
-            LiveClassAsset preset, RemoteControlContainer container, UnityEngine.Object target)
+        /// <summary>
+        /// How a scene says which object is exposed: an entry in the container's own object list,
+        /// carrying the id it is exposed under. The declaration of the type has to be registered
+        /// first — the entry takes its live class from it as it is constructed.
+        /// </summary>
+        private static LiveComponent _AddEntry(RemoteControlContainer container, Component target)
         {
-            var entry = new LiveClassAsset.InstanceBinding
-            {
-                key = System.Guid.NewGuid().ToString(),
-                typeName = target.GetType().AssemblyQualifiedName,
-            };
-            preset.bindings.Add(entry);
-            container.SetReferenceValue(new PropertyName(entry.key), target);
+            var entry = new LiveComponent(target);
+            container._objects.Add(entry);
             return entry;
         }
 
         [TearDown]
         public void TearDown()
         {
-            // Destroying the container GameObjects fires OnDisable, which unregisters bindings.
+            // Destroying the container GameObjects fires OnDisable, which drops the declarations.
             foreach (var go in _gameObjects)
             {
                 if (go != null) Object.DestroyImmediate(go);
@@ -150,7 +149,7 @@ namespace Lilium.RemoteControl.Tests
             Assert.That(liveClass.FindProperty("range").isPersistable, Is.False);
         }
 
-        // --- Container: reference table + instance registration ---
+        // --- Container: declaration registration + exposed instances ---
 
         private RemoteControlContainer _CreateContainer(LiveClassAsset preset)
         {
@@ -161,7 +160,7 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void ABinding_WorksForATypeDeclaredInAnotherAsset()
+        public void AnEntry_WorksForATypeDeclaredInAnotherAsset()
         {
             // What a shared package plus a project asset looks like: the package declares what a
             // Light exposes, and the scene says which Light. Requiring the declaration to be
@@ -173,19 +172,19 @@ namespace Lilium.RemoteControl.Tests
             definition.members.Add(new LiveClassAssetMember { path = "intensity" });
             LiveClassAssetSystem.RegisterTypes(declaring);
 
-            var binding = _CreatePreset();
-            Assert.That(binding.FindTypeDefinition(typeof(Light)), Is.Null,
-                "the binding side is not supposed to need a declaration of its own");
+            var scenePreset = _CreatePreset();
+            Assert.That(scenePreset.FindTypeDefinition(typeof(Light)), Is.Null,
+                "the scene side is not supposed to need a declaration of its own");
 
             var lightGo = _CreateGameObject("ForeignDeclaredLight");
             var light = lightGo.AddComponent<Light>();
             light.intensity = 3f;
 
-            var container = _CreateContainer(binding);
-            var entry = _AddBinding(binding, container, light);
+            var container = _CreateContainer(scenePreset);
             container.Reload();
+            var entry = _AddEntry(container, light);
 
-            var handle = LiveObjectRegistry.FindById(entry.key);
+            var handle = LiveObjectRegistry.FindById(entry.id);
             Assert.That(handle, Is.Not.Null, "the instance was not exposed");
             Assert.That(handle.Value.target, Is.SameAs(light));
             Assert.That(handle.Value.FindProperty("intensity"), Is.Not.Null,
@@ -204,11 +203,11 @@ namespace Lilium.RemoteControl.Tests
             var light = lightGo.AddComponent<Light>();
 
             var container = _CreateContainer(preset);
-            var entry = _AddBinding(preset, container, light);
             container.Reload();
+            var entry = _AddEntry(container, light);
 
-            var handle = LiveObjectRegistry.FindById(entry.key);
-            Assert.That(handle, Is.Not.Null, "Binding key must be registered as the LiveObject id");
+            var handle = LiveObjectRegistry.FindById(entry.id);
+            Assert.That(handle, Is.Not.Null, "The entry's id must be registered as the LiveObject id");
             Assert.That(handle.Value.target, Is.SameAs(light));
 
             // Value round-trip through the live property.
@@ -222,41 +221,49 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void Container_UnboundKey_IsSkippedWithoutError()
+        public void Container_EntryWithNoReference_IsSkippedWithoutError()
         {
             var preset = _CreatePreset();
             var definition = preset.GetOrAddTypeDefinition(typeof(Light));
             definition.members.Add(new LiveClassAssetMember { path = "intensity" });
 
             var container = _CreateContainer(preset);
-            var entry = new LiveClassAsset.InstanceBinding
-            {
-                key = System.Guid.NewGuid().ToString(),
-                typeName = typeof(Light).AssemblyQualifiedName,
-            };
-            preset.bindings.Add(entry);
             container.Reload();
 
-            Assert.That(LiveObjectRegistry.FindById(entry.key), Is.Null);
+            // An entry whose object was deleted (or was never assigned) exposes nothing. Not an
+            // error: the rest of the list has to keep working.
+            var entry = _AddEntry(container, null);
+            entry.OnEnable();
+
+            Assert.That(LiveObjectRegistry.FindById(entry.id), Is.Null);
         }
 
         [Test]
-        public void Container_Disable_UnregistersInstances()
+        public void Container_Teardown_DropsInstancesBeforeTheirType()
         {
             var preset = _CreatePreset();
             preset.GetOrAddTypeDefinition(typeof(Light)).members.Add(new LiveClassAssetMember { path = "intensity" });
 
-            var lightGo = _CreateGameObject("BindingLightDisable");
+            var lightGo = _CreateGameObject("EntryLightDisable");
             var light = lightGo.AddComponent<Light>();
 
             var container = _CreateContainer(preset);
-            var entry = _AddBinding(preset, container, light);
             container.Reload();
+            var entry = _AddEntry(container, light);
 
-            Assert.That(LiveObjectRegistry.FindById(entry.key), Is.Not.Null);
+            var live = new LiveObjectContainer(container.name, container._objects);
+            live.Initialize();
+            Assert.That(LiveObjectRegistry.FindById(entry.id), Is.Not.Null);
+
+            // The order a host tears a container down in: the object list is shut down first
+            // (RemoteControlBehaviour does this from onUnregistered), and only then does the
+            // container unapply its declarations. The reverse would unregister a live class the
+            // still-live handles hold.
+            live.Shutdown();
+            Assert.That(LiveObjectRegistry.FindById(entry.id), Is.Null);
 
             container.enabled = false;
-            Assert.That(LiveObjectRegistry.FindById(entry.key), Is.Null);
+            Assert.That(LiveClass.Has(typeof(Light)), Is.False);
         }
 
         [Test]
@@ -326,7 +333,7 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void Container_Disable_KeepsTypeStillBoundByAnotherContainer()
+        public void Container_Disable_KeepsTypeStillExposedByAnotherContainer()
         {
             var preset = _CreatePreset();
             preset.GetOrAddTypeDefinition(typeof(Light)).members.Add(new LiveClassAssetMember { path = "intensity" });
@@ -335,36 +342,22 @@ namespace Lilium.RemoteControl.Tests
             var lightB = _CreateGameObject("SharedLightB").AddComponent<Light>();
 
             var containerA = _CreateContainer(preset);
-            var entryA = _AddBinding(preset, containerA, lightA);
             containerA.Reload();
+            var entryA = _AddEntry(containerA, lightA);
 
             var containerB = _CreateContainer(preset);
-            var entryB = _AddBinding(preset, containerB, lightB);
             containerB.Reload();
+            var entryB = _AddEntry(containerB, lightB);
 
+            // A's entries go first, the way a host shuts its source down before the container
+            // unapplies its declarations.
+            entryA.OnDisable();
             containerA.enabled = false;
 
-            Assert.That(LiveObjectRegistry.FindById(entryA.key), Is.Null);
+            Assert.That(LiveObjectRegistry.FindById(entryA.id), Is.Null);
             Assert.That(LiveClass.Has(typeof(Light)), Is.True,
                 "B still exposes an instance of the type, and its handle holds this LiveClass");
-            Assert.That(LiveObjectRegistry.FindById(entryB.key), Is.Not.Null);
-        }
-
-        [Test]
-        public void Container_RuntimeBindings_StayOutOfSerializedObjectList()
-        {
-            var preset = _CreatePreset();
-            preset.GetOrAddTypeDefinition(typeof(Light)).members.Add(new LiveClassAssetMember { path = "intensity" });
-
-            var light = _CreateGameObject("BindingLightSerialize").AddComponent<Light>();
-
-            var container = _CreateContainer(preset);
-            _AddBinding(preset, container, light);
-            container.Reload();
-
-            // _objects is [SerializeReference]: anything put there is written into the scene file.
-            Assert.That(container._objects, Is.Empty);
-            Assert.That(container.bindingObjects.Count, Is.EqualTo(1));
+            Assert.That(LiveObjectRegistry.FindById(entryB.id), Is.Not.Null);
         }
 
         [Test]
@@ -379,13 +372,13 @@ namespace Lilium.RemoteControl.Tests
             var lightB = _CreateGameObject("LightB").AddComponent<Light>();
 
             var container = _CreateContainer(preset);
-            var entryA = _AddBinding(preset, container, lightA);
-            var entryB = _AddBinding(preset, container, lightB);
             container.Reload();
+            var entryA = _AddEntry(container, lightA);
+            var entryB = _AddEntry(container, lightB);
 
             var liveClass = LiveClass.Find(typeof(Light));
-            var handleA = LiveObjectRegistry.FindById(entryA.key);
-            var handleB = LiveObjectRegistry.FindById(entryB.key);
+            var handleA = LiveObjectRegistry.FindById(entryA.id);
+            var handleB = LiveObjectRegistry.FindById(entryB.id);
             Assert.That(handleA, Is.Not.Null);
             Assert.That(handleB, Is.Not.Null);
             Assert.That(ReferenceEquals(handleA.Value.targetType, liveClass), Is.True);
@@ -402,24 +395,22 @@ namespace Lilium.RemoteControl.Tests
             var lightGo = _CreateGameObject("BindingLightSave");
             var light = lightGo.AddComponent<Light>();
 
-            // The container is the host. Its runtime wrappers are a source of their own (they are
-            // deliberately kept out of the serialized _objects list), which is what
-            // RemoteControlBehaviour merges and the live-scene save then enumerates.
-            var hostGo = _CreateGameObject("BindingHost");
+            // The container is the host. Its object list is what RemoteControlBehaviour hands to
+            // the merged container and the live-scene save then enumerates.
+            var hostGo = _CreateGameObject("EntryHost");
             var host = hostGo.AddComponent<RemoteControlContainer>();
             host.assets.Add(preset);
-            var entry = _AddBinding(preset, host, light);
             host.Reload();
+            var entry = _AddEntry(host, light);
 
             var container = new LiveObjectContainer(hostGo.name, host._objects);
-            container.AddSource(host.bindingObjects, host.bindingObjects);
             container.Initialize();
             try
             {
                 light.intensity = 7.25f;
 
                 // EnumerateAllObjects, not .objects: the save path walks the main list plus every
-                // merged source, and the binding wrappers are a source.
+                // merged source.
                 var all = new List<ILiveObject>(container.EnumerateAllObjects());
                 var resolved = LiveObjectGraph.ResolveLiveObjects(all, container);
                 var saved = LiveSceneSerializer.LiveSceneToJson(resolved, container, SerializeMode.Snapshot);
@@ -431,9 +422,9 @@ namespace Lilium.RemoteControl.Tests
                 foreach (var token in objectsArr)
                 {
                     var entryId = token["@source"]?.Value<string>() ?? token["@id"]?.Value<string>();
-                    if (entryId == entry.key) { json = (JObject)token; break; }
+                    if (entryId == entry.id) { json = (JObject)token; break; }
                 }
-                Assert.That(json, Is.Not.Null, "Binding entry must be present in saved JSON. Actual: " + saved);
+                Assert.That(json, Is.Not.Null, "The entry must be present in saved JSON. Actual: " + saved);
                 Assert.That(json["intensity"].Value<float>(), Is.EqualTo(7.25f).Within(0.001f));
 
                 light.intensity = 1f;

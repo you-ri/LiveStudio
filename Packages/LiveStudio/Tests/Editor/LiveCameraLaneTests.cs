@@ -38,10 +38,15 @@ namespace Lilium.LiveStudio.Tests
             // last written to the field.
             //
             // 'name' rides along, as it does on every other proxy (LiveGameObject, LiveAsset,
-            // LiveComponent). It did not here until 2026-09-06: the base declares it through a
-            // private '_name' field, which the block generated inside this type cannot reach, and
-            // the public property that could was passed over for being a property. With the lane's
-            // default no longer asking which of the two a member is, the reachable half carries it.
+            // LiveComponent). It did not here until 2026-09-06, and the reason is worth keeping:
+            // the base stores it in a private '_name' field, and this type is generated against
+            // that base as *metadata* -- another assembly -- where a private member is not among
+            // the ones the generator can see. The pair is therefore invisible from here and the
+            // public property is the only face a block of this type can carry, which is why the
+            // base says the lane on the property as well as on the field.
+            //
+            // ⚠ Leaning on the lane's default instead is what put a property nothing saves on the
+            // state lane, so this cannot go back to being implicit (see StateLaneDefaultTests).
             CollectionAssert.AreEquivalent(
                 new[] { "name", "priority" },
                 System.Array.ConvertAll(

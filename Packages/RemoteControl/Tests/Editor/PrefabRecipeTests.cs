@@ -21,8 +21,14 @@ namespace Lilium.RemoteControl.Tests
         private const string kPrefabKey = "test-prefab-guid";
         private const string kId = "spawned-1";
         private const string kTypeName = "GameObjectWithTransform";
+        private const string kLateKey = "test-prefab-guid-late";
+        private const string kLateId = "spawned-late";
 
         private GameObject _prefab;
+
+        // A prefab that is not in the registry to begin with, for the "it arrives late" cases. Held so
+        // teardown takes it away whether or not the test got as far as registering it.
+        private GameObject _latePrefab;
         private LiveObjectContainer _container;
         private LiveObjectContainer _previousMain;
         private StructureBlock _structure;
@@ -62,6 +68,9 @@ namespace Lilium.RemoteControl.Tests
 
             if (_prefab != null) Object.DestroyImmediate(_prefab);
             _prefab = null;
+
+            if (_latePrefab != null) Object.DestroyImmediate(_latePrefab);
+            _latePrefab = null;
 
             _structure.Dispose();
         }
@@ -197,6 +206,70 @@ namespace Lilium.RemoteControl.Tests
 
             Assert.AreEqual(1, LiveStructureSystem.unresolvedCount);
             Assert.AreEqual(0, LiveStructureSystem.createdCount);
+        }
+
+        [Test]
+        public void APrefabThatArrivesLate_IsMadeOnTheNextApply()
+        {
+            // The case an external bundle is in: the take names a prefab this run has not read yet.
+            // Whoever can read it puts it in the registry, and the reconcile -- which runs at every
+            // frame head -- makes the instance on the first apply after that. Nothing has to be told.
+            _structure.AddOrUpdate(_symbols.Intern(kLateId), _symbols.Intern(kTypeName),
+                FrameSymbolTable.kNone, _symbols.Intern(kLateKey));
+
+            LiveStructureSystem.ApplyFrom(_structure, _symbols);
+
+            Assert.AreEqual(0, LiveStructureSystem.createdCount);
+            Assert.AreEqual(1, LiveStructureSystem.unresolvedCount, "nothing could make it yet");
+
+            _latePrefab = new GameObject("late-prefab");
+            PrefabRegistry.Register(kLateKey, _latePrefab);
+
+            LiveStructureSystem.ApplyFrom(_structure, _symbols);
+
+            Assert.AreEqual(1, LiveStructureSystem.createdCount);
+            Assert.AreEqual(0, LiveStructureSystem.unresolvedCount);
+            Assert.IsTrue(LiveObjectRegistry.TryFindById(kLateId, out var handle));
+            Assert.IsInstanceOf<LiveGameObjectWithTransform>(handle.target);
+
+            // And it is this system's to take away, like anything else it stood up: an object that
+            // arrived late must still go when a scrub lands before its spawn.
+            using (var earlier = new StructureBlock())
+            {
+                LiveStructureSystem.ApplyFrom(earlier, _symbols);
+            }
+
+            Assert.AreEqual(1, LiveStructureSystem.destroyedCount);
+            Assert.IsFalse(LiveObjectRegistry.TryFindById(kLateId, out _));
+        }
+
+        [Test]
+        public void APrefabThatWentAway_IsNotAnsweredForOutOfTheCache()
+        {
+            // A bundle prefab can be unloaded. The maker is cached per key, so a cached one for a
+            // prefab that is gone would answer with nothing forever -- and, worse, take the key away
+            // from a resolver that could fetch it again.
+            _latePrefab = new GameObject("late-prefab");
+            PrefabRegistry.Register(kLateKey, _latePrefab);
+
+            _structure.AddOrUpdate(_symbols.Intern(kLateId), _symbols.Intern(kTypeName),
+                FrameSymbolTable.kNone, _symbols.Intern(kLateKey));
+            LiveStructureSystem.ApplyFrom(_structure, _symbols);
+            Assert.AreEqual(1, LiveStructureSystem.createdCount, "the first one was made");
+
+            Object.DestroyImmediate(_latePrefab);
+            _latePrefab = null;
+
+            using (var another = new StructureBlock())
+            {
+                another.AddOrUpdate(_symbols.Intern("spawned-2"), _symbols.Intern(kTypeName),
+                    FrameSymbolTable.kNone, _symbols.Intern(kLateKey));
+
+                LiveStructureSystem.ApplyFrom(another, _symbols);
+            }
+
+            Assert.AreEqual(1, LiveStructureSystem.unresolvedCount);
+            Assert.IsFalse(LiveObjectRegistry.TryFindById("spawned-2", out _));
         }
 
         private int _IndexOf(string id)

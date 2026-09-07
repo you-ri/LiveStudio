@@ -20,8 +20,9 @@ namespace Lilium.RemoteControl.Editor
 
     /// <summary>
     /// Type-level expose/unexpose logic shared by <see cref="LiveClassAssetWindow"/> and
-    /// <see cref="LiveClassAssetAddMemberWindow"/>, both of which edit the same
-    /// <see cref="LiveClassAsset"/> / <see cref="RemoteControlContainer"/> pair.
+    /// <see cref="LiveClassAssetAddMemberWindow"/>, which edit the same
+    /// <see cref="LiveClassAsset"/>, plus the answer to who applies that asset -- the one thing
+    /// an edit has to reach for it to take effect before the next domain reload.
     /// </summary>
     internal static class LiveClassAssetMemberExposure
     {
@@ -104,56 +105,70 @@ namespace Lilium.RemoteControl.Editor
         }
 
         /// <summary>
-        /// Opens one undo step covering the asset and, when present, the container.
-        /// Both are snapshotted whole: these edits change list sizes and [SerializeReference]
-        /// controls, which <see cref="Undo.RecordObject"/>'s incremental diff does not capture
-        /// reliably. Everything registered until the next <c>BeginEdit</c> undoes together.
+        /// Opens one undo step over the asset. It is snapshotted whole: these edits change list
+        /// sizes and [SerializeReference] references, which <see cref="Undo.RecordObject"/>'s
+        /// incremental diff does not capture reliably. Everything registered until the next
+        /// <c>BeginEdit</c> undoes together.
         /// </summary>
-        public static void BeginEdit(LiveClassAsset preset, RemoteControlContainer container, string name)
-        {
-            Undo.IncrementCurrentGroup();
-            Undo.SetCurrentGroupName(name);
-            if (preset != null && container != null)
-            {
-                Undo.RegisterCompleteObjectUndo(new UnityEngine.Object[] { preset, container }, name);
-            }
-            else if (preset != null)
-            {
-                Undo.RegisterCompleteObjectUndo(preset, name);
-            }
-            else if (container != null)
-            {
-                Undo.RegisterCompleteObjectUndo(container, name);
-            }
-        }
-
-        // Ensures the edited preset is registered on the container (so its bindings resolve at runtime).
-        public static void EnsurePresetOnContainer(LiveClassAsset preset, RemoteControlContainer container)
-        {
-            if (container == null || preset == null) return;
-            if (container.assets.Contains(preset)) return;
-            Undo.RegisterCompleteObjectUndo(container, "Add Preset To Container");
-            container.assets.Add(preset);
-            EditorUtility.SetDirty(container);
-        }
-
-        // Drops every instance binding pointing at the given type (its definition is gone).
-        public static void RemoveBindingsOfType(LiveClassAsset preset, RemoteControlContainer container, Type type)
-        {
-            for (int i = preset.bindings.Count - 1; i >= 0; i--)
-            {
-                var entry = preset.bindings[i];
-                if (entry == null || entry.ResolveType() != type) continue;
-                if (container != null) container.ClearReferenceValue(new PropertyName(entry.key));
-                preset.bindings.RemoveAt(i);
-            }
-        }
-
-        public static void ExposeTypeMember(LiveClassAsset preset, RemoteControlContainer container, Type type, in MemberCandidate candidate)
+        public static void BeginEdit(LiveClassAsset preset, string name)
         {
             if (preset == null) return;
-            BeginEdit(preset, container, "Expose Member");
-            EnsurePresetOnContainer(preset, container);
+
+            Undo.IncrementCurrentGroup();
+            Undo.SetCurrentGroupName(name);
+            Undo.RegisterCompleteObjectUndo(preset, name);
+        }
+
+        /// <summary>
+        /// Whether anything currently applies this asset: a container in an open scene that lists
+        /// it, or the session-long registration the project settings (or a package) made.
+        ///
+        /// An asset nothing applies is still worth editing -- it is a declaration, and being
+        /// applied is a separate decision, taken in the project settings or on a container -- but
+        /// nothing it says reaches the remote until something takes it.
+        /// </summary>
+        public static bool IsApplied(LiveClassAsset preset)
+        {
+            if (preset == null) return false;
+            if (LiveClassAssetSystem.IsPermanent(preset)) return true;
+
+            var containers = RemoteControlContainer.all;
+            for (int i = 0; i < containers.Count; i++)
+            {
+                if (containers[i] != null && containers[i].assets.Contains(preset)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Re-registers the asset through whoever applied it, so an edit reaches the live classes
+        /// without waiting for a domain reload.
+        ///
+        /// Through the appliers rather than by registering it here: applying an asset is the
+        /// decision of whoever brought it in, and an asset merely being edited must not start
+        /// declaring types nothing asked for. The same rule <c>LivePrefabCatalog.Refresh</c>
+        /// follows for the prefabs of the same asset.
+        /// </summary>
+        public static void Reapply(LiveClassAsset preset)
+        {
+            if (preset == null) return;
+
+            var containers = RemoteControlContainer.all;
+            for (int i = containers.Count - 1; i >= 0; i--)
+            {
+                var container = containers[i];
+                if (container != null && container.assets.Contains(preset)) container.Reload();
+            }
+
+            // A permanent registration has no container behind it to reload, so nothing else
+            // would pick the edit up.
+            if (LiveClassAssetSystem.IsPermanent(preset)) LiveClassAssetSystem.RegisterTypes(preset);
+        }
+
+        public static void ExposeTypeMember(LiveClassAsset preset, Type type, in MemberCandidate candidate)
+        {
+            if (preset == null) return;
+            BeginEdit(preset, "Expose Member");
 
             var definition = preset.GetOrAddTypeDefinition(type);
             if (FindMember(definition, candidate.path, candidate.isFunction) == null)
@@ -172,7 +187,7 @@ namespace Lilium.RemoteControl.Editor
             EditorUtility.SetDirty(preset);
         }
 
-        public static void UnexposeTypeMember(LiveClassAsset preset, RemoteControlContainer container, Type type, in MemberCandidate candidate)
+        public static void UnexposeTypeMember(LiveClassAsset preset, Type type, in MemberCandidate candidate)
         {
             if (preset == null) return;
             var definition = preset.FindTypeDefinition(type);
@@ -180,18 +195,16 @@ namespace Lilium.RemoteControl.Editor
             var member = FindMember(definition, candidate.path, candidate.isFunction);
             if (member == null) return;
 
-            BeginEdit(preset, container, "Unexpose Member");
+            BeginEdit(preset, "Unexpose Member");
 
             definition.members.Remove(member);
             if (definition.members.Count == 0)
             {
-                // Last member of the type gone: drop the definition and every binding of that type.
+                // Last member of the type gone: the declaration has nothing left to say.
                 preset.typeDefinitions.Remove(definition);
-                RemoveBindingsOfType(preset, container, type);
             }
 
             EditorUtility.SetDirty(preset);
-            if (container != null) EditorUtility.SetDirty(container);
         }
     }
 }

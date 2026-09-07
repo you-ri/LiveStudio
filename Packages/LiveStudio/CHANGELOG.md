@@ -2,7 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **A prop instance spawned from a bundle came back on a replay; before, it silently did not.** A take carries the key an instance was made from, and the maker that rebuilds it can only answer for a prefab already in hand — true of a built-in prop, whose catalogue reads from Resources synchronously, and not of an external `*.prop.lsb` one, whose key is a project-relative path and whose prefab has to be read out of a bundle first. Nothing was doing that read, so the instance was counted as unresolved on every frame of the replay and reported nowhere. `PropInstanceRecipeResolver` now stands as a second recipe resolver (see the resolver chain in `jp.lilium.remotecontrol`) and does one thing: it starts the read and puts the result in the `PrefabRegistry`, which is what brings the key within reach of the maker that already knew how to rebuild these. It deliberately **never creates the object** — creating is the reconcile's, which is looking at the inventory of the frame it is on, so an instance scrubbed away mid-read is simply never made rather than appearing late over a world that has moved on. While the read runs the replay is held (`FrameGate.HoldSupply`, the same wait an asset load takes) rather than run on without the instance: how long a bundle takes is a property of this machine, not of the take. A read that comes back with nothing — a bundle file that is gone, which the loader reports as an error — is remembered and not retried until the catalog changes, or one broken prop would fill the console with the same line at every frame head. The "+" also registers a prop's prefab as it spawns it, so a replay in the same session resolves without opening the bundle again. `ExternalAssetManager` keeps the single answer to "what prefab is this key": the deferred live-scene restore and the replay both go through it.
+
 ### Changed
+
+- **The Camera, GLTF Model and External Avatar Controller prefabs are declared in the shipped `LiveStudioLiveClasses` asset, following the move in `jp.lilium.remotecontrol`.** The scene page's "+" offers the same three in the same order, at the same access levels; the camera page's "+" now offers the camera, which it could not before because the list lived on the scene page. A project of your own adds its prefabs to its own live class asset -- the shipped one stays read-only -- and the Studio UI definition no longer carries a factory list at all.
 
 - **The project crawler classifies `*.scene.json` as a live scene, following the extension change in `jp.lilium.remotecontrol`.** `*.live.json` is still accepted, so an existing project keeps listing every scene it already has; only the suffix a newly saved one carries has changed.
 

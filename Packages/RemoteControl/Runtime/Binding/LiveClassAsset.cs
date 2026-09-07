@@ -16,11 +16,12 @@ namespace Lilium.RemoteControl
     /// - <see cref="TypeDefinition"/>: which members of a type are exposed, with their UI metadata.
     ///   One definition per type — this is the single source for the type-level
     ///   <see cref="LiveClass"/> registration.
-    /// - <see cref="InstanceBinding"/>: which scene objects are exposed. Each entry holds only a
-    ///   stable GUID key; the actual scene reference is resolved through the standard
-    ///   <see cref="IExposedPropertyTable"/> mechanism (same as PlayableDirector/Timeline) by a
-    ///   <c>RemoteControlContainer</c> in the scene. The key doubles as the LiveObject id,
-    ///   so persisted values stay stable across scenes and renames.
+    /// - <see cref="PrefabDefinition"/>: which prefabs the remote can stand up in the live scene.
+    ///
+    /// Both are type-level and scene-independent, which is what lets the same asset apply to every
+    /// scene at once (project settings, or a package that ships one). Which *instances* are exposed
+    /// is not said here: a scene names its own objects in the <c>RemoteControlContainer</c> object
+    /// list, as <c>LiveComponent</c> / <c>LiveAsset</c> entries carrying their own ids.
     /// </summary>
     [MovedFrom(false, null, null, "LiveBindingPreset")]
     [CreateAssetMenu(menuName = "Live Studio/Remote Control/Live Class Asset", fileName = "LiveClassAsset")]
@@ -166,27 +167,29 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// One exposed scene object. <see cref="key"/> is both the IExposedPropertyTable
-        /// reference name and the LiveObject id.
+        /// One prefab the remote can add to the live scene, and the page that offers it.
+        ///
+        /// The maker is the same <see cref="ILiveObjectFactory"/> the UI definition used to hold:
+        /// it decides what the instance is exposed as (a plain object, one with a transform, a
+        /// camera), which is a property of the prefab rather than of the page showing it. Moving
+        /// the list here makes the asset the single place a prefab is declared — the same asset
+        /// that says what of it is exposed — so a bundle that brings a prefab brings the way to
+        /// stand it up with it.
         /// </summary>
         [Serializable]
-        public class InstanceBinding
+        public class PrefabDefinition
         {
-            public string key;
+            [Tooltip("Category page whose \"+\" also offers this prefab. Empty: the scene page only")]
+            public string category;
 
-            [Tooltip("Assembly-qualified name of the expected type (for validation and missing display)")]
-            public string typeName;
-
-            public Type ResolveType()
-            {
-                if (string.IsNullOrEmpty(typeName)) return null;
-                return Type.GetType(typeName);
-            }
+            [SerializeReference, Select]
+            public ILiveObjectFactory factory;
         }
 
         public List<TypeDefinition> typeDefinitions = new List<TypeDefinition>();
 
-        public List<InstanceBinding> bindings = new List<InstanceBinding>();
+        [Tooltip("Prefabs the remote can instantiate into the live scene")]
+        public List<PrefabDefinition> prefabs = new List<PrefabDefinition>();
 
         public TypeDefinition FindTypeDefinition(Type type)
         {
@@ -208,6 +211,32 @@ namespace Lilium.RemoteControl
             }
             return def;
         }
+
+#if UNITY_EDITOR
+        private void OnValidate()
+        {
+            RefreshPrefabKeys();
+
+            // Follow an edit made while playing: the guid is what a saved object names its prefab
+            // by, so a prefab swapped in the inspector has to reach the registry without waiting
+            // for the next domain reload.
+            LivePrefabCatalog.Refresh(this);
+        }
+
+        /// <summary>
+        /// Re-resolves the asset GUID each declared prefab is registered under, from the
+        /// AssetDatabase. The guid is serialized rather than looked up at runtime (there is no
+        /// AssetDatabase in a build), so it has to be refreshed whenever the list is edited.
+        /// </summary>
+        public void RefreshPrefabKeys()
+        {
+            if (prefabs == null) return;
+            for (int i = 0; i < prefabs.Count; i++)
+            {
+                prefabs[i]?.factory?.RefreshPrefabKey();
+            }
+        }
+#endif
     }
 
     /// <summary>

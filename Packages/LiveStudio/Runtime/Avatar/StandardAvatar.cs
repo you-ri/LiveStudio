@@ -77,6 +77,10 @@ namespace Lilium.LiveStudio
 
         Animator _animator;
 
+        // Owns the HumanPoseHandler the muscle-space pose is written through. This avatar drives its
+        // bones directly rather than through AvatarBodyDriver's graph, so it needs its own.
+        readonly AvatarPoseWriter _poseWriter = new AvatarPoseWriter();
+
         MotionSourceBase _motionSource;
 
         [SerializeReference, Select]
@@ -179,6 +183,7 @@ namespace Lilium.LiveStudio
         void OnDestroy()
         {
             _ClearGraph();
+            _poseWriter.Dispose();
 
             // NativeReferenceを解放
             if (_eyeDirectionNative.IsCreated)
@@ -215,7 +220,7 @@ namespace Lilium.LiveStudio
 
             if (_animator != null)
             {
-                AvatarAnimationSystem.UpdateBodyAnimation(_animator, in _motionSource.frameData);
+                _poseWriter.Apply(_animator, in _motionSource.frameData);
             }
         }
 
@@ -225,7 +230,7 @@ namespace Lilium.LiveStudio
 
             if (_animator != null)
             {
-                AvatarAnimationSystem.UpdateBodyAnimation(_animator, in _motionSource.frameData);
+                _poseWriter.Apply(_animator, in _motionSource.frameData);
             }
 
         }

@@ -134,7 +134,7 @@ namespace Lilium.LiveStudio
             _current = this;
             // Resolve deferred external-prop @prefab instances (queued by the live-scene restore before this
             // manager's crawl registered their asset) through this manager.
-            PendingPrefabStore.SetProvider(_ResolveInstancePrefabForKey);
+            PendingPrefabStore.SetProvider(ResolveInstancePrefabForKey);
             LiveObjectRegistry.Create<ExternalAssetManager>(this, kId);
             LiveClass.Get<ExternalAssetManager>().onPropertyChanged += _OnPropertyChanged;
 
@@ -699,28 +699,46 @@ namespace Lilium.LiveStudio
             return _Find(_MakeId(abs));
         }
 
-        // Provider for PendingPrefabStore: resolves a live-scene @prefab key (an IInstantiableProp's
-        // instanceKey) to its root prefab, so a deferred external-prop instance can be created once its asset
-        // has registered. Static so a single registration routes to whichever manager is current.
-        private static Task<GameObject> _ResolveInstancePrefabForKey(string key)
+        /// <summary>
+        /// Resolves a live-scene <c>@prefab</c> key (an <see cref="IInstantiableProp.instanceKey"/>) to its
+        /// root prefab, loading the owning bundle if needed, so a deferred instance can be created once its
+        /// asset has registered. Static so a single registration routes to whichever manager is current.
+        ///
+        /// The one answer to "what prefab is this key", shared by the two things that ask: the live scene's
+        /// deferred restore (<see cref="PendingPrefabStore"/>) and a replay standing an instance back up
+        /// (<see cref="PropInstanceRecipeResolver"/>). Two resolutions would be two ways for a saved scene
+        /// and a recording to disagree about what an instance is.
+        /// </summary>
+        internal static Task<GameObject> ResolveInstancePrefabForKey(string key)
         {
-            var manager = _current;
-            return manager != null ? manager._ResolveInstancePrefab(key) : Task.FromResult<GameObject>(null);
+            var prop = FindInstantiableProp(key);
+            return prop != null ? prop.LoadInstancePrefabAsync() : Task.FromResult<GameObject>(null);
         }
 
-        private Task<GameObject> _ResolveInstancePrefab(string key)
+        /// <summary>
+        /// The prop a live-scene <c>@prefab</c> key names, or null when no registered asset claims it.
+        ///
+        /// Separate from the load above because "no asset owns this key" and "the owner could not produce a
+        /// prefab" are different answers, and a caller that has to tell them apart cannot: both come back as
+        /// a task holding null. A replay uses the difference — an unclaimed key belongs to somebody else,
+        /// while a failed load is this manager's and must not be attempted again every frame.
+        /// </summary>
+        internal static IInstantiableProp FindInstantiableProp(string key)
         {
-            if (string.IsNullOrEmpty(key)) return Task.FromResult<GameObject>(null);
+            var manager = _current;
+            if (manager == null || string.IsNullOrEmpty(key)) return null;
+
             // Match by instanceKey (a built-in prop's catalog GUID or an external prop's portable reference).
+            var assets = manager.assets;
             for (int i = 0; i < assets.Length; i++)
             {
                 if (assets[i] is IInstantiableProp p && p.supportsInstancing && p.instanceKey == key)
-                    return p.LoadInstancePrefabAsync();
+                    return p;
             }
             // Fall back to reference resolution so path-variant keys (absolute vs project-relative) still match.
-            if (FindAssetByReference(key) is IInstantiableProp byRef && byRef.supportsInstancing)
-                return byRef.LoadInstancePrefabAsync();
-            return Task.FromResult<GameObject>(null);
+            if (manager.FindAssetByReference(key) is IInstantiableProp byRef && byRef.supportsInstancing)
+                return byRef;
+            return null;
         }
 
         /// <summary>

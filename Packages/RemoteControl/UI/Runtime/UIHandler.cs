@@ -118,10 +118,12 @@ namespace Lilium.RemoteControl.UI
                     if (factory is ObjectFactoryBase factoryBase)
                     {
                         var container = _context?.objectContainer;
-                        factoryBase.Initialize(container);
-                    }
 
-                    factory.RegisterPrefabs();
+                        // The page's own category decides which declared prefabs its "+" offers.
+                        // A page that shows no category (the scene page) offers all of them.
+                        var category = (selector as StandardObjectSelector)?.category;
+                        factoryBase.Initialize(container, category);
+                    }
 
                     var factoryId = $"ui.factory.{item.id}";
                     var factoryLiveClass = LiveClass.Find(typeof(ObjectFactoryBase));

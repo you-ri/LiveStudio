@@ -23,6 +23,9 @@ namespace Lilium.LiveStudio
 
         private Animator _animator;
 
+        // Owns the HumanPoseHandler the muscle-space pose is written through.
+        private readonly AvatarPoseWriter _poseWriter = new AvatarPoseWriter();
+
         private MotionSourceBase _motionSource;
 
         [SerializeReference, Select]
@@ -98,6 +101,7 @@ namespace Lilium.LiveStudio
 
         void OnDestroy()
         {
+            _poseWriter.Dispose();
             expressionResolver.Dispose();
         }
 
@@ -109,7 +113,7 @@ namespace Lilium.LiveStudio
 
             if (_animator != null)
             {
-                AvatarAnimationSystem.UpdateBodyAnimation(_animator, in _motionSource.frameData);
+                _poseWriter.Apply(_animator, in _motionSource.frameData);
             }
 
             if (_blendShapeProxy == null) return;

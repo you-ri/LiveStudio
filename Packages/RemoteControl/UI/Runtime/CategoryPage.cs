@@ -43,8 +43,6 @@ namespace Lilium.RemoteControl.UI
         void CreateObject(int index);
 
         void DestroyObject(string objectId);
-
-        void RegisterPrefabs();
     }
 
     [Serializable]
@@ -54,6 +52,15 @@ namespace Lilium.RemoteControl.UI
     {
         [NonSerialized]
         protected LiveObjectContainer _container;
+
+        /// <summary>
+        /// Category of the page this factory belongs to, or empty for a page that offers every
+        /// declared prefab (the scene page). Handed in by the host rather than authored here: the
+        /// page already says which category it shows, and writing it twice is a way for the "+" and
+        /// the list under it to disagree.
+        /// </summary>
+        [NonSerialized]
+        protected string _category;
 
         public object[] objects => GetObjects();
 
@@ -70,16 +77,48 @@ namespace Lilium.RemoteControl.UI
 
         public virtual void Initialize(LiveObjectContainer container)
         {
-            _container = container;
+            Initialize(container, null);
         }
 
-        [LiveFunction]
+        /// <inheritdoc cref="Initialize(LiveObjectContainer)"/>
+        /// <param name="category">
+        /// Category of the hosting page; empty offers every declared prefab.
+        /// </param>
+        public virtual void Initialize(LiveObjectContainer container, string category)
+        {
+            _container = container;
+            _category = category;
+        }
+
+        /// <summary>
+        /// Stands up the maker at <paramref name="index"/>. Kept out of the live data on purpose.
+        ///
+        /// What this produces is carried by the inventory instead: a spawned object names the
+        /// prefab it came from, and the structure lane creates it again under the id it was
+        /// recorded with. Recording the press as well would stand up a second one -- this call
+        /// takes an index, not an id, so replaying it mints a fresh id that no recorded value
+        /// addresses, next to the one the inventory already rebuilt. It is also an index into a
+        /// list that grows and shrinks with what is loaded, so it does not mean the same thing in
+        /// the next run the way an id does.
+        ///
+        /// ⚠ The inventory only carries what a recipe can rebuild (see <c>ILiveMadeFromRecipe</c>).
+        /// A maker that produces something with no recipe key would have its spawn recorded
+        /// nowhere; every one of them names its prefab today, and a new one has to.
+        /// </summary>
+        [LiveFunction(lane = FrameLane.None)]
         public virtual void CreateObject(int index) { }
 
+        /// <summary>
+        /// Takes away the object with this id.
+        ///
+        /// Recorded, unlike <see cref="CreateObject"/>: it is addressed by an id that means the same
+        /// thing on replay, and applying it twice is harmless (the second finds nothing). It also
+        /// reaches further than the inventory can -- the structure lane only takes away what it
+        /// stood up itself, so a delete of something that was in the scene before the take began is
+        /// carried by this alone.
+        /// </summary>
         [LiveFunction]
         public virtual void DestroyObject(string objectId) { }
-
-        public virtual void RegisterPrefabs() { }
     }
 
     /// <summary>
@@ -128,41 +167,48 @@ namespace Lilium.RemoteControl.UI
     [MovedFrom(true, "Lilium.RemoteControl.WebUI", "Lilium.RemoteControl.WebUI")]
     public class StandardObjectFactory : ObjectFactoryBase
     {
-        [SerializeReference, Select]
-        public ILiveObjectFactory[] factories;
+        /// <summary>
+        /// The makers this page offers, from the prefabs declared by the applied live class assets
+        /// (<see cref="LivePrefabCatalog"/>).
+        ///
+        /// Read on every call rather than cached: an asset carried in by a bundle adds its prefabs
+        /// while running, and a list captured once would go on offering what has been unloaded.
+        /// </summary>
+        protected List<ILiveObjectFactory> _Factories() => LivePrefabCatalog.FactoriesFor(_category);
 
         protected override object[] GetObjects()
         {
-            if (factories == null) return new object[0];
-            var result = new object[factories.Length];
-            for (int i = 0; i < factories.Length; i++)
+            var factories = _Factories();
+            var result = new object[factories.Count];
+            for (int i = 0; i < factories.Count; i++)
                 result[i] = factories[i];
             return result;
         }
 
         protected override string[] GetObjectNames()
         {
-            if (factories == null) return new string[0];
-            var names = new string[factories.Length];
-            for (int i = 0; i < factories.Length; i++)
+            var factories = _Factories();
+            var names = new string[factories.Count];
+            for (int i = 0; i < factories.Count; i++)
                 names[i] = factories[i]?.name ?? "";
             return names;
         }
 
         protected override int[] GetObjectAccessLevels()
         {
-            if (factories == null) return new int[0];
-            var levels = new int[factories.Length];
-            for (int i = 0; i < factories.Length; i++)
+            var factories = _Factories();
+            var levels = new int[factories.Count];
+            for (int i = 0; i < factories.Count; i++)
                 levels[i] = (int)(factories[i]?.accessLevel ?? AccessLevel.Public);
             return levels;
         }
 
         public override void CreateObject(int index)
         {
-            if (factories == null || index < 0 || index >= factories.Length)
+            var factories = _Factories();
+            if (index < 0 || index >= factories.Count)
             {
-                Debug.LogWarning($"[RemoteControl] StandardObjectFactory.CreateObject: invalid index {index} (factories={(factories?.Length ?? 0)}).");
+                Debug.LogWarning($"[RemoteControl] StandardObjectFactory.CreateObject: invalid index {index} (factories={factories.Count}).");
                 return;
             }
             var factory = factories[index];
@@ -233,6 +279,14 @@ namespace Lilium.RemoteControl.UI
                 GameObject go = null;
                 if (target is GameObject g) go = g;
                 else if (target is Component c) go = c.gameObject;
+                // A registered target is usually the wrapper, not the scene object it drives, so
+                // ask it for what it wraps. Without this the object is unregistered and its
+                // GameObject left standing -- a delete that only half happens.
+                else if (target is LiveUnityObjectBase u && u.reference != null)
+                {
+                    if (u.reference is GameObject wg) go = wg;
+                    else if (u.reference is Component wc) go = wc.gameObject;
+                }
 
                 exposed.Unregister();
 
@@ -241,29 +295,22 @@ namespace Lilium.RemoteControl.UI
             }
         }
 
-        public override void RegisterPrefabs()
-        {
-            if (factories == null) return;
-            for (int i = 0; i < factories.Length; i++)
-            {
-                factories[i]?.RegisterPrefabs();
-            }
-        }
-
-#if UNITY_EDITOR
         /// <summary>
-        /// Re-resolves the prefab GUID for each ILiveObjectFactory from its Asset.
-        /// Invoked by UIDefinition.OnValidate.
+        /// Destroys the GameObject behind a live object, which is what every
+        /// <see cref="ILiveObjectFactory.Destroy"/> does. Used when no factory is on hand to
+        /// delegate to, so a deleted object never survives as an orphaned GameObject.
         /// </summary>
-        public void RefreshPrefabKeys()
+        private static void _DestroyGameObjectOf(ILiveObject obj)
         {
-            if (factories == null) return;
-            for (int i = 0; i < factories.Length; i++)
-            {
-                factories[i]?.RefreshPrefabKey();
-            }
+            if (!(obj is LiveUnityObjectBase u) || u.reference == null) return;
+
+            GameObject go = null;
+            if (u.reference is GameObject g) go = g;
+            else if (u.reference is Component c) go = c.gameObject;
+
+            if (go != null)
+                GameObjectUtility.DestroyWithUndo(go);
         }
-#endif
 
         protected string _GenerateUniqueName(string baseName)
         {
@@ -290,34 +337,38 @@ namespace Lilium.RemoteControl.UI
         {
             if (_container == null) return false;
 
-            GameObjectUtility.RecordObjectUndo(_container.host, "Delete Object");
-
-            var objects = _container.objects;
-            for (int i = 0; i < objects.Count; i++)
+            // Every object the container can reach, not only the ones in its own list: an object
+            // that stood up from a live scene was appended to the list of the container that
+            // restored it, which arrives here as a source. Looking only at the main list made such
+            // an object undeletable -- it fell through to the id lookup below, which unregistered
+            // it while its GameObject and its entry in the source list stayed put, so it came back
+            // in the very next listing.
+            ILiveObject obj = null;
+            foreach (var candidate in _container.EnumerateAllObjects())
             {
-                if (objects[i] == null) continue;
-                if (objects[i].liveObject?.id == objectId)
-                {
-                    var obj = objects[i];
-                    obj.OnDispose();
-                    _container.RemoveLiveObject(obj);
-
-                    // Factoryに破棄を委譲
-                    if (factories != null)
-                    {
-                        for (int j = 0; j < factories.Length; j++)
-                        {
-                            if (factories[j] != null)
-                            {
-                                factories[j].Destroy(obj);
-                                break;
-                            }
-                        }
-                    }
-                    return true;
-                }
+                if (candidate == null) continue;
+                if (candidate.liveObject?.id != objectId) continue;
+                obj = candidate;
+                break;
             }
-            return false;
+            if (obj == null) return false;
+
+            // Undo records the object that serializes the list being changed, which is the host for
+            // the main list and the source's owner for a merged one.
+            GameObjectUtility.RecordObjectUndo(
+                _container.FindSerializedOwner(obj) ?? _container.host, "Delete Object");
+
+            obj.OnDispose();
+            _container.RemoveLiveObjectAnywhere(obj);
+
+            // Factoryに破棄を委譲。宣言されたプレハブが 1 つも無い場合でも取り残さないよう、
+            // 委譲先が無ければ GameObject を直接破棄する (Factory の Destroy と同じ処理)。
+            var factories = _Factories();
+            if (factories.Count > 0 && factories[0] != null)
+                factories[0].Destroy(obj);
+            else
+                _DestroyGameObjectOf(obj);
+            return true;
         }
     }
 

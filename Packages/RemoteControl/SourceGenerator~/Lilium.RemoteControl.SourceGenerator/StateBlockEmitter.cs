@@ -620,24 +620,34 @@ namespace Lilium.RemoteControl.SourceGenerator
             // The same rule the runtime applies (FrameLaneRules.Resolve), read off the attribute's
             // arguments. A member the live scene does not save -- persistScope other than Scene, or
             // persistable = false -- is off the frame unless its lane is said out loud, so it does not
-            // get a block slot for want of a declaration. Saved and unsaid, it goes on the state
-            // lane, whether it is a field or a property.
+            // get a block slot for want of a declaration. Saved and unsaid, it goes on the state lane.
             //
-            // ⚠ Until 2026-09-06 that default was fields only, on the reading that a field holds a
-            // value something else drives while a property is written from outside. It does not
-            // hold: the event lane keeps only writes that came through the gate, so a property an
-            // Animator, a Timeline or the type's own internals drives leaves no trace in either
-            // lane -- a D1 hole opened by how the author happened to spell the member. Where the
-            // value genuinely only ever arrives through the gate, the two lanes are equivalent for
-            // determinism and the choice is frequency and cost, so defaulting to the lane that
-            // cannot lose a change is the safe half of the trade. What cannot be moved as bytes
-            // falls back to events below, quietly (see _SeverityFor).
+            // ⚠ A *property* saves nothing on its own, so unsaid it is off the frame. The runtime
+            // only ever persists one through something else -- a shadow field, or an
+            // [InlineReference] -- and a bare [LiveProperty] is therefore not persistable, which
+            // FrameLaneRules turns into FrameLane.None. Reading the property's own silence as
+            // "saved" here is what made the two halves disagree: every write path dropped the
+            // member's event records for being off the frame while a block copied it into every
+            // frame regardless, so a per-machine setting was recorded and a replay wrote it onto
+            // the machine playing back (RenderQuality.quality, 2026-09-07). A shadow pair is
+            // unaffected -- the field's declaration is what is read for both faces, below -- so
+            // what is left here is the property that persists nowhere, and the way to put one on
+            // the lane is to say so (lane = FrameLane.State), which is the same exception
+            // FrameLaneRules names for anything else the scene does not save.
+            //
+            // ⚠ Until 2026-09-06 the default was fields only, on the reading that a field holds a
+            // value something else drives while a property is written from outside. That reading
+            // does not hold for a *saved* member -- the event lane keeps only writes that came
+            // through the gate, so a saved property an Animator, a Timeline or the type's own
+            // internals drives leaves no trace in either lane -- and the default for those stays
+            // the state lane, whether they are spelled as a field or as a property. What cannot be
+            // moved as bytes falls back to events below, quietly (see _SeverityFor).
             //
             // ⚠ Whether the lane was said out loud is carried out of here, because it decides who a
             // diagnostic is addressed to. "Your declaration is not being carried" is the right thing
             // to tell someone who declared; to everyone else it is noise about a request they never
             // made, and every exposed member would make one.
-            var savedToScene = true;
+            var savedToScene = !(member is IPropertySymbol);
             int? declaredLane = null;
 
             foreach (var named in attribute.NamedArguments)

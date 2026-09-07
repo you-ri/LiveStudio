@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using NUnit.Framework;
 using Lilium.RemoteControl;
+using Lilium.RemoteControl.Frames;
 
 namespace Lilium.LiveStudio.Tests
 {
@@ -168,6 +169,46 @@ namespace Lilium.LiveStudio.Tests
             }
 
             Assert.IsEmpty(offenders, string.Join(", ", offenders));
+        }
+
+        /// <summary>
+        /// The half a declaration cannot promise: what the state block generator concluded.
+        ///
+        /// The runtime resolves the lane from what it can see of the persistence, and the generator
+        /// re-derives it from the attribute arguments alone. Where the two see different things the
+        /// member is off the frame as far as every write path is concerned -- its event records are
+        /// dropped -- while a block copies it into every frame regardless, which is the whole of
+        /// being recorded without anyone having said so.
+        ///
+        /// A bare <c>[LiveProperty]</c> is exactly such a member: nothing saves it (a property is
+        /// persisted only through a shadow field or an [InlineReference]), so the runtime puts it
+        /// off the frame, while the attribute says nothing the generator can read as "not saved".
+        /// RenderQuality.quality reached the state lane that way -- a per-machine setting a replay
+        /// would have written onto the machine playing it back.
+        /// </summary>
+        [Test]
+        public void AMemberOffTheFrame_IsNotCarriedByABlock()
+        {
+            var offenders = new List<string>();
+
+            foreach (var type in _ExposedTypes())
+            {
+                var bridge = StateBridgeRegistry.Find(type);
+                if (bridge == null) continue;
+
+                var liveClass = LiveClass.Get(type);
+                foreach (var member in liveClass.propertyTypes)
+                {
+                    if (member == null || member.lane != FrameLane.None) continue;
+                    if (!LiveStateCarriage.IsCarriedByState(member, bridge)) continue;
+
+                    offenders.Add($"{liveClass.typeName}.{member.name}");
+                }
+            }
+
+            Assert.IsEmpty(offenders,
+                "off the frame for every write path, yet copied into every frame by a state block: "
+                + string.Join(", ", offenders));
         }
     }
 }

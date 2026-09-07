@@ -7,8 +7,6 @@ using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
 
-using Lilium.RemoteControl.LiveScene;
-
 namespace Lilium.RemoteControl.Editor
 {
     /// <summary>
@@ -20,20 +18,18 @@ namespace Lilium.RemoteControl.Editor
     /// multi-select) fills it with members and methods - then edit the metadata (label, control,
     /// persistence) of the exposed members in the detail pane on the right.
     ///
-    /// Layout: the header holds the class asset and the container, the body is a two-pane class
-    /// list / class detail split, and the footer lists the instance bindings - hidden entirely
-    /// until a container is assigned, since there is nothing to bind into without one.
+    /// Layout: the header holds the class asset, the tabs pick what is edited, and the class tab's
+    /// body is a two-pane class list / class detail split.
     ///
-    /// Declaring a class is the whole job for the ordinary case. A component of a GameObject the
-    /// container exposes is listed, saved and carried in the frame from the declaration alone, so
-    /// the footer is expected to stay empty. A binding is the opt-in for giving one object an id of
-    /// its own - an object that is not a component of an exposed GameObject, a second component of
-    /// a type already on the same GameObject (the composed address is keyed by type name and would
-    /// collide), or one whose id has to survive being used from another scene.
+    /// Declaring a class is the whole job. A component of a GameObject the container exposes is
+    /// listed, saved and carried in the frame from the declaration alone. Giving some other object
+    /// an id of its own is said in the scene rather than here: add a LiveComponent / LiveAsset
+    /// entry to the container's object list and point it at the object.
     ///
-    /// Exposure settings are stored in a <see cref="LiveClassAsset"/> asset (shared across
-    /// scenes); the scene-object references live in a <see cref="RemoteControlContainer"/> in the
-    /// scene, using the standard IExposedPropertyTable mechanism.
+    /// What a class asset holds is type-level and scene-independent, which is why the same asset
+    /// can apply to every scene at once. Who applies it is said elsewhere -- the project settings
+    /// for the app's own declarations, a Remote Control Container for the ones that travel with a
+    /// scene or a set bundle -- and this window only reports when nothing does.
     ///
     /// The member metadata fields are bound to a <see cref="SerializedObject"/> over the asset, so
     /// their edits get Unity's undo and dirtying for free; everything that changes the shape of a
@@ -79,7 +75,6 @@ namespace Lilium.RemoteControl.Editor
 
         private const float kClassRowHeight = 20f;
         private const float kDefaultClassPaneWidth = 240f;
-        private const float kDefaultFooterHeight = 220f;
         private const float kMinBodyHeight = 140f;
 
         // A bound PropertyField also raises its change callback once while the binding pushes the
@@ -90,33 +85,40 @@ namespace Lilium.RemoteControl.Editor
 
         private static readonly List<LiveClassAsset.TypeDefinition> kNoDefinitions = new List<LiveClassAsset.TypeDefinition>();
 
-        private RemoteControlContainer _container;
-
         // Rows of the class list: this preset's own definitions, then the ones other assets
         // declared. Held rather than reading _preset.typeDefinitions directly, because the list is
         // no longer just that.
         private readonly List<LiveClassAsset.TypeDefinition> _classRows
             = new List<LiveClassAsset.TypeDefinition>();
 
-        // Which asset declared a row, for the ones this preset did not. An instance binding names
-        // its type and nothing else, so a type declared elsewhere can be bound here -- but its
-        // members belong to whoever declared them and are not edited through this window.
+        // Which asset declared a row, for the ones this preset did not. Such a row is shown so the
+        // full set of declared types stays visible from one window, but its members belong to
+        // whoever declared them and are not edited here.
         private readonly Dictionary<LiveClassAsset.TypeDefinition, LiveClassAsset> _classRowOwner
             = new Dictionary<LiveClassAsset.TypeDefinition, LiveClassAsset>();
         private LiveClassAsset _preset;
 
-        // Two-pane body + footer geometry (persisted for the window's lifetime only).
+        // Two-pane body geometry (persisted for the window's lifetime only).
         [SerializeField] private float _classPaneWidth = kDefaultClassPaneWidth;
-        [SerializeField] private float _footerHeight = kDefaultFooterHeight;
         [SerializeField] private string _selectedTypeName;
-        [SerializeField] private bool _bindingsFoldout = true;
+
+        /// <summary>Which of the asset's two declaration lists the body edits.</summary>
+        private enum Tab
+        {
+            /// <summary>The types this asset declares, and the members exposed on them.</summary>
+            Classes = 0,
+
+            /// <summary>The prefabs this asset lets the remote stand up in the live scene.</summary>
+            Prefabs = 1,
+        }
+
+        [SerializeField] private Tab _tab = Tab.Classes;
 
         // Searchable class dropdown behind the class list's "+".
         private readonly AdvancedDropdownState _classDropdownState = new AdvancedDropdownState();
 
         private ObjectField _presetField;
-        private ObjectField _containerField;
-        private Button _createContainerButton;
+        private HelpBox _applyHelp;
         private VisualElement _bodyHost;
 
         private ListView _classList;
@@ -127,11 +129,18 @@ namespace Lilium.RemoteControl.Editor
 
         private VisualElement _detailTitle;
         private ToolbarButton _addMemberButton;
-        private ToolbarButton _addBindingButton;
         private VisualElement _detailContent;
         private bool _settlingBind;
 
-        private Foldout _bindingsFoldoutElement;
+        private ToolbarButton[] _tabButtons;
+
+        private ToolbarButton _addPrefabButton;
+        private VisualElement _prefabContent;
+
+        // Header text of the prefab cards, refreshed in place after an edit rather than rebuilt:
+        // it is derived from the prefab the entry points at, and rebuilding the card to update it
+        // would take the field being typed into with it.
+        private readonly List<PrefabHeader> _prefabHeaders = new List<PrefabHeader>();
 
         private void OnEnable()
         {
@@ -143,25 +152,30 @@ namespace Lilium.RemoteControl.Editor
             Undo.undoRedoPerformed -= _OnUndoRedo;
         }
 
-        // The container may have been created, deleted or replaced while another window had
-        // focus; pick that up on the way back in rather than polling for it.
+        // The asset may have been deleted or replaced while another window had focus; pick that
+        // up on the way back in rather than polling for it.
         private void OnFocus()
         {
             if (_presetField == null) return;
-            var previousContainer = _container;
+
             var previousPreset = _preset;
-            _AcquireContainerAndPreset();
-            if (!ReferenceEquals(previousContainer, _container) || !ReferenceEquals(previousPreset, _preset))
+            _AcquirePreset();
+            if (!ReferenceEquals(previousPreset, _preset))
             {
                 _RefreshAll();
+                return;
             }
+
+            // Whether anything applies the asset is decided in another window (the project
+            // settings) or in the scene, so re-read it here rather than leaving a stale notice.
+            _RefreshApplyNotice();
         }
 
-        // An undo restores the serialized state only; the container's runtime lookup table has to
-        // be rebuilt from it, or the bindings keep resolving to the pre-undo objects.
+        // An undo restores the serialized state only; the declarations registered from it have to
+        // be applied again, or the live classes keep the pre-undo member set.
         private void _OnUndoRedo()
         {
-            if (_container != null) _container.Reload();
+            LiveClassAssetMemberExposure.Reapply(_preset);
             if (_presetField != null) _RefreshAll();
         }
 
@@ -172,6 +186,7 @@ namespace Lilium.RemoteControl.Editor
             root.style.flexDirection = FlexDirection.Column;
 
             _BuildHeader(root);
+            _BuildTabs(root);
 
             _bodyHost = new VisualElement();
             _bodyHost.style.flexGrow = 1;
@@ -196,22 +211,22 @@ namespace Lilium.RemoteControl.Editor
             });
             header.Add(_MakeHeaderRow(_presetField, new Button(_CreatePresetAsset) { text = "New" }));
 
-            _containerField = new ObjectField("Container") { objectType = typeof(RemoteControlContainer), allowSceneObjects = true };
-            _containerField.RegisterValueChangedCallback(evt =>
-            {
-                _container = evt.newValue as RemoteControlContainer;
-                _RefreshAll();
-            });
-            _createContainerButton = new Button(_CreateContainer) { text = "Create" };
-            header.Add(_MakeHeaderRow(_containerField, _createContainerButton));
+            // That nothing applies the asset, when nothing does. The window edits a declaration,
+            // and a declaration nobody applies is not an error - but nothing it says reaches the
+            // remote either, and there is no other place that would say so.
+            _applyHelp = new HelpBox(
+                "Nothing applies this asset, so none of it reaches the remote. Add it to Project"
+                + " Settings > Lilium Remote Control for the whole project, or to a Remote Control"
+                + " Container for declarations that travel with a scene or a set bundle.",
+                HelpBoxMessageType.Warning);
+            _applyHelp.AddToClassList(LiveClassAssetStyles.kHelp);
+            header.Add(_applyHelp);
 
             root.Add(header);
         }
 
         /// <summary>
-        /// One header row: a labelled field that grows, then a fixed-width action column. The
-        /// column keeps its width when its button is hidden, so both fields end at the same x
-        /// whether or not a container still has to be created.
+        /// One header row: a labelled field that grows, then a fixed-width action column.
         /// </summary>
         private static VisualElement _MakeHeaderRow(ObjectField field, Button action)
         {
@@ -242,50 +257,116 @@ namespace Lilium.RemoteControl.Editor
             _RefreshAll();
         }
 
-        private void _CreateContainer()
+        /// <summary>
+        /// The asset to open on when the window has none: the first one the project settings
+        /// apply, which is the one the app itself declares through.
+        ///
+        /// A container's list is not consulted. An asset a set bundle carries belongs to that
+        /// bundle, and opening this window is no reason to start editing it.
+        /// </summary>
+        private void _AcquirePreset()
         {
-            var go = new GameObject("Remote Control Container");
-            Undo.RegisterCreatedObjectUndo(go, "Create Remote Control Container");
-            _container = Undo.AddComponent<RemoteControlContainer>(go);
-            _RefreshAll();
+            if (_preset != null) return;
+
+            var settings = RemoteControlProjectSettings.Instance;
+            if (settings == null) return;
+
+            var assets = settings.liveClassAssets;
+            for (int i = 0; i < assets.Count; i++)
+            {
+                if (assets[i] == null) continue;
+                _preset = assets[i];
+                return;
+            }
         }
 
-        private void _AcquireContainerAndPreset()
+        // --- Tabs ---
+
+        /// <summary>
+        /// The strip that picks what the body edits.
+        ///
+        /// The asset declares two independent things - what of a type is exposed, and what the
+        /// remote can stand up - and neither is edited while looking at the other. Tabs rather
+        /// than one long page: the class side is a two-pane split that wants the whole window.
+        /// </summary>
+        private void _BuildTabs(VisualElement root)
         {
-            if (_container == null)
-            {
-                var containers = FindObjectsByType<RemoteControlContainer>(FindObjectsInactive.Include, FindObjectsSortMode.InstanceID);
-                if (containers.Length > 0) _container = containers[0];
-            }
-            if (_preset == null && _container != null && _container.assets.Count > 0)
-            {
-                _preset = _container.assets[0];
-            }
+            var bar = new Toolbar();
+            bar.AddToClassList(LiveClassAssetStyles.kTabs);
+
+            _tabButtons = new ToolbarButton[2];
+            _tabButtons[(int)Tab.Classes] = _MakeTab(bar, Tab.Classes, "Classes",
+                "Types this asset declares, and the members exposed on them");
+            _tabButtons[(int)Tab.Prefabs] = _MakeTab(bar, Tab.Prefabs, "Prefabs",
+                "Prefabs this asset lets the remote add to the live scene");
+
+            root.Add(bar);
         }
 
-        // --- Body: (class list | class detail) over the instance-bindings footer ---
+        private ToolbarButton _MakeTab(Toolbar bar, Tab tab, string text, string tooltip)
+        {
+            var button = new ToolbarButton(() => _SelectTab(tab)) { text = text, tooltip = tooltip };
+            button.AddToClassList(LiveClassAssetStyles.kTab);
+            button.EnableInClassList(LiveClassAssetStyles.kTabActive, _tab == tab);
+            bar.Add(button);
+            return button;
+        }
+
+        private void _SelectTab(Tab tab)
+        {
+            // Clicking the open tab is not an edit: rebuilding the body for it would only take
+            // the field being typed into with it.
+            if (_tab == tab) return;
+
+            _tab = tab;
+            for (int i = 0; i < _tabButtons.Length; i++)
+            {
+                _tabButtons[i].EnableInClassList(LiveClassAssetStyles.kTabActive, i == (int)tab);
+            }
+            _RebuildBody();
+        }
+
+        // --- Body: class list | class detail ---
 
         /// <summary>
         /// Refreshes the header state and rebuilds the whole body. The panes are recreated rather
-        /// than patched because the footer's presence changes the split hierarchy itself, and a
-        /// <see cref="TwoPaneSplitView"/> does not survive having its children swapped out.
+        /// than patched because a <see cref="TwoPaneSplitView"/> does not survive having its
+        /// children swapped out.
         /// </summary>
         private void _RefreshAll()
         {
-            _AcquireContainerAndPreset();
+            _AcquirePreset();
 
             _presetField.SetValueWithoutNotify(_preset);
-            _containerField.SetValueWithoutNotify(_container);
-            _createContainerButton.style.display = _container == null ? DisplayStyle.Flex : DisplayStyle.None;
+            _RefreshApplyNotice();
 
             _RebuildBody();
+        }
+
+        private void _RefreshApplyNotice()
+        {
+            bool unapplied = _preset != null && !LiveClassAssetMemberExposure.IsApplied(_preset);
+            _applyHelp.style.display = unapplied ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         private void _RebuildBody()
         {
             _detailContent?.Unbind();
-            _bindingsFoldoutElement = null;
+            _prefabContent?.Unbind();
             _bodyHost.Clear();
+
+            // Only the open tab's pane exists; the fields of the other one point at elements that
+            // were just cleared, which is why every refresh below checks the tab first.
+            _detailContent = null;
+            _prefabContent = null;
+            _prefabHeaders.Clear();
+
+            if (_tab == Tab.Prefabs)
+            {
+                _bodyHost.Add(_BuildPrefabPane());
+                _RefreshPrefabs();
+                return;
+            }
 
             var classPane = _BuildClassPane();
             var detailPane = _BuildDetailPane();
@@ -299,24 +380,7 @@ namespace Lilium.RemoteControl.Editor
                 if (evt.newRect.width > 0f) _classPaneWidth = evt.newRect.width;
             });
 
-            // No container means nothing to bind into, so the instance-bindings footer has
-            // nothing to show; leave the whole pane out rather than show an empty box.
-            if (_container == null)
-            {
-                _bodyHost.Add(bodySplit);
-            }
-            else
-            {
-                var footer = _BuildFooter();
-                var footerSplit = new TwoPaneSplitView(1, Mathf.Max(1f, _footerHeight), TwoPaneSplitViewOrientation.Vertical);
-                footerSplit.Add(bodySplit);
-                footerSplit.Add(footer);
-                footer.RegisterCallback<GeometryChangedEvent>(evt =>
-                {
-                    if (evt.newRect.height > 0f) _footerHeight = evt.newRect.height;
-                });
-                _bodyHost.Add(footerSplit);
-            }
+            _bodyHost.Add(bodySplit);
 
             _RefreshStructure();
         }
@@ -393,27 +457,11 @@ namespace Lilium.RemoteControl.Editor
             {
                 var type = _FindSelectedDefinition()?.ResolveType();
                 if (type == null) return;
-                LiveClassAssetAddMemberWindow.Open(() => _preset, () => _container, type, _OnStructureChanged,
+                LiveClassAssetAddMemberWindow.Open(() => _preset, type, _OnStructureChanged,
                     GUIUtility.GUIToScreenRect(_addMemberButton.worldBound));
             });
             bar.Add(_addMemberButton);
 
-            // Creates an unbound instance entry; the object itself is assigned in Instance
-            // Bindings in the footer (or another scene's object through its container). Needs a
-            // container to bind into, so it stays hidden without one.
-            //
-            // Not the ordinary route any more. A component of a GameObject the container exposes is
-            // listed, saved and carried in the frame without one -- a binding is for giving an
-            // object an identity of its own, which the tooltip says and the footer repeats.
-            _addBindingButton = new ToolbarButton(() => _AddBinding(_FindSelectedDefinition())) { text = "Add Binding" };
-            _addBindingButton.tooltip =
-                "Give one object an id of its own.\n\n"
-                + "Usually unnecessary: add the GameObject to the container's object list and its "
-                + "exposed components are listed, saved and recorded already.\n\n"
-                + "Bind when the object is not a component of an exposed GameObject (an asset, a "
-                + "ScriptableObject), when two components of this type sit on one GameObject, or "
-                + "when the id has to stay the same across scenes.";
-            bar.Add(_addBindingButton);
             pane.Add(bar);
 
             var scroll = new ScrollView();
@@ -427,35 +475,16 @@ namespace Lilium.RemoteControl.Editor
             return pane;
         }
 
-        private VisualElement _BuildFooter()
-        {
-            var footer = new VisualElement();
-            footer.AddToClassList(LiveClassAssetStyles.kFooter);
-
-            var scroll = new ScrollView();
-            scroll.AddToClassList(LiveClassAssetStyles.kScroll);
-
-            _bindingsFoldoutElement = new Foldout { value = _bindingsFoldout };
-            _bindingsFoldoutElement.RegisterValueChangedCallback(evt =>
-            {
-                // Toggles inside the foldout raise bool change events of their own that bubble
-                // through here; only the foldout's own event carries the fold state.
-                if (evt.target != _bindingsFoldoutElement) return;
-                _bindingsFoldout = evt.newValue;
-            });
-            scroll.Add(_bindingsFoldoutElement);
-            footer.Add(scroll);
-
-            return footer;
-        }
-
         // --- Refresh ---
 
         private void _RefreshStructure()
         {
+            // A structural edit lands one frame late (see _OnStructureChanged), by which time the
+            // tab may have changed: the class panes are gone and there is nothing to refresh.
+            if (_tab != Tab.Classes || _classList == null) return;
+
             _RefreshClassList();
             _RefreshDetail();
-            _RefreshBindings();
         }
 
         private void _RefreshClassList()
@@ -493,11 +522,9 @@ namespace Lilium.RemoteControl.Editor
         /// <summary>
         /// Fills the class list: this preset's definitions, then every type another asset declared.
         ///
-        /// The second group is what makes a binding independent of where the type was declared. A
-        /// binding carries a key and a type name, and the runtime resolves the live class by type
-        /// from whoever registered it -- so a scene's own asset can bind an instance of a type a
-        /// shared package declared, without copying the declaration and without writing the scene's
-        /// object into the package.
+        /// The second group is there because exposure is resolved by type, not by which asset
+        /// declared it: a scene can expose an instance of a type a shared package declared, without
+        /// copying the declaration into an asset of its own.
         /// </summary>
         private void _RebuildClassRows()
         {
@@ -538,41 +565,6 @@ namespace Lilium.RemoteControl.Editor
         /// <summary>The asset a row was declared in, or null when this preset declared it.</summary>
         private LiveClassAsset _OwnerOf(LiveClassAsset.TypeDefinition definition)
             => definition != null && _classRowOwner.TryGetValue(definition, out var owner) ? owner : null;
-
-        private void _RefreshBindings()
-        {
-            if (_bindingsFoldoutElement == null) return;
-
-            _bindingsFoldoutElement.Clear();
-            int count = _preset != null ? _preset.bindings.Count : 0;
-            _bindingsFoldoutElement.text = $"Instance Bindings ({count})";
-            // The foldout builds its text label lazily, so the title style can only be applied
-            // once a text has been assigned.
-            _bindingsFoldoutElement.Q<Label>(className: Foldout.textUssClassName)
-                ?.EnableInClassList(LiveClassAssetStyles.kFooterTitle, true);
-
-            if (_preset == null)
-            {
-                _bindingsFoldoutElement.Add(_MakeEmpty("Assign a preset to bind instances."));
-                return;
-            }
-            if (count == 0)
-            {
-                // Deliberately not "use Add Binding": empty is the ordinary state. Declaring the
-                // class is enough for every component of a GameObject the container exposes, and
-                // saying otherwise here sent people to bind one object at a time.
-                _bindingsFoldoutElement.Add(_MakeEmpty(
-                    "None, which is usually right: components of a GameObject in the container's "
-                    + "object list are exposed by the declaration alone.\n"
-                    + "Bind an object here to give it an id of its own."));
-                return;
-            }
-            foreach (var entry in _preset.bindings)
-            {
-                if (entry == null) continue;
-                _bindingsFoldoutElement.Add(_MakeBindingRow(entry));
-            }
-        }
 
         // --- Class list rows ---
 
@@ -657,7 +649,6 @@ namespace Lilium.RemoteControl.Editor
             // scene's opinion into whatever shared asset happens to hold the declaration.
             _addMemberButton.style.display = definition != null && owner == null ? DisplayStyle.Flex : DisplayStyle.None;
             _addMemberButton.SetEnabled(type != null);
-            _addBindingButton.style.display = definition != null && _container != null ? DisplayStyle.Flex : DisplayStyle.None;
 
             if (definition == null)
             {
@@ -862,7 +853,8 @@ namespace Lilium.RemoteControl.Editor
 
             if (!member.isFunction)
             {
-                body.Add(_MakeControlField(memberProperty.FindPropertyRelative("control")));
+                body.Add(_MakeSelectField(memberProperty.FindPropertyRelative("control"),
+                    typeof(LiveBindingControl), "Control"));
             }
 
             // Help text is documentation rather than a setting, so it trails the fields that
@@ -897,8 +889,9 @@ namespace Lilium.RemoteControl.Editor
         }
 
         /// <summary>
-        /// The member's controller: a dropdown over the <see cref="LiveBindingControl"/> types on
-        /// the row itself, and the chosen control's own fields stepped in under it.
+        /// A [SerializeReference, Select] field: a dropdown over the concrete types the reference
+        /// can hold, and the chosen one's own fields stepped in under it. Used for a member's
+        /// controller and for a prefab entry's factory, which are the same choice made twice.
         ///
         /// Built here rather than through a PropertyField over the [SerializeReference, Select]
         /// drawer. That drawer is IMGUI, and outside an InspectorElement a PropertyField leaves
@@ -907,67 +900,81 @@ namespace Lilium.RemoteControl.Editor
         /// to this package either: on 2022.3, PropertyField dereferences a field it only sets for
         /// its default drawing when a managed reference comes with a custom CreatePropertyGUI.
         /// </summary>
-        private VisualElement _MakeControlField(SerializedProperty controlProperty)
+        /// <param name="derivedChildName">
+        /// Serialized name of a child the reference computes for itself (a factory's prefab guid).
+        /// Shown, because an empty one is why a saved object cannot find its prefab again, but not
+        /// offered for editing. Null when every child is the author's to set.
+        /// </param>
+        private VisualElement _MakeSelectField(SerializedProperty selectProperty, Type baseType, string label,
+            string derivedChildName = null)
         {
             var host = new VisualElement();
 
-            var choices = SelectPropertyDrawer.GetChoices(typeof(LiveBindingControl));
+            var choices = SelectPropertyDrawer.GetChoices(baseType);
             var names = new List<string>(choices.names);
-            var dropdown = new DropdownField("Control", names, _ControlChoiceIndex(controlProperty, choices));
+            var dropdown = new DropdownField(label, names, _SelectChoiceIndex(selectProperty, choices));
             dropdown.AddToClassList(BaseField<string>.alignedFieldUssClassName);
-            dropdown.tooltip = controlProperty.tooltip;
+            dropdown.tooltip = selectProperty.tooltip;
             dropdown.RegisterValueChangedCallback(evt =>
             {
                 int typeIndex = names.IndexOf(evt.newValue) - 1;
-                controlProperty.managedReferenceValue = typeIndex >= 0 && typeIndex < choices.types.Length
+                selectProperty.managedReferenceValue = typeIndex >= 0 && typeIndex < choices.types.Length
                     ? Activator.CreateInstance(choices.types[typeIndex])
                     : null;
-                controlProperty.serializedObject.ApplyModifiedProperties();
-                _ApplyChanges();
+                selectProperty.serializedObject.ApplyModifiedProperties();
+                _OnEditApplied();
             });
             host.Add(dropdown);
 
             var detail = new VisualElement();
             detail.AddToClassList(LiveClassAssetStyles.kMemberNested);
-            _FillControlDetail(detail, controlProperty);
+            _FillSelectDetail(detail, selectProperty, derivedChildName);
             host.Add(detail);
 
             // Rebuilt only when the reference changes type, whichever side changed it. The fields
             // under it are bound, so a value edit reaches them on its own -- and tearing them down
             // for one would take the field being typed into with it.
-            var typeName = controlProperty.managedReferenceFullTypename;
-            host.TrackPropertyValue(controlProperty, property =>
+            var typeName = selectProperty.managedReferenceFullTypename;
+            host.TrackPropertyValue(selectProperty, property =>
             {
                 if (string.Equals(property.managedReferenceFullTypename, typeName, StringComparison.Ordinal)) return;
                 typeName = property.managedReferenceFullTypename;
-                dropdown.SetValueWithoutNotify(names[_ControlChoiceIndex(property, choices)]);
-                _FillControlDetail(detail, property);
+                dropdown.SetValueWithoutNotify(names[_SelectChoiceIndex(property, choices)]);
+                _FillSelectDetail(detail, property, derivedChildName);
                 detail.Bind(property.serializedObject);
             });
 
             return host;
         }
 
-        private static int _ControlChoiceIndex(SerializedProperty controlProperty, SelectPropertyDrawer.TypeChoices choices)
+        private static int _SelectChoiceIndex(SerializedProperty selectProperty, SelectPropertyDrawer.TypeChoices choices)
         {
-            var type = controlProperty.managedReferenceValue?.GetType();
+            var type = selectProperty.managedReferenceValue?.GetType();
             return type != null ? Array.IndexOf(choices.types, type) + 1 : 0;
         }
 
-        // One field per visible member of the control, or nothing for None. The fields carry
+        // One field per visible member of the reference, or nothing for None. The fields carry
         // their binding path only; whoever rebuilds them binds them.
-        private void _FillControlDetail(VisualElement detail, SerializedProperty controlProperty)
+        private void _FillSelectDetail(VisualElement detail, SerializedProperty selectProperty, string derivedChildName)
         {
             detail.Clear();
-            if (controlProperty.managedReferenceValue == null) return;
+            if (selectProperty.managedReferenceValue == null) return;
 
-            var child = controlProperty.Copy();
-            var end = controlProperty.GetEndProperty();
+            var child = selectProperty.Copy();
+            var end = selectProperty.GetEndProperty();
             bool enterChildren = true;
             while (child.NextVisible(enterChildren) && !SerializedProperty.EqualContents(child, end))
             {
                 enterChildren = false;
-                detail.Add(_MakeBoundField(child.Copy(), null));
+
+                var field = _MakeBoundField(child.Copy(), null);
+                // Derived from another field of the same reference: what is typed into it would be
+                // overwritten by the next edit, which re-resolves it.
+                if (derivedChildName != null && string.Equals(child.name, derivedChildName, StringComparison.Ordinal))
+                {
+                    field.SetEnabled(false);
+                }
+                detail.Add(field);
             }
         }
 
@@ -1055,7 +1062,16 @@ namespace Lilium.RemoteControl.Editor
         private void _OnBoundValueChanged()
         {
             if (_settlingBind) return;
+            _OnEditApplied();
+        }
+
+        // Everything an edit has to do beyond the binding's own apply. The card headers follow
+        // here rather than at each field, because what a prefab card is called comes from a field
+        // two levels down inside its factory.
+        private void _OnEditApplied()
+        {
             _ApplyChanges();
+            _RefreshPrefabHeaders();
         }
 
         private LiveClassAsset.TypeDefinition _FindSelectedDefinition()
@@ -1081,58 +1097,22 @@ namespace Lilium.RemoteControl.Editor
             return -1;
         }
 
-        // --- Instance binding rows ---
-
-        // Only reached with a container present - the footer itself is left out without one.
-        private VisualElement _MakeBindingRow(LiveClassAsset.InstanceBinding entry)
-        {
-            var expectedType = entry.ResolveType() ?? typeof(UnityEngine.Object);
-            var current = _container.ResolveKey(entry.key);
-
-            var row = new VisualElement();
-            row.AddToClassList(LiveClassAssetStyles.kBindingRow);
-
-            var state = new Label("(unbound)");
-            state.AddToClassList(LiveClassAssetStyles.kBindingRowState);
-            state.style.display = current == null ? DisplayStyle.Flex : DisplayStyle.None;
-
-            var field = new ObjectField(expectedType.Name) { objectType = expectedType, allowSceneObjects = true };
-            field.AddToClassList(LiveClassAssetStyles.kBindingRowField);
-            field.SetValueWithoutNotify(current);
-            field.RegisterValueChangedCallback(evt =>
-            {
-                _BeginEdit("Rebind Instance");
-                _container.SetReferenceValue(new PropertyName(entry.key), evt.newValue);
-                if (evt.newValue != null) entry.typeName = evt.newValue.GetType().AssemblyQualifiedName;
-                _ApplyChanges();
-                // Patched in place instead of rebuilt, so the row the user is still interacting
-                // with survives its own edit.
-                field.label = (entry.ResolveType() ?? typeof(UnityEngine.Object)).Name;
-                state.style.display = evt.newValue == null ? DisplayStyle.Flex : DisplayStyle.None;
-            });
-            row.Add(field);
-            row.Add(state);
-
-            row.Add(_MakeTextButton("✕", "Remove", () =>
-            {
-                _BeginEdit("Remove Binding");
-                _container.ClearReferenceValue(new PropertyName(entry.key));
-                _preset.bindings.Remove(entry);
-                _OnStructureChanged();
-            }));
-            return row;
-        }
-
         // --- Preset mutations ---
 
         private void _ApplyChanges()
         {
-            if (_preset != null) EditorUtility.SetDirty(_preset);
-            if (_container != null)
-            {
-                EditorUtility.SetDirty(_container);
-                _container.Reload();
-            }
+            if (_preset == null) return;
+
+            // The guid a saved object names its prefab by is derived from the prefab reference,
+            // so it is re-resolved before anything registers the entries again.
+            _preset.RefreshPrefabKeys();
+            EditorUtility.SetDirty(_preset);
+
+            // Both reach the asset through whoever applied it - a container that lists it, or the
+            // session-long registration the project settings made - and do nothing at all for an
+            // asset nothing applies.
+            LivePrefabCatalog.Refresh(_preset);
+            LiveClassAssetMemberExposure.Reapply(_preset);
         }
 
         /// <summary>
@@ -1146,40 +1126,18 @@ namespace Lilium.RemoteControl.Editor
             rootVisualElement.schedule.Execute(_RefreshStructure);
         }
 
-        // Opens one undo step over the asset + container; see LiveClassAssetMemberExposure.BeginEdit.
+        // Opens one undo step over the asset; see LiveClassAssetMemberExposure.BeginEdit.
         private void _BeginEdit(string name)
         {
-            LiveClassAssetMemberExposure.BeginEdit(_preset, _container, name);
-        }
-
-        // Ensures the edited preset is registered on the container (so its bindings resolve at runtime).
-        private void _EnsurePresetOnContainer()
-        {
-            LiveClassAssetMemberExposure.EnsurePresetOnContainer(_preset, _container);
+            LiveClassAssetMemberExposure.BeginEdit(_preset, name);
         }
 
         private void _AddClass(Type type)
         {
             if (_preset == null) return;
             _BeginEdit("Add Class");
-            _EnsurePresetOnContainer();
             var added = _preset.GetOrAddTypeDefinition(type);
             _selectedTypeName = added.typeName;
-            _OnStructureChanged();
-        }
-
-        private void _AddBinding(LiveClassAsset.TypeDefinition definition)
-        {
-            if (_preset == null || definition == null) return;
-            _BeginEdit("Add Binding");
-            _EnsurePresetOnContainer();
-            _preset.bindings.Add(new LiveClassAsset.InstanceBinding
-            {
-                key = Guid.NewGuid().ToString(),
-                typeName = definition.typeName,
-            });
-            _bindingsFoldout = true;
-            if (_bindingsFoldoutElement != null) _bindingsFoldoutElement.value = true;
             _OnStructureChanged();
         }
 
@@ -1187,15 +1145,13 @@ namespace Lilium.RemoteControl.Editor
         {
             if (_preset == null || definition == null) return;
 
-            // Declared by another asset. Removing it here would take this preset's bindings for the
-            // type with it while leaving the declaration standing -- the opposite of what the button
-            // says. The row hides the button; this is the guard behind it.
+            // Declared by another asset: removing it here would leave that declaration standing --
+            // the opposite of what the button says. The row hides the button; this is the guard
+            // behind it.
             if (_OwnerOf(definition) != null) return;
-            var type = definition.ResolveType();
 
             _BeginEdit("Remove Class");
             _preset.typeDefinitions.Remove(definition);
-            LiveClassAssetMemberExposure.RemoveBindingsOfType(_preset, _container, type);
             if (string.Equals(_selectedTypeName, definition.typeName, StringComparison.Ordinal)) _selectedTypeName = null;
             _OnStructureChanged();
         }
@@ -1214,6 +1170,228 @@ namespace Lilium.RemoteControl.Editor
             _BeginEdit("Unexpose Member");
             members.Remove(member);
             _OnStructureChanged();
+        }
+
+        // --- Prefabs ---
+
+        /// <summary>
+        /// The prefab pane: one card per entry the asset offers, in the order the remote lists
+        /// them.
+        ///
+        /// One pane rather than the class tab's list / detail split. An entry is a factory, the
+        /// prefab it holds and the page that offers it - which fits on the card that names it,
+        /// with nothing left over for a second pane to show.
+        /// </summary>
+        private VisualElement _BuildPrefabPane()
+        {
+            var pane = new VisualElement();
+            pane.AddToClassList(LiveClassAssetStyles.kPane);
+
+            var bar = new Toolbar();
+            bar.Add(_MakePaneHeader("Prefabs"));
+            bar.Add(_MakeSpacer());
+            _addPrefabButton = _MakeAddButton("Add a prefab", _AddPrefab);
+            bar.Add(_addPrefabButton);
+            pane.Add(bar);
+
+            var scroll = new ScrollView();
+            scroll.AddToClassList(LiveClassAssetStyles.kScroll);
+            // Same reason as the class detail pane: padding on the content container adds to the
+            // content width and makes the pane scroll sideways over its own inset.
+            scroll.AddToClassList(LiveClassAssetStyles.kDetail);
+            _prefabContent = scroll.contentContainer;
+            pane.Add(scroll);
+
+            return pane;
+        }
+
+        private void _RefreshPrefabs()
+        {
+            _prefabContent.Unbind();
+            _prefabContent.Clear();
+            _prefabHeaders.Clear();
+
+            bool hasPreset = _preset != null;
+            _addPrefabButton.SetEnabled(hasPreset);
+
+            if (!hasPreset)
+            {
+                var help = new HelpBox(
+                    "Assign or create a Live Class Asset above. Its prefab list is what a page's \"+\" offers in RemoteApp.",
+                    HelpBoxMessageType.Info);
+                help.AddToClassList(LiveClassAssetStyles.kHelp);
+                _prefabContent.Add(help);
+                return;
+            }
+
+            var prefabs = _preset.prefabs;
+            if (prefabs == null || prefabs.Count == 0)
+            {
+                _prefabContent.Add(_MakeEmpty(
+                    "Nothing offered yet. Add an entry with \"+\" and point it at a prefab."
+                    + "\n\nEvery entry is offered on the scene page; naming a category also puts it on that page's \"+\"."));
+                return;
+            }
+
+            var serialized = new SerializedObject(_preset);
+            var prefabsProperty = serialized.FindProperty("prefabs");
+            for (int i = 0; i < prefabs.Count; i++)
+            {
+                if (prefabs[i] == null) continue;
+                _prefabContent.Add(_MakePrefabCard(prefabs, i, prefabsProperty.GetArrayElementAtIndex(i)));
+            }
+
+            _settlingBind = true;
+            _prefabContent.Bind(serialized);
+            _prefabContent.schedule.Execute(() => _settlingBind = false).ExecuteLater(kBindSettleMs);
+        }
+
+        private VisualElement _MakePrefabCard(List<LiveClassAsset.PrefabDefinition> prefabs, int index,
+            SerializedProperty prefabProperty)
+        {
+            var definition = prefabs[index];
+
+            var card = new VisualElement();
+            card.AddToClassList(LiveClassAssetStyles.kMember);
+
+            var header = new VisualElement();
+            header.AddToClassList(LiveClassAssetStyles.kMemberHeader);
+
+            var title = new Label();
+            title.AddToClassList(LiveClassAssetStyles.kMemberTitle);
+            header.Add(title);
+
+            var moveUp = _MakeTextButton("\u25b2", "Move up", () => _MovePrefab(prefabs, index, -1));
+            moveUp.SetEnabled(index > 0);
+            header.Add(moveUp);
+            var moveDown = _MakeTextButton("\u25bc", "Move down", () => _MovePrefab(prefabs, index, 1));
+            moveDown.SetEnabled(index < prefabs.Count - 1);
+            header.Add(moveDown);
+            header.Add(_MakeTextButton("\u2715", "Remove", () => _RemovePrefab(prefabs, definition)));
+            card.Add(header);
+
+            // What the entry is missing, on the card that is missing it. An entry with no factory
+            // or no prefab is skipped when the catalogue is built (LivePrefabCatalog.Register), so
+            // nothing downstream ever complains about it.
+            var status = new Label();
+            status.AddToClassList(LiveClassAssetStyles.kStateBudget);
+            status.AddToClassList(LiveClassAssetStyles.kWarning);
+            card.Add(status);
+
+            var headerRefs = new PrefabHeader(definition, title, status);
+            _prefabHeaders.Add(headerRefs);
+            _RefreshPrefabHeader(headerRefs);
+
+            var body = new VisualElement();
+
+            // The factory decides what the instance is exposed as (a plain object, one with a
+            // transform, a camera) and holds the prefab itself, which is why the prefab field
+            // appears stepped in under it rather than beside it.
+            body.Add(_MakeSelectField(prefabProperty.FindPropertyRelative("factory"),
+                typeof(ILiveObjectFactory), "Factory", kPrefabGuidField));
+
+            body.Add(_MakeBoundField(prefabProperty.FindPropertyRelative("category"), "Category"));
+            card.Add(body);
+
+            return card;
+        }
+
+        /// <summary>Card header of one prefab entry: what it is called, and what it lacks.</summary>
+        private readonly struct PrefabHeader
+        {
+            public readonly LiveClassAsset.PrefabDefinition definition;
+            public readonly Label title;
+            public readonly Label status;
+
+            public PrefabHeader(LiveClassAsset.PrefabDefinition definition, Label title, Label status)
+            {
+                this.definition = definition;
+                this.title = title;
+                this.status = status;
+            }
+        }
+
+        private void _RefreshPrefabHeaders()
+        {
+            for (int i = 0; i < _prefabHeaders.Count; i++)
+            {
+                _RefreshPrefabHeader(_prefabHeaders[i]);
+            }
+        }
+
+        private static void _RefreshPrefabHeader(PrefabHeader header)
+        {
+            var factory = header.definition?.factory;
+
+            // Every factory names itself after the prefab it holds, so an empty name is the one
+            // reading of "nothing is pointed at yet" that works for all of them.
+            var name = factory != null ? factory.name : null;
+            bool unset = string.IsNullOrEmpty(name);
+
+            header.title.text = unset ? "(no prefab)" : name;
+            header.title.EnableInClassList(LiveClassAssetStyles.kSubtle, unset);
+
+            string status = factory == null
+                ? "No factory: this entry offers nothing until one is picked."
+                : unset ? "No prefab: this entry offers nothing until one is assigned."
+                : null;
+            header.status.text = status ?? string.Empty;
+            header.status.style.display = status == null ? DisplayStyle.None : DisplayStyle.Flex;
+        }
+
+        // --- Prefab mutations ---
+
+        // The guid the factories derive from their prefab: shown on the card, not editable there.
+        // See _MakeSelectField.
+        private const string kPrefabGuidField = "_prefabGuid";
+
+        /// <summary>
+        /// Adds an entry holding the ordinary factory: a prefab you place and move. The other
+        /// kinds are one dropdown away on the card, which is a better start than an entry that
+        /// offers nothing until a type is picked.
+        /// </summary>
+        private void _AddPrefab()
+        {
+            if (_preset == null) return;
+
+            _BeginEdit("Add Prefab");
+            _preset.prefabs ??= new List<LiveClassAsset.PrefabDefinition>();
+            _preset.prefabs.Add(new LiveClassAsset.PrefabDefinition
+            {
+                factory = new LiveGameObjectWithTransformFactory(),
+            });
+            _OnPrefabStructureChanged();
+        }
+
+        private void _RemovePrefab(List<LiveClassAsset.PrefabDefinition> prefabs,
+            LiveClassAsset.PrefabDefinition definition)
+        {
+            if (_preset == null || definition == null) return;
+
+            _BeginEdit("Remove Prefab");
+            prefabs.Remove(definition);
+            _OnPrefabStructureChanged();
+        }
+
+        private void _MovePrefab(List<LiveClassAsset.PrefabDefinition> prefabs, int index, int delta)
+        {
+            int target = index + delta;
+            if (target < 0 || target >= prefabs.Count) return;
+
+            _BeginEdit("Reorder Prefab");
+            (prefabs[target], prefabs[index]) = (prefabs[index], prefabs[target]);
+            _OnPrefabStructureChanged();
+        }
+
+        // The same deferral as _OnStructureChanged, for the same reason: these run from click
+        // handlers on the cards the rebuild destroys.
+        private void _OnPrefabStructureChanged()
+        {
+            _ApplyChanges();
+            rootVisualElement.schedule.Execute(() =>
+            {
+                if (_tab == Tab.Prefabs && _prefabContent != null) _RefreshPrefabs();
+            });
         }
 
         // --- Class-first flow: candidate types for the class list's "+" dropdown ---

@@ -23,7 +23,7 @@ namespace Lilium.LiveStudio
     public static class LiveStudioLiveClassRegistry
     {
         /// <summary><c>Resources.Load</c> path (no extension) of the asset shipped here.</summary>
-        public const string kResourcesName = "LiveStudioLiveClasses";
+        public const string kResourcesName = "Settings/UnityBasicLiveClasses";
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
 #if UNITY_EDITOR

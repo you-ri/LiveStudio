@@ -40,8 +40,8 @@
     min-width: 62px;
 }
 
-/* The action column keeps its width when its button is hidden, so both fields end at the same
- * x whether or not a container still has to be created. */
+/* A fixed action column beside the field, so the field keeps the same width whatever the
+ * button beside it says. */
 .lca-header-row__action {
     width: 54px;
     flex-shrink: 0;
@@ -52,6 +52,34 @@
     margin-left: 0;
     margin-right: 0;
     flex-grow: 1;
+}
+
+/* --- Tabs --- */
+
+/* The strip that picks which of the asset's declaration lists the body edits. Toolbar buttons
+ * with an active class rather than Unity 6's TabView, which does not exist on 2022.3. */
+.lca-tabs {
+    flex-shrink: 0;
+}
+
+.lca-tab {
+    padding-left: 10px;
+    padding-right: 10px;
+    -unity-text-align: middle-center;
+    background-color: rgba(0, 0, 0, 0);
+    border-bottom-width: 2px;
+    border-bottom-color: rgba(0, 0, 0, 0);
+}
+
+.lca-tab:hover {
+    background-color: rgba(127, 127, 127, 0.2);
+}
+
+/* The open tab: bold text over an underline, so which one is open still reads in a theme that
+ * draws toolbar buttons flat. */
+.lca-tab--active {
+    -unity-font-style: bold;
+    border-bottom-color: rgba(88, 156, 224, 0.9);
 }
 
 /* --- Panes --- */
@@ -217,39 +245,6 @@
  * settings - stepped in under it, while the row itself stays in the card's column. */
 .lca-member__nested {
     margin-left: 12px;
-}
-
-/* --- Instance bindings footer --- */
-
-.lca-footer {
-    flex-direction: column;
-    border-top-width: 1px;
-    border-top-color: rgba(127, 127, 127, 0.35);
-    min-height: 60px;
-    padding-top: 2px;
-}
-
-.lca-footer__title {
-    -unity-font-style: bold;
-}
-
-.lca-binding-row {
-    flex-direction: row;
-    align-items: center;
-    margin-left: 12px;
-    margin-right: 4px;
-}
-
-.lca-binding-row__field {
-    flex-grow: 1;
-    flex-shrink: 1;
-}
-
-.lca-binding-row__state {
-    flex-shrink: 0;
-    width: 64px;
-    opacity: 0.6;
-    -unity-text-align: middle-right;
 }
 
 /* --- Add Member / From Selected popups --- */

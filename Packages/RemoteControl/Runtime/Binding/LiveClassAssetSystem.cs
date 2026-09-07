@@ -9,15 +9,16 @@ namespace Lilium.RemoteControl
 {
     /// <summary>
     /// Owns the type-level LiveClass registrations driven by <see cref="LiveClassAsset"/>
-    /// assets, and tracks the active <see cref="LiveBinding"/> instances so their registry
-    /// handles can be refreshed when a type definition is re-registered (handles capture the
-    /// LiveClass, so a rebuild invalidates them).
+    /// assets, and tracks the object wrappers exposing an instance of one of those types so their
+    /// registry handles can be refreshed when a type definition is re-registered (handles capture
+    /// the LiveClass, so a rebuild invalidates them).
     /// </summary>
     public static class LiveClassAssetSystem
     {
-        // Active runtime bindings per type (for handle refresh on type rebuild).
-        private static readonly Dictionary<Type, List<LiveBinding>> _activeByType
-            = new Dictionary<Type, List<LiveBinding>>();
+        // Wrappers currently exposing an instance, per target type (for handle refresh on type
+        // rebuild, and to keep a type registered for as long as one of its instances is exposed).
+        private static readonly Dictionary<Type, List<LiveUnityObjectBase>> _activeByType
+            = new Dictionary<Type, List<LiveUnityObjectBase>>();
 
         // Last applied registration signature per type. Skips redundant LiveClass rebuilds
         // (and the handle churn they cause) when the member definition did not actually change.
@@ -36,7 +37,7 @@ namespace Lilium.RemoteControl
         [ThreadStatic]
         private static System.Text.StringBuilder _signatureBuilder;
 
-        // Reset statics at runtime startup so disabling Domain Reload does not leak bindings
+        // Reset statics at runtime startup so disabling Domain Reload does not leak registrations
         // from the previous play session.
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void _ClearStatics()
@@ -48,12 +49,18 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// Registers (or re-registers) the LiveClass of every type definition in the asset.
+        /// Registers (or re-registers) the LiveClass of every type definition in the asset, and
+        /// offers the prefabs it declares (<see cref="LivePrefabCatalog"/>).
         /// Idempotent: unchanged definitions are skipped via a signature check.
         /// </summary>
         public static void RegisterTypes(LiveClassAsset asset)
         {
             if (asset == null) return;
+
+            // Applying an asset is one act: what it exposes and what it can stand up arrive
+            // together, so nothing has to remember to also register the prefabs.
+            LivePrefabCatalog.Register(asset);
+
             foreach (var definition in asset.typeDefinitions)
             {
                 if (definition == null) continue;
@@ -91,15 +98,32 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
+        /// Whether this asset was registered for the whole session (see
+        /// <see cref="RegisterTypesPermanent"/>) rather than by something that can drop it again.
+        ///
+        /// Asked by an editor that has just changed an asset: it re-registers only what something
+        /// already applied, because what an asset declares is not a reason to declare it.
+        /// </summary>
+        public static bool IsPermanent(LiveClassAsset asset)
+        {
+            return asset != null && _permanent.Contains(asset);
+        }
+
+        /// <summary>
         /// Undoes <see cref="RegisterTypes"/> for every type this asset registered, so an asset
         /// carried in by an asset bundle can be dropped again when the bundle unloads.
         /// Conservative by design: a type is only really unregistered when this asset is the one
-        /// that defined it, it was not registered permanently, and no binding instance of it is
+        /// that defined it, it was not registered permanently, and no exposed instance of it is
         /// left (see <see cref="_UnregisterType"/>).
         /// </summary>
         public static void UnregisterTypes(LiveClassAsset asset)
         {
             if (asset == null) return;
+
+            // Before the early return below: an asset can declare prefabs and no types at all, and
+            // it should still stop offering them. A permanent asset keeps its own, the same way it
+            // keeps its types.
+            if (!_permanent.Contains(asset)) LivePrefabCatalog.Unregister(asset);
 
             // What the asset actually registered, not what it currently declares: a definition
             // dropped from the asset before the unapply runs (the editor window removes it from
@@ -121,7 +145,7 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
-        /// Resolves the LiveClass a binding instance of <paramref name="type"/> should use.
+        /// Resolves the LiveClass an exposed instance of <paramref name="type"/> should use.
         /// Attribute-based [LiveClass] types keep their own definition; asset-defined types
         /// must have been registered through <see cref="RegisterTypes"/> first.
         /// </summary>
@@ -135,37 +159,37 @@ namespace Lilium.RemoteControl
             return LiveClass.Find(type);
         }
 
-        /// <summary>Tracks an active binding and creates its registry handle.</summary>
-        internal static void Attach(LiveBinding binding)
+        /// <summary>Tracks an exposed instance wrapper and creates its registry handle.</summary>
+        internal static void Attach(LiveUnityObjectBase obj)
         {
-            var target = binding?.target;
+            var target = obj?.reference;
             if (target == null) return;
             var type = target.GetType();
 
             if (!_activeByType.TryGetValue(type, out var list))
             {
-                list = new List<LiveBinding>();
+                list = new List<LiveUnityObjectBase>();
                 _activeByType[type] = list;
             }
-            if (!list.Contains(binding)) list.Add(binding);
+            if (!list.Contains(obj)) list.Add(obj);
 
             var liveClass = ResolveLiveClass(type);
             if (liveClass == null)
             {
-                Debug.LogWarning($"[RemoteControl] No live class asset type definition registered for '{type.Name}'. Register the asset before enabling bindings.");
+                Debug.LogWarning($"[RemoteControl] No live class definition registered for '{type.Name}'. Declare it in a live class asset before exposing an instance of it.");
                 return;
             }
-            binding.RefreshHandle(liveClass);
+            obj.RefreshHandle(liveClass);
         }
 
-        /// <summary>Stops tracking a binding (the binding unregisters its own handle).</summary>
-        internal static void Detach(LiveBinding binding)
+        /// <summary>Stops tracking a wrapper (the wrapper unregisters its own handle).</summary>
+        internal static void Detach(LiveUnityObjectBase obj)
         {
-            if (binding == null) return;
+            if (obj == null) return;
             List<Type> emptied = null;
             foreach (var kv in _activeByType)
             {
-                if (kv.Value.Remove(binding) && kv.Value.Count == 0)
+                if (kv.Value.Remove(obj) && kv.Value.Count == 0)
                 {
                     (emptied ??= new List<Type>()).Add(kv.Key);
                 }
@@ -291,10 +315,23 @@ namespace Lilium.RemoteControl
             // not ours. Dropping it here would take that asset's members away with it.
             if (!_ownerByType.TryGetValue(type, out var owner) || owner != asset) return;
 
-            // Instances are still exposed — by a container that is staying, or by one whose own
-            // unapply has not run yet. The handles hold this LiveClass, so it has to outlive them;
-            // the last container to leave is the one that gets past this check.
-            if (_activeByType.TryGetValue(type, out var active) && active.Count > 0) return;
+            if (_activeByType.TryGetValue(type, out var active))
+            {
+                // Wrappers whose object has been destroyed do not count. Nothing detaches them:
+                // a scene torn down without a host to shut its object list down first leaves them
+                // here, and one of those would keep the type registered for the rest of the
+                // session — the very leak this method exists to prevent.
+                for (int i = active.Count - 1; i >= 0; i--)
+                {
+                    var obj = active[i];
+                    if (obj == null || obj.reference == null) active.RemoveAt(i);
+                }
+
+                // Instances are still exposed — by a container that is staying, or by one whose own
+                // unapply has not run yet. The handles hold this LiveClass, so it has to outlive
+                // them; the last container to leave is the one that gets past this check.
+                if (active.Count > 0) return;
+            }
 
             if (LiveClass.TryGet(type, out var liveClass)) LiveClass.Unregister(liveClass);
             _signatureByType.Remove(type);

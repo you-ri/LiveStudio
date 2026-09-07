@@ -124,9 +124,14 @@ namespace Lilium.RemoteControl
         {
         }
 
-        public virtual bool ResolveReferences(IExposedPropertyTable resolver)
+        /// <summary>
+        /// (Re)creates the registry handle against the given LiveClass. Called by
+        /// <see cref="LiveClassAssetSystem"/> — handles capture the LiveClass, so a rebuilt type
+        /// definition invalidates them and they must be recreated. No-op for a wrapper that does
+        /// not expose its reference under the reference's own type.
+        /// </summary>
+        internal virtual void RefreshHandle(LiveClass liveClass)
         {
-            return reference != null;
         }
 
         /// <summary>
@@ -227,12 +232,6 @@ namespace Lilium.RemoteControl
             }
         }
 
-        public override bool ResolveReferences(IExposedPropertyTable resolver)
-        {
-            _liveObject = LiveObjectRegistry.Create<T>(_reference, id);
-
-            return _reference != null;
-        }
     }
 
 
@@ -265,7 +264,13 @@ namespace Lilium.RemoteControl
         [FormerlyNamedAs("name")]
         private string _name;
 
-        [LiveProperty]
+        // The lane is said on both faces, and it has to be. A derived type in another assembly --
+        // LiveCamera is one -- is generated against this type as metadata, where a private field is
+        // not among the members the generator can see, so the pair is invisible there and the
+        // property is the only face its block can carry. Where the pair *is* visible (a derived type
+        // in this assembly) the field's declaration is what is read and this one is skipped, so
+        // saying it twice costs nothing and cannot put the value in the block twice.
+        [LiveProperty(lane = FrameLane.State)]
         public override string name
         {
             get => _reference != null ? _reference.name : _fallbackName;
@@ -356,12 +361,6 @@ namespace Lilium.RemoteControl
             }
         }
 
-        public override bool ResolveReferences(IExposedPropertyTable resolver)
-        {
-            _liveObject = LiveObjectRegistry.Create(GetType(), this, id);
-
-            return _reference != null;
-        }
 
     }
 
@@ -681,7 +680,13 @@ namespace Lilium.RemoteControl
         [FormerlyNamedAs("name")]
         private string _name;
 
-        [LiveProperty]
+        // The lane is said on both faces, and it has to be. A derived type in another assembly --
+        // LiveCamera is one -- is generated against this type as metadata, where a private field is
+        // not among the members the generator can see, so the pair is invisible there and the
+        // property is the only face its block can carry. Where the pair *is* visible (a derived type
+        // in this assembly) the field's declaration is what is read and this one is skipped, so
+        // saying it twice costs nothing and cannot put the value in the block twice.
+        [LiveProperty(lane = FrameLane.State)]
         public override string name
         {
             get => _reference != null ? _reference.name : _fallbackName;
@@ -724,16 +729,20 @@ namespace Lilium.RemoteControl
             // (Unity [SerializeReference]デシリアライズ時のデフォルトコンストラクタ呼び出し対策)
             if (reference != null)
             {
-                _liveObject = LiveObjectRegistry.Create(_reference.GetType(), _reference, id);
+                LiveClassAssetSystem.Attach(this);
             }
         }
 
+        // Through LiveClassAssetSystem rather than straight to the registry: the reference is
+        // exposed under its own type, and that type's LiveClass may be one an asset declared —
+        // which is rebuilt whenever the declaration changes, invalidating the handle held here.
+        // Attaching is what gets RefreshHandle called when that happens.
         public override void OnEnable()
         {
             base.OnEnable();
             if (_reference != null)
             {
-                _liveObject = LiveObjectRegistry.Create(_reference.GetType(), _reference, id);
+                LiveClassAssetSystem.Attach(this);
             }
         }
 
@@ -741,6 +750,7 @@ namespace Lilium.RemoteControl
         {
             base.OnDisable();
 
+            LiveClassAssetSystem.Detach(this);
             _liveObject?.Unregister();
             _liveObject = null;
         }
@@ -758,27 +768,29 @@ namespace Lilium.RemoteControl
 
         public override void ReplaceId(string newId)
         {
+            // Dropped before the id changes, so RefreshHandle below sees no handle to keep and
+            // creates one under the new id.
             _liveObject?.Unregister();
+            _liveObject = null;
             _id = newId;
             if (_reference != null)
             {
-                _liveObject = LiveObjectRegistry.Create(_reference.GetType(), _reference, id);
+                LiveClassAssetSystem.Attach(this);
             }
         }
 
-        public override bool ResolveReferences(IExposedPropertyTable resolver)
+        internal override void RefreshHandle(LiveClass liveClass)
         {
-            if (_reference != null)
+            if (_reference == null || liveClass == null)
             {
-                _liveObject = LiveObjectRegistry.Create(_reference.GetType(), _reference, id);
-            }
-            else
-            {
+                _liveObject?.Unregister();
                 _liveObject = null;
+                return;
             }
+            if (_liveObject.HasValue && ReferenceEquals(_liveObject.Value.targetType, liveClass)) return;
 
-
-            return _reference != null;
+            _liveObject?.Unregister();
+            _liveObject = LiveObjectRegistry.GetOrCreate(_id, liveClass, _reference);
         }
     }
 

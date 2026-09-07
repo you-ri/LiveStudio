@@ -6,8 +6,6 @@ using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
 
-using Lilium.RemoteControl.LiveScene;
-
 namespace Lilium.RemoteControl.Editor
 {
     /// <summary>
@@ -20,7 +18,6 @@ namespace Lilium.RemoteControl.Editor
         private static readonly Vector2 kWindowSize = new Vector2(320f, 400f);
 
         private Func<LiveClassAsset> _getPreset;
-        private Func<RemoteControlContainer> _getContainer;
         private Type _type;
         private Action _onChanged;
 
@@ -36,13 +33,12 @@ namespace Lilium.RemoteControl.Editor
             public Toggle toggle;
         }
 
-        public static void Open(Func<LiveClassAsset> getPreset, Func<RemoteControlContainer> getContainer, Type type, Action onChanged, Rect screenRect)
+        public static void Open(Func<LiveClassAsset> getPreset, Type type, Action onChanged, Rect screenRect)
         {
             var window = CreateInstance<LiveClassAssetAddMemberWindow>();
             window.titleContent = new GUIContent("Add Member");
             window.minSize = kWindowSize;
             window._getPreset = getPreset;
-            window._getContainer = getContainer;
             window._type = type;
             window._onChanged = onChanged;
             window.position = new Rect(screenRect.x, screenRect.yMax, kWindowSize.x, kWindowSize.y);
@@ -60,10 +56,10 @@ namespace Lilium.RemoteControl.Editor
         }
 
         // The checkbox states are read straight off the asset, so an undo elsewhere has to
-        // re-read this list - and rebuild the container's lookup table with it.
+        // re-read this list - and re-register the declarations it restored.
         private void _OnUndoRedo()
         {
-            _Applied(_getContainer?.Invoke());
+            _Applied();
         }
 
         private void CreateGUI()
@@ -131,12 +127,11 @@ namespace Lilium.RemoteControl.Editor
         {
             var preset = _getPreset?.Invoke();
             if (preset == null) return;
-            var container = _getContainer?.Invoke();
 
-            if (exposed) LiveClassAssetMemberExposure.ExposeTypeMember(preset, container, _type, candidate);
-            else LiveClassAssetMemberExposure.UnexposeTypeMember(preset, container, _type, candidate);
+            if (exposed) LiveClassAssetMemberExposure.ExposeTypeMember(preset, _type, candidate);
+            else LiveClassAssetMemberExposure.UnexposeTypeMember(preset, _type, candidate);
 
-            _Applied(container);
+            _Applied();
         }
 
         private void _ApplyFilter()
@@ -163,9 +158,9 @@ namespace Lilium.RemoteControl.Editor
             }
         }
 
-        private void _Applied(RemoteControlContainer container)
+        private void _Applied()
         {
-            if (container != null) container.Reload();
+            LiveClassAssetMemberExposure.Reapply(_getPreset?.Invoke());
             _RefreshToggles();
             _onChanged?.Invoke();
         }

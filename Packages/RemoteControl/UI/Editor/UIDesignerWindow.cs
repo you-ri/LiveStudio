@@ -71,20 +71,6 @@ namespace Lilium.RemoteControl.UI.Editor
                 _providerField.style.display = hasProvider ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
-        /// <summary>
-        /// Re-resolves the prefab GUIDs held by the Factory on the _definition assigned to this Designer
-        /// from the AssetDatabase. Does not touch other UIDefinition assets.
-        /// </summary>
-        private void _RefreshPrefabKeys()
-        {
-            if (_definition == null)
-            {
-                UnityEngine.Debug.LogWarning("[RemoteControl] UI Designer Reset: no UIDefinition is set. Assign one in the Definition field before pressing Reset.");
-                return;
-            }
-            UIDefinitionPrefabKeyRefresher.Refresh(_definition);
-        }
-
         private void _SaveProviderPath()
         {
             if (_providerObject != null)
@@ -328,10 +314,8 @@ namespace Lilium.RemoteControl.UI.Editor
             // リセットボタン
             var resetButton = new Button(() =>
             {
-                // UIDefinition に紐づく各 Factory の prefab GUID を再解決する。
-                // OnValidate を待たずに Reset ボタンで一括登録できるようにする。
-                _RefreshPrefabKeys();
-
+                // インスタンス可能なプレハブは LiveClassAsset 側の宣言なので、ここでは触らない
+                // (LiveClassAsset.OnValidate が prefab GUID を解決し、カタログに反映する)。
                 var provider = _GetProvider();
                 if (provider != null && provider.objectContainer != null)
                 {

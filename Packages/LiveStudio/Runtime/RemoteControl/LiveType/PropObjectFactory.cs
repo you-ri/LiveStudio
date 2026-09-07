@@ -37,8 +37,8 @@ namespace Lilium.LiveStudio
         [SerializeField]
         private AccessLevel _propAccessLevel = AccessLevel.Public;
 
-        // Number of inherited static factory entries; props occupy the indices after these.
-        private int _StaticCount => factories?.Length ?? 0;
+        // Number of inherited declared-prefab entries; props occupy the indices after these.
+        private int _StaticCount => _Factories().Count;
 
         protected override string[] GetObjectNames()
         {
@@ -108,6 +108,11 @@ namespace Lilium.LiveStudio
                 Debug.LogError($"[LiveStudio] PropObjectFactory: could not load prop prefab for '{asset.name}'.");
                 return;
             }
+
+            // Now that it is read, say so: a replay standing this instance back up (and a live-scene
+            // restore in the same session) finds the prefab without the bundle being opened again.
+            // Harmless when it is already there -- the registry keys on the same instanceKey.
+            PrefabRegistry.Register(instanceable.instanceKey, prefab);
 
             if (_container == null)
             {

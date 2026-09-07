@@ -18,11 +18,11 @@ namespace Lilium.RemoteControl.Tests
     public class FrameRecordSizeTests
     {
         /// <summary>
-        /// Stands in for a capture pose, at exactly the size the real one is (measured: 1464 bytes
+        /// Stands in for a capture pose, at exactly the size the real one is (measured: 1144 bytes
         /// for AvatarAnimationData). Sized rather than copied so this assembly does not have to see
         /// the avatar types, which live above it.
         /// </summary>
-        [StructLayout(LayoutKind.Explicit, Size = 1464)]
+        [StructLayout(LayoutKind.Explicit, Size = 1144)]
         private struct PoseSized
         {
         }
@@ -117,9 +117,11 @@ namespace Lilium.RemoteControl.Tests
             var bytesPerFrame = BytesPerFrame(0, withPose: true);
             Report("1 pose", bytesPerFrame);
 
-            // 1464 of pose, 16 of meta, 12 of block header, 13 of entry header, 21 of boundary.
-            Assert.Greater(bytesPerFrame, 1500);
-            Assert.Less(bytesPerFrame, 1560, "the pose should be carried nearly raw");
+            // 1144 of pose, 16 of meta, 12 of block header, 13 of entry header, 21 of boundary.
+            // The pose shrank by 320 bytes when it moved to muscle space: 95 muscles and their
+            // presence weigh less than 55 quaternions and theirs.
+            Assert.Greater(bytesPerFrame, 1180);
+            Assert.Less(bytesPerFrame, 1240, "the pose should be carried nearly raw");
         }
 
         [Test]

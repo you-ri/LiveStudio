@@ -310,6 +310,28 @@ namespace Lilium.RemoteControl
 
         public void RemoveLiveObject(ILiveObject liveObject) => _objects.Remove(liveObject);
 
+        /// <summary>
+        /// Removes a live object from whichever list actually holds it -- the main one, or the
+        /// source that merged it in -- and answers whether it was found.
+        ///
+        /// The main list is not the only home an object added while running can have: an object
+        /// standing up from a live scene is appended to the list of the container that restores it,
+        /// which reaches this one as a source. Deleting such an object through
+        /// <see cref="RemoveLiveObject"/> alone leaves it in that list, so it goes on being
+        /// enumerated (see <see cref="EnumerateAllObjects"/>) after it was supposedly deleted.
+        /// </summary>
+        public bool RemoveLiveObjectAnywhere(ILiveObject liveObject)
+        {
+            if (liveObject == null) return false;
+            if (_objects.Remove(liveObject)) return true;
+
+            for (int s = 0; s < _sources.Count; s++)
+            {
+                if (_sources[s].list.Remove(liveObject)) return true;
+            }
+            return false;
+        }
+
         public void RemoveLiveObjectById(string id)
         {
             var obj = _objects.FirstOrDefault(x => x.id == id);
@@ -317,18 +339,6 @@ namespace Lilium.RemoteControl
         }
 
         public bool HasLiveObject(string id) => _objects.Any(x => x.id == id);
-
-        public void RebindLiveObject(string id, UnityEngine.Object obj, IExposedPropertyTable resolver)
-        {
-            var data = _objects.FirstOrDefault(x => x.id == id);
-            if (data != null)
-            {
-                data.OnDisable();
-                if (obj != null && data is LiveUnityObjectBase unityObj)
-                    unityObj.ResolveReferences(resolver);
-                data.OnEnable();
-            }
-        }
 
         public void ResetAll()
         {
@@ -338,29 +348,12 @@ namespace Lilium.RemoteControl
             Debug.Log($"[RemoteControl] Reset all {_name} container to default values.");
         }
 
-        public void ResolveAllReferences(IExposedPropertyTable resolver)
-        {
-            _ResolveReferencesInList(_objects, resolver);
-            for (int i = 0; i < _sources.Count; i++)
-                _ResolveReferencesInList(_sources[i].list, resolver);
-        }
-
         private static void _ResetObjectList(List<ILiveObject> list)
         {
             foreach (var obj in list)
             {
                 if (obj == null) continue;
                 obj.Reset();
-            }
-        }
-
-        private static void _ResolveReferencesInList(List<ILiveObject> list, IExposedPropertyTable resolver)
-        {
-            foreach (var obj in list)
-            {
-                if (obj == null) continue;
-                if (obj is LiveUnityObjectBase unityObj)
-                    unityObj.ResolveReferences(resolver);
             }
         }
 

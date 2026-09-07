@@ -11,7 +11,7 @@ namespace Lilium.RemoteControl.LiveScene
     ///
     /// The keys are prefab guids and the set of them is open -- a project's own prefabs, the built-in
     /// catalogue, whatever an external bundle brings -- so these are resolved on demand through
-    /// <see cref="LiveRecipes.RegisterResolver"/> rather than registered one by one. A key resolves
+    /// <see cref="LiveRecipes.AddResolver"/> rather than registered one by one. A key resolves
     /// exactly when <see cref="PrefabRegistry"/> can find the prefab, which is the same condition
     /// that decides whether a saved scene can restore it.
     ///
@@ -66,12 +66,16 @@ namespace Lilium.RemoteControl.LiveScene
         ///
         /// Registered at startup rather than by whoever owns a prefab: the answer is the same for
         /// every key, and one resolver is what keeps it that way as catalogues come and go.
+        ///
+        /// This one only ever answers for a prefab that is already in hand. A key whose prefab has
+        /// to be fetched first belongs to whoever can fetch it -- it stands as a resolver of its own
+        /// and puts the prefab in the <see cref="PrefabRegistry"/>, which brings the key here.
         /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         public static void Install()
         {
             _byKey.Clear();
-            LiveRecipes.RegisterResolver(_Resolve);
+            LiveRecipes.AddResolver(_Resolve);
         }
 
 #if UNITY_EDITOR
@@ -88,12 +92,26 @@ namespace Lilium.RemoteControl.LiveScene
         private static ILiveRecipe _Resolve(string key)
         {
             if (string.IsNullOrEmpty(key)) return null;
-            if (_byKey.TryGetValue(key, out var recipe)) return recipe;
 
             // Only for a key that names a prefab something can actually find. Handing back a recipe
             // for any key at all would turn "nothing knows how to make this" into "it was made and
-            // then failed", which counts as a different thing in the reconcile.
-            if (!PrefabRegistry.TryFind(key, out var prefab) || prefab == null) return null;
+            // then failed", which counts as a different thing in the reconcile -- and it would take
+            // the key away from a resolver that could still fetch it.
+            //
+            // Asked every time rather than only on the way into the table: a bundle prefab can be
+            // unloaded, and a cached recipe for a destroyed prefab is one that answers with nothing
+            // forever while the resolver that could load it again is never reached.
+            var known = PrefabRegistry.TryFind(key, out var prefab) && prefab != null;
+
+            if (_byKey.TryGetValue(key, out var recipe))
+            {
+                if (known) return recipe;
+
+                _byKey.Remove(key);
+                return null;
+            }
+
+            if (!known) return null;
 
             recipe = new PrefabRecipe(key);
             _byKey[key] = recipe;

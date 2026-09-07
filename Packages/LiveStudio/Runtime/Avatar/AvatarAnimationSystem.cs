@@ -11,28 +11,26 @@ namespace Lilium.LiveStudio
     /// </summary>
     public static class AvatarAnimationSystem
     {
-        public static void MakeAvatarAnimationData(Animator animator, out AvatarAnimationData dst)
-        {
-            Debug.Assert(animator != null);
-
-            dst = new AvatarAnimationData();
-            dst.root.valid = 1;
-            MakeRoot(animator.transform, out dst.root);
-            MakePose(animator, out dst.pose);
-        }
-
         public static void MakeInvalidAvatarAnimationData(out AvatarAnimationData dst)
         {
             dst = new AvatarAnimationData();
             dst.root.valid = 0;
         }
 
-        public static void UpdateBodyAnimation(Animator animator, in AvatarAnimationData src)
+        /// <summary>
+        /// Writes a frame onto an avatar directly (no PlayableGraph): the root transform, then the
+        /// pose through <paramref name="poseHandler"/>.
+        ///
+        /// The handler is the caller's because it is bound to one avatar and owns native memory --
+        /// building one per frame would allocate, and building one here would leave nobody to
+        /// dispose it. Callers that drive an avatar every frame keep one for the life of that avatar.
+        /// </summary>
+        public static void UpdateBodyAnimation(Animator animator, HumanPoseHandler poseHandler, in AvatarAnimationData src)
         {
             Debug.Assert(animator != null);
 
             UpdateRoot(animator.transform, in src.root);
-            UpdatePose(animator, in src.pose);
+            UpdatePose(poseHandler, in src.pose);
         }
 
         // Time-based interpolation between two received frames so the avatar pose
@@ -40,7 +38,7 @@ namespace Lilium.LiveStudio
         // capture rate (60fps). Without this, the pose freezes between received frames
         // and secondary physics (spring bones) jitters on the stalled pose.
         //
-        // a/b are passed by value: AsRotation/AsCamera are not readonly, so accessing
+        // a/b are passed by value: AsMuscle/AsCamera are not readonly, so accessing
         // them on an `in` parameter would force a defensive copy per element. Copying
         // once up front and reading from the locals avoids that.
         public static void Lerp(AvatarAnimationData a, AvatarAnimationData b, float t, out AvatarAnimationData dst)
@@ -54,11 +52,16 @@ namespace Lilium.LiveStudio
             dst.root.rotation = Quaternion.Slerp(a.root.rotation, b.root.rotation, t);
             dst.root.scale = Vector3.Lerp(a.root.scale, b.root.scale, t);
 
-            dst.pose.hipPosition = Vector3.Lerp(a.pose.hipPosition, b.pose.hipPosition, t);
-            for (int i = 0; i < (int)HumanBodyBones.LastBone; i++)
+            dst.pose.bodyPosition = Vector3.Lerp(a.pose.bodyPosition, b.pose.bodyPosition, t);
+            dst.pose.bodyRotation = Quaternion.Slerp(a.pose.bodyRotation, b.pose.bodyRotation, t);
+            dst.pose.bodyPresence = Mathf.Lerp(a.pose.bodyPresence, b.pose.bodyPresence, t);
+            for (int i = 0; i < HumanoidPoseData.kMuscleCount; i++)
             {
-                dst.pose.AsRotation(i) = Quaternion.Slerp(a.pose.AsRotation(i), b.pose.AsRotation(i), t);
-                dst.pose.AsPresence(i) = Mathf.Lerp(a.pose.AsPresence(i), b.pose.AsPresence(i), t);
+                // Muscles are scalars, so this is a plain lerp -- and a better-behaved one than the
+                // slerp per bone it replaces: interpolating two joint angles cannot swing a limb
+                // through a path neither endpoint took.
+                dst.pose.AsMuscle(i) = Mathf.Lerp(a.pose.AsMuscle(i), b.pose.AsMuscle(i), t);
+                dst.pose.AsMusclePresence(i) = Mathf.Lerp(a.pose.AsMusclePresence(i), b.pose.AsMusclePresence(i), t);
             }
 
             for (int i = 0; i < (int)ARKitBlendShapeLocation.Max; i++)
@@ -123,33 +126,65 @@ namespace Lilium.LiveStudio
             transform.localScale = src.scale;
         }
 
-        public static void MakePose(Animator animator, out HumanoidPoseData dst)
+        /// <summary>
+        /// Reads an avatar's current pose in muscle space.
+        /// </summary>
+        public static void MakePose(HumanPoseHandler poseHandler, out HumanoidPoseData dst)
         {
-            Debug.Assert(animator != null);
+            Debug.Assert(poseHandler != null);
 
             dst = new HumanoidPoseData();
-            dst.hipPosition = animator.GetBoneTransform(HumanBodyBones.Hips).localPosition;
+            _EnsureScratch();
+            poseHandler.GetHumanPose(ref _scratch);
 
-            for (int i = 0; i < (int)HumanBodyBones.LastBone; i++)
+            dst.bodyPosition = _scratch.bodyPosition;
+            dst.bodyRotation = _scratch.bodyRotation;
+            dst.bodyPresence = 1f;
+            for (int i = 0; i < HumanoidPoseData.kMuscleCount; i++)
             {
-                var bone = animator.GetBoneTransform((HumanBodyBones)i);
-                if (bone == null) continue;
-                dst.AsRotation(i) = bone.localRotation;
+                dst.AsMuscle(i) = _scratch.muscles[i];
+                dst.AsMusclePresence(i) = 1f;
             }
         }
 
-        public static void UpdatePose(Animator animator, in HumanoidPoseData src)
+        /// <summary>
+        /// Writes a muscle-space pose onto an avatar. Presence is not consulted: this path has no
+        /// upstream animation to blend an untracked part against, so the whole pose is applied.
+        /// </summary>
+        public static void UpdatePose(HumanPoseHandler poseHandler, in HumanoidPoseData src)
         {
-            Debug.Assert(animator != null);
+            Debug.Assert(poseHandler != null);
 
-            animator.GetBoneTransform(HumanBodyBones.Hips).localPosition = src.hipPosition;
-
-            for (int i = 0; i < (int)HumanBodyBones.LastBone; i++)
+            _EnsureScratch();
+            _scratch.bodyPosition = src.bodyPosition;
+            _scratch.bodyRotation = src.bodyRotation;
+            for (int i = 0; i < HumanoidPoseData.kMuscleCount; i++)
             {
-                var bone = animator.GetBoneTransform((HumanBodyBones)i);
-                if (bone == null) continue;
-                bone.localRotation = src.AsRotation(i);
+                // The `in` parameter would be copied defensively on every AsMuscle call (it is not a
+                // readonly member), so the read goes through a local copy of the index instead.
+                _scratch.muscles[i] = _MuscleOf(in src, i);
             }
+
+            poseHandler.SetHumanPose(ref _scratch);
+        }
+
+        private static float _MuscleOf(in HumanoidPoseData src, int index)
+        {
+            unsafe
+            {
+                fixed (float* muscles = src.muscles) return muscles[index];
+            }
+        }
+
+        // Reused across calls so applying a pose does not allocate a 95-float array every frame.
+        // Lazily filled rather than initialized from a hook, so it is there whether or not the
+        // domain was reloaded.
+        private static HumanPose _scratch;
+
+        private static void _EnsureScratch()
+        {
+            if (_scratch.muscles == null || _scratch.muscles.Length != HumanoidPoseData.kMuscleCount)
+                _scratch.muscles = new float[HumanoidPoseData.kMuscleCount];
         }
     }
 }

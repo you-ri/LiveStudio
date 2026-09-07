@@ -113,11 +113,6 @@ namespace Lilium.RemoteControl
         /// </summary>
         internal LiveObjectHandle WithId(string newId) => new LiveObjectHandle(targetType, target, newId);
 
-        public bool ResolveReferences(IExposedPropertyTable resolver)
-        {
-            return isValid;
-        }
-
         public LiveProperty? GetProperty(ReadOnlySpan<char> name)
         {
             // name.ToString() を挟まず span のまま引く (パス解決のたびの文字列確保を避ける)。

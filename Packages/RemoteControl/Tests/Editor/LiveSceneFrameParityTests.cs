@@ -79,7 +79,7 @@ namespace Lilium.RemoteControl.Tests
 
         /// <inheritdoc cref="_PlaceExposedLight(out Light)"/>
         /// <param name="bindingKey">
-        /// When non-null on return, the id an instance binding gave the component. Pass
+        /// When non-null on return, the id an entry of its own gave the component. Pass
         /// <paramref name="bind"/> to ask for one.
         /// </param>
         private LiveGameObject _PlaceExposedLight(out Light light, out string bindingKey, bool bind = false)
@@ -102,30 +102,25 @@ namespace Lilium.RemoteControl.Tests
             var host = hostGo.AddComponent<RemoteControlContainer>();
             host.assets.Add(asset);
 
-            bindingKey = null;
-            if (bind)
-            {
-                // The opt-in: an instance binding gives the component an id of its own, which the
-                // save path prefers over the composed key and the frame has to prefer with it.
-                bindingKey = System.Guid.NewGuid().ToString();
-                asset.bindings.Add(new LiveClassAsset.InstanceBinding
-                {
-                    key = bindingKey,
-                    typeName = typeof(Light).AssemblyQualifiedName,
-                });
-                host.SetReferenceValue(new PropertyName(bindingKey), light);
-            }
-
             host.Reload();
 
             Assert.That(LiveClass.Has(typeof(Light)), Is.True,
                 "the declaration has to be registered before either side can see the component");
 
+            bindingKey = null;
+            if (bind)
+            {
+                // The opt-in: an entry of its own gives the component an id, which the save path
+                // prefers over the composed key and the frame has to prefer with it.
+                var entry = new LiveComponent(light);
+                host._objects.Add(entry);
+                bindingKey = entry.id;
+            }
+
             var proxy = new LiveGameObject(lightGo);
             host._objects.Add(proxy);
 
             _container = new LiveObjectContainer(hostGo.name, host._objects);
-            _container.AddSource(host.bindingObjects, host.bindingObjects);
             _container.Initialize();
 
             return proxy;

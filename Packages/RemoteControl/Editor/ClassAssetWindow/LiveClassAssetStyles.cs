@@ -35,6 +35,9 @@ namespace Lilium.RemoteControl.Editor
         public const string kHeaderRow = "lca-header-row";
         public const string kHeaderRowField = "lca-header-row__field";
         public const string kHeaderRowAction = "lca-header-row__action";
+        public const string kTabs = "lca-tabs";
+        public const string kTab = "lca-tab";
+        public const string kTabActive = "lca-tab--active";
         public const string kPane = "lca-pane";
         public const string kPaneDivided = "lca-pane--divided";
         public const string kPaneHeader = "lca-pane-title";
@@ -51,11 +54,6 @@ namespace Lilium.RemoteControl.Editor
         public const string kMemberLane = "lca-member__lane";
         public const string kStateBudget = "lca-state-budget";
         public const string kMemberNested = "lca-member__nested";
-        public const string kFooter = "lca-footer";
-        public const string kFooterTitle = "lca-footer__title";
-        public const string kBindingRow = "lca-binding-row";
-        public const string kBindingRowField = "lca-binding-row__field";
-        public const string kBindingRowState = "lca-binding-row__state";
         public const string kPopupRow = "lca-popup-row";
         public const string kPopupRowToggle = "lca-popup-row__toggle";
         public const string kPopupRowMeta = "lca-popup-row__meta";

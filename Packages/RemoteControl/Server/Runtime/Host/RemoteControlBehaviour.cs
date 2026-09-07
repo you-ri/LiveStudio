@@ -237,11 +237,8 @@ namespace Lilium.RemoteControl.LiveScene
             {
                 var c = containers[i];
                 if (c == null) continue;
-                // Skip self for _objects: it is already the container's main list, not a source.
-                // The binding wrappers are a source either way — they are runtime-only and live
-                // outside _objects, self included.
+                // Skip self: _objects is already the container's main list, not a source.
                 if (c != this) _container.AddSource(c._objects, c);
-                _container.AddSource(c.bindingObjects, c.bindingObjects);
             }
             RemoteControlContainer.onRegistered += _OnContainerRegistered;
             RemoteControlContainer.onUnregistered += _OnContainerUnregistered;
@@ -373,9 +370,6 @@ namespace Lilium.RemoteControl.LiveScene
             if (container == null || container == this) return;
             _container.AddSource(container._objects, container);
             _container.InitializeSource(container);
-
-            _container.AddSource(container.bindingObjects, container.bindingObjects);
-            _container.InitializeSource(container.bindingObjects);
         }
 
         // Re-deserialize after a base-scene switch on a persistent host. There is no new host in the
@@ -405,11 +399,8 @@ namespace Lilium.RemoteControl.LiveScene
         {
             if (container == null || container == this) return;
 
-            // Bindings first: they are the ones the container is about to drop in its own
-            // _UnapplyAssets, which runs right after this.
-            _container.ShutdownSource(container.bindingObjects);
-            _container.RemoveSource(container.bindingObjects);
-
+            // Before the container's own _UnapplyAssets, which runs right after this: the entries
+            // have to release their handles while the types those handles hold are still registered.
             _container.ShutdownSource(container);
             _container.RemoveSource(container);
         }

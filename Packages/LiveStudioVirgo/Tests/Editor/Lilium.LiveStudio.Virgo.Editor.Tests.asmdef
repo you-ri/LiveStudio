@@ -7,7 +7,10 @@
         "Lilium.LiveStudio.Virgo",
         "Lilium.LiveStudio",
         "Lilium.RemoteControl",
-        "Unity.InputSystem"
+        "Unity.InputSystem",
+        "Lilium.LiveStudio.Editor.Tests",
+        "Lilium.RemoteControl.Simulation",
+        "Lilium.RemoteControl.Core"
     ],
     "includePlatforms": [
         "Editor"

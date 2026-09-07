@@ -13,7 +13,14 @@ namespace Lilium.LiveStudio.Virgo
     /// </summary>
     public static class AnimationFrameBridge
     {
-        public static unsafe void ToLiveStudio(in AnimationFrameData src, out Lilium.LiveStudio.AvatarAnimationData dst)
+        /// <summary>
+        /// 受信フレームを Studio 側のフレームへ変換する。姿勢だけは形が違う (ワイヤはボーンの
+        /// ローカル回転、Studio は muscle 空間) ので <paramref name="normalizer"/> を通す。
+        /// normalizer がまだ骨格を持っていない (アバター未ロード) 場合は false を返し、
+        /// 呼び出し側はそのフレームの姿勢が無いものとして扱う。
+        /// </summary>
+        public static unsafe bool ToLiveStudio(in AnimationFrameData src, WirePoseNormalizer normalizer,
+            out Lilium.LiveStudio.AvatarAnimationData dst)
         {
             dst = new Lilium.LiveStudio.AvatarAnimationData();
 
@@ -22,21 +29,7 @@ namespace Lilium.LiveStudio.Virgo
             dst.root.rotation = src.rotation;
             dst.root.scale = src.scale;
 
-            dst.pose.hipPosition = src.hipPosition;
-
-            fixed (byte* dstBones = dst.pose.boneRotations)
-            fixed (byte* srcBones = src.boneRotations)
-            {
-                UnsafeUtility.MemCpy(dstBones, srcBones,
-                    (int)HumanBodyBones.LastBone * CompilerUtility.QuaternionSize);
-            }
-
-            fixed (float* dstPresences = dst.pose.bonePresences)
-            fixed (float* srcPresences = src.bonePresences)
-            {
-                UnsafeUtility.MemCpy(dstPresences, srcPresences,
-                    sizeof(float) * (int)HumanBodyBones.LastBone);
-            }
+            if (normalizer == null || !normalizer.TryNormalize(in src, out dst.pose)) return false;
 
             fixed (float* dstWeights = dst.expression.weights)
             fixed (float* srcWeights = src.blendShapes)
@@ -47,7 +40,7 @@ namespace Lilium.LiveStudio.Virgo
 
             // CameraData (Lilium.LiveStudio.Virgo) and Lilium.LiveStudio.CameraData share an
             // identical sequential layout, so the whole camera array is copied verbatim, the
-            // same way the bone/blendshape buffers above are bridged across the type boundary.
+            // same way the blendshape buffer above is bridged across the type boundary.
             fixed (byte* dstCameras = dst.cameras)
             fixed (byte* srcCameras = src.cameras)
             {
@@ -56,6 +49,7 @@ namespace Lilium.LiveStudio.Virgo
             }
 
             dst.frames = src.frames;
+            return true;
         }
     }
 }

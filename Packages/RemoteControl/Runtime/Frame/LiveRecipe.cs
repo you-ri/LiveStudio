@@ -89,16 +89,34 @@ namespace Lilium.RemoteControl.Frames
         }
 
         /// <summary>
-        /// Registers a fallback asked for a key nothing was registered under.
+        /// Adds a fallback asked for a key nothing was registered under.
         ///
         /// For makers whose set is open and known elsewhere: every prefab is one a replay could be
         /// asked to stand up, and pre-registering each one would mean walking a catalogue that grows
-        /// while running (an external bundle brings its own). The same shape
-        /// <see cref="PrefabRegistry.RegisterResolver"/> uses, for the same reason.
+        /// while running (an external bundle brings its own).
+        ///
+        /// Several can stand at once, because the answer to "what could this key be" is owned by
+        /// more than one part of the app: the prefabs already in hand, and whatever has to be
+        /// fetched before it is. They are asked in the order they were added and the first non-null
+        /// answer is taken, so <b>each one must return null for a key outside what it owns</b> --
+        /// a resolver that answers everything is one that silences the rest.
+        ///
+        /// Adding the same resolver twice does nothing: registration runs again on a domain reload,
+        /// and being asked twice is only a way to load the same thing twice.
         /// </summary>
-        public static void RegisterResolver(System.Func<string, ILiveRecipe> resolver)
+        public static void AddResolver(System.Func<string, ILiveRecipe> resolver)
         {
-            _resolver = resolver;
+            if (resolver == null || _resolvers.Contains(resolver)) return;
+
+            _resolvers.Add(resolver);
+        }
+
+        /// <summary>Takes back a resolver added by <see cref="AddResolver"/>.</summary>
+        public static void RemoveResolver(System.Func<string, ILiveRecipe> resolver)
+        {
+            if (resolver == null) return;
+
+            _resolvers.Remove(resolver);
         }
 
         public static bool TryGet(string key, out ILiveRecipe recipe)
@@ -107,19 +125,25 @@ namespace Lilium.RemoteControl.Frames
             if (string.IsNullOrEmpty(key)) return false;
             if (_recipes.TryGetValue(key, out recipe)) return true;
 
-            if (_resolver != null) recipe = _resolver(key);
-            return recipe != null;
+            for (int i = 0; i < _resolvers.Count; i++)
+            {
+                recipe = _resolvers[i](key);
+                if (recipe != null) return true;
+            }
+
+            return false;
         }
 
         /// <summary>
         /// Forgets every maker registered by key. For tests, and for tearing a session down.
         ///
-        /// The resolver is kept: the table is per-run, but a resolver is a standing answer to
+        /// The resolvers are kept: the table is per-run, but a resolver is a standing answer to
         /// "what could this key be" that its owner registers once.
         /// </summary>
         public static void Clear() => _recipes.Clear();
 
-        private static System.Func<string, ILiveRecipe> _resolver;
+        private static readonly List<System.Func<string, ILiveRecipe>> _resolvers =
+            new List<System.Func<string, ILiveRecipe>>();
     }
 
     /// <summary>

@@ -112,7 +112,7 @@ namespace Lilium.RemoteControl.Editor
 
         private void _AddClass(LiveClassAsset preset, Type type)
         {
-            LiveClassAssetMemberExposure.BeginEdit(preset, null, "Add Class");
+            LiveClassAssetMemberExposure.BeginEdit(preset, "Add Class");
             var definition = preset.GetOrAddTypeDefinition(type);
             EditorUtility.SetDirty(preset);
             _onAdded?.Invoke(definition.typeName);

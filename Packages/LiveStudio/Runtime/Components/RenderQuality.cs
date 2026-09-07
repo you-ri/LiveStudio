@@ -40,11 +40,18 @@ namespace Lilium.LiveStudio
         public string[] qualityNames => QualitySettings.names;
 
         // Off the live data: how hard this machine is willing to work for a frame is exactly the kind
-        // of thing a spare machine is expected to differ on. The field is a project setting and the
-        // property below persists nothing of its own (the field carries no [FormerlyNamedAs], so it is
-        // exposed in its own right rather than as the property's shadow), and the lane follows from
-        // both (FrameLaneRules) without either saying so.
+        // of thing a spare machine is expected to differ on. Saying it is a project setting is the
+        // whole of saying that -- the lane follows from the scope (FrameLaneRules).
+        //
+        // The [FormerlyNamedAs] pairs the field with the property below as its shadow, which is what
+        // carries the scope across to the property's face of the same value. Without it the two are
+        // separate members: the property is left saying nothing, and both halves of the lane rule
+        // read that silence as "saved to the scene" -- the state block generator literally so,
+        // giving the property a slot it was copied into on every frame while the runtime reported it
+        // off the frame. The field's own member name stays readable as a former name, so a
+        // RenderQuality.settings.json written under `_quality` still restores.
         [LiveField(persistScope = PersistScope.Project), Hide]
+        [FormerlyNamedAs("quality")]
         private string _quality;
 
         [Section("high_quality", "SECTION_QUALITY_TITLE", "SECTION_QUALITY_SUBTITLE")]
