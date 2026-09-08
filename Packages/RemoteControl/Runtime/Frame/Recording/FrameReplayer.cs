@@ -141,6 +141,21 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// <summary>The recording being played. Its structure and state are the restored world.</summary>
         public FrameRecordPlayer player => _player;
 
+        /// <summary>
+        /// The replayer a frame source is driving, or null when it is not a replay at all.
+        ///
+        /// A replay reaches the gate wrapped in a pacer (<see cref="PacedFrameSource"/>) rather than
+        /// as itself, so a caller asking "is a take playing, and which one" cannot test the source's
+        /// type any more. It asks here instead, and keeps working whatever else gets wrapped around
+        /// a replay later.
+        /// </summary>
+        public static FrameReplayer Behind(IFrameSource source)
+        {
+            if (source is FrameReplayer replayer) return replayer;
+
+            return (source as PacedFrameSource)?.replayer;
+        }
+
         /// <summary>Frame most recently replayed, or -1 before the first.</summary>
         public long frameNumber => _player.frameNumber;
 
@@ -211,23 +226,13 @@ namespace Lilium.RemoteControl.Frames.Recording
             // Only once a frame has actually played, though. Paused before the first one, the
             // player's lanes are empty, and supplying those would blank the world rather than hold
             // it -- so the first frame plays either way and the hold starts from there.
-            if (isPaused && _player.frameNumber >= 0)
-            {
-                frame.structure = _player.structure;
-                frame.state = _player.state;
-                frame.symbols = _player.symbols;
-
-                // Nothing played, but a seek may have put events back since the last frame: they
-                // belong to this head, because this is the head they became visible at.
-                _PublishReplayed(frame.events);
-                return true;
-            }
+            if (isPaused && SupplyCurrent(ref frame)) return true;
 
             if (!_player.Advance())
             {
                 // Ran out. Looping starts the take again rather than letting the gate detach the
                 // source -- the world going back live mid-take is the one thing a loop must not do.
-                if (!loop || !_RewindToStart()) return false;
+                if (!loop || !RewindToStart()) return false;
 
                 // The rewind is a seek, which already restored the frame and put its events back.
                 // Advancing again here would skip the first frame of every pass but the first.
@@ -253,6 +258,30 @@ namespace Lilium.RemoteControl.Frames.Recording
             // like any other. Without this the frame carries the recording's state and structure but
             // an empty event lane, and everything downstream -- a viewer's event list first among
             // them -- reports that a replay fired nothing.
+            _PublishReplayed(frame.events);
+            return true;
+        }
+
+        /// <summary>
+        /// Supplies the frame the player is already on, reading nothing further and putting nothing
+        /// back a second time. False before the first frame has played, where there is nothing to
+        /// supply but the empty lanes the player starts with -- which would blank the world rather
+        /// than hold it.
+        ///
+        /// This is what a hold is made of, and what a pacer supplies on a frame where the take is
+        /// not due to move (<see cref="PacedFrameSource"/>). The events of the frame already landed
+        /// when it played; only records a seek put back since then are still waiting for a lane.
+        /// </summary>
+        public bool SupplyCurrent(ref Frame frame)
+        {
+            if (_player.frameNumber < 0) return false;
+
+            frame.structure = _player.structure;
+            frame.state = _player.state;
+            frame.symbols = _player.symbols;
+
+            // Nothing played, but a seek may have put events back since the last frame: they
+            // belong to this head, because this is the head they became visible at.
             _PublishReplayed(frame.events);
             return true;
         }
@@ -346,7 +375,7 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// Jumps back to the first frame of the recording. False when there is no index to seek by,
         /// which is what ends a loop over a take that was cut short.
         /// </summary>
-        private bool _RewindToStart()
+        public bool RewindToStart()
         {
             var first = _player.FrameNumberAt(0);
 
@@ -392,7 +421,7 @@ namespace Lilium.RemoteControl.Frames.Recording
 
                 // Nothing to collapse a call with, and nothing that says how many of them a
                 // destination has behind it. Left to forward play, which sees them in order.
-                if (record.kind == EventKind.FunctionCall) continue;
+                if (record.kind == EventKind.Call) continue;
 
                 _walked.Add(record);
             }

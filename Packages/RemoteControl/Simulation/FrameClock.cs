@@ -12,6 +12,15 @@ namespace Lilium.RemoteControl.Frames
     ///
     /// Replaceable so an external sync source (LTC, a house clock, an upstream node) can take over
     /// later without anything else changing: only the supply is swapped.
+    ///
+    /// <para>
+    /// ⚠ A replay is not one of those. A clock here has to keep going forwards -- the gate commits
+    /// one frame per number and skips the pump when the number repeats, so a clock that stopped
+    /// would stop the frame heads, and the event that resumed it is itself applied at a head. A take
+    /// that can be paused and scrubbed therefore arrives as a source (<c>IFrameSource</c>) with its
+    /// own position, paced against this clock rather than replacing it. External sync belongs here
+    /// because it only ever counts forwards; transport does not.
+    /// </para>
     /// </summary>
     public interface IFrameClock
     {
@@ -86,8 +95,8 @@ namespace Lilium.RemoteControl.Frames
     // LRC011 is suppressed for this type on purpose. The rule says the simulation must not read a
     // clock of its own -- but a clock has to enter somewhere, and this is that door. Real time is an
     // input here, in the same sense a gamepad is: it is read once at the boundary, stamped onto the
-    // frame, and everything downstream reads it from the frame. Replacing this clock with a supplied
-    // one is exactly how replay works.
+    // frame, and everything downstream reads it from the frame. A replay reads it from the frame
+    // too: it does not replace this clock, it spends its records against what this one stamped.
 #pragma warning disable LRC011
     public sealed class RealtimeFrameClock : IFrameClock
     {

@@ -10,45 +10,125 @@ using UnityEngine.SceneManagement;
 namespace Lilium.LiveStudio
 {
     /// <summary>
-    /// Discovers the app's built-in sets from the build's scene list — the runtime counterpart of
-    /// <see cref="BuiltinAssetRegistry"/> for scenes. Unlike a built-in prop (baked into a catalog because
-    /// a Resources asset cannot be enumerated at runtime), the build's scene list is directly readable at
-    /// runtime (<see cref="SceneManager.sceneCountInBuildSettings"/> /
-    /// <see cref="SceneUtility.GetScenePathByBuildIndex"/>), so no bake step or catalog is needed: any
-    /// scene added to the build is a built-in set.
+    /// Runtime facade over the project's <see cref="BuiltinSetList"/> declaration — the set counterpart of
+    /// <see cref="BuiltinAssetRegistry"/>. It turns each declared scene into a loadable
+    /// <see cref="BuiltinSetAsset"/> for <see cref="ExternalAssetManager"/> to list, pre-warms the declared
+    /// preview images into <see cref="ThumbnailCache"/>, and answers the two identity questions the asset
+    /// needs: which scene path a GUID loads (a moved scene keeps its GUID) and which GUID an old saved
+    /// scene path meant.
     ///
-    /// The bootstrap (base) scene is skipped: it is already surfaced as <see cref="StageManager"/>'s
-    /// persistent set entry, and offering it a second time would let it be loaded additively on top of
-    /// itself — a duplicate of the whole studio scene, including a second AvatarController. Every other
-    /// build scene becomes a loadable <see cref="BuiltinSetAsset"/>. (Excluding further scenes that should
-    /// not be sets is a future opt-out, deliberately not modeled here.)
+    /// A scene is a set only by being declared. Enumerating the build's scene list instead would be
+    /// zero-configuration but would offer every non-stage scene as a set — including a second bootstrap
+    /// scene, which additively loading would duplicate the whole studio — and could not carry a display
+    /// name, a preview, or an identity that survives moving the scene (there is no GUID at runtime).
     /// </summary>
     public static class BuiltinSetSource
     {
+        static BuiltinSetList _list;
+        static bool _listLoaded;
+        static bool _prewarmed;
+
         /// <summary>
-        /// Builds a <see cref="BuiltinSetAsset"/> for each build scene except the bootstrap one,
-        /// with its id / name / scene path populated so <see cref="ExternalAssetManager"/> can list and
-        /// load it. Empty when the build holds nothing but the bootstrap scene.
+        /// Drops the cached declaration so the next call reloads it. Called by the editor authoring tools
+        /// right after the list is edited, so a change takes effect without a domain reload.
+        /// </summary>
+        public static void Reload()
+        {
+            _list = null;
+            _listLoaded = false;
+            _prewarmed = false;
+        }
+
+        static BuiltinSetList _List()
+        {
+            if (!_listLoaded)
+            {
+                _list = Resources.Load<BuiltinSetList>(BuiltinSetList.kResourcesName);
+                _listLoaded = true;
+            }
+            return _list;
+        }
+
+        /// <summary>
+        /// Builds a <see cref="BuiltinSetAsset"/> for each declared scene, with its id / name / scene path
+        /// populated so <see cref="ExternalAssetManager"/> can list and load it. Empty when the project
+        /// declares no built-in sets (the default — a project ships sets only if it says so).
+        ///
+        /// Entries that cannot become a working set are dropped with an error rather than listed: a scene
+        /// missing from the build could never load, and a duplicate display name would make the stage's
+        /// recorded state ambiguous (a set is referred to by name, see <see cref="BuiltinSetList.Entry.displayName"/>).
         /// </summary>
         public static IReadOnlyList<AssetBase> GetSets()
         {
-            int count = SceneManager.sceneCountInBuildSettings;
-            if (count <= 1) return Array.Empty<AssetBase>();
+            var list = _List();
+            if (list == null) return Array.Empty<AssetBase>();
 
-            var basePath = _ResolveBaseScenePath();
+            var entries = list.entries;
+            if (entries.Length == 0) return Array.Empty<AssetBase>();
 
-            var result = new List<AssetBase>(count - 1);
-            for (int i = 0; i < count; i++)
+            _PrewarmThumbnails(entries);
+
+            return BuildSets(
+                entries,
+                _ResolveBaseScenePath(),
+                path => SceneUtility.GetBuildIndexByScenePath(path) >= 0);
+        }
+
+        /// <summary>
+        /// The rules that turn declared entries into listable sets, with the two things that depend on the
+        /// running app — which scene is the bootstrap one, and whether a scene is in the build — passed in.
+        /// Split out from <see cref="GetSets"/> so the rules can be exercised without a built player or a
+        /// Resources asset.
+        /// </summary>
+        internal static IReadOnlyList<AssetBase> BuildSets(
+            IReadOnlyList<BuiltinSetList.Entry> entries, string basePath, Func<string, bool> isInBuild)
+        {
+            var result = new List<AssetBase>(entries.Count);
+            var takenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var takenGuids = new HashSet<string>(StringComparer.Ordinal);
+
+            for (int i = 0; i < entries.Count; i++)
             {
-                var path = SceneUtility.GetScenePathByBuildIndex(i);
-                if (string.IsNullOrEmpty(path)) continue;
-                if (path == basePath) continue;
+                var entry = entries[i];
+                if (string.IsNullOrEmpty(entry.guid) || string.IsNullOrEmpty(entry.scenePath)) continue;
+
+                if (!takenGuids.Add(entry.guid))
+                {
+                    Debug.LogError($"[LiveStudio] Built-in set declared twice: '{entry.scenePath}'. Ignoring the duplicate.");
+                    continue;
+                }
+
+                // The bootstrap scene is the studio itself. Offering it as a set would let it load
+                // additively on top of itself — a second AvatarController and a duplicate of everything.
+                if (string.Equals(entry.scenePath, basePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    Debug.LogError($"[LiveStudio] Built-in set '{entry.scenePath}' is the app's base scene; it cannot also be a set. Ignoring it.");
+                    continue;
+                }
+
+                // Only a scene in the build can be loaded by path at runtime. Report it here rather than
+                // letting it list and fail on load, so the cause is visible before an operator taps it.
+                if (isInBuild != null && !isInBuild(entry.scenePath))
+                {
+                    Debug.LogError($"[LiveStudio] Built-in set scene is not in the build's scene list: '{entry.scenePath}'. Ignoring it.");
+                    continue;
+                }
+
+                var name = ResolveName(entry);
+                if (!takenNames.Add(name))
+                {
+                    // Names are how the stage's saved and recorded state refers to a set, so two sets
+                    // answering to one name would make a restore pick an arbitrary winner.
+                    Debug.LogError($"[LiveStudio] Two built-in sets are named '{name}' ('{entry.scenePath}'). Ignoring the second one.");
+                    continue;
+                }
 
                 result.Add(new BuiltinSetAsset
                 {
-                    id = path,
-                    name = Path.GetFileNameWithoutExtension(path),
-                    scenePath = path,
+                    id = entry.guid,
+                    guid = entry.guid,
+                    name = name,
+                    scenePath = entry.scenePath,
                     filePath = string.Empty,
                     path = string.Empty,
                     enabled = false,
@@ -58,10 +138,82 @@ namespace Lilium.LiveStudio
             return result;
         }
 
+        /// <summary>The display name declared for <paramref name="entry"/>, falling back to the scene's file name.</summary>
+        public static string ResolveName(BuiltinSetList.Entry entry)
+            => !string.IsNullOrEmpty(entry.displayName)
+                ? entry.displayName
+                : Path.GetFileNameWithoutExtension(entry.scenePath ?? string.Empty);
+
+        /// <summary>
+        /// Looks up the declared entry for <paramref name="guid"/>. False when the project no longer
+        /// declares it — e.g. a live scene saved before the set was removed from the declaration.
+        /// </summary>
+        public static bool TryFind(string guid, out BuiltinSetList.Entry entry)
+        {
+            entry = default;
+            if (string.IsNullOrEmpty(guid)) return false;
+
+            var list = _List();
+            if (list == null) return false;
+
+            var entries = list.entries;
+            for (int i = 0; i < entries.Length; i++)
+            {
+                if (string.Equals(entries[i].guid, guid, StringComparison.Ordinal))
+                {
+                    entry = entries[i];
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// The GUID of the declared set at <paramref name="scenePath"/>, or null when no declared set sits
+        /// there. Used to read a live scene saved before a set's identity became its GUID, where the scene
+        /// path was the persisted identity.
+        /// </summary>
+        public static string ResolveGuidByScenePath(string scenePath)
+        {
+            if (string.IsNullOrEmpty(scenePath)) return null;
+
+            var list = _List();
+            if (list == null) return null;
+
+            var entries = list.entries;
+            for (int i = 0; i < entries.Length; i++)
+            {
+                if (string.Equals(entries[i].scenePath, scenePath, StringComparison.OrdinalIgnoreCase))
+                    return entries[i].guid;
+            }
+            return null;
+        }
+
+        // Stores each declared preview image's raw bytes under the same synthetic key an asset's
+        // thumbnailCacheKey resolves to, so the image endpoint serves it without touching the scene. Runs
+        // once; the images travel with this asset, so nothing extra is loaded here.
+        static void _PrewarmThumbnails(BuiltinSetList.Entry[] entries)
+        {
+            if (_prewarmed) return;
+            _prewarmed = true;
+
+            for (int i = 0; i < entries.Length; i++)
+            {
+                var entry = entries[i];
+                if (string.IsNullOrEmpty(entry.guid)) continue;
+
+                var thumbnail = entry.thumbnail;
+                if (thumbnail == null || !thumbnail.HasImage) continue;
+
+                ThumbnailCache.Store(
+                    BuiltinAssetRegistry.ThumbnailCacheKey(entry.guid), thumbnail.ImageData, thumbnail.MimeType);
+            }
+        }
+
         // The bootstrap scene is build index 0 only in a player launched normally: in the Editor any
         // scene can be played, and a base-scene switch re-points it at runtime. StageManager captures
         // the scene it started in, so ask it first and fall back to index 0 only before it exists.
-        private static string _ResolveBaseScenePath()
+        static string _ResolveBaseScenePath()
         {
             var stage = StageManager.current;
             if (stage != null && !string.IsNullOrEmpty(stage.persistentScenePath)) return stage.persistentScenePath;

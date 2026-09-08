@@ -3,23 +3,48 @@ using System;
 
 namespace Lilium.RemoteControl.Frames
 {
-    /// <summary>What kind of outside event crossed the boundary into the application.</summary>
+    /// <summary>
+    /// Whether an event can be folded to the last one per target, which is the only question
+    /// anything in this lane asks about an event.
+    ///
+    /// ⚠ Not the HTTP verb and not what the event does. A seek replays a span of frames at once and
+    /// has to decide, per record, between "the value ended up here" and "this happened, this many
+    /// times, in this order". That decision is the whole content of this enum, and every other way
+    /// an event differs is carried elsewhere: what was asked for in <see cref="EventRecord.verbId"/>
+    /// and the target, where it came from in <see cref="EventRecord.sourceId"/>, and facts about
+    /// the record itself in <see cref="EventFlags"/>.
+    ///
+    /// So an idempotent call whose target names what it acts on belongs in <see cref="Set"/> even
+    /// though it is a call: replaying it twice changes nothing, and folding it is what lets a seek
+    /// land on it.
+    ///
+    /// ⚠ Being addressed by an id is not enough -- the id has to be in the target. The fold keys on
+    /// <see cref="EventRecord.targetId"/> alone and reads neither the verb nor the payload, so a
+    /// call that takes what it acts on as a payload (destroying an object by id in the body, say)
+    /// collapses to whichever one came last and loses the rest.
+    /// </summary>
     public enum EventKind : int
     {
-        /// <summary>A write to an exposed, writable property.</summary>
-        PropertyWrite = 0,
-
-        /// <summary>A call to an exposed method. Triggers do not show up as a value change.</summary>
-        FunctionCall = 1,
-
-        /// <summary>A structural change, such as re-parenting an object.</summary>
-        StructureChange = 2,
+        /// <summary>
+        /// A value arriving at a target, foldable to the last one per target.
+        ///
+        /// A write to an exposed property is the usual case, but so is anything else whose result
+        /// depends only on the last one to arrive.
+        /// </summary>
+        Set = 0,
 
         /// <summary>
-        /// A source registered explicitly because determinism needs it even though there is no
-        /// reason to expose it -- capture pose, time, random seed, device event, load completion.
+        /// Something that happened, where the count and the order are the content.
+        ///
+        /// A seek does not replay these: there is nothing to fold them with, and nothing that says
+        /// how many a destination already has behind it. Forward play sees them in order.
         /// </summary>
-        RegisteredSource = 3,
+        Call = 1,
+
+        // 2 and 3 were StructureChange and RegisteredSource, retired 2026-09-08. Both asked
+        // something this lane never answered -- one what the event did, the other where it came
+        // from -- and neither reached the fold, which is what the kind is for. Nothing wrote 3.
+        // Recordings still hold 2; the reader normalises it, see FrameRecordPlayer.
     }
 
     /// <summary>Things worth knowing about an event that are not part of what it asked for.</summary>

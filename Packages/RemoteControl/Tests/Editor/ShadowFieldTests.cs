@@ -71,6 +71,44 @@ namespace Lilium.RemoteControl.Tests
         }
 
         /// <summary>
+        /// Shadow Field holding a string[], mirroring StageManager.loadedSets. Collection
+        /// elements take a different deserialize path than scalars, so the array shape needs
+        /// its own coverage: a plain `[LiveField] string[]` is restored by the array property
+        /// path, while the shadow shape goes through the generic object path.
+        /// </summary>
+        [Serializable]
+        [LiveClass("TestArrayShadowHost")]
+        public class TestArrayShadowHost
+        {
+            [SerializeField, LiveField, Hide]
+            [FormerlyNamedAs("names")]
+            private string[] _names = Array.Empty<string>();
+
+            [LiveProperty]
+            public string[] names
+            {
+                get => _names;
+                set => _names = value ?? Array.Empty<string>();
+            }
+
+            [SerializeField, LiveField, Hide]
+            [FormerlyNamedAs("label")]
+            private string _label = string.Empty;
+
+            [LiveProperty]
+            public string label
+            {
+                get => _label;
+                set => _label = value ?? string.Empty;
+            }
+
+            public string[] rawBackingField => _names;
+            public void SetBackingFieldDirectly(string[] v) => _names = v;
+            public string rawLabel => _label;
+            public void SetLabelDirectly(string v) => _label = v;
+        }
+
+        /// <summary>
         /// Base class declaring a private Shadow Field, mirroring the
         /// LiveUnityObjectProxy._name / LiveGameObject._active layout.
         /// The [LiveClass] is on the derived type — the base is not registered itself.
@@ -112,6 +150,7 @@ namespace Lilium.RemoteControl.Tests
             LiveClass.RegisterFromAttributes<TestHost>();
             LiveClass.RegisterFromAttributes<TestNonShadowHost>();
             LiveClass.RegisterFromAttributes<TestInheritedShadowDerived>();
+            LiveClass.RegisterFromAttributes<TestArrayShadowHost>();
 
             var toRemove = LiveObjectRegistry.instances.ToList();
             foreach (var obj in toRemove) obj.Unregister();
@@ -250,6 +289,54 @@ namespace Lilium.RemoteControl.Tests
 
             Assert.AreEqual(77, target.rawBackingField,
                 "Legacy '_value' JSON key must still load via formerNames fallback.");
+        }
+
+        [Test]
+        public void Shadow_FullFromJson_RestoresStringArray()
+        {
+            var target = new TestArrayShadowHost();
+            var liveObj = new LiveObjectHandle("test-shadow-array-1", LiveClass.Get<TestArrayShadowHost>(), target);
+
+            LivePropertySerializer.FromJson("{\"names\": [\"alpha\", \"beta\"]}", liveObj, _resolver);
+
+            CollectionAssert.AreEqual(new[] { "alpha", "beta" }, target.rawBackingField,
+                "String array elements must be restored through the shadow field.");
+        }
+
+        [Test]
+        public void Shadow_FullFromJson_StringArray_ReplacesExistingElements()
+        {
+            // The failure this guards against kept the pre-restore elements instead of the
+            // saved ones, so a scene load or snapshot restore silently reverted the value
+            // (StageManager.loadedSets kept whatever set was already loaded).
+            var target = new TestArrayShadowHost();
+            target.SetBackingFieldDirectly(new[] { "stale" });
+            var liveObj = new LiveObjectHandle("test-shadow-array-2", LiveClass.Get<TestArrayShadowHost>(), target);
+
+            LivePropertySerializer.FromJson("{\"names\": [\"saved\"]}", liveObj, _resolver);
+
+            CollectionAssert.AreEqual(new[] { "saved" }, target.rawBackingField,
+                "Existing elements must not survive a full FromJson restore.");
+        }
+
+        [Test]
+        public void Shadow_FullFromJson_ArrayWhereScalarExpected_KeepsGoing()
+        {
+            // A member whose type changed (string[] -> string, which is what StageManager.loadedSets
+            // did) leaves saved files holding the old shape. Converting an array to a scalar throws,
+            // and the throw used to take the whole restore with it -- every member after this one
+            // would be skipped. The member keeps its current value; the rest of the object loads.
+            var target = new TestArrayShadowHost();
+            target.SetLabelDirectly("current");
+            var liveObj = new LiveObjectHandle("test-shadow-array-3", LiveClass.Get<TestArrayShadowHost>(), target);
+
+            LivePropertySerializer.FromJson(
+                "{\"label\": [\"old\", \"format\"], \"names\": [\"restored\"]}", liveObj, _resolver);
+
+            Assert.AreEqual("current", target.rawLabel,
+                "a scalar member cannot take an array; it must keep what it has.");
+            CollectionAssert.AreEqual(new[] { "restored" }, target.rawBackingField,
+                "the members after the mismatched one must still be restored.");
         }
 
         #endregion

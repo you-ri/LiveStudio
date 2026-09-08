@@ -26,6 +26,12 @@ namespace Lilium.RemoteControl.Tests
         {
             LiveClass.Clear();
 
+            // Nor may it leave objects in the registry. Several tests here assert on what the
+            // registry does *not* hold -- the fallback to the live class when nothing is registered
+            // -- so an object left behind by an earlier test does not fail that test, it fails a
+            // later one, and which one depends on the order the run happened to take.
+            LiveObjectRegistry.ClearAll();
+
             // A test that failed before its cleanup must not leave prefabs on offer for the next one.
             LivePrefabCatalog.Clear();
         }

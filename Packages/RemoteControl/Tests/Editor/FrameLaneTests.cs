@@ -256,7 +256,7 @@ namespace Lilium.RemoteControl.Tests
             const string target = "/live/object/fixture/carried";
             var before = FrameGate.omittedRecordCount;
 
-            FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, "{\"value\":2.5}",
+            FrameGate._Enqueue(EventKind.Set, "test", target, "{\"value\":2.5}",
                 () =>
                 {
                     FrameGate.OmitAppliedRecord(target);
@@ -400,7 +400,7 @@ namespace Lilium.RemoteControl.Tests
 
         private static void _EnqueueAdd(string target)
         {
-            FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, "{\"value\":0}",
+            FrameGate._Enqueue(EventKind.Set, "test", target, "{\"value\":0}",
                 () =>
                 {
                     var ok = LiveObjectHandler.ApplyRecordedOperation(
@@ -415,7 +415,7 @@ namespace Lilium.RemoteControl.Tests
         /// <summary>Runs a write the way a request and a replay both run one.</summary>
         private static void _EnqueueSet(string target, string body)
         {
-            FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, body,
+            FrameGate._Enqueue(EventKind.Set, "test", target, body,
                 () =>
                 {
                     var ok = LiveObjectHandler.ApplyRecordedOperation(
@@ -570,7 +570,7 @@ namespace Lilium.RemoteControl.Tests
         /// </summary>
         private static void _EnqueueReset(string target)
         {
-            FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, null,
+            FrameGate._Enqueue(EventKind.Set, "test", target, null,
                 () =>
                 {
                     var ok = LiveObjectHandler.ApplyRecordedOperation(
@@ -587,7 +587,7 @@ namespace Lilium.RemoteControl.Tests
         {
             const string target = "/live/object/fixture/requested";
 
-            FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, "{\"value\":2.5}",
+            FrameGate._Enqueue(EventKind.Set, "test", target, "{\"value\":2.5}",
                 () =>
                 {
                     FrameGate.StampAppliedPayload(target, typeof(float), 2.5f);
@@ -616,7 +616,7 @@ namespace Lilium.RemoteControl.Tests
             const string target = "/live/object/fixture/setting";
             var before = FrameGate.omittedRecordCount;
 
-            FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, "{\"value\":2.5}",
+            FrameGate._Enqueue(EventKind.Set, "test", target, "{\"value\":2.5}",
                 () =>
                 {
                     FrameGate.OmitAppliedRecord(target);
@@ -762,8 +762,8 @@ namespace Lilium.RemoteControl.Tests
             // it is state would lose the writes that are only in the event lane.
             var operations = new[]
             {
-                new EventDescriptor(EventKind.PropertyWrite, "PUT", "/live/a", "1"),
-                new EventDescriptor(EventKind.PropertyWrite, "PUT", "/live/b", "2"),
+                new EventDescriptor(EventKind.Set, "PUT", "/live/a", "1"),
+                new EventDescriptor(EventKind.Set, "PUT", "/live/b", "2"),
             };
 
             FrameGate._Enqueue(operations, "test", () =>

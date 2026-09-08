@@ -431,15 +431,26 @@ namespace Lilium.RemoteControl
         public string icon { get; set; }
 
         /// <summary>
-        /// Whether a recording keeps this call. Default <see cref="FrameLane.Event"/>, which records
-        /// it; <see cref="FrameLane.None"/> keeps it out of the take entirely, for a call that
-        /// belongs to the machine rather than to the world (opening a folder, re-syncing a link).
+        /// Whether a recording keeps this call. Default <see cref="FrameLane.None"/>, which leaves it
+        /// out of the take; <see cref="FrameLane.Event"/> records it.
+        ///
+        /// Unlike a member, a call has no persistence to derive a lane from -- nothing about a method
+        /// says whether it changes the world or the machine -- so the default is a choice about which
+        /// mistake to make. Recording by default was the other choice, and what it produced was takes
+        /// that replayed a folder being opened, a snapshot being restored, a scene file being
+        /// written; several types had to be taken off the frame whole to stop it. A call left out
+        /// that should have been kept loses a moment from a take, which is the smaller failure.
+        ///
+        /// So: a call whose effect lands in a member the frame already carries needs nothing here --
+        /// the member is what a replay reads, and recording the call as well would write the same
+        /// change twice. Say <see cref="FrameLane.Event"/> when the effect leaves no trace in any
+        /// lane and the call is the only record there is.
         ///
         /// <see cref="FrameLane.State"/> means nothing here -- a call is not a value, so there is
         /// nothing to copy every frame -- and is corrected to <see cref="FrameLane.Event"/> with a
         /// warning at registration rather than obeyed in silence.
         /// </summary>
-        public FrameLane lane { get; set; } = FrameLane.Event;
+        public FrameLane lane { get; set; } = FrameLane.None;
 
         public LiveFunctionAttribute()
         {

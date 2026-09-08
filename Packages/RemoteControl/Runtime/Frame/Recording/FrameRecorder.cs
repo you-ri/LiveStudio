@@ -35,11 +35,27 @@ namespace Lilium.RemoteControl.Frames.Recording
         // put the periodic keyframe one frame late.
         private long _lastKeyframeFrame = -1;
 
+        // First and most recent frame numbers written, or -1 before the first. The distance between
+        // them is how long the take runs: a count of records is not, because a run that drops below
+        // rate skips numbers and a take of 1200 records can be twenty seconds or a minute.
+        private long _firstFrameNumber = -1;
+        private long _lastFrameNumber = -1;
+
         /// <summary>True between <see cref="Start(string)"/> and <see cref="Stop"/>.</summary>
         public bool isRecording => _writer != null;
 
         /// <summary>Frames written so far, or zero when not recording.</summary>
         public int frameCount => _writer?.frameCount ?? 0;
+
+        /// <summary>
+        /// Number of the first frame written, or -1 before it. With <see cref="lastFrameNumber"/>
+        /// and the clock's rate, this is how much of the take has been performed -- which is what a
+        /// timecode of a take in progress reads off.
+        /// </summary>
+        public long firstFrameNumber => _firstFrameNumber;
+
+        /// <summary>Number of the most recent frame written, or -1 before the first.</summary>
+        public long lastFrameNumber => _lastFrameNumber;
 
         /// <summary>Bytes written so far, or zero when not recording.</summary>
         public long length => _writer?.length ?? 0;
@@ -120,6 +136,8 @@ namespace Lilium.RemoteControl.Frames.Recording
             _symbols = null;
             _path = null;
             _lastKeyframeFrame = -1;
+            _firstFrameNumber = -1;
+            _lastFrameNumber = -1;
 
             var header = DescribeRun(FrameGate.clock.frameRate, DateTime.UtcNow.Ticks);
             _writer = new FrameRecordWriter(stream, header, leaveOpen, compress);
@@ -150,6 +168,9 @@ namespace Lilium.RemoteControl.Frames.Recording
 
             // Kept so Stop can write the complete table even if the last frame carried no symbols.
             _symbols = symbols;
+
+            if (_firstFrameNumber < 0) _firstFrameNumber = frame.frameNumber;
+            _lastFrameNumber = frame.frameNumber;
 
             _writer.BeginFrame(in frame, symbols);
 

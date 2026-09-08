@@ -600,7 +600,7 @@ namespace Lilium.RemoteControl
             // (object 未解決時に InputStream を読むかどうかは応答内容に影響しない)。
             var body = readBody ? await ReadRequestBody(context.Request) : null;
 
-            var result = await ExecuteAsEvent(EventKind.PropertyWrite, context.Request.HttpMethod, path, body, () =>
+            var result = await ExecuteAsEvent(EventKind.Set, context.Request.HttpMethod, path, body, () =>
             {
                 if (!TryBuildPropertyContext(GetObjectContainer(), path, stripResetSuffix, body,
                         out var ctx, out var errStatus, out var errMessage))
@@ -1124,8 +1124,8 @@ namespace Lilium.RemoteControl
 
                 var kind = string.Equals(item.method, "POST", StringComparison.OrdinalIgnoreCase) &&
                            item.path != null && item.path.StartsWith("/live/function/", StringComparison.OrdinalIgnoreCase)
-                    ? EventKind.FunctionCall
-                    : EventKind.PropertyWrite;
+                    ? EventKind.Call
+                    : EventKind.Set;
 
                 writes ??= new List<EventDescriptor>(items.Count);
                 writes.Add(new EventDescriptor(kind, item.method, item.path, item.body));
@@ -1660,7 +1660,7 @@ namespace Lilium.RemoteControl
             // 関数の解決・パラメータ準備・実行・結果 JSON 化をすべてメインスレッドで行う。
             // A call is an input in its own right: a trigger or a scene change never shows up as a
             // property value changing, so recording only writes would lose it.
-            var result = await ExecuteAsEvent(EventKind.FunctionCall, context.Request.HttpMethod,
+            var result = await ExecuteAsEvent(EventKind.Call, context.Request.HttpMethod,
                 context.Request.Url.AbsolutePath, body,
                 () => InvokeFunctionCore(GetObjectContainer(), GetResolver(), id, functionPath, body,
                     context.Request.Url.AbsolutePath));
@@ -1907,7 +1907,20 @@ namespace Lilium.RemoteControl
                 return;
             }
 
-            var result = await ExecuteAsEvent(EventKind.StructureChange, context.Request.HttpMethod,
+            // Set rather than Call, though it reads like a structural operation: the target is one
+            // child's @parent, so folding to the last one per target gives exactly "where each
+            // child ended up", which is what a seek needs.
+            //
+            // ⚠ And a seek has nothing else to get it from. LiveStructureSystem records parentId
+            // (_ParentId) but never applies it -- ApplyFrom only creates, destroys and reconciles
+            // elements -- so this fold is the sole path by which a seek restores the hierarchy.
+            //
+            // Sole, but partial: a seek collects only from the last keyframe, and keyframes are cut
+            // periodically, so a jump landing more than one keyframe past a re-parenting does not
+            // see it. Forward play always does. Should the structure lane start applying parents,
+            // this write becomes a duplicate and should be dropped from the frame the way
+            // state-carried writes are -- and that is what would make a seek whole.
+            var result = await ExecuteAsEvent(EventKind.Set, context.Request.HttpMethod,
                 context.Request.Url.AbsolutePath, body, () =>
             {
                 var ok = LiveObjectRegistry.SetParent(id, parentId, out var err);

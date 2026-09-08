@@ -548,6 +548,17 @@ namespace Lilium.RemoteControl
                 type == typeof(float) || type == typeof(double) || type == typeof(long) ||
                 type == typeof(short) || type == typeof(byte))
             {
+                // 形の合わないトークンはスカラーに変換できず、ToObject が投げて復元そのものが
+                // 途中で止まる。メンバーの型が変わった後に古い保存が残っているとここに来るので、
+                // そのメンバーだけ既存値に留めて残りの復元を続ける。
+                if (token.Type == JTokenType.Array || token.Type == JTokenType.Object)
+                {
+                    Debug.LogWarning(
+                        $"[RemoteControl] Expected a scalar for {type.Name} but the saved value is a {token.Type}. " +
+                        "Keeping the current value; the saved one was written by an older format.");
+                    return instance;
+                }
+
                 return token.ToObject(type);
             }
             // Unity型の処理
@@ -700,6 +711,11 @@ namespace Lilium.RemoteControl
                 return _DeserializeCollectionDelta(resolver, jArray, elementType, isArray, instance);
             }
 
+            // Elements go through DeserializeUnityType, not DeserializeLiveObject: only the
+            // former handles primitives (string, numerics) and enums. DeserializeLiveObject
+            // falls through to JsonUtility for those, which throws on a bare scalar and leaves
+            // the existing element in place -- a string[] would silently keep its old contents.
+            // Non-primitive element types are delegated back to DeserializeLiveObject there.
             int count = jArray.Count;
 
             if (isArray)
@@ -710,7 +726,7 @@ namespace Lilium.RemoteControl
                 for (int i = 0; i < count; i++)
                 {
                     var existing = existingArray != null && i < existingArray.Length ? existingArray.GetValue(i) : LivePropertyUtility.CreateDefaultElement(elementType);
-                    var element = DeserializeLiveObject(resolver, jArray[i], elementType, existing);
+                    var element = DeserializeUnityType(resolver, jArray[i], elementType, existing);
                     array.SetValue(element, i);
                 }
                 return array;
@@ -724,7 +740,7 @@ namespace Lilium.RemoteControl
                 for (int i = 0; i < count; i++)
                 {
                     var existing = existingList != null && i < existingList.Count ? existingList[i] : LivePropertyUtility.CreateDefaultElement(elementType);
-                    var element = DeserializeLiveObject(resolver, jArray[i], elementType, existing);
+                    var element = DeserializeUnityType(resolver, jArray[i], elementType, existing);
                     list.Add(element);
                 }
                 return list;

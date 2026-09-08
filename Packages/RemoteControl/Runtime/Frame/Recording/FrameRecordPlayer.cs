@@ -166,6 +166,40 @@ namespace Lilium.RemoteControl.Frames.Recording
         }
 
         /// <summary>
+        /// The number of the frame <see cref="Advance"/> would play next, without playing it. False
+        /// when the recording has none left.
+        ///
+        /// What it is for is pacing: a player driven by a clock has to know whether the next frame
+        /// is due yet, and the only way to ask that without this is to play it and find out.
+        ///
+        /// Reading ahead is safe because a frame's own entries are already behind the reader by the
+        /// time this can be asked -- the boundary that ends a frame is read when that frame is
+        /// played, and everything before the first boundary is symbols, which are applied either
+        /// way. So this consumes nothing a later <see cref="Advance"/> needed.
+        /// </summary>
+        public bool TryPeekNextFrameNumber(out long frameNumber)
+        {
+            if (!_pendingBoundary)
+            {
+                if (_atEnd || !_AdvanceToNextBoundary())
+                {
+                    // Same conclusion Advance would have reached, so it is recorded here rather
+                    // than left for a call that would have to read to the end a second time.
+                    _atEnd = true;
+                    frameNumber = -1;
+                    return false;
+                }
+
+                // Held for Advance, which then does not go looking for it again. This is the same
+                // state a frame that ended on a boundary leaves behind.
+                _pendingBoundary = true;
+            }
+
+            frameNumber = _pendingFrameNumber;
+            return true;
+        }
+
+        /// <summary>
         /// Jumps to a frame and plays it.
         ///
         /// The mapping table comes from the tail rather than from the entries, because a jump skips
@@ -493,10 +527,38 @@ namespace Lilium.RemoteControl.Frames.Recording
                 $"Here but not in the recording, so left as the object already has them: {unwritten}.");
         }
 
+        /// <summary>
+        /// Reads the kind a recording holds, mapping values this build no longer writes.
+        ///
+        /// EventKind lost StructureChange (2) and RegisteredSource (3) on 2026-09-08. The field is
+        /// still an int and the layout is unchanged, so kVersion stays where it is and old takes
+        /// stay readable -- this is the one point that has to know they used four values.
+        ///
+        /// 2 becomes Call: of the six routes that ever wrote it, five were calls (scene export and
+        /// import, orphan removal, manipulator open and close) and one -- @parent -- was a write.
+        /// A take from before the change replays the calls correctly and loses only the fold that
+        /// used to restore a hierarchy on seek, which forward play still does. Splitting them by
+        /// target path would put routing knowledge in the reader, and the takes it would rescue
+        /// are development-era ones already treated as disposable.
+        ///
+        /// 3 never reached a recording: nothing wrote RegisteredSource. Mapped for completeness so
+        /// an unknown value cannot arrive as a kind no switch here has a case for.
+        /// </summary>
+        private static EventKind _NormaliseKind(int stored)
+        {
+            switch (stored)
+            {
+                case 0: return EventKind.Set;
+                case 1: return EventKind.Call;
+                case 2: return EventKind.Call;
+                default: return EventKind.Set;
+            }
+        }
+
         private void _ApplyEvent(ReadOnlySpan<byte> payload)
         {
             var sequence = BitConverter.ToInt64(payload.Slice(0, 8));
-            var kind = (EventKind)BitConverter.ToInt32(payload.Slice(8, 4));
+            var kind = _NormaliseKind(BitConverter.ToInt32(payload.Slice(8, 4)));
             var sourceId = BitConverter.ToInt32(payload.Slice(12, 4));
             var targetId = BitConverter.ToInt32(payload.Slice(16, 4));
             var verbId = BitConverter.ToInt32(payload.Slice(20, 4));

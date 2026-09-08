@@ -530,18 +530,20 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
             var replaying = controller != null && controller.isReplaying;
             var held = replaying && controller.replayPaused;
 
-            var rate = FrameGate.clock.frameRate;
+            // The take's own rate while one is playing: a recording made at another rate is read
+            // back in the frames it was written in, not in this machine's.
+            var rate = replaying ? controller.replayFrameRate : FrameGate.clock.frameRate;
 
             if (recording)
             {
-                _SetPosition(controller.recordedFrames, rate);
+                _SetPosition(controller.recordedFrameSpan, rate);
                 _detailLabel.text = _Tr("LDS_RECORDED_DETAIL",
                     controller.recordedFrames, controller.recordedMegabytes.ToString("0.0"));
             }
             else if (replaying)
             {
                 var index = controller.replayIndex;
-                _SetPosition(Math.Max(index, 0), rate);
+                _SetPosition(Math.Max(controller.replayFrameSpan, 0), rate);
 
                 var count = controller.replayFrameCount;
                 _detailLabel.text = count > 0
@@ -577,6 +579,11 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
         /// The gate's own frame number is what a recording stores, and it is whatever the clock had
         /// reached when the take began -- a session running for a while reads as seventeen hours in,
         /// which is true and useless. What is being moved through here is the take.
+        ///
+        /// ⚠ A distance in frame numbers, never a count of records. A run that drops below rate
+        /// skips numbers, so a take of 1200 records is a minute of performance at twenty frames a
+        /// second and twenty seconds of it at sixty -- and a timecode fed the count reads a third of
+        /// the elapsed time without ever looking wrong.
         /// </summary>
         private void _SetPosition(long frames, FrameRate rate)
         {
@@ -621,7 +628,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
 
             // The failure that costs a day: a recording carries a type the playing side cannot hold,
             // so the whole lane is dropped and the replay simply shows nothing.
-            if (FrameGate.source is FrameReplayer replayer)
+            var replayer = FrameReplayer.Behind(FrameGate.source);
+            if (replayer != null)
             {
                 var unknown = replayer.player.unknownStateTypes;
                 if (unknown.Count > 0)

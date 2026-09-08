@@ -210,6 +210,7 @@ namespace Lilium.LiveStudio
             // (StageManager, the remote app) would otherwise dereference null and crash.
             assets = _WithoutNulls(_persistedAssets);
             _ResolveAssetPaths(assets);
+            assets = _WithoutUnidentifiableBuiltins(assets);
             // The persisted set carries only loadable built-ins that were in use (e.g. an enabled built-in
             // prop, restored with its objectId so its overrides reattach); reference-only built-ins and the
             // disabled catalog are not persisted. Re-inject the built-in catalog so the rest is present —
@@ -494,12 +495,23 @@ namespace Lilium.LiveStudio
             // (crawl / restore); fire-and-forget, and a no-op until the owning asset is registered.
             _ = PendingPrefabStore.DrainAsync();
 
-            // Two built-in sources: catalog-baked Resources assets (props / clips) and the build's scene
-            // list projected to sets. Both are app-embedded, so both are injected here and protected from
-            // the crawl's prune; a set needs no bake because the build scene list is readable at runtime.
+            // Two built-in sources: catalog-baked Resources assets (props / clips) and the scenes the
+            // project declares as sets. Both are app-embedded, so both are injected here and protected from
+            // the crawl's prune; a set is declared by hand rather than baked because a scene cannot live
+            // under Resources for the baker to find.
             var catalogAssets = BuiltinAssetRegistry.GetAssets();
-            var buildSets = BuiltinSetSource.GetSets();
-            if (catalogAssets.Count == 0 && buildSets.Count == 0) return;
+            var declaredSets = BuiltinSetSource.GetSets();
+
+            // A built-in set restored from a saved scene carries only its GUID, plus whatever name it went by
+            // when it was saved. Re-read the rest from the declaration first: the de-dup below keeps the
+            // restored entry (for its enabled state), so without this a set renamed in the editor would keep
+            // the old name, and one whose scene moved would keep a path that no longer loads.
+            for (int i = 0; i < assets.Length; i++)
+            {
+                if (assets[i] is BuiltinSetAsset set) set.RefreshFromDeclaration();
+            }
+
+            if (catalogAssets.Count == 0 && declaredSets.Count == 0) return;
 
             var existing = new HashSet<string>();
             for (int i = 0; i < assets.Length; i++)
@@ -509,7 +521,7 @@ namespace Lilium.LiveStudio
 
             List<AssetBase> list = null;
             _AddBuiltins(catalogAssets, existing, ref list);
-            _AddBuiltins(buildSets, existing, ref list);
+            _AddBuiltins(declaredSets, existing, ref list);
             if (list == null) return; // all built-ins already present.
 
             assets = list.ToArray();
@@ -1233,6 +1245,34 @@ namespace Lilium.LiveStudio
         // entry deserializes to null when its @type is no longer registered (e.g. saved data referencing
         // a removed/renamed asset kind); such holes must not reach the live array or a broadcast. The
         // input is returned as-is when it has no nulls, so the common case allocates nothing.
+        /// <summary>
+        /// Drops built-in entries whose identity could not be resolved after a restore. A built-in asset has
+        /// no file path to rebuild an id from, so an entry the app no longer recognises (a built-in set the
+        /// project stopped declaring; a saved scene written when the identity had another shape) comes back
+        /// with an empty id. Such an entry can never load — <c>_ApplyDiff</c> skips empty ids — yet it would
+        /// list on the stage page, dodge the built-in de-dup (which keys on id) and be written back out on
+        /// every save, so it would haunt the scene permanently. Nothing is lost by dropping it: every
+        /// still-declared built-in is re-injected right after.
+        /// </summary>
+        private static AssetBase[] _WithoutUnidentifiableBuiltins(AssetBase[] source)
+        {
+            if (source == null || source.Length == 0) return Array.Empty<AssetBase>();
+
+            var kept = new List<AssetBase>(source.Length);
+            for (int i = 0; i < source.Length; i++)
+            {
+                var asset = source[i];
+                if (asset != null && asset.isBuiltin && string.IsNullOrEmpty(asset.id))
+                {
+                    Debug.LogWarning(
+                        $"[LiveStudio] Built-in asset '{asset.name}' in the saved scene is no longer available; dropping it.");
+                    continue;
+                }
+                kept.Add(asset);
+            }
+            return kept.Count == source.Length ? source : kept.ToArray();
+        }
+
         private static AssetBase[] _WithoutNulls(AssetBase[] source)
         {
             if (source == null || source.Length == 0) return Array.Empty<AssetBase>();

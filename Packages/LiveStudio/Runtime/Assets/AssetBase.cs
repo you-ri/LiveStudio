@@ -184,7 +184,12 @@ namespace Lilium.LiveStudio
         /// membership is never persisted (they are always re-injected each run). A loadable built-in's
         /// in-use state is still persisted (see <see cref="isPersistable"/>), keyed by
         /// <see cref="persistentId"/>. Defaults to false for ordinary file-backed assets.
+        /// <para>
+        /// Exposed so the remote app can mark an entry as shipped with the app without enumerating the
+        /// built-in concrete types. Read-only, so persistence skips it and a saved scene is unchanged.
+        /// </para>
         /// </summary>
+        [LiveProperty, Hide]
         public virtual bool isBuiltin => false;
 
         /// <summary>

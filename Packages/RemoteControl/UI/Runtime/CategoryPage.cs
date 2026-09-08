@@ -115,9 +115,10 @@ namespace Lilium.RemoteControl.UI
         /// thing on replay, and applying it twice is harmless (the second finds nothing). It also
         /// reaches further than the inventory can -- the structure lane only takes away what it
         /// stood up itself, so a delete of something that was in the scene before the take began is
-        /// carried by this alone.
+        /// carried by this alone -- which is why the lane is said out loud rather than left to the
+        /// default (calls are off the frame unless they ask).
         /// </summary>
-        [LiveFunction]
+        [LiveFunction(lane = FrameLane.Event)]
         public virtual void DestroyObject(string objectId) { }
     }
 

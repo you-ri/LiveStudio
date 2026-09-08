@@ -60,6 +60,10 @@ namespace Lilium.RemoteControl.Tests
         [LiveField]
         public List<ElementSlot> slots = new List<ElementSlot>();
 
+        /// <summary>The same thing as <see cref="rows"/>, held as an array rather than a List.</summary>
+        [LiveField]
+        public ElementRow[] ranks = new ElementRow[0];
+
         /// <summary>A view of something else: rebuilt on demand, so nothing may stand it back up.</summary>
         [LiveProperty]
         public ElementRow[] mirror => rows.ToArray();
@@ -122,6 +126,81 @@ namespace Lilium.RemoteControl.Tests
             var names = new List<string>();
             for (int i = 0; i < rows.Count; i++) names.Add(rows[i].name);
             return names;
+        }
+
+        /// <summary>
+        /// An owner is told when the reconcile changes an array, and is not told when it changes a
+        /// List.
+        ///
+        /// The difference is <c>LiveProperty.Add</c> / <c>RemoveAt</c>: the array branch builds a new
+        /// array and SetValues it, which raises the change; the List branch edits the IList in place
+        /// and raises nothing. It decides whether an owner can produce an effect from the elements
+        /// coming and going -- loading a stage, showing a mesh -- or whether the collection comes
+        /// back on replay while the world it describes does not follow.
+        ///
+        /// Not a preference between the two shapes: an owner with an effect to produce has to be on
+        /// the array, and this is what says which one that is.
+        /// </summary>
+        [Test]
+        public void AnArrayCollection_TellsItsOwnerTheElementsChanged()
+        {
+            var raised = 0;
+            void Count(LiveProperty property, object oldValue)
+            {
+                if (property.PathContains(nameof(ElementOwner.ranks))) raised++;
+            }
+
+            var liveClass = LiveClass.Get<ElementOwner>();
+            liveClass.onPropertyChanged += Count;
+            try
+            {
+                _owner.ranks = new[] { new ElementRow { name = "rank-a" } };
+
+                var symbols = new FrameSymbolTable();
+                var structure = Capture(symbols);
+
+                _owner.ranks = new ElementRow[0];
+                LiveStructureSystem.ApplyFrom(structure, symbols);
+
+                Assert.AreEqual(1, _owner.ranks.Length, "the element was not stood back up");
+                Assert.Greater(raised, 0,
+                    "the owner was not told, so nothing could act on the element coming back");
+            }
+            finally
+            {
+                liveClass.onPropertyChanged -= Count;
+            }
+        }
+
+        [Test]
+        public void AListCollection_DoesNotTellItsOwner()
+        {
+            var raised = 0;
+            void Count(LiveProperty property, object oldValue)
+            {
+                if (property.PathContains(nameof(ElementOwner.rows))) raised++;
+            }
+
+            var liveClass = LiveClass.Get<ElementOwner>();
+            liveClass.onPropertyChanged += Count;
+            try
+            {
+                _owner.rows.Add(new ElementRow { name = "row-a" });
+
+                var symbols = new FrameSymbolTable();
+                var structure = Capture(symbols);
+
+                _owner.rows.Clear();
+                LiveStructureSystem.ApplyFrom(structure, symbols);
+
+                Assert.AreEqual(1, _owner.rows.Count, "the element was not stood back up");
+                Assert.AreEqual(0, raised,
+                    "a List reconcile is silent; if this starts raising, the array-only rule is stale");
+            }
+            finally
+            {
+                liveClass.onPropertyChanged -= Count;
+            }
         }
 
         [Test]

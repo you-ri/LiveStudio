@@ -1743,7 +1743,7 @@ namespace Lilium.RemoteControl
             // Which lane, if any, keeps this call. State is not a thing a call can be on -- there is
             // no value to copy every frame -- so it is corrected rather than obeyed, and said out
             // loud: a silent correction would read as "I asked for something and nothing happened".
-            var lane = laneOverride ?? funcAttr?.lane ?? FrameLane.Event;
+            var lane = laneOverride ?? funcAttr?.lane ?? FrameLane.None;
             if (lane == FrameLane.State)
             {
                 Debug.LogWarning($"[RemoteControl] {methodInfo.DeclaringType?.Name}.{name}: " +

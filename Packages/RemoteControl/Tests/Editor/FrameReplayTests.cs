@@ -112,7 +112,7 @@ namespace Lilium.RemoteControl.Tests
             var bytes = Record(4, () =>
             {
                 var value = (next++).ToString();
-                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", value,
+                FrameGate._Enqueue(EventKind.Set, "test", "/live/object/cam/fov", value,
                     () => true);
             });
 
@@ -131,7 +131,7 @@ namespace Lilium.RemoteControl.Tests
             {
                 Assert.AreEqual(i.ToString(), applier.applied[i].text);
                 Assert.AreEqual("/live/object/cam/fov", applier.applied[i].target);
-                Assert.AreEqual(EventKind.PropertyWrite, applier.applied[i].kind);
+                Assert.AreEqual(EventKind.Set, applier.applied[i].kind);
             }
         }
 
@@ -143,7 +143,7 @@ namespace Lilium.RemoteControl.Tests
             // reported that a replay had fired nothing.
             var next = 0;
             var bytes = Record(2, () =>
-                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov",
+                FrameGate._Enqueue(EventKind.Set, "test", "/live/object/cam/fov",
                     (next++).ToString(), () => true, verb: "PUT"));
 
             var applier = new RecordingApplier();
@@ -158,7 +158,7 @@ namespace Lilium.RemoteControl.Tests
 
                     Assert.IsTrue(replayer.FillFrame(ref frame), $"frame {i} should have played");
                     Assert.AreEqual(1, lane.eventCount, $"frame {i} should carry its one event");
-                    Assert.AreEqual(EventKind.PropertyWrite, lane[0].kind);
+                    Assert.AreEqual(EventKind.Set, lane[0].kind);
                 }
             }
         }
@@ -169,7 +169,7 @@ namespace Lilium.RemoteControl.Tests
             // The pause re-supplies the frame it stopped on. Its events landed when it played, so
             // listing them again every frame would turn one write into a rising count of them.
             var bytes = Record(1, () =>
-                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", "35.0",
+                FrameGate._Enqueue(EventKind.Set, "test", "/live/object/cam/fov", "35.0",
                     () => true, verb: "PUT"));
 
             var applier = new RecordingApplier();
@@ -196,7 +196,7 @@ namespace Lilium.RemoteControl.Tests
             // The same path answers to more than one verb, so replaying a write as a reset would be
             // a plausible-looking wrong answer rather than a failure.
             var bytes = Record(1, () =>
-                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", "35.0",
+                FrameGate._Enqueue(EventKind.Set, "test", "/live/object/cam/fov", "35.0",
                     () => true, verb: "PUT"));
 
             var applier = new RecordingApplier();
@@ -212,7 +212,7 @@ namespace Lilium.RemoteControl.Tests
         public void TheSource_IsCarriedThroughSoATrackCanBeLeftOut()
         {
             var bytes = Record(1, () =>
-                FrameGate._Enqueue(EventKind.FunctionCall, "unit-test", "/live/function/reset", "{}",
+                FrameGate._Enqueue(EventKind.Call, "unit-test", "/live/function/reset", "{}",
                     () => true));
 
             var applier = new RecordingApplier();
@@ -222,7 +222,7 @@ namespace Lilium.RemoteControl.Tests
             }
 
             Assert.AreEqual("unit-test", applier.applied[0].source);
-            Assert.AreEqual(EventKind.FunctionCall, applier.applied[0].kind);
+            Assert.AreEqual(EventKind.Call, applier.applied[0].kind);
         }
 
         [Test]
@@ -233,7 +233,7 @@ namespace Lilium.RemoteControl.Tests
             {
                 toggle = !toggle;
                 var target = toggle ? "/live/object/gone/fov" : "/live/object/cam/fov";
-                FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, "1", () => true);
+                FrameGate._Enqueue(EventKind.Set, "test", target, "1", () => true);
             });
 
             var applier = new RecordingApplier();
@@ -258,7 +258,7 @@ namespace Lilium.RemoteControl.Tests
             // What was kept of it is not what was applied live, so putting it back would quietly
             // change the value instead of reproducing it.
             var bytes = Record(1, () =>
-                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/curve",
+                FrameGate._Enqueue(EventKind.Set, "test", "/live/object/cam/curve",
                     new string('x', 4000), () => true));
 
             var applier = new RecordingApplier();
@@ -283,7 +283,7 @@ namespace Lilium.RemoteControl.Tests
             var bytes = Record(6, () =>
             {
                 var value = (next++).ToString();
-                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", value,
+                FrameGate._Enqueue(EventKind.Set, "test", "/live/object/cam/fov", value,
                     () => true);
             });
 
@@ -309,13 +309,13 @@ namespace Lilium.RemoteControl.Tests
             var bytes = Record(6, () =>
             {
                 var value = (next++).ToString();
-                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", value,
+                FrameGate._Enqueue(EventKind.Set, "test", "/live/object/cam/fov", value,
                     () => true);
 
                 // Written once, early, and never again.
                 if (value == "1")
                 {
-                    FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/near",
+                    FrameGate._Enqueue(EventKind.Set, "test", "/live/object/cam/near",
                         "0.3", () => true);
                 }
             });
@@ -357,7 +357,7 @@ namespace Lilium.RemoteControl.Tests
             var bytes = Record(6, () =>
             {
                 var value = (next++).ToString();
-                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", value,
+                FrameGate._Enqueue(EventKind.Set, "test", "/live/object/cam/fov", value,
                     () => true);
             });
 

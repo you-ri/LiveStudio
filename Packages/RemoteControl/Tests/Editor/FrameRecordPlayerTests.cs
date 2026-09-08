@@ -359,7 +359,7 @@ namespace Lilium.RemoteControl.Tests
             var bytes = Record(3, beforePump: () =>
             {
                 var value = (pending++).ToString();
-                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", value,
+                FrameGate._Enqueue(EventKind.Set, "test", "/live/object/cam/fov", value,
                     () => true);
             });
 
@@ -371,7 +371,7 @@ namespace Lilium.RemoteControl.Tests
                     for (int i = 0; i < player.events.Count; i++)
                     {
                         var record = player.events[i];
-                        Assert.AreEqual(EventKind.PropertyWrite, record.kind);
+                        Assert.AreEqual(EventKind.Set, record.kind);
                         Assert.AreEqual("/live/object/cam/fov", player.Resolve(record.targetId));
                         Assert.AreEqual("test", player.Resolve(record.sourceId));
                         total++;
@@ -379,6 +379,60 @@ namespace Lilium.RemoteControl.Tests
                 }
 
                 Assert.AreEqual(3, total);
+            }
+        }
+
+        /// <summary>
+        /// A take made before EventKind lost StructureChange (2) on 2026-09-08 still holds that
+        /// value, and the reader is the one point that knows what it meant.
+        ///
+        /// Written as a raw cast rather than patched into the bytes afterwards: a C# enum is not a
+        /// closed set, so the writer takes (EventKind)2 and puts it on disk exactly as a build from
+        /// before the change did.
+        /// </summary>
+        [Test]
+        public void ARetiredKind_ComesBackAsTheKindItBehavedLike()
+        {
+            var written = false;
+            var bytes = Record(2, beforePump: () =>
+            {
+                if (written) return;
+
+                written = true;
+                FrameGate._Enqueue((EventKind)2, "test", "/live/scene/export", "{}", () => true);
+            });
+
+            using (var player = new FrameRecordPlayer(new MemoryStream(bytes)))
+            {
+                Assert.IsTrue(player.Advance());
+                Assert.AreEqual(1, player.events.Count);
+                Assert.AreEqual(EventKind.Call, player.events[0].kind,
+                    "2 was StructureChange, and five of its six routes were calls");
+                Assert.AreEqual("/live/scene/export", player.Resolve(player.events[0].targetId));
+            }
+        }
+
+        /// <summary>
+        /// Nothing ever wrote 3 (RegisteredSource), but a reader still has to land an unknown value
+        /// on a kind the rest of the code has a case for rather than pass it through.
+        /// </summary>
+        [Test]
+        public void AKindNoBuildEverWrote_ComesBackAsSomethingReadable()
+        {
+            var written = false;
+            var bytes = Record(2, beforePump: () =>
+            {
+                if (written) return;
+
+                written = true;
+                FrameGate._Enqueue((EventKind)3, "test", "/live/a", "1", () => true);
+            });
+
+            using (var player = new FrameRecordPlayer(new MemoryStream(bytes)))
+            {
+                Assert.IsTrue(player.Advance());
+                Assert.AreEqual(1, player.events.Count);
+                Assert.AreEqual(EventKind.Set, player.events[0].kind);
             }
         }
 
@@ -391,7 +445,7 @@ namespace Lilium.RemoteControl.Tests
                 if (written) return;
 
                 written = true;
-                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/a", "1", () => true);
+                FrameGate._Enqueue(EventKind.Set, "test", "/live/a", "1", () => true);
             });
 
             using (var player = new FrameRecordPlayer(new MemoryStream(bytes)))

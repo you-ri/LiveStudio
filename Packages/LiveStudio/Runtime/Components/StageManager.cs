@@ -17,9 +17,10 @@ using Lilium.RemoteControl;
 namespace Lilium.LiveStudio
 {
     /// <summary>
-    /// One entry in <see cref="StageManager.sets"/>: a set bundle (<c>*.set.lsb</c>)
-    /// that the user has added. <see cref="enabled"/> is the desired state controlled from the
-    /// remote app; <see cref="isLoaded"/> reflects whether the set is actually loaded.
+    /// One entry in <see cref="StageManager.sets"/>: a set the operator added as a set bundle
+    /// (<c>*.set.lsb</c>) or one that ships inside the app (see <see cref="isBuiltin"/>), plus the
+    /// bootstrap entry. <see cref="enabled"/> is the desired state controlled from the remote app;
+    /// <see cref="isLoaded"/> reflects whether the set is actually loaded.
     ///
     /// Surfaced to the remote app's stage detail page through the generic exposed-object UI: the
     /// visible members are <see cref="name"/> and the <see cref="WarpTo"/> / <see cref="WarpToOrigin"/>
@@ -65,6 +66,15 @@ namespace Lilium.LiveStudio
         public bool isPersistent;
 
         /// <summary>
+        /// True for a set that ships inside the app (a declared built-in scene) rather than a
+        /// <c>*.set.lsb</c> the operator added. Such a set is always present and has no file to remove, so
+        /// the stage page marks it and offers only load / activate. Projected from the backing asset, so it
+        /// is not persisted.
+        /// </summary>
+        [LiveField(persistable = false), Hide]
+        public bool isBuiltin;
+
+        /// <summary>
         /// Labels of the <see cref="StageMark"/>s in this set's loaded scene, in registration order.
         /// The source of <see cref="WarpTo"/>'s dropdown options; not shown as its own control. Empty
         /// when the set is not loaded. Derived view data, so not persisted.
@@ -85,6 +95,27 @@ namespace Lilium.LiveStudio
         /// <summary>Warps the current avatar to the origin (doubling as a "reset to zero").</summary>
         [LiveFunction]
         public void WarpToOrigin() => StageManager.current?.WarpTo(id, string.Empty);
+    }
+
+    /// <summary>
+    /// One loaded stage in <see cref="StageManager.loadedSets"/>. The element existing is what says
+    /// the set is loaded, so it carries nothing but the name it is addressed by.
+    /// </summary>
+    [Serializable]
+    [LiveClass]
+    public class LoadedSet
+    {
+        /// <summary>
+        /// Stable key: the element's address is its name, not where it sits. The catalog is ordered
+        /// differently on every machine (it is whatever that machine has on disk), so a position
+        /// recorded here would land on another set entirely on replay.
+        /// </summary>
+        // The lane is said out loud so the key does not also travel as a value: unsaid, the
+        // generator reads a saved field as state lane and puts the string in a block beside the
+        // structure lane's copy of it. What the frame needs is the element being there, which is
+        // the structure lane's job.
+        [LiveField(lane = FrameLane.Event), LiveKey]
+        public string name;
     }
 
     /// <summary>
@@ -196,25 +227,46 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>
-        /// 読み込まれているステージの集合 (立っているものを含む)、表示名で。
+        /// 読み込まれているステージの集合 (立っているものを含む)。
         ///
         /// <see cref="activeSet"/> が「どれが立っているか」しか言わないので、複数セットを同時に
-        /// 読み込んでいる状態はこれが言う。⚠ イベントレーン (保存先から導出) — 値の配列は状態
-        /// ブロックに載らないため。したがってテイクの途中から再生した場合、ここまでの読み込み履歴を
-        /// 辿らないと集合は復元されない。立っているステージだけは <see cref="activeSet"/> が
-        /// 状態レーンで運ぶので、どのフレームからでも分かる。
+        /// 読み込んでいる状態はこれが言う。フレームには集合の形そのものが載るので、テイクのどの
+        /// フレームから再生しても集合は分かる (読み込みの履歴を辿る必要はない)。
         ///
-        /// ⚠ 投影 (<see cref="sets"/>) の enabled は非永続なので、保存も収録もこちらが担う。
+        /// ⚠ 名前の配列ではなく <see cref="LoadedSet"/> の配列。値の配列は状態ブロックに載らない
+        /// (unmanaged でないため落ちる = LRC002) が、[LiveClass] な参照型を要素に持つコレクション
+        /// なら構造レーンが要素の出し入れを、要素の状態レーンのメンバーがその値を運ぶ。ここは
+        /// 要素があること自体が情報なので、運ぶのは構造レーンだけになる。
+        /// <c>AvatarController.meshStateOverrides</c> と同じ形。
+        ///
+        /// ⚠ List ではなく配列。構造レーンの出し入れ (<c>LiveStructureSystem._ReconcileCollection</c>)
+        /// は <c>LiveProperty.Add</c> / <c>RemoveAt</c> を通るが、List の分岐は IList を直接いじる
+        /// だけで所有者に通知しない。配列の分岐だけが新しい配列を <c>SetValue</c> し、そこから
+        /// <see cref="_OnPropertyChanged"/> が発火して <see cref="_ApplyStageIntent"/> に届く。
+        /// List にすると再生で集合は戻るのにセットが読み込まれない。
+        ///
+        /// ⚠ 投影 (<see cref="sets"/>) の enabled は非永続なので、保存はこちらが担う。
         /// </summary>
+        // セッターに副作用を持たせないのは、書き込みの経路が 3 つあるため (REST / 構造レーンの
+        // 配列差し替え / ライブシーン復元のシャドウ直書き)。前 2 つは _OnPropertyChanged が、
+        // 最後は OnAfterLiveDeserialize が拾うので、適用はその 2 箇所に集約する。
         [LiveProperty]
-        public string[] loadedSets
+        public LoadedSet[] loadedSets
         {
-            get => _loadedSets ?? Array.Empty<string>();
-            set
+            get => _loadedSets ?? Array.Empty<LoadedSet>();
+            set => _loadedSets = value ?? Array.Empty<LoadedSet>();
+        }
+
+        // 意図がその名前を挙げているか。実体がまだ無い名前も意図には残る (カタログに来ていない
+        // ものは _stagePending で待つ)。
+        private static bool _NamesSet(LoadedSet[] wanted, string setName)
+        {
+            for (int i = 0; i < wanted.Length; i++)
             {
-                _loadedSets = value ?? Array.Empty<string>();
-                _ApplyStageIntent();
+                if (wanted[i] != null && wanted[i].name == setName) return true;
             }
+
+            return false;
         }
 
         // 「何が出ているか」の意図。ライブシーンに保存され、同じ宣言から収録レーンも決まる
@@ -226,9 +278,12 @@ namespace Lilium.LiveStudio
         // private だとムーバーから見えず黙って落ちる (LRC009)。AvatarController._avatarLayer と同じ。
         internal string _activeSet = string.Empty;
 
-        [SerializeField, LiveField, Hide]
+        // ⚠ レーンを明示するのは、導出だと実行時 (FrameLaneRules) が Event、生成器
+        // (StateBlockEmitter) が State と読んで食い違い、配列を状態ブロックへ入れようとして
+        // LRC002 で落ちるため。集合の形を運ぶのは構造レーンで、ブロックではない。
+        [SerializeField, LiveField(lane = FrameLane.Event), Hide]
         [FormerlyNamedAs("loadedSets")]
-        internal string[] _loadedSets = Array.Empty<string>();
+        internal LoadedSet[] _loadedSets = Array.Empty<LoadedSet>();
 
         // 意図がまだカタログに無くて適用できていない状態。立っている間は実体からの同期を止める
         // — 起動直後のカタログは空で、そこから同期すると復元した意図をその場で消す。
@@ -467,10 +522,9 @@ namespace Lilium.LiveStudio
         public void SwitchToSetByName(string setName)
         {
             if (string.IsNullOrEmpty(setName)) return;
-            for (int i = 0; i < sets.Length; i++)
-            {
-                if (sets[i].name == setName) { _SwitchToSet(sets[i].id); return; }
-            }
+
+            var setId = _FindSetIdByName(setName);
+            if (setId != null) _SwitchToSet(setId);
         }
 
         // Complete-switch core: flag only the target active, unload every other set bundle, and load the
@@ -585,6 +639,19 @@ namespace Lilium.LiveStudio
         private void _OnPropertyChanged(LiveProperty property, object oldValue)
         {
             if (!_initialized) return;
+
+            // 意図が外から入れ替わった。REST の書き込みと、再生で構造レーンが配列を差し替えたとき
+            // (LiveProperty の配列分岐は新しい配列を SetValue するので、ここに届く) の両方。
+            if (property.PathContains(nameof(loadedSets)))
+            {
+                _ApplyStageIntent();
+
+                // loadedSets[key] を解決済みパスのキャッシュで駆動する操作に、要素の並びが変わった
+                // ことを知らせる。通知しないと並べ替えの後に隣の要素を指し続ける。
+                LiveObjectRegistry.NotifyKeyedCollectionChanged();
+                return;
+            }
+
             if (!property.PathContains(nameof(sets))) return;
             _TransferEnabledToAssets();
         }
@@ -659,15 +726,15 @@ namespace Lilium.LiveStudio
             var manager = ExternalAssetManager.current;
             if (manager == null) return false;
 
-            var wanted = _loadedSets ?? Array.Empty<string>();
+            var wanted = loadedSets;
             var complete = true;
 
             // 読み込みの集合をそのまま実体へ。ここに無い名前は「まだ来ていない」で、次の変化を待つ。
             var view = manager.assetsView;
             for (int i = 0; i < wanted.Length; i++)
             {
-                if (string.IsNullOrEmpty(wanted[i])) continue;
-                if (_FindSetAssetIdByName(manager, wanted[i]) == null) complete = false;
+                if (wanted[i] == null || string.IsNullOrEmpty(wanted[i].name)) continue;
+                if (_FindSetAssetIdByName(manager, wanted[i].name) == null) complete = false;
             }
 
             for (int i = 0; i < view.Count; i++)
@@ -675,7 +742,7 @@ namespace Lilium.LiveStudio
                 var asset = view[i];
                 if (!(asset is ISetAsset) || string.IsNullOrEmpty(asset.id)) continue;
 
-                manager.SetAssetEnabled(asset.id, Array.IndexOf(wanted, asset.name) >= 0);
+                manager.SetAssetEnabled(asset.id, _NamesSet(wanted, asset.name));
             }
 
             // 立っているステージ。空 = 何も言っていないので触らない (起動直後の既定)。
@@ -696,23 +763,40 @@ namespace Lilium.LiveStudio
         private void _SyncStageFromAssets()
         {
             var active = string.Empty;
-            var loaded = new List<string>();
+            var loaded = new List<LoadedSet>();
 
             for (int i = 0; i < sets.Length; i++)
             {
                 if (sets[i].isActive) active = sets[i].name ?? string.Empty;
                 if (sets[i].isPersistent) continue;
-                if (sets[i].enabled) loaded.Add(sets[i].name ?? string.Empty);
+                if (sets[i].enabled) loaded.Add(new LoadedSet { name = sets[i].name ?? string.Empty });
             }
 
             _activeSet = active;
+            // 直書き。プロパティを通すと _OnPropertyChanged が意図の適用を呼び返してしまう
+            // (ここは実体から意図への向きで、逆向きに回す必要はない)。
             _loadedSets = loaded.ToArray();
         }
 
         // 投影 (sets) 上の表示名から id を引く。ブートストラップの合成エントリも含むので、
         // activeSet が持ち回るのはこちら。
-        private string _FindSetIdByName(string setName)
+        private string _FindSetIdByName(string setName) => FindSetIdByName(sets, setName);
+
+        /// <summary>
+        /// 表示名からセットの id を引く。同名が複数あるときは<b>アプリ同梱 (組み込み) を優先する</b>。
+        ///
+        /// 名前は保存と収録がセットを指す唯一の手掛かりなので、同名が並ぶと「どちらを指していたか」が
+        /// 決められない。プロジェクトフォルダに置かれた `*.set.lsb` は機械ごとに入れ替わる持ち物で、
+        /// アプリに同梱されたセットはどの機械にも必ず同じものが在る。復元が当てにできるのは後者なので、
+        /// 衝突したら組み込みを採る (同名が並んでいること自体は <see cref="_RebuildSetsView"/> が警告する)。
+        /// </summary>
+        internal static string FindSetIdByName(SetBundleEntry[] sets, string setName)
         {
+            for (int i = 0; i < sets.Length; i++)
+            {
+                if (sets[i].isBuiltin && sets[i].name == setName) return sets[i].id;
+            }
+
             for (int i = 0; i < sets.Length; i++)
             {
                 if (sets[i].name == setName) return sets[i].id;
@@ -723,8 +807,19 @@ namespace Lilium.LiveStudio
 
         // カタログ上のセットアセットの id。ブートストラップは含まない (アセットではない)。
         private static string _FindSetAssetIdByName(ExternalAssetManager manager, string setName)
+            => FindSetAssetIdByName(manager.assetsView, setName);
+
+        /// <summary>
+        /// カタログ上のセットアセットを表示名から引く。<see cref="FindSetIdByName"/> と同じ理由で、
+        /// 同名なら組み込みを優先する。
+        /// </summary>
+        internal static string FindSetAssetIdByName(IReadOnlyList<AssetBase> view, string setName)
         {
-            var view = manager.assetsView;
+            for (int i = 0; i < view.Count; i++)
+            {
+                if (view[i] is ISetAsset && view[i].isBuiltin && view[i].name == setName) return view[i].id;
+            }
+
             for (int i = 0; i < view.Count; i++)
             {
                 if (view[i] is ISetAsset && view[i].name == setName) return view[i].id;
@@ -740,9 +835,37 @@ namespace Lilium.LiveStudio
         /// </summary>
         public void OnAfterLiveDeserialize()
         {
+            _DropUnnamedLoadedSets();
+
             if (!Application.isPlaying) return;
 
             _ApplyStageIntent();
+        }
+
+        // 名前の無い要素を捨てる。loadedSets が名前の配列だった頃のシーンを読むとここに来る:
+        // 文字列は LoadedSet に変換できず、要素は既定値 (名前が空) のまま残る。空の要素はキーを
+        // 持たないので、構造レーンが位置で照合し始める。
+        private void _DropUnnamedLoadedSets()
+        {
+            var current = _loadedSets;
+            if (current == null || current.Length == 0) return;
+
+            var kept = 0;
+            for (int i = 0; i < current.Length; i++)
+            {
+                if (current[i] != null && !string.IsNullOrEmpty(current[i].name)) kept++;
+            }
+
+            if (kept == current.Length) return;
+
+            var trimmed = new LoadedSet[kept];
+            var at = 0;
+            for (int i = 0; i < current.Length; i++)
+            {
+                if (current[i] != null && !string.IsNullOrEmpty(current[i].name)) trimmed[at++] = current[i];
+            }
+
+            _loadedSets = trimmed;
         }
 
         /// <summary>
@@ -835,13 +958,54 @@ namespace Lilium.LiveStudio
                         isLoaded = asset.isLoaded,
                         isActive = s.isActive,
                         isPersistent = false,
+                        isBuiltin = asset.isBuiltin,
                         marks = _MarkLabelsInScene(s.scene),
                     });
                 }
             }
 
             sets = list.ToArray();
+            _WarnOnDuplicateSetNames(sets);
             _Broadcast();
+        }
+
+        // 直近に警告した同名の並び。同じ衝突で毎回ログを出さないためだけに持つ (投影の再構築は
+        // カタログが変わるたびに走るので、抱えないと同じ行が何度も出る)。
+        [NonSerialized]
+        private string _warnedDuplicateNames;
+
+        /// <summary>
+        /// 表示名が重複しているセットを警告する。名前は保存 (activeSet / loadedSets) と収録が
+        /// セットを指す唯一の手掛かりなので、同名が並ぶと復元がどちらを指していたか決められない。
+        /// 引くとき自体は組み込みを優先する (<see cref="FindSetIdByName"/>) が、それは事故を
+        /// 決定的にするための規則であって、名前を分けるべき状況が消えるわけではない。
+        /// </summary>
+        private void _WarnOnDuplicateSetNames(SetBundleEntry[] entries)
+        {
+            List<string> duplicated = null;
+            var seen = new HashSet<string>();
+            for (int i = 0; i < entries.Length; i++)
+            {
+                var name = entries[i].name;
+                if (string.IsNullOrEmpty(name)) continue;
+                if (seen.Add(name)) continue;
+
+                (duplicated ??= new List<string>()).Add(name);
+            }
+
+            if (duplicated == null)
+            {
+                _warnedDuplicateNames = null;
+                return;
+            }
+
+            var signature = string.Join(", ", duplicated);
+            if (signature == _warnedDuplicateNames) return;
+
+            _warnedDuplicateNames = signature;
+            Debug.LogWarning(
+                $"[LiveStudio] Two stages answer to the same name ({signature}). A saved or recorded stage " +
+                "cannot tell them apart; the built-in one is used. Rename one of them.");
         }
 
         // The bootstrap set is active whenever no set bundle is flagged active.
@@ -857,6 +1021,7 @@ namespace Lilium.LiveStudio
                 isLoaded = true,
                 isActive = !_AnySetAssetActive(manager),
                 isPersistent = true,
+                isBuiltin = true,
                 marks = _MarkLabelsInScene(_persistentScene),
             };
         }

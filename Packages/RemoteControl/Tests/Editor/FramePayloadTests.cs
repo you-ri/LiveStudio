@@ -180,7 +180,7 @@ namespace Lilium.RemoteControl.Tests
         {
             const string target = "/live/object/cam/fov";
 
-            var task = FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, "35.0",
+            var task = FrameGate._Enqueue(EventKind.Set, "test", target, "35.0",
                 () =>
                 {
                     // Stands in for the property write: by this point the target has been resolved,
@@ -241,7 +241,7 @@ namespace Lilium.RemoteControl.Tests
 
             try
             {
-                FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, body,
+                FrameGate._Enqueue(EventKind.Set, "test", target, body,
                     () => LiveObjectHandler.ApplyRecordedOperation(
                         null, DefaultLiveObjectResolver.Instance, "PUT", target, body, out _, out _),
                     verb: "PUT");
@@ -273,7 +273,7 @@ namespace Lilium.RemoteControl.Tests
         {
             const string target = "/live/object/avatar/name";
 
-            FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, "{\"value\":\"ai\"}",
+            FrameGate._Enqueue(EventKind.Set, "test", target, "{\"value\":\"ai\"}",
                 () =>
                 {
                     FrameGate.StampAppliedPayload(target, typeof(string), "ai");
@@ -301,7 +301,7 @@ namespace Lilium.RemoteControl.Tests
             // layout still records something a replay can use.
             const string target = "/live/object/avatar/name";
 
-            FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, "\"ai\"", () => true);
+            FrameGate._Enqueue(EventKind.Set, "test", target, "\"ai\"", () => true);
             FrameGate.Pump();
 
             using var frame = new EventFrame();
@@ -328,7 +328,7 @@ namespace Lilium.RemoteControl.Tests
         {
             const string target = "/live/object/cam/fov";
 
-            FrameGate._Enqueue(EventKind.PropertyWrite, "test", target, new string('x', 4000),
+            FrameGate._Enqueue(EventKind.Set, "test", target, new string('x', 4000),
                 () =>
                 {
                     FrameGate.StampAppliedPayload(target, typeof(float), 12f);
@@ -388,7 +388,7 @@ namespace Lilium.RemoteControl.Tests
             {
                 events.Reset(0, FrameRate.FPS60);
 
-                var record = new EventRecord(1, EventKind.PropertyWrite, symbols.Intern("rest"),
+                var record = new EventRecord(1, EventKind.Set, symbols.Intern("rest"),
                     symbols.Intern("/live/object/cam/fov"), EventFlags.None, symbols.Intern("PUT"));
 
                 Span<byte> packed = stackalloc byte[EventRecord.kPayloadCapacity];

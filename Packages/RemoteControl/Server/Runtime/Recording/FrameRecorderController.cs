@@ -92,6 +92,11 @@ namespace Lilium.RemoteControl
 
         private readonly FrameRecorder _recorder = new FrameRecorder();
         private FrameReplayer _replayer;
+
+        // What the gate is actually given: the replayer wrapped in the thing that decides how many
+        // of its records are due at each head. Held separately because everything about the take --
+        // position, pause, seek -- is still asked of the replayer.
+        private PacedFrameSource _replaySource;
         private bool _holdsStateSystems;
 
         // Rebuilt when the set of exclusions changes and reused otherwise. Filled in Record().
@@ -298,6 +303,68 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
+        /// How long the take being written has run, in frames of the clock it is being written
+        /// against. Zero when nothing is being recorded.
+        ///
+        /// Not <see cref="recordedFrames"/>, which counts records. The two are the same number only
+        /// while the machine holds rate: a run that drops to twenty frames a second writes a record
+        /// every third frame number, so twelve hundred records are a minute of performance and not
+        /// twenty seconds of it. Anything reading a clock off a take -- a timecode, a duration --
+        /// reads this.
+        /// </summary>
+        public long recordedFrameSpan
+        {
+            get
+            {
+                var first = _recorder.firstFrameNumber;
+                if (!_recorder.isRecording || first < 0) return 0;
+
+                return _recorder.lastFrameNumber - first + 1;
+            }
+        }
+
+        /// <summary>
+        /// How far into the take the replay has reached, in the take's own frames, or -1 when
+        /// nothing is being replayed.
+        ///
+        /// Counted from the first frame of the recording, because the numbers in it are the ones the
+        /// clock had reached on the machine that made it -- a take recorded at five in the afternoon
+        /// starts at frame number 3,672,000 and means "zero" by it.
+        ///
+        /// Falls back to the position within the take for a recording that was cut short and carries
+        /// no index to say where it began. That reads slow on a take that dropped frames, which is
+        /// the same thing every count of records does, and is all there is to go on.
+        /// </summary>
+        public long replayFrameSpan
+        {
+            get
+            {
+                var replayer = _replayer;
+                if (replayer == null || replayer.frameNumber < 0) return -1;
+
+                var first = replayer.player.FrameNumberAt(0);
+                if (first < 0) return Math.Max(replayIndex, 0);
+
+                return replayer.frameNumber - first;
+            }
+        }
+
+        /// <summary>
+        /// The rate <see cref="replayFrameSpan"/> is counted at: the take's own, which is not
+        /// necessarily this machine's. The live clock's rate when nothing is being replayed.
+        /// </summary>
+        public FrameRate replayFrameRate
+        {
+            get
+            {
+                var replayer = _replayer;
+                var rate = replayer?.player.header.frameRate ?? default;
+
+                return rate.numerator > 0 && rate.denominator > 0 ? rate : FrameGate.clock.frameRate;
+            }
+        }
+
+        /// <summary>
         /// Moves the replay to a position within <see cref="replayFrameCount"/>. False when there is
         /// no replay, or when the recording carries no index to seek by.
         ///
@@ -419,6 +486,11 @@ namespace Lilium.RemoteControl
             var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
             _replayer = new FrameReplayer(stream, new LiveEventApplier()) { loop = _loop };
 
+            // Paced rather than handed over as it is: a replayer walks one record per frame head,
+            // which plays a take recorded on a machine that was struggling as fast as this machine
+            // can read it. The pacer spends the records against real time instead.
+            _replaySource = new PacedFrameSource(_replayer);
+
             // Every registered type gets a block up front. Without it the recording reports each type
             // as unknown until something happens to write it live first, which on a machine that is
             // only replaying never happens.
@@ -443,7 +515,7 @@ namespace Lilium.RemoteControl
             // is what puts it ahead of the producers -- they read the frame it filled rather than
             // racing it in an order nobody declared.
             FrameGate.onSourceEnded += _OnReplayEnded;
-            FrameGate.source = _replayer;
+            FrameGate.source = _replaySource;
 
             Debug.Log($"[RemoteControl] Replaying {_replayFilename}");
         }
@@ -453,12 +525,15 @@ namespace Lilium.RemoteControl
             var replayer = _replayer;
             if (replayer == null) return;
 
+            var source = _replaySource;
+
             // Cleared before the teardown, so a re-entrant call (an input reaching back into this
             // object) finds nothing left to do rather than disposing it twice.
             _replayer = null;
+            _replaySource = null;
 
             FrameGate.onSourceEnded -= _OnReplayEnded;
-            if (ReferenceEquals(FrameGate.source, replayer)) FrameGate.source = null;
+            if (ReferenceEquals(FrameGate.source, source)) FrameGate.source = null;
 
             LiveStructureSystem.applyOnSuppliedFrames = false;
             FrameGate.driveEngineTimeOnSuppliedFrames = false;
@@ -471,7 +546,9 @@ namespace Lilium.RemoteControl
             var failed = replayer.failedEventCount;
             var skipped = replayer.skippedTruncatedCount;
 
-            replayer.Dispose();
+            // Through the pacer, which owns the replayer once it wraps it.
+            if (source != null) source.Dispose();
+            else replayer.Dispose();
 
             _StopStateSystem();
 

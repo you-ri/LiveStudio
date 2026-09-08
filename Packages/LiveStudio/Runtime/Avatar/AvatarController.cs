@@ -1139,7 +1139,9 @@ namespace Lilium.LiveStudio
         }
 
         [Preserve]
-        [LiveFunction(label="AVATAR_RESETPHYSICS")]
+        // ⚠ レーンを明示するのは、揺れ物を意図的にシミュレーションの外に置いているから。
+        // リセットの効果はどのレーンの値にも残らないので、呼ばれたこと自体を記録する。
+        [LiveFunction(label="AVATAR_RESETPHYSICS", lane = FrameLane.Event)]
         [Help("AVATAR_RESETPHYSICS_HELP")]
         void ResetPhysics()
         {

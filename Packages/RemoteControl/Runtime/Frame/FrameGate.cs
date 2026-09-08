@@ -941,7 +941,7 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         private static void _CountIfRepeatedWrite(in EventRecord record)
         {
-            if (record.kind != EventKind.PropertyWrite) return;
+            if (record.kind != EventKind.Set) return;
             if (record.targetId == FrameSymbolTable.kNone) return;
 
             var key = ((long)record.sourceId << 32) | (uint)record.targetId;
@@ -977,15 +977,13 @@ namespace Lilium.RemoteControl.Frames
             {
                 // Detached rather than left to throw every frame, for the same reason as the sink:
                 // one failure must not become one per frame, and the run is still fine live.
-                _source = null;
                 Debug.LogError($"[RemoteControl] Frame source failed and was detached: {e}");
-                _RaiseSourceEnded();
+                _RetireSource(source);
                 return;
             }
 
             // Ran out. The frame falls back to the live lanes it was already pointing at.
-            _source = null;
-            _RaiseSourceEnded();
+            _RetireSource(source);
         }
 
         /// <summary>
@@ -1027,6 +1025,22 @@ namespace Lilium.RemoteControl.Frames
 
             _engineTimeDriven = false;
             Time.captureDeltaTime = 0f;
+        }
+
+        /// <summary>
+        /// Detaches a source that has finished or failed, and says so.
+        ///
+        /// Only if it is still the one attached. A take can carry the requests that stop it and
+        /// start another (a replay of a session in which somebody replayed something), so by the
+        /// time the frame comes back the source may already have been replaced -- and clearing the
+        /// field then would detach the new one before its first frame.
+        /// </summary>
+        private static void _RetireSource(IFrameSource source)
+        {
+            if (!ReferenceEquals(_source, source)) return;
+
+            _source = null;
+            _RaiseSourceEnded();
         }
 
         private static void _RaiseSourceEnded()

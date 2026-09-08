@@ -42,7 +42,12 @@ namespace Lilium.LiveStudio.EditorTests
             // an element's float weight by its stable key, e.g. "weights[Beta].weight".
             [LiveField] public WeightedEntry[] weights;
 
-            [LiveFunction]
+            /// <summary>
+            /// A call the take keeps. It says the lane out loud because calls are off the frame
+            /// unless they ask -- what makes this one worth recording is that its effect lands
+            /// nowhere a lane already carries.
+            /// </summary>
+            [LiveFunction(lane = FrameLane.Event)]
             public void DoThing() => invokeCount++;
 
             /// <summary>
@@ -344,7 +349,7 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
-        public void InvokeFunctionOperation_OnAnOrdinaryCall_IsStillRecorded()
+        public void InvokeFunctionOperation_OnACallThatAsksForTheLane_IsRecorded()
         {
             var action = new InvokeFunctionOperation { targetId = kTargetId, functionName = "DoThing" };
 

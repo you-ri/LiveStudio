@@ -82,7 +82,7 @@ namespace Lilium.RemoteControl.Tests
                 for (long f = 0; f < 3; f++)
                 {
                     events.Reset(f, FrameRate.FPS60);
-                    events.Add(new EventRecord(f, EventKind.PropertyWrite, symbols.Intern("rest"),
+                    events.Add(new EventRecord(f, EventKind.Set, symbols.Intern("rest"),
                         symbols.Intern("/live/a"), EventFlags.None));
 
                     var frame = new Frame { frameNumber = f, frameRate = FrameRate.FPS60, events = events };
@@ -122,7 +122,7 @@ namespace Lilium.RemoteControl.Tests
             {
                 events.Reset(0, FrameRate.FPS60);
 
-                var record = new EventRecord(7, EventKind.FunctionCall, symbols.Intern("rest"),
+                var record = new EventRecord(7, EventKind.Call, symbols.Intern("rest"),
                     symbols.Intern("/live/camera/reset"), EventFlags.PayloadTruncated);
                 Span<byte> text = stackalloc byte[EventRecord.kPayloadCapacity];
                 EventPayload.TryWriteString("35.0", text, out var textLength);
@@ -144,7 +144,7 @@ namespace Lilium.RemoteControl.Tests
                     if (entry.kind != FrameEntryKind.Event) continue;
 
                     Assert.AreEqual(7L, BitConverter.ToInt64(entry.payload.Slice(0, 8).ToArray(), 0));
-                    Assert.AreEqual((int)EventKind.FunctionCall, BitConverter.ToInt32(entry.payload.Slice(8, 4).ToArray(), 0));
+                    Assert.AreEqual((int)EventKind.Call, BitConverter.ToInt32(entry.payload.Slice(8, 4).ToArray(), 0));
                     // 8 sequence, 4 kind, 4 source, 4 target, 4 verb, 4 payload type, 1 flags,
                     // 4 length, payload.
                     Assert.AreEqual((byte)EventFlags.PayloadTruncated, entry.payload[28]);
@@ -377,7 +377,7 @@ namespace Lilium.RemoteControl.Tests
                 for (long f = 0; f < 10; f++)
                 {
                     events.Reset(f, FrameRate.FPS60);
-                    events.Add(new EventRecord(f, EventKind.PropertyWrite, symbols.Intern("rest"),
+                    events.Add(new EventRecord(f, EventKind.Set, symbols.Intern("rest"),
                         symbols.Intern("/live/object/cam/fov"), EventFlags.None));
 
                     var frame = new Frame { frameNumber = f, frameRate = FrameRate.FPS60, events = events };

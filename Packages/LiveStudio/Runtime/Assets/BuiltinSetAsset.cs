@@ -18,53 +18,72 @@ namespace Lilium.LiveStudio
     /// the build — no marker asset or Resources folder, unlike a built-in prop.
     ///
     /// Scenes cannot be loaded from a <c>Resources</c> folder, so — unlike <see cref="BuiltinPropAsset"/>
-    /// (Resources) — this loads through <see cref="SceneManager"/> by the scene's build path. The path is
-    /// the stable identity persisted to the live scene (there is no runtime GUID without a bake), and the
-    /// runtime <see cref="AssetBase.id"/> is reconstructed from it on restore.
+    /// (Resources) — this loads through <see cref="SceneManager"/> by the scene's build path. Only the
+    /// <see cref="guid"/> is persisted, exactly as a built-in prop persists its catalog GUID: the path is
+    /// re-resolved from the declaration each run, so moving or renaming the scene does not break a saved
+    /// live scene.
     ///
-    /// Implements <see cref="ISetAsset"/> so <see cref="StageManager"/> orchestrates it (active set, warps)
-    /// through the same path as a bundle set. Additive and avatar-independent; a single active set at a
-    /// time is an invariant StageManager enforces.
+    /// Derives from <see cref="SetAssetBase"/> so <see cref="StageManager"/> orchestrates it (active set,
+    /// warps) through the same path as a bundle set. Additive and avatar-independent; a single active set
+    /// at a time is an invariant StageManager enforces.
     /// </summary>
     [Serializable]
     [LiveClass("BuiltinSetAsset", Category = "Asset", Icon = "public", lane = FrameLane.None)]
-    public class BuiltinSetAsset : AssetBase, ISetAsset
+    public class BuiltinSetAsset : SetAssetBase
     {
         /// <summary>
-        /// The scene's build path (e.g. <c>Assets/Scenes/Stage.unity</c>). The stable identity persisted to
-        /// the live scene (the runtime <see cref="AssetBase.id"/> is reconstructed from it) and the handle
-        /// <see cref="SceneManager.LoadSceneAsync(string, LoadSceneParameters)"/> loads the scene by.
+        /// The declared scene asset's GUID: this entry's stable identity, and the only field it persists.
+        /// Everything else about the set (where the scene sits, what it is called, its preview) is read
+        /// back from <see cref="BuiltinSetList"/> under this GUID on the next run.
         /// </summary>
         [LiveField, Hide]
-        public string scenePath;
+        public string guid;
 
         /// <summary>
-        /// True when this set is the active set. Persisted so the saved active set is reactivated on
-        /// restore once it has loaded. Written by <see cref="StageManager"/>.
+        /// The scene's build path (e.g. <c>Assets/Scenes/Stage.unity</c>), which
+        /// <see cref="SceneManager.LoadSceneAsync(string, LoadSceneParameters)"/> loads the scene by.
+        /// Deliberately NOT persisted: it is a cache of where the identity currently points, so a scene
+        /// moved between sessions still loads. Re-resolved from <see cref="guid"/> when the catalog entry
+        /// is (re-)injected.
         /// </summary>
-        [LiveField]
-        public bool isActive;
+        [LiveField(persistable = false), Hide]
+        public string scenePath;
 
-        public override bool reloadsOnAvatarChange => false;
         public override bool isBuiltin => true;
 
-        // No project file: restore the runtime id from the persisted scene path so the re-enumerated
-        // built-in set and the persisted one dedup to a single entry.
-        public override string persistentId => scenePath;
+        // No project file: the persisted identity is the scene GUID. A live scene saved before the identity
+        // became a GUID persisted the scene path instead (and no guid), so fall back to looking that path up
+        // in the declaration — otherwise the restored entry would have no id at all and could neither dedup
+        // against the declared entry nor ever load.
+        public override string persistentId
+            => !string.IsNullOrEmpty(guid) ? guid : BuiltinSetSource.ResolveGuidByScenePath(scenePath);
 
         // The additively-loaded scene, owned until unload. Held only at runtime.
         [NonSerialized]
         private Scene _loadedScene;
 
         /// <summary>The loaded scene handle, or <c>default</c> when not loaded.</summary>
-        public Scene scene => _loadedScene;
+        public override Scene scene => _loadedScene;
 
         /// <summary>True when a valid scene is currently loaded.</summary>
-        public bool hasScene => _loadedScene.IsValid() && _loadedScene.isLoaded;
+        public override bool hasScene => _loadedScene.IsValid() && _loadedScene.isLoaded;
 
-        // ISetAsset.isActive delegates to the exposed field (a field cannot implement the property
-        // directly). scene / hasScene satisfy the interface implicitly.
-        bool ISetAsset.isActive { get => isActive; set => isActive = value; }
+        /// <summary>
+        /// Re-reads the name and scene path from the declaration, so a set renamed or moved in the editor
+        /// takes effect on an entry that came back from a saved live scene (which persists only the GUID,
+        /// and whose stored name is whatever it was called when it was saved). Also back-fills the GUID for
+        /// an entry restored from the older path-based identity. No-op once the declaration no longer lists
+        /// this set — the entry then keeps what it was restored with and simply fails to load.
+        /// </summary>
+        public void RefreshFromDeclaration()
+        {
+            var id = persistentId;
+            if (!BuiltinSetSource.TryFind(id, out var entry)) return;
+
+            guid = entry.guid;
+            scenePath = entry.scenePath;
+            name = BuiltinSetSource.ResolveName(entry);
+        }
 
         public override async Task LoadAsync(AssetLoadContext context)
         {

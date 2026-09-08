@@ -66,7 +66,7 @@ namespace Lilium.RemoteControl.Tests
         public void InputsApplied_AtAFrameHead_AreInTheRecording()
         {
             var bytes = RecordFrames(1, () =>
-                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", "35.0",
+                FrameGate._Enqueue(EventKind.Set, "test", "/live/object/cam/fov", "35.0",
                     () => true));
 
             using (var reader = new FrameRecordReader(new MemoryStream(bytes)))
@@ -135,7 +135,7 @@ namespace Lilium.RemoteControl.Tests
 
             try
             {
-                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/a", "1",
+                FrameGate._Enqueue(EventKind.Set, "test", "/live/a", "1",
                     () => { order.Add("evt"); return true; });
 
                 FrameGate.Pump();
@@ -205,13 +205,13 @@ namespace Lilium.RemoteControl.Tests
             _recorder.Start(_stream, leaveOpen: true);
             FrameGate.sink = _recorder;
 
-            FrameGate._Enqueue(EventKind.FunctionCall, "test", "/live/function/recorder-page/Record",
+            FrameGate._Enqueue(EventKind.Call, "test", "/live/function/recorder-page/Record",
                 "{}", () => true);
-            FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/recorder-page/take",
+            FrameGate._Enqueue(EventKind.Set, "test", "/live/object/recorder-page/take",
                 "2", () => true);
-            FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/recorder-id/_take",
+            FrameGate._Enqueue(EventKind.Set, "test", "/live/object/recorder-id/_take",
                 "2", () => true);
-            FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov",
+            FrameGate._Enqueue(EventKind.Set, "test", "/live/object/cam/fov",
                 "35", () => true);
 
             FrameGate.Pump();
@@ -241,9 +241,9 @@ namespace Lilium.RemoteControl.Tests
             _recorder.Start(_stream, leaveOpen: true);
             FrameGate.sink = _recorder;
 
-            FrameGate._Enqueue(EventKind.FunctionCall, "test", "/live/function/recorder-id/Record",
+            FrameGate._Enqueue(EventKind.Call, "test", "/live/function/recorder-id/Record",
                 "{}", () => true);
-            FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", "35",
+            FrameGate._Enqueue(EventKind.Set, "test", "/live/object/cam/fov", "35",
                 () => true);
 
             FrameGate.Pump();

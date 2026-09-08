@@ -93,7 +93,7 @@ namespace Lilium.RemoteControl
                 ownerType = ownerType ?? ResolveType();
 
                 // A function has no persistence to derive from, so what it asks for is what it gets.
-                if (member.isFunction) return member.declaredLane ?? FrameLane.Event;
+                if (member.isFunction) return member.declaredLane ?? FrameLane.None;
 
                 // The same rule the attribute path applies (FrameLaneRules): a member the scene does
                 // not save is off the frame unless it says otherwise, and a saved member cannot ask
@@ -367,7 +367,7 @@ namespace Lilium.RemoteControl
                 // A call is not a value, so there is no persistence to derive a lane from and
                 // nothing to copy every frame: the declared value is taken as it stands, and an
                 // unsaid one is the event lane.
-                lane = declaredLane ?? FrameLane.Event,
+                lane = declaredLane ?? FrameLane.None,
             };
         }
 

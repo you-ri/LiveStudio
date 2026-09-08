@@ -8,9 +8,14 @@ namespace Lilium.LiveStudio
     /// An <see cref="AssetBase"/> that owns an additively-loaded Unity scene presented as a "set" on the
     /// Stage page and orchestrated by <see cref="StageManager"/> (active set, warps). Implemented by
     /// <see cref="SetBundleAsset"/> (scene from a <c>*.set.lsb</c> AssetBundle) and
-    /// <see cref="BuiltinSetAsset"/> (scene from the app's built-in scene list). StageManager reconciles
+    /// <see cref="BuiltinSetAsset"/> (a scene the app declares as a built-in set). StageManager reconciles
     /// through this interface rather than a concrete type, so both set sources share one path; the base
-    /// <see cref="AssetBase"/> supplies id / name / enabled / isLoaded.
+    /// <see cref="AssetBase"/> supplies id / name / enabled / isLoaded, and <see cref="SetAssetBase"/>
+    /// implements this interface once for both.
+    ///
+    /// ⚠ This interface is not what the remote app groups sets by: the type information published over
+    /// REST carries base classes only, never interfaces, so the wire-side grouping key is the
+    /// <see cref="SetAssetBase"/> class.
     ///
     /// The <see cref="scene"/> handle is also the single source of truth for "is this scene a set scene?"
     /// — <see cref="ExternalAssetManager"/> uses it to keep a prop out of a set scene, replacing the old

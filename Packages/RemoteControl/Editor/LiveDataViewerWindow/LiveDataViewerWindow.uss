@@ -200,6 +200,22 @@
     overflow: hidden;
 }
 
+/* SET or CALL, which is the whole of what a kind says. Narrow and quiet: it is there to be
+   scanned down the lane, not read. */
+.ldv-col-kind {
+    min-width: 38px;
+    max-width: 38px;
+    font-size: 10px;
+    -unity-font-style: bold;
+    color: rgba(200, 200, 200, 0.55);
+}
+
+/* Calls are the ones a seek will not replay, so they are worth picking out of a lane that is
+   mostly writes. */
+.ldv-kind-call {
+    color: rgb(205, 175, 120);
+}
+
 .ldv-empty {
     flex-shrink: 0;
     padding: 10px;

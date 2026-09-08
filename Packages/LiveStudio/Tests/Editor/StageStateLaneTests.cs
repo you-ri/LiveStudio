@@ -46,6 +46,65 @@ namespace Lilium.LiveStudio.Tests
         }
 
         /// <summary>
+        /// Which stages are loaded rides the frame as a collection of live objects: the structure
+        /// lane carries the elements being there, so a replay starting anywhere sees the whole set
+        /// rather than having to walk the loads that produced it.
+        ///
+        /// It was a string[] while the shape was what kept it off the frame -- a value array is not
+        /// unmanaged, so the block refused it (LRC002) and the member fell out of every lane without
+        /// anything at runtime saying so. A collection of [LiveClass] elements is the shape the frame
+        /// does carry.
+        /// </summary>
+        [Test]
+        public void TheLoadedStages_AreARecordedCollection()
+        {
+            var member = _Member("loadedSets");
+
+            Assert.AreNotEqual(FrameLane.None, member.lane, "the member is off the frame");
+            Assert.IsTrue(LiveObjectWalk.HoldsLiveObjectCollection(member),
+                "the loaded stages are not a collection of live objects, so the walk skips them");
+        }
+
+        /// <summary>
+        /// An array, not a List, and the difference is whether anything happens on replay.
+        ///
+        /// The structure lane puts elements in and out through LiveProperty.Add / RemoveAt. The List
+        /// branch edits the IList in place and tells the owner nothing; only the array branch builds
+        /// a new array and SetValues it, which is what raises onPropertyChanged and gets the manager
+        /// to actually load the set. As a List the set would come back while the stage stayed empty.
+        /// </summary>
+        [Test]
+        public void TheLoadedStages_AreAnArraySoTheOwnerHearsAboutIt()
+        {
+            Assert.IsTrue(_Member("loadedSets").valueType.IsArray,
+                "a List is reconciled without notifying the owner, so nothing would apply the change");
+        }
+
+        /// <summary>
+        /// Elements are addressed by name. A position would land on a different set on a machine
+        /// whose catalog is ordered differently -- which is every other machine.
+        /// </summary>
+        [Test]
+        public void ALoadedStage_IsKeyedByName()
+        {
+            Assert.AreEqual("Dawn_Star_Sky",
+                LiveObjectWalk.KeyOf(new LoadedSet { name = "Dawn_Star_Sky" }),
+                "a loaded stage has no key, so replay would match it by position instead");
+        }
+
+        /// <summary>
+        /// The projection the remote app renders is off the frame: it is rebuilt from the catalog,
+        /// which is a setting of this machine. Writing an entry's enabled flag is still how a set is
+        /// loaded -- what a take carries is <c>loadedSets</c> following along afterwards, not the
+        /// write itself.
+        /// </summary>
+        [Test]
+        public void TheSetProjectionStaysOffTheFrame()
+        {
+            Assert.AreEqual(FrameLane.None, _Member("sets").lane);
+        }
+
+        /// <summary>
         /// The asset side stays off the frame, which is the decision this member exists to make
         /// survivable. If this ever flips back, the same value is in two lanes.
         /// </summary>

@@ -36,7 +36,7 @@ namespace Lilium.LiveStudio
             var manager = ExternalAssetManager.current;
             if (manager == null) return;
 
-            FrameGate.Post(EventKind.FunctionCall, _source, "POST",
+            FrameGate.Post(EventKind.Call, _source, "POST",
                 $"/live/function/{manager.id}/selectavatarbyname",
                 () => AvatarSelection.SelectByName(ExternalAssetManager.current, avatar),
                 OperationRequest.FromArguments(avatar));

@@ -561,7 +561,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
             // The failure that cost a day: a recording carries a type the playing side cannot hold,
             // so the whole lane is dropped and the replay simply shows nothing.
-            if (FrameGate.source is FrameReplayer replayer)
+            var replayer = FrameReplayer.Behind(FrameGate.source);
+            if (replayer != null)
             {
                 var unknown = replayer.player.unknownStateTypes;
                 if (unknown.Count > 0)
@@ -1216,7 +1217,16 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             source.AddToClassList(RemoteControlEditorStyles.kSubtle);
             head.Add(source);
 
-            var verb = new Label(string.IsNullOrEmpty(evt.verb) ? evt.kind.ToString() : evt.verb);
+            // The kind gets a column of its own rather than standing in for a missing verb. It
+            // answers the one question the lane asks -- does this record fold to the last one per
+            // target, or does it have to be replayed in order -- and that stays worth seeing on a
+            // row that also has a verb, which says something else entirely.
+            var kind = new Label(_KindName(evt.kind));
+            kind.AddToClassList("ldv-col-kind");
+            kind.EnableInClassList("ldv-kind-call", evt.kind == EventKind.Call);
+            head.Add(kind);
+
+            var verb = new Label(string.IsNullOrEmpty(evt.verb) ? "-" : evt.verb);
             verb.AddToClassList(RemoteControlEditorStyles.kGrow);
             verb.AddToClassList(RemoteControlEditorStyles.kEllipsis);
             head.Add(verb);
@@ -1359,6 +1369,9 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _AddElementsOf(snapshot, _selectedOwnerId);
         }
 
+        /// <summary>⚠ Same spelling as the UE viewer: the same take gets read in both.</summary>
+        private static string _KindName(EventKind kind) => kind == EventKind.Call ? "CALL" : "SET";
+
         private void _BuildEventDetail()
         {
             if (!_TryFindEvent(_selectedEventRowId, out var evt))
@@ -1368,11 +1381,11 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                 return;
             }
 
-            _detailTitle.text = $"#{evt.sequence}  {evt.kind}";
+            _detailTitle.text = $"#{evt.sequence}  {_KindName(evt.kind)}";
 
             _rows.Add(new LiveDataValueRow("frame", evt.frameNumber.ToString("D8")));
             _rows.Add(new LiveDataValueRow("sequence", evt.sequence.ToString()));
-            _rows.Add(new LiveDataValueRow("kind", evt.kind.ToString()));
+            _rows.Add(new LiveDataValueRow("kind", _KindName(evt.kind)));
             _rows.Add(new LiveDataValueRow("source", string.IsNullOrEmpty(evt.source) ? "-" : evt.source));
             _rows.Add(new LiveDataValueRow("verb", string.IsNullOrEmpty(evt.verb) ? "-" : evt.verb));
             _rows.Add(new LiveDataValueRow("target", evt.target));

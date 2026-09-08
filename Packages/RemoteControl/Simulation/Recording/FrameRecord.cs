@@ -78,6 +78,11 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// what it holds, member by member. The hash could only say "these two builds disagree",
         /// which cost the whole type its state whenever one member was added or taken away; the
         /// description says which members they still agree on, so the rest of the take plays.
+        ///
+        /// 8 stands, unchanged, through the retirement of two EventKind values on 2026-09-08: the
+        /// kind is still one int at the same offset, only two of the four values it could hold are
+        /// no longer written. A version is for a layout a reader cannot walk, and this one it can --
+        /// the reader maps the retired values instead, see FrameRecordPlayer.
         /// </summary>
         public const int kVersion = 8;
 

@@ -305,7 +305,11 @@ namespace Lilium.LiveStudio
             }
         }
 
-        [LiveFunction]
+        // ⚠ レーンを明示するのは、この呼び出しが記録の唯一の手段だから。scenes は SceneInfo
+        // (struct) の配列なので、値の配列として状態ブロックにも載らず、参照型でないので
+        // 構造レーンも拾わない。本来は SceneInfo を class にしてコレクションとして運ぶのが筋
+        // (StageManager.loadedSets と同じ形)。それまでの間、ここで記録する。
+        [LiveFunction(lane = FrameLane.Event)]
         public void CreateScene(string sceneName)
         {
             if (string.IsNullOrEmpty(sceneName))
@@ -325,7 +329,11 @@ namespace Lilium.LiveStudio
             Debug.Log($"[RemoteControl] Scene created: {sceneName}");
         }
 
-        [LiveFunction]
+        // ⚠ レーンを明示するのは、この呼び出しが記録の唯一の手段だから。scenes は SceneInfo
+        // (struct) の配列なので、値の配列として状態ブロックにも載らず、参照型でないので
+        // 構造レーンも拾わない。本来は SceneInfo を class にしてコレクションとして運ぶのが筋
+        // (StageManager.loadedSets と同じ形)。それまでの間、ここで記録する。
+        [LiveFunction(lane = FrameLane.Event)]
         public void UnloadScene(string sceneName)
         {
             if (string.IsNullOrEmpty(sceneName))
@@ -351,7 +359,11 @@ namespace Lilium.LiveStudio
             Debug.Log($"[RemoteControl] Scene unloading: {sceneName}");
         }
 
-        [LiveFunction]
+        // ⚠ レーンを明示するのは、この呼び出しが記録の唯一の手段だから。scenes は SceneInfo
+        // (struct) の配列なので、値の配列として状態ブロックにも載らず、参照型でないので
+        // 構造レーンも拾わない。本来は SceneInfo を class にしてコレクションとして運ぶのが筋
+        // (StageManager.loadedSets と同じ形)。それまでの間、ここで記録する。
+        [LiveFunction(lane = FrameLane.Event)]
         public void SetActiveScene(string sceneName)
         {
             if (string.IsNullOrEmpty(sceneName))

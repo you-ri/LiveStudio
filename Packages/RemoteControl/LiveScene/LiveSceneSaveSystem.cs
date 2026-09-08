@@ -263,10 +263,10 @@ namespace Lilium.RemoteControl.LiveScene
         }
 
         /// <summary>
-        /// Reads <c>baseSceneName</c> from the file. If it differs from the active Unity scene
+        /// Reads <c>baseSceneName</c> from the file. If it differs from the loaded base scene
         /// and is registered in build settings, calls <see cref="SceneManager.LoadScene(int)"/>
         /// and returns <c>true</c>; the new scene's RemoteControlBehaviour will re-trigger the load.
-        /// Returns <c>false</c> when no switch is needed (legacy file, same scene, or scene not in build).
+        /// Returns <c>false</c> when no switch is needed (legacy file, same base scene, or scene not in build).
         ///
         /// With <paramref name="force"/>, "same scene" and "no recorded scene" reload the active build
         /// scene instead of doing nothing, so the caller still gets a scene rebuilt from scratch.
@@ -278,7 +278,11 @@ namespace Lilium.RemoteControl.LiveScene
             // Legacy file / brand-new scene: the only sensible forced target is the active scene.
             if (string.IsNullOrEmpty(baseSceneName)) return force && _ReloadActiveBuildScene();
 
-            if (!force && baseSceneName == SceneManager.GetActiveScene().name) return false;
+            // Compared against the loaded base scene, not the active scene: a loaded set makes its
+            // own (non-build) scene active, so comparing the active scene would read as "a different
+            // base scene" and reload the whole Unity scene while a set is up. ResolveBaseSceneName is
+            // what the save side records, so this keeps both ends on the same name.
+            if (!force && baseSceneName == ResolveBaseSceneName()) return false;
 
             int count = SceneManager.sceneCountInBuildSettings;
             for (int i = 0; i < count; i++)

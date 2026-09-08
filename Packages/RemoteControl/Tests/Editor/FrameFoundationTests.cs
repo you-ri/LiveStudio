@@ -172,7 +172,7 @@ namespace Lilium.RemoteControl.Tests
             var frame = buffer.BeginFrame(frameNumber, kRate60);
             for (int i = 0; i < eventCount; i++)
             {
-                frame.Add(new EventRecord(i, EventKind.PropertyWrite, 0, 0, EventFlags.None));
+                frame.Add(new EventRecord(i, EventKind.Set, 0, 0, EventFlags.None));
             }
             buffer.Commit(frameNumber);
         }
@@ -302,7 +302,7 @@ namespace Lilium.RemoteControl.Tests
         public void Enqueue_CompletesOnceThePumpAppliesIt()
         {
             var applied = false;
-            var task = FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/a", "1",
+            var task = FrameGate._Enqueue(EventKind.Set, "test", "/live/a", "1",
                 () => { applied = true; return 42; });
 
             Assert.IsFalse(task.IsCompleted, "nothing should be applied before a frame head");
@@ -321,7 +321,7 @@ namespace Lilium.RemoteControl.Tests
             for (int i = 0; i < 5; i++)
             {
                 var captured = i;
-                FrameGate._Enqueue(EventKind.PropertyWrite, "test", $"/live/{i}", null,
+                FrameGate._Enqueue(EventKind.Set, "test", $"/live/{i}", null,
                     () => { order.Add(captured); return true; });
             }
 
@@ -333,7 +333,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Pump_RecordsWhatItApplied()
         {
-            FrameGate._Enqueue(EventKind.FunctionCall, "unit-test", "/live/camera/reset", "{}",
+            FrameGate._Enqueue(EventKind.Call, "unit-test", "/live/camera/reset", "{}",
                 () => true);
 
             FrameGate.Pump();
@@ -343,7 +343,7 @@ namespace Lilium.RemoteControl.Tests
             Assert.AreEqual(1, frame.eventCount);
 
             var record = frame[0];
-            Assert.AreEqual(EventKind.FunctionCall, record.kind);
+            Assert.AreEqual(EventKind.Call, record.kind);
             Assert.AreEqual("/live/camera/reset", FrameGate.symbols.Resolve(record.targetId));
             Assert.AreEqual("unit-test", FrameGate.symbols.Resolve(record.sourceId));
             Assert.IsFalse(record.faulted);
@@ -352,7 +352,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Pump_FailedInput_FaultsTheCallerAndMarksTheRecord()
         {
-            var task = FrameGate._Enqueue<bool>(EventKind.PropertyWrite, "test", "/live/boom", null,
+            var task = FrameGate._Enqueue<bool>(EventKind.Set, "test", "/live/boom", null,
                 () => throw new InvalidOperationException("boom"));
 
             LogAssert.Expect(LogType.Error, new Regex("Frame evt #.*failed"));
@@ -371,7 +371,7 @@ namespace Lilium.RemoteControl.Tests
         {
             // Dropping them silently left the caller waiting for a frame head that would never
             // arrive, which hung the HTTP request behind it until the client gave up.
-            var task = FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/a", "1",
+            var task = FrameGate._Enqueue(EventKind.Set, "test", "/live/a", "1",
                 () => true);
 
             FrameGate.ResetState("[test] restarted");
@@ -385,7 +385,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var before = FrameGate.truncatedPayloadCount;
 
-            FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/long", new string('x', 4000),
+            FrameGate._Enqueue(EventKind.Set, "test", "/live/long", new string('x', 4000),
                 () => true);
             FrameGate.Pump();
 
@@ -403,7 +403,7 @@ namespace Lilium.RemoteControl.Tests
             // gate applies it immediately -- and says so, because it is a gap in the ordering.
             var before = FrameGate.bypassedCount;
 
-            var task = FrameGate.SubmitAsync(EventKind.PropertyWrite, "test", "PUT", "/live/a", null,
+            var task = FrameGate.SubmitAsync(EventKind.Set, "test", "PUT", "/live/a", null,
                 () => 7);
 
             Assert.IsTrue(task.IsCompleted);
@@ -417,9 +417,9 @@ namespace Lilium.RemoteControl.Tests
             var applied = 0;
             var operations = new[]
             {
-                new EventDescriptor(EventKind.PropertyWrite, "PUT", "/live/object/cam/fov", "35"),
-                new EventDescriptor(EventKind.PropertyWrite, "PUT", "/live/object/cam/near", "0.1"),
-                new EventDescriptor(EventKind.FunctionCall, "POST", "/live/function/reset", "{}"),
+                new EventDescriptor(EventKind.Set, "PUT", "/live/object/cam/fov", "35"),
+                new EventDescriptor(EventKind.Set, "PUT", "/live/object/cam/near", "0.1"),
+                new EventDescriptor(EventKind.Call, "POST", "/live/function/reset", "{}"),
             };
 
             var task = FrameGate._Enqueue(operations, "batch", () => { applied++; return true; });
@@ -436,7 +436,7 @@ namespace Lilium.RemoteControl.Tests
             Assert.AreEqual(frame[0].sequence + 1, frame[1].sequence);
             Assert.AreEqual(frame[1].sequence + 1, frame[2].sequence);
             Assert.AreEqual("/live/object/cam/fov", FrameGate.symbols.Resolve(frame[0].targetId));
-            Assert.AreEqual(EventKind.FunctionCall, frame[2].kind);
+            Assert.AreEqual(EventKind.Call, frame[2].kind);
         }
 
         [Test]
@@ -444,8 +444,8 @@ namespace Lilium.RemoteControl.Tests
         {
             var operations = new[]
             {
-                new EventDescriptor(EventKind.PropertyWrite, "PUT", "/live/a", "1"),
-                new EventDescriptor(EventKind.PropertyWrite, "PUT", "/live/b", "2"),
+                new EventDescriptor(EventKind.Set, "PUT", "/live/a", "1"),
+                new EventDescriptor(EventKind.Set, "PUT", "/live/b", "2"),
             };
 
             var task = FrameGate._Enqueue<bool>(operations, "batch",
@@ -489,13 +489,13 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Flags_ReadBackThroughTheirProperties()
         {
-            var record = new EventRecord(1, EventKind.FunctionCall, 0, 1,
+            var record = new EventRecord(1, EventKind.Call, 0, 1,
                 EventFlags.Faulted | EventFlags.PayloadTruncated);
 
             Assert.IsTrue(record.faulted);
             Assert.IsTrue(record.payloadTruncated);
 
-            var clean = new EventRecord(2, EventKind.PropertyWrite, 0, 1, EventFlags.None);
+            var clean = new EventRecord(2, EventKind.Set, 0, 1, EventFlags.None);
 
             Assert.IsFalse(clean.faulted);
             Assert.IsFalse(clean.payloadTruncated);
@@ -578,11 +578,11 @@ namespace Lilium.RemoteControl.Tests
         {
             LogAssert.Expect(LogType.Warning, new Regex("not declared"));
 
-            FrameGate._Enqueue(EventKind.PropertyWrite, "stray", "/live/a", "1", () => true);
+            FrameGate._Enqueue(EventKind.Set, "stray", "/live/a", "1", () => true);
 
             // Reported once, not per event: a caller that has not been migrated would otherwise
             // fill the console at its own request rate.
-            FrameGate._Enqueue(EventKind.PropertyWrite, "stray", "/live/b", "2", () => true);
+            FrameGate._Enqueue(EventKind.Set, "stray", "/live/b", "2", () => true);
 
             FrameGate.Pump();
 
@@ -595,7 +595,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void SubmitGroup_WithAnUnresolvedHandle_Throws()
         {
-            var operations = new[] { new EventDescriptor(EventKind.PropertyWrite, "PUT", "/live/a", "1") };
+            var operations = new[] { new EventDescriptor(EventKind.Set, "PUT", "/live/a", "1") };
 
             Assert.Throws<ArgumentException>(
                 () => FrameGate.SubmitGroupAsync(operations, default(FrameSource), () => true));
@@ -635,7 +635,7 @@ namespace Lilium.RemoteControl.Tests
 
             try
             {
-                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/a", "1",
+                FrameGate._Enqueue(EventKind.Set, "test", "/live/a", "1",
                     () => { order.Add("evt"); return true; });
 
                 FrameGate.Pump();
@@ -683,7 +683,7 @@ namespace Lilium.RemoteControl.Tests
 
             try
             {
-                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/a", "1", () => true);
+                FrameGate._Enqueue(EventKind.Set, "test", "/live/a", "1", () => true);
                 FrameGate.Pump();
             }
             finally
@@ -753,7 +753,7 @@ namespace Lilium.RemoteControl.Tests
             for (int i = 0; i < 3; i++)
             {
                 var value = i.ToString();
-                FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/object/cam/fov", value,
+                FrameGate._Enqueue(EventKind.Set, "test", "/live/object/cam/fov", value,
                     () => true);
             }
 
@@ -772,8 +772,8 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void WritesToDifferentTargets_AreNotCountedAsRepeats()
         {
-            FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/a", "1", () => true);
-            FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/b", "2", () => true);
+            FrameGate._Enqueue(EventKind.Set, "test", "/live/a", "1", () => true);
+            FrameGate._Enqueue(EventKind.Set, "test", "/live/b", "2", () => true);
 
             FrameGate.Pump();
 
@@ -783,10 +783,10 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void TheSameTargetInSeparateFrames_IsNotARepeat()
         {
-            FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/a", "1", () => true);
+            FrameGate._Enqueue(EventKind.Set, "test", "/live/a", "1", () => true);
             FrameGate.Pump();
 
-            FrameGate._Enqueue(EventKind.PropertyWrite, "test", "/live/a", "2", () => true);
+            FrameGate._Enqueue(EventKind.Set, "test", "/live/a", "2", () => true);
             FrameGate.Pump();
 
             Assert.AreEqual(0, FrameGate.repeatedWriteCount,
@@ -796,8 +796,8 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void FunctionCalls_AreNotCountedAsRepeatedWrites()
         {
-            FrameGate._Enqueue(EventKind.FunctionCall, "test", "/live/camera/reset", "{}", () => true);
-            FrameGate._Enqueue(EventKind.FunctionCall, "test", "/live/camera/reset", "{}", () => true);
+            FrameGate._Enqueue(EventKind.Call, "test", "/live/camera/reset", "{}", () => true);
+            FrameGate._Enqueue(EventKind.Call, "test", "/live/camera/reset", "{}", () => true);
 
             FrameGate.Pump();
 
