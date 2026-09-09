@@ -21,7 +21,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
     /// drives the transport is one where the thing that moved and the thing that moved it cannot be
     /// told apart.
     ///
-    /// Everything here reaches through to the <see cref="FrameRecorderController"/> in the scene.
+    /// Everything here reaches through to the registered <see cref="FrameRecorderController"/>.
     /// This window owns no recorder of its own: a take is recorded by the running application, not by
     /// the editor watching it, and a second recorder would fight the first over the gate's one sink
     /// -- which is also why a page in the remote app and this window can be open at once.

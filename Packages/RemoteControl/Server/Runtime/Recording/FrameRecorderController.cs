@@ -13,15 +13,25 @@ namespace Lilium.RemoteControl
     /// Records and replays live data.
     ///
     /// This is the machinery: it holds the open file, the recorder and the replayer, and it needs a
-    /// Unity lifecycle to close them when the object goes away. How it is presented -- sections,
-    /// labels, help, the file picker -- belongs to whatever drives it: a page in the remote app, the
-    /// LiveData Sequencer window, or both at once.
+    /// lifecycle to close them when the object goes away -- the host's shutdown, which reaches every
+    /// registered object when play stops and when the application quits. How it is presented --
+    /// sections, labels, help, the file picker -- belongs to whatever drives it: a page in the remote
+    /// app, the LiveData Sequencer window, or both at once.
     ///
     /// It lives here rather than with an application because everything it does is this package's:
     /// the gate, the recorder, the replayer, retaining the state and structure systems for the length
     /// of a take, and putting the inventory back on a supplied frame. Getting that sequence right is
     /// not something each application should have to rediscover. The one thing it does not know is
     /// where an application files its work -- see <see cref="recordingFolderProvider"/>.
+    ///
+    /// A plain object in the host's object list rather than a component, because nothing here is
+    /// placed in the world: there is no transform, nothing to do per frame -- the gate drives the
+    /// recorder and the replayer from the player loop -- and no scene-scoped state, only the settings
+    /// of the machine running the take. Being a component cost it twice. The remote app serves this
+    /// page from a stopped editor, where no Unity callback has run, so the one instance had to be
+    /// hunted down lazily instead of announcing itself; and a component is addressable both by its own
+    /// id and through the GameObject holding it, which is what once let a take carry the recorder's
+    /// own settings (see the remarks below).
     /// </summary>
     /// <remarks>
     /// Declared off the frame whole. Everything on it is the recorder's own machinery -- a setting
@@ -32,13 +42,24 @@ namespace Lilium.RemoteControl
     /// is applied to events only. A member on the state lane is copied by the walk, which does not
     /// consult it, so the exclusion silently stops covering a member the moment its lane changes.
     /// </remarks>
-    [DefaultExecutionOrder(10000)]
+    [Serializable]
     [LiveClass(kLiveClassName, Icon = "fiber_manual_record", Category = "Recorder",
         lane = FrameLane.None)]
-    public class FrameRecorderController : MonoBehaviour
+    public class FrameRecorderController : ILiveObject
     {
+        // A GUID rather than a readable name: the remote app's object listing drops an entry whose id
+        // is spelled like its wire type, reading it as a static class, and the wire type here is
+        // kLiveClassName. Fixed, so project settings written under it restore into the same object.
+        const string kId = "9d4f2b17-58ac-4e0b-a3d6-71c8e5f0b924";
+
+        public string name { get; set; } = "Frame Recorder";
+
+        public LiveObjectHandle? liveObject => LiveObjectRegistry.FindByTarget(this);
+
+        public string id => kId;
+
         /// <summary>
-        /// The exposed name of this component, which is also how a page addresses it. A constant
+        /// The exposed name of this object, which is also how a page addresses it. A constant
         /// because a page has to name it literally: it binds its fields while the class registry may
         /// still be empty, and a lookup by type would fall back to the C# type name and quietly
         /// resolve to nothing.
@@ -62,12 +83,13 @@ namespace Lilium.RemoteControl
         //
         // All of them are off the live data, and where they are saved is what says so
         // (FrameLaneRules): the interval and the compression are project settings, the take number
-        // and the replay file are values nothing persists. They are the recorder's own settings, and
-        // <see cref="excludeObjectIds"/> is not enough on its own: that excludes by this component's
-        // registry id, while any client writing through the owning GameObject addresses the same
-        // members as `{gameObject}/components/{n}/_take`. The two
-        // never meet, so a take was carrying the take number and the compression setting it was
-        // written with, and a replay of it wrote them back over the operator's own.
+        // and the replay file are values nothing persists.
+        //
+        // The class-wide lane is what keeps them off it, and it used to have to. As a component this
+        // was addressable twice -- by its own registry id, and as `{gameObject}/components/{n}/_take`
+        // through the GameObject holding it -- so an exclusion by id could not reach the second way
+        // in, and a take carried the take number and the compression it was written with, pressing
+        // them back over the operator's own on replay. A plain object has one address.
         [SerializeField]
         [LiveField(persistable = false)]
         private int _take = 1;
@@ -107,25 +129,17 @@ namespace Lilium.RemoteControl
         private static FrameRecorderController _instance;
 
         /// <summary>
-        /// The recorder in the scene, or null when none is placed. Whatever drives it goes through
-        /// this for everything it cannot reach by property path.
+        /// The registered recorder, or null when none is in the host's object list. Whatever drives it
+        /// goes through this for everything it cannot reach by property path.
         ///
-        /// Found lazily rather than assigned in OnEnable, because the remote control server serves
-        /// its page while the editor is not playing too, when no Unity callback has run.
+        /// Set in <see cref="OnEnable"/>, which the host runs while the editor is not playing too --
+        /// the remote app serves this page from a stopped editor, and this is what answers it.
         /// </summary>
-        public static FrameRecorderController instance
-        {
-            get
-            {
-                if (_instance != null) return _instance;
-#if UNITY_2022_3_OR_NEWER
-                _instance = FindFirstObjectByType<FrameRecorderController>();
-#else
-                _instance = FindObjectOfType<FrameRecorderController>();
-#endif
-                return _instance;
-            }
-        }
+        public static FrameRecorderController instance => _instance;
+
+        // Reset on subsystem registration for safety when Domain Reload is disabled.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void _ResetStatics() => _instance = null;
 
         /// <summary>Subfolder of the open project that holds the takes.</summary>
         public const string kFolderName = "LiveData";
@@ -407,6 +421,14 @@ namespace Lilium.RemoteControl
 
         public void Record()
         {
+            // The host runs this object in a stopped editor too, where the gate is not pumped: a take
+            // started there would open a file and never write a frame into it.
+            if (!Application.isPlaying)
+            {
+                Debug.LogWarning("[RemoteControl] Cannot record while the editor is not playing.");
+                return;
+            }
+
             if (_recorder.isRecording) return;
 
             StopReplay();
@@ -420,13 +442,13 @@ namespace Lilium.RemoteControl
             // presses them again -- a recorded Record starts a second recording, and a recorded Stop
             // tears down the replay that is running it.
             //
-            // This component always, plus whatever registered itself through ExcludeControlObject:
-            // the controls and the machinery are separate exposed objects, since a page carries the
+            // This object always, plus whatever registered itself through ExcludeControlObject: the
+            // controls and the machinery are separate exposed objects, since a page carries the
             // buttons and the settings while this carries the values they write.
             var count = 1 + _excludedControlObjectIds.Count;
             if (_excludeIds.Length != count) _excludeIds = new string[count];
 
-            _excludeIds[0] = LiveObjectRegistry.FindByTarget(this)?.id;
+            _excludeIds[0] = kId;
             for (int i = 0; i < _excludedControlObjectIds.Count; i++)
             {
                 _excludeIds[i + 1] = _excludedControlObjectIds[i];
@@ -467,6 +489,14 @@ namespace Lilium.RemoteControl
 
         public void Replay()
         {
+            // Same as Record: the gate is not pumped in a stopped editor, so the replay would open the
+            // file and then stand still on it.
+            if (!Application.isPlaying)
+            {
+                Debug.LogWarning("[RemoteControl] Cannot replay while the editor is not playing.");
+                return;
+            }
+
             if (_recorder.isRecording) Stop();
             StopReplay();
 
@@ -555,18 +585,43 @@ namespace Lilium.RemoteControl
             Debug.Log($"[RemoteControl] Replay stopped: {applied} events applied, {failed} failed, {skipped} skipped as truncated");
         }
 
-        private void OnDisable()
+        public void OnEnable()
         {
-            if (_instance == this) _instance = null;
+            _instance = this;
 
-            // Both hold a file open, and neither survives the object going away.
+            LiveObjectRegistry.Create<FrameRecorderController>(this, kId);
+        }
+
+        public void OnDisable()
+        {
+            // Both hold a file open, and neither survives the object going away. Reached from the
+            // host's shutdown, which runs when play stops and when the application quits.
             StopReplay();
 
-            if (!_recorder.isRecording) return;
+            if (_recorder.isRecording)
+            {
+                FrameGate.sink = null;
+                _recorder.Stop();
+                _StopStateSystem();
+            }
 
-            FrameGate.sink = null;
-            _recorder.Stop();
-            _StopStateSystem();
+            LiveObjectRegistry.FindByTarget(this)?.Unregister();
+
+            if (_instance == this) _instance = null;
+        }
+
+        public void OnDispose()
+        {
+            OnDisable();
+        }
+
+        /// <summary>Nothing per frame: the gate drives the recorder and the replayer from the player loop.</summary>
+        public void Update()
+        {
+        }
+
+        public void Reset()
+        {
         }
 
         // The gate detached the recording because it ran out. Tear down what was set up for it.

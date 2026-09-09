@@ -230,7 +230,7 @@ namespace Lilium.LiveStudio
             var recorder = FrameRecorderController.instance;
             if (recorder == null)
             {
-                Debug.LogError("[Studio] Record: no FrameRecorderController in the scene.");
+                Debug.LogError("[Studio] Record: no FrameRecorderController is registered.");
                 return;
             }
 
@@ -280,7 +280,7 @@ namespace Lilium.LiveStudio
             var recorder = FrameRecorderController.instance;
             if (recorder == null)
             {
-                Debug.LogError("[Studio] Play: no FrameRecorderController in the scene.");
+                Debug.LogError("[Studio] Play: no FrameRecorderController is registered.");
                 return;
             }
 
