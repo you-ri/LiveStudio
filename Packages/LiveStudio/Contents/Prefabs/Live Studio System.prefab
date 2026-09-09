@@ -46,7 +46,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   _take: 1
   _keyframeInterval: 60
+  _compress: 1
   _replayFilename: 
+  _loop: 0
 --- !u!1 &5944317548342265899
 GameObject:
   m_ObjectHideFlags: 0
@@ -143,12 +145,13 @@ MonoBehaviour:
   - rid: 4217817217901789388
   - rid: 4217817217901789389
   - rid: 4217817297473503389
+  - rid: 4217817297473503390
   - rid: 4217817217901789390
   - rid: 4217817217901789391
   - rid: 4217817297473503388
   - rid: 6395816828084159292
-  _assets: []
-  _references: []
+  _assets:
+  - {fileID: 11400000, guid: 079fa70ebbb04ea28a8e85f40f191d3f, type: 2}
   _serverConfig: {fileID: 11400000, guid: fe5d91a57c882da4791babe82a0d8d75, type: 2}
   _persistAcrossScenes: 1
   _uiDefinition: {fileID: 11400000, guid: 0d7378062cf94704d8b17ee9440d3b21, type: 2}
@@ -166,7 +169,9 @@ MonoBehaviour:
       data: 
     - rid: 4217817217901789391
       type: {class: StageManager, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
-      data: 
+      data:
+        _activeSet: 
+        _loadedSets: []
     - rid: 4217817297473503388
       type: {class: OperationManager, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
       data:
@@ -174,6 +179,9 @@ MonoBehaviour:
         decks: []
     - rid: 4217817297473503389
       type: {class: RenderQuality, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
+      data: 
+    - rid: 4217817297473503390
+      type: {class: ScreenManager, ns: Lilium.LiveStudio, asm: Lilium.LiveStudio}
       data: 
     - rid: 6395816828084159292
       type: {class: LiveGameObject, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl}

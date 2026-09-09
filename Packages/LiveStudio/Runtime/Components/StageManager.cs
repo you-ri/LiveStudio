@@ -462,10 +462,12 @@ namespace Lilium.LiveStudio
 
         /// <summary>
         /// Makes the loaded set with the given id the active set (lighting/instantiation target). Only
-        /// loaded sets can be activated; this does not load or unload any set. Drives the Stage page's set
-        /// selection — loading is controlled independently through each entry's enabled flag, so multiple
-        /// sets stay loaded and only the active one changes here. (A stage-switch operation wanting a complete
-        /// replace uses <see cref="SwitchToSetByName"/> instead.)
+        /// loaded sets can be activated; this does not load or unload any set, so whatever else the
+        /// operator has loaded stays up and only the active flag moves.
+        ///
+        /// This is the multi-scene half of the interface, kept for callers that are deliberately holding
+        /// several sets at once. The Stage page's selection is not one of them: picking a stage there is
+        /// a complete switch (<see cref="SwitchToSet"/>).
         /// </summary>
         [LiveFunction]
         public void SetActiveSet(string setId)
@@ -498,6 +500,23 @@ namespace Lilium.LiveStudio
 
             _ReconcileActiveScene();
             _RebuildSetsView();
+        }
+
+        /// <summary>
+        /// Switches the stage to the set with the given id as a complete switch: every other set is
+        /// unloaded and the target is loaded on demand, leaving only the bootstrap scene and this set.
+        /// This is what the Stage page's selection calls.
+        ///
+        /// The id-taking twin of <see cref="SwitchToSetByName"/>. Names are what an operation can offer
+        /// in a dropdown, but they are not unique — <see cref="_WarnOnDuplicateSetNames"/> exists
+        /// because two bundles can carry the same one — so anything holding the entry itself says which
+        /// set it means by id.
+        /// </summary>
+        [LiveFunction]
+        public void SwitchToSet(string setId)
+        {
+            if (string.IsNullOrEmpty(setId)) return;
+            _SwitchToSet(setId);
         }
 
         /// <summary>

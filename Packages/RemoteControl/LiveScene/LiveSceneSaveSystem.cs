@@ -279,9 +279,9 @@ namespace Lilium.RemoteControl.LiveScene
             if (string.IsNullOrEmpty(baseSceneName)) return force && _ReloadActiveBuildScene();
 
             // Compared against the loaded base scene, not the active scene: a loaded set makes its
-            // own (non-build) scene active, so comparing the active scene would read as "a different
-            // base scene" and reload the whole Unity scene while a set is up. ResolveBaseSceneName is
-            // what the save side records, so this keeps both ends on the same name.
+            // own scene active, so comparing the active scene would read as "a different base scene"
+            // and reload the whole Unity scene while a set is up. ResolveBaseSceneName is what the
+            // save side records, so this keeps both ends on the same name.
             if (!force && baseSceneName == ResolveBaseSceneName()) return false;
 
             int count = SceneManager.sceneCountInBuildSettings;
@@ -706,20 +706,25 @@ namespace Lilium.RemoteControl.LiveScene
         }
 
         // A Unity scene counts as a "base scene" only when it is registered in build settings.
-        // Scenes loaded from AssetBundles (.set.lsb sets) have buildIndex == -1 and must
-        // never be recorded as baseSceneName — sets are calibrated on top of a bundled base.
+        // A scene loaded from an AssetBundle has buildIndex == -1 and can never be one.
         private static bool _IsBuildScene(Scene scene)
             => scene.buildIndex >= 0 && scene.buildIndex < SceneManager.sceneCountInBuildSettings;
 
-        // Resolve the baseSceneName to persist. Prefer the active scene when it is a build scene;
-        // otherwise fall back to the first loaded build scene (the active scene is an additive
-        // world bundle on top of it). Returns null when no build scene is loaded, in which case
-        // the serializer omits the field. Public so other full-state writers (snapshots) record
-        // the same base scene a regular scene save would.
+        // Resolve the baseSceneName to persist: the FIRST loaded build scene, which is the scene the
+        // app booted into. Everything loaded after it was loaded additively, on top of it, so none of
+        // it is the base — whether or not it is a build scene itself.
+        //
+        // Deliberately not the active scene. A host that loads worlds additively makes the loaded
+        // world's scene the active one (for lighting), and such a scene may well be shipped inside
+        // the build rather than in a bundle. Recording the active scene then saves the world as the
+        // base, and loading that file boots the world as the whole app and loads it a second time on
+        // top of itself. (`jp.lilium.livestudio`'s built-in sets are exactly this shape.)
+        //
+        // Returns null when no build scene is loaded, in which case the serializer omits the field.
+        // Public so other full-state writers (snapshots) record the same base scene a regular scene
+        // save would.
         public static string ResolveBaseSceneName()
         {
-            var active = SceneManager.GetActiveScene();
-            if (_IsBuildScene(active)) return active.name;
             for (int i = 0; i < SceneManager.sceneCount; i++)
             {
                 var s = SceneManager.GetSceneAt(i);

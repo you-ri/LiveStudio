@@ -74,6 +74,15 @@ namespace Lilium.RemoteControl.Tests
             public int sceneVal;
         }
 
+        // component だったものが素のオブジェクトへ移った型 (Screen と同型)。ディスクに残る旧エントリは
+        // @parent 付きのままなので、読み込み側が登録済みインスタンスへ振り替えられることを確かめる。
+        [LiveClass("TestMovedScreenClass")]
+        public class TestMovedScreenClass
+        {
+            [LiveField(persistScope = PersistScope.Project)]
+            public int projectVal;
+        }
+
         #endregion
 
         private TestLiveObjectResolver _resolver;
@@ -446,6 +455,49 @@ namespace Lilium.RemoteControl.Tests
             {
                 proxy?.OnDisable();
                 if (go != null) UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        // -------------------------------------------------------
+        // component だったクラスが素のオブジェクトへ移った場合の読み込み
+        // (Screen が ScreenController から ScreenManager へ移った構図)
+        // -------------------------------------------------------
+
+        [Test]
+        public void ApplyJson_ComponentEntryOfMovedClass_AppliesToRegisteredInstance()
+        {
+            LiveClass.RegisterFromAttributes<TestMovedScreenClass>();
+
+            var target = new TestMovedScreenClass();
+            var handle = LiveObjectRegistry.Create<TestMovedScreenClass>(target, "moved-screen-instance");
+            try
+            {
+                // ディスク上に残っている旧世代のエントリ。まだ component だった頃に書かれたので
+                // @parent / @componentIndex を持ち、@id は持たない。
+                var json = new JObject
+                {
+                    ["format"] = ProjectSettingsSerializer.FormatIdentifier,
+                    ["formatVersion"] = ProjectSettingsSerializer.CurrentFormatVersion,
+                    ["objects"] = new JArray
+                    {
+                        new JObject
+                        {
+                            ["@type"] = "TestMovedScreenClass",
+                            ["@parent"] = "a-gameobject-that-no-longer-carries-it",
+                            ["@componentIndex"] = 0,
+                            ["projectVal"] = 42,
+                        },
+                    },
+                }.ToString();
+
+                ProjectSettingsSerializer.ApplyJson(json, _resolver);
+
+                Assert.AreEqual(42, target.projectVal,
+                    "An entry written while the class was a component must still reach the class now that it is a plain object.");
+            }
+            finally
+            {
+                if (handle.HasValue) handle.Value.Unregister();
             }
         }
     }

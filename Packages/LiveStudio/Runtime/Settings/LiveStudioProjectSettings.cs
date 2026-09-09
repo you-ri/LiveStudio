@@ -32,6 +32,21 @@ namespace Lilium.LiveStudio
         [Tooltip("Initial project name shown before a project folder is opened. Empty falls back to \"Untitled\".")]
         string _defaultProjectName = "Untitled";
 
+        [Header("Screen")]
+
+#if KEIJIRO_KLAK_SPOUT
+        /// <summary>
+        /// Resources asset the Klak.Spout sender needs. Held here because the sender is created at
+        /// runtime on whichever camera is currently the screen, so there is no scene object left to
+        /// carry the reference.
+        /// </summary>
+        public Klak.Spout.SpoutResources spoutResources => _spoutResources;
+
+        [SerializeField]
+        [Tooltip("SpoutResources asset from the Klak.Spout package (required for runtime SpoutSender creation).")]
+        Klak.Spout.SpoutResources _spoutResources;
+#endif
+
         [Header("Remote App")]
         [Tooltip("If enabled, the configured Remote app is launched on application startup and stopped on shutdown.")]
         [SerializeField] bool _launchRemoteOnStartup = true;

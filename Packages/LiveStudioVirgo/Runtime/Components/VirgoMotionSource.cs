@@ -108,20 +108,27 @@ namespace Lilium.LiveStudio.Virgo
 
         // 撮影カメラの基準点のうち、カメラ合わせが算出する分。ResetCamera が書き、配置行列が読む。
         //
-        // 状態レーンに載せる (既定の Scene スコープ = シーン保存 = 収録)。基準点を記録に残さないと、
-        // 再生は「再生機の今のリグ設定で置き直す」ことしかできず、収録時の立ち位置が再現しない。
-        // 値そのものは毎フレーム変わらないが、テイクの途中でカメラリセットが走れば変わるし、
-        // 状態レーンなら開始前の値もどのフレームからでも自己完結して読める。
+        // 収録はするが保存はしない (persistable = false + lane を明示)。これは FrameLaneRules が
+        // 名前を挙げている例外そのもの — 姿勢や表情ウェイトと同じ「シーンは保存しないがテイクが
+        // 運ぶメンバー」。基準点を記録に残さないと、再生は「再生機の今のリグ設定で置き直す」
+        // ことしかできず、収録時の立ち位置が再現しない。値そのものは毎フレーム変わらないが、
+        // テイクの途中でカメラリセットが走れば変わるし、状態レーンなら開始前の値もどのフレーム
+        // からでも自己完結して読める。
+        //
+        // ⚠ シーンに保存してはいけない。resetCameraAtReceived (既定 true) により受信開始で必ず
+        // 再算出されるので保存値は毎起動で捨てられ、しかも実測値なので毎回わずかに違う。保存対象に
+        // すると「起動して何もせず終了」が未保存の編集として数えられ、終了時に保存ダイアログが
+        // 出続ける (dirty 判定は Scene スコープの永続化メンバーを見るため)。
         //
         // internal なのは「人が手で書き換える値ではないが、記録には要る」という位置づけのため。
         // 算出するのは ResetCamera で、リグの実寸 (cameraHeight / cameraDistance) のように
         // 人が決める設定ではない。
         [SerializeField]
-        [LiveField]
+        [LiveField(persistable = false, lane = FrameLane.State)]
         internal Vector3 _offsetPosition = Vector3.zero;
 
         [SerializeField]
-        [LiveField]
+        [LiveField(persistable = false, lane = FrameLane.State)]
         internal Vector3 _offsetRotation = Vector3.zero;
 
         private AnimationFrameData _lastReceivedFrameData;

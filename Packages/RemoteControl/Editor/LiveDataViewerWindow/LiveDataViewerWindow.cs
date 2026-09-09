@@ -53,11 +53,10 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             public int ownerId;
         }
 
-        /// <summary>One inventory row, kept so its parent can be written without rebuilding it.</summary>
+        /// <summary>One inventory row, kept so the highlight can move without rebuilding it.</summary>
         private sealed class StructureRowView
         {
             public VisualElement root;
-            public Label parent;
             public int objectId;
         }
 
@@ -882,7 +881,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             var snapshot = LiveDataTap.snapshot;
 
             _RefreshStateRows(snapshot);
-            _RefreshStructureRows(snapshot);
+            _RefreshStructureRows();
             _RefreshEventRows();
             _DrawDetail();
 
@@ -908,8 +907,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                 _stateCount.text = $"{snapshot.structure.Count} objects / epoch {snapshot.structureEpoch}";
             }
 
-            // Which objects exist and what they are. Reparenting is the one part that moves without
-            // the set changing, so it is written into the rows rather than counted as a new shape.
+            // Which objects exist and what they are. Nothing in a row moves once it is built --
+            // parentage is read in the detail pane, not the list -- so the shape is the whole of it.
             _shape.Clear();
             for (int i = 0; i < snapshot.structure.Count; i++)
             {
@@ -924,7 +923,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                 _RebuildStructure(snapshot);
             }
 
-            _RefreshStructureRows(snapshot);
+            _RefreshStructureRows();
         }
 
         private void _RebuildStructure(LiveDataSnapshot snapshot)
@@ -943,22 +942,11 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             }
         }
 
-        private void _RefreshStructureRows(LiveDataSnapshot snapshot)
+        private void _RefreshStructureRows()
         {
             for (int i = 0; i < _structureRows.Count; i++)
             {
                 var view = _structureRows[i];
-                if (!_TryFindObject(snapshot, view.objectId, out var entry)) continue;
-
-                view.parent.text = string.IsNullOrEmpty(entry.parentName)
-                    ? (entry.parentId == FrameSymbolTable.kNone
-                        ? "-"
-                        : _Tr("LDV_UNRESOLVED", entry.parentId))
-                    : entry.parentName;
-
-                view.parent.EnableInClassList(RemoteControlEditorStyles.kWarning,
-                    entry.parentId != FrameSymbolTable.kNone && string.IsNullOrEmpty(entry.parentName));
-
                 view.root.EnableInClassList("ldv-element-selected",
                     _detailKind == DetailKind.StructureEntry && view.objectId == _selectedObjectId);
             }
@@ -992,15 +980,10 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             line.Add(name);
 
             var type = new Label(_ShortTypeName(entry.typeName));
-            type.AddToClassList("ldv-col-mid");
+            type.AddToClassList("ldv-col-type");
             type.AddToClassList(RemoteControlEditorStyles.kSubtle);
             type.tooltip = entry.typeName;
             line.Add(type);
-
-            var parent = new Label();
-            parent.AddToClassList("ldv-col-mid");
-            parent.AddToClassList(RemoteControlEditorStyles.kSubtle);
-            line.Add(parent);
 
             var objectId = entry.objectId;
             line.RegisterCallback<MouseDownEvent>(_ => _SelectObject(objectId));
@@ -1008,7 +991,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _structureRows.Add(new StructureRowView
             {
                 root = line,
-                parent = parent,
                 objectId = objectId,
             });
 
@@ -1041,8 +1023,14 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                 ? _Tr("LDV_NOT_IN_SYMBOLS", entry.objectId)
                 : entry.objectName));
             _rows.Add(new LiveDataValueRow("type", string.IsNullOrEmpty(entry.typeName) ? "-" : entry.typeName));
+            // The one place parentage is shown, so an id the table cannot name says so here rather
+            // than reading as a blank.
             _rows.Add(new LiveDataValueRow("parent",
-                entry.parentId == FrameSymbolTable.kNone ? "(none)" : entry.parentName));
+                entry.parentId == FrameSymbolTable.kNone
+                    ? "(none)"
+                    : string.IsNullOrEmpty(entry.parentName)
+                        ? _Tr("LDV_UNRESOLVED", entry.parentId)
+                        : entry.parentName));
 
             // Whether a replay can stand this back up. Empty is common and not an error -- an object
             // that was in the scene from the start is listed so its values have an owner -- but it

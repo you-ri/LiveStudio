@@ -107,6 +107,21 @@ namespace Lilium.LiveStudio.Tests
             Assert.AreEqual("abc123", sets[0].id);
         }
 
+        /// <summary>
+        /// The bootstrap set is listed under its scene's file name, so a declared scene with that same file
+        /// name — in another folder, so it is not the base scene itself — would list under a name that
+        /// always resolved to the bootstrap entry. It is refused rather than listed and unreachable.
+        /// </summary>
+        [Test]
+        public void ASceneNamedLikeTheBootstrapScene_IsRefused()
+        {
+            LogAssert.Expect(LogType.Error, new Regex("named"));
+
+            var sets = _Build(_Entry("abc123", "Assets/Sets/Studio.unity"));
+
+            Assert.AreEqual(0, sets.Count);
+        }
+
         [Test]
         public void AnIncompleteEntry_IsSkippedQuietly()
         {

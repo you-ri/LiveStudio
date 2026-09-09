@@ -196,6 +196,15 @@
     text-overflow: ellipsis;
 }
 
+/* Wider than the columns beside it: this one holds a type name, which is long even shortened,
+   and the inventory row has nothing else to spend the width on. */
+.ldv-col-type {
+    min-width: 180px;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .ldv-col-frame {
     overflow: hidden;
 }

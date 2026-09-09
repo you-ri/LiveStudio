@@ -46,6 +46,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _port: 31000
+  _delaySeconds: 0.0167
+  _cameraHeight: 1.6
+  _cameraDistance: 0
   _offsetPosition: {x: 0, y: 0, z: 0}
   _offsetRotation: {x: 0, y: 0, z: 0}
   resetCameraAtReceived: 1

@@ -84,8 +84,16 @@ namespace Lilium.LiveStudio
             IReadOnlyList<BuiltinSetList.Entry> entries, string basePath, Func<string, bool> isInBuild)
         {
             var result = new List<AssetBase>(entries.Count);
-            var takenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var takenGuids = new HashSet<string>(StringComparer.Ordinal);
+
+            // The bootstrap set occupies a name too — StageManager lists it under its scene's file name —
+            // and it is not in `entries`, so reserve it up front. Without this, a declared scene that
+            // happens to share the base scene's file name (in another folder, so the path check above lets
+            // it through) would list under a name that always resolves to the bootstrap entry instead.
+            var takenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                _BootstrapDisplayName(basePath),
+            };
 
             for (int i = 0; i < entries.Count; i++)
             {
@@ -136,6 +144,14 @@ namespace Lilium.LiveStudio
                 });
             }
             return result;
+        }
+
+        // How StageManager labels the bootstrap entry: its scene's file name, or "Studio" before a scene is
+        // known. Kept in step with StageManager._CreatePersistentEntry.
+        static string _BootstrapDisplayName(string basePath)
+        {
+            var name = Path.GetFileNameWithoutExtension(basePath ?? string.Empty);
+            return string.IsNullOrEmpty(name) ? "Studio" : name;
         }
 
         /// <summary>The display name declared for <paramref name="entry"/>, falling back to the scene's file name.</summary>

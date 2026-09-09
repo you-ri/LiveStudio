@@ -20,7 +20,7 @@ namespace Lilium.RemoteControl.LiveScene
     /// but every entry belongs to a single class and carries only Project-scoped members.
     ///
     /// Besides the top-level registered objects, this also walks the <c>[LiveClass]</c> components
-    /// of each exposed GameObject. Such components (e.g. ScreenController = "Screen") are not
+    /// of each exposed GameObject. Such components are not
     /// registered as standalone handles; in the live scene they are saved as inline-reference pending
     /// entries via <see cref="LiveSceneSerializer"/>. Here they are re-linked to their owning
     /// GameObject by <c>@parent</c> (the GameObject's stable id) so they can be resolved on apply.
@@ -62,7 +62,7 @@ namespace Lilium.RemoteControl.LiveScene
                     }
                 }
 
-                // 2. 公開 GameObject の [LiveClass] component を辿る (ScreenController="Screen" など)。
+                // 2. 公開 GameObject の [LiveClass] component を辿る。
                 _CollectComponentEntries(obj, resolver, entriesByClass);
             }
 
@@ -170,15 +170,6 @@ namespace Lilium.RemoteControl.LiveScene
 
         private static void _ApplyComponentEntry(JObject jObject, string parentId, ILiveObjectResolver resolver)
         {
-            var parent = resolver.FindById(parentId);
-            if (parent == null)
-            {
-                Debug.LogWarning($"[RemoteControl] Project settings: parent '{parentId}' not found; component entry skipped.");
-                return;
-            }
-            var go = LiveSceneObjectUtil.GetGameObject(parent.Value);
-            if (go == null) return;
-
             var typeName = jObject["@type"]?.Value<string>();
             if (string.IsNullOrEmpty(typeName)) return;
             var compClass = LiveClass.Find(typeName);
@@ -187,6 +178,28 @@ namespace Lilium.RemoteControl.LiveScene
                 Debug.LogWarning($"[RemoteControl] Project settings: unknown component type '{typeName}' (deleted/renamed class?); entry skipped.");
                 return;
             }
+
+            // A class that used to be a component and is now a plain object: the settings on disk are
+            // still keyed by @parent (the GameObject it used to sit on), but there is no component to
+            // find any more. Fall back to the registered instance of that class so the operator's saved
+            // settings survive the move instead of silently resetting to defaults.
+            //
+            // Stated as a rule about shape rather than about any one class, so this reads the same for
+            // the next class that makes the same move.
+            if (!typeof(Component).IsAssignableFrom(compClass.type))
+            {
+                _ApplyMovedComponentEntry(jObject, compClass, resolver);
+                return;
+            }
+
+            var parent = resolver.FindById(parentId);
+            if (parent == null)
+            {
+                Debug.LogWarning($"[RemoteControl] Project settings: parent '{parentId}' not found; component entry skipped.");
+                return;
+            }
+            var go = LiveSceneObjectUtil.GetGameObject(parent.Value);
+            if (go == null) return;
 
             int wantIdx = jObject["@componentIndex"]?.Value<int>() ?? 0;
             var matches = go.GetComponents(compClass.type);
@@ -198,6 +211,43 @@ namespace Lilium.RemoteControl.LiveScene
 
             var ch = LiveObjectHandle.CreateUnregistered(compClass, matches[wantIdx]);
             LivePropertySerializer.FromJson(jObject.ToString(), ch, resolver, captureDefaults: false);
+        }
+
+        /// <summary>
+        /// Applies an entry that was written when its class was a component, to the registered instance
+        /// that class has now that it is a plain object. Only meaningful for a class with a single
+        /// registered instance, which is what such a class is: the settings were one machine's, and a
+        /// class that moved off its GameObject moved to being the one holder of them.
+        /// </summary>
+        private static void _ApplyMovedComponentEntry(JObject jObject, LiveClass compClass, ILiveObjectResolver resolver)
+        {
+            LiveObjectHandle? found = null;
+            int count = 0;
+            foreach (var handle in LiveObjectRegistry.GetByTargetType(compClass.type))
+            {
+                count++;
+                if (count > 1) break;
+                found = handle;
+            }
+
+            if (found == null)
+            {
+                Debug.LogWarning($"[RemoteControl] Project settings: '{compClass.typeName}' is no longer a component and no instance is registered; entry skipped.");
+                return;
+            }
+            if (count > 1)
+            {
+                Debug.LogWarning($"[RemoteControl] Project settings: '{compClass.typeName}' is no longer a component but has several instances; entry skipped.");
+                return;
+            }
+
+            // @parent / @componentIndex belonged to the shape this entry no longer has. Dropping them
+            // keeps the reader from treating the id as a value to write.
+            var moved = (JObject)jObject.DeepClone();
+            moved.Remove("@parent");
+            moved.Remove("@componentIndex");
+
+            LivePropertySerializer.FromJson(moved.ToString(), found.Value, resolver, captureDefaults: false);
         }
 
         private static void _AddEntry(Dictionary<string, JArray> entriesByClass, string className, JObject entry)

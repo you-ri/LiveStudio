@@ -43,6 +43,9 @@ namespace Lilium.LiveStudio
         [LiveProperty]
         public bool isLive => _reference != null ? _reference.IsLive : false;
 
+        /// <summary>Last <see cref="isLive"/> seen by <see cref="_PollIsLive"/>.</summary>
+        private bool _lastIsLive;
+
         [LiveProperty, Hide]
         public float aspect
         {
@@ -158,6 +161,26 @@ namespace Lilium.LiveStudio
             {
                 controller.Update(_reference);
             }
+
+            _PollIsLive();
+        }
+
+        /// <summary>
+        /// Records a change when <see cref="isLive"/> flips. The flag is derived from the Brain, so
+        /// nothing writes it and the priority setter's record is not enough on its own: the Brain
+        /// only settles after the blend, and until it does the outgoing camera is still a live child.
+        /// A remote client that refetches on the priority change therefore reads "live" for both
+        /// cameras and, with no later change to pick up, keeps the badge on every camera it ever
+        /// switched to. Watching the derived value covers the blend's end as well as switches made
+        /// outside the property setter (Timeline, direct Priority writes, Solo in the editor).
+        /// </summary>
+        private void _PollIsLive()
+        {
+            var live = isLive;
+            if (live == _lastIsLive) return;
+
+            _lastIsLive = live;
+            if (!string.IsNullOrEmpty(id)) LiveChangeLog.Record(id);
         }
         
         public void RequestCameraImage()
@@ -223,31 +246,23 @@ namespace Lilium.LiveStudio
             return _texture2D;
         }
         
-        private static Camera _cachedRenderCamera;
-
         /// <summary>
-        /// CinemachineBrainを持つCameraを検索する。Camera.mainが無い場合のフォールバック。
+        /// サムネイルを撮る描画カメラ。<see cref="ScreenManager"/> が「今画面に出ているカメラ」を
+        /// 一元的に決めているので、ここでは探さずにそれを借りる。自前で探すと、セットが自分の
+        /// カメラを持ち込んだときにサムネイルだけ別のカメラの絵になる。
+        ///
+        /// ⚠ 結果をキャッシュしない。ScreenManager 側はセットの出し入れで出力カメラを差し替えるので、
+        /// ここが握ると古いカメラを指したままになる (Unity の null 判定では破棄されたときしか気付けず、
+        /// 破棄されずに切り替わった場合を取りこぼす)。
         /// </summary>
         private static Camera _FindRenderCamera()
         {
-            // キャッシュが有効ならそれを返す
-            if (_cachedRenderCamera != null)
-                return _cachedRenderCamera;
+            var screen = ScreenManager.current;
+            if (screen != null && screen.outputCamera != null) return screen.outputCamera;
 
-            // Camera.mainがあればそれを使う
-            if (Camera.main != null)
-            {
-                _cachedRenderCamera = Camera.main;
-                return _cachedRenderCamera;
-            }
-
-            // CinemachineBrainを持つCameraを探す
+            // ScreenManager がまだ居ない場面 (非再生の Editor など) のための最後の手段。
             var brain = UnityEngine.Object.FindAnyObjectByType<CinemachineBrain>();
-            if (brain != null)
-            {
-                _cachedRenderCamera = brain.GetComponent<Camera>();
-                return _cachedRenderCamera;
-            }
+            if (brain != null) return brain.GetComponent<Camera>();
 
             return null;
         }
@@ -310,6 +325,9 @@ namespace Lilium.LiveStudio
             // file that carries no priority key re-applies the current value (no-op) and the dirty
             // baseline starts from the authored state.
             if (_reference != null) _priority = _reference.Priority;
+
+            // Seed the watcher so the first frame does not report a change for every camera.
+            _lastIsLive = isLive;
 
             Service<ILiveCamera>.Register(this);
 

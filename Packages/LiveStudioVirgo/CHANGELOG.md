@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Quitting a session that touched nothing no longer asks whether to save the live scene.** `VirgoMotionSource`'s camera-fit offsets (`_offsetPosition` / `_offsetRotation`) became live-scene members when they were put on the state lane, and `resetCameraAtReceived` recomputes them from the first frames of capture on every launch. The result is measured, so it differs slightly each run, and an untouched session therefore counted as an unsaved edit and prompted at quit -- saving did not help, because the next launch measured a new value. The offsets now declare `persistable = false` with an explicit `lane = FrameLane.State`, which is the exception `FrameLaneRules` states out loud: a member the scene does not save but a take must carry, the same shape as a pose or an expression weight. A take still replays where it was shot -- the offsets ride the state lane exactly as before -- and the scene file no longer carries a value the next launch would overwrite anyway.
+
 ## [0.26.0] - 2026-08-20
 <!-- changelog-sha: c639c1ec8e82903d9b2fce176fb5ad194df87332 -->
 
