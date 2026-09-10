@@ -1,19 +1,33 @@
 # Changelog
 
-## [Unreleased]
-
-### Fixed
-
-- **Quitting a session that touched nothing no longer asks whether to save the live scene.** `VirgoMotionSource`'s camera-fit offsets (`_offsetPosition` / `_offsetRotation`) became live-scene members when they were put on the state lane, and `resetCameraAtReceived` recomputes them from the first frames of capture on every launch. The result is measured, so it differs slightly each run, and an untouched session therefore counted as an unsaved edit and prompted at quit -- saving did not help, because the next launch measured a new value. The offsets now declare `persistable = false` with an explicit `lane = FrameLane.State`, which is the exception `FrameLaneRules` states out loud: a member the scene does not save but a take must carry, the same shape as a pose or an expression weight. A take still replays where it was shot -- the offsets ride the state lane exactly as before -- and the scene file no longer carries a value the next launch would overwrite anyway.
-
 ## [0.26.0] - 2026-08-20
-<!-- changelog-sha: c639c1ec8e82903d9b2fce176fb5ad194df87332 -->
+<!-- changelog-sha: c41546bfecf2c2854bd2032780ab482d6ce1a63d -->
+
+### Added
+
+- **A take carries the captured pose and replays it without Fusion.** `VirgoMotionSource` is now a sampler on `MotionSourceBase` (see `jp.lilium.livestudio`): it samples the received stream at the playback position and the base class puts the pose on the state lane, so a replay drives the avatar from the take with nothing listening on the port. The stream is declared as the frame source `fusion`. The received per-bone rotations are converted into the muscle-space pose Studio records by `WirePoseNormalizer`, on a hidden skeleton built from the same build data Studio sends to Fusion, so the conversion is exact; interpolation between received frames now happens in muscle space. The conversion is transitional and moves to Fusion once the wire carries muscles. Placement is applied at the frame head after sampling rather than on the receive thread, so the recorded pose does not depend on where the camera stood when a packet arrived, and the camera-fit offsets ride the state lane so a take replays where it was shot.
+
+- `receivedFrameCount` and `validFrameCount` are exposed read-only (hidden in the UI), so a driver can tell whether motion is actually arriving: two reads a moment apart with no increase mean the Fusion → UDP → Studio path is broken, which a still avatar cannot show.
+
+- `FusionApp` does not start Fusion when the build is launched with `-noCompanionApp`, so the caller can start Fusion itself with its own arguments.
+
+- TODO: `Contents/Prefabs/Virgo Extention.prefab` was added (a `RemoteControlContainer`, `CaptureCameraTracker`, `PostProcessLayer` and a Cinemachine camera; used by the Studio scene) — describe what it is for.
 
 ### Changed
+
+- ⚠ **`VirgoMotionSource`'s rig settings — UDP port, playback delay, camera height and camera distance — are project settings instead of live-scene values.** They describe how this machine is wired and where its camera stands, not what was performed, so they stay out of takes, and a spare machine can listen on a different port. ⚠ A replay on a machine with different rig settings places the avatar differently.
+
+- `Open`, `ResyncTiming` and `ResetCamera` are not recorded. ⚠ `ResetCamera` moves the world — it re-pins the capture camera, so the avatar's position changes — and pressing it during a take makes the replay diverge from that moment.
+
+- `AnimationFrameBridge.ToLiveStudio` takes a `WirePoseNormalizer` and returns false while no skeleton has been built (no avatar loaded yet). Breaking for callers of the bridge.
 
 - `VirgoMotionSource` receives avatar-build notifications through the new `AvatarBuildNotifier.onAvatarBuilt` event instead of implementing the removed `IAvatarBuildObserver` interface. Behaviour is unchanged.
 - `VirgoMotionSource.ResyncTiming` now asks Fusion to re-lock its capture timing as well, so a single button resyncs the whole pipeline. There are two timing baselines — Fusion's offset onto the capture stream and Studio's playback offset — and re-locking one left the other's drift in place, which meant pressing a button in each app. The request to Fusion is fire-and-forget and the local reset always runs, so a Studio-only session (or an offline Fusion) resyncs exactly as before.
 - `FusionRequestSystem` calls `/live/function/...`, following RemoteControl's `/exposed/*` → `/live/*` route rename.
+
+### Fixed
+
+- **Quitting a session that touched nothing no longer asks whether to save the live scene.** `VirgoMotionSource`'s camera-fit offsets (`_offsetPosition` / `_offsetRotation`) became live-scene members when they were put on the state lane, and `resetCameraAtReceived` recomputes them from the first frames of capture on every launch. The result is measured, so it differs slightly each run, and an untouched session therefore counted as an unsaved edit and prompted at quit -- saving did not help, because the next launch measured a new value. The offsets now declare `persistable = false` with an explicit `lane = FrameLane.State`, which is the exception `FrameLaneRules` states out loud: a member the scene does not save but a take must carry, the same shape as a pose or an expression weight. A take still replays where it was shot -- the offsets ride the state lane exactly as before -- and the scene file no longer carries a value the next launch would overwrite anyway.
 
 ## [0.25.1] - 2026-07-20
 <!-- changelog-sha: dc55cba22927641c3ad952c44a494539b13e05dc -->
