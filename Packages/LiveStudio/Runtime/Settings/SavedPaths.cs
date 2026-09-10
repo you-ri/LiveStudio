@@ -66,6 +66,20 @@ namespace Lilium.LiveStudio
 
         private static string _ResolveDefaultBaseDirectory()
         {
+            // An integration test run points every saved file at a scratch folder so it never
+            // touches the operator's real projects. Read here rather than from an init hook: the
+            // base directory is resolved lazily on first use, so there is no callback ordering to
+            // get wrong -- whoever asks first gets the overridden value.
+            //
+            // This alone does not isolate a run. The last opened project is persisted as an
+            // absolute path and reopened on startup, so it would be reopened from outside this
+            // folder and rewritten. ProjectManager reads the matching -project option for that.
+            var overridden = LaunchArgs.GetPath(LaunchArgs.kSavedBase);
+            if (!string.IsNullOrEmpty(overridden))
+            {
+                return overridden;
+            }
+
             string root;
             try
             {

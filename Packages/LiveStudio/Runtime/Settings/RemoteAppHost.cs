@@ -28,6 +28,11 @@ namespace Lilium.LiveStudio
             // The Editor leaves Remote app lifecycle to the developer.
             if (Application.isEditor) return;
 
+            // An integration test drives the remote app itself and must be the only client doing so.
+            // Left to itself this build starts a second one in a hidden window, which goes on polling
+            // and answering confirmation prompts the test is waiting to answer.
+            if (LaunchArgs.Has(LaunchArgs.kNoRemoteApp)) return;
+
             var settings = LiveStudioProjectSettings.Instance;
             if (settings == null)
             {

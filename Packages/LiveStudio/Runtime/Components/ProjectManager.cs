@@ -118,14 +118,65 @@ namespace Lilium.LiveStudio
             _unselectedCameraPreviewIntervalMs = 50;
             _realtimePropertyIntervalMs = 100;
 
-            _projectPath = PlayerPrefs.GetString(kProjectPathKey, "");
-            if (string.IsNullOrEmpty(_projectPath))
+            // A project named on the command line wins over the persisted one and is never written
+            // back (see _persistProjectPath). Without this, pointing -savedBase at a scratch folder
+            // does not isolate a run: the last opened project is persisted machine-wide as an
+            // absolute path, so a run would reopen the operator's real project from outside the
+            // scratch folder and rewrite it.
+            var forced = LaunchArgs.GetPath(LaunchArgs.kProject);
+            // Assigned rather than only cleared, so a previous run does not leave it off with Domain
+            // Reload disabled.
+            _persistProjectPath = string.IsNullOrEmpty(forced);
+            if (!_persistProjectPath)
             {
-                _projectPath = _EnsureInitialProjectPath();
+                _projectPath = _EnsureDirectory(forced);
+            }
+            else
+            {
+                _projectPath = PlayerPrefs.GetString(kProjectPathKey, "");
+                if (string.IsNullOrEmpty(_projectPath))
+                {
+                    _projectPath = _EnsureInitialProjectPath();
+                }
             }
 
             // 開いているプロジェクトフォルダを Scene (live scene) の既定保存先に合わせる。
             _ApplySaveDirectory();
+        }
+
+        /// <summary>
+        /// The project folder a launch starts on, resolved without touching any state: the one named
+        /// on the command line if there is one, else the persisted path (empty when neither).
+        ///
+        /// The startup base-scene switch resolves through here too, so the two cannot disagree about
+        /// which project a run belongs to. A disagreement would load one project's base scene while
+        /// reading and writing another project's folder.
+        /// </summary>
+        internal static string ResolveStartupProjectPath()
+        {
+            var forced = LaunchArgs.GetPath(LaunchArgs.kProject);
+            if (!string.IsNullOrEmpty(forced)) return forced;
+            return PlayerPrefs.GetString(kProjectPathKey, "");
+        }
+
+        // Whether opening a project writes the path back to PlayerPrefs. False for a run whose
+        // project came from the command line: such a run must leave no trace, or the next ordinary
+        // launch would open the scratch project instead of the operator's own.
+        private static bool _persistProjectPath = true;
+
+        // Creates a directory, returning the path either way. A failure here is left to the caller's
+        // normal not-found handling rather than thrown: this runs during startup.
+        private static string _EnsureDirectory(string path)
+        {
+            try
+            {
+                if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"[LiveStudio] Failed to create project directory '{path}': {ex.Message}");
+            }
+            return path;
         }
 
         // Resolves the initial project folder Documents/<brand>/<DefaultProject> and creates it.
@@ -201,8 +252,14 @@ namespace Lilium.LiveStudio
         private static void _OpenProjectConfirmed(string folderPath)
         {
             _projectPath = folderPath;
-            PlayerPrefs.SetString(kProjectPathKey, folderPath);
-            PlayerPrefs.Save();
+            // A run whose project came from the command line leaves no trace, including projects it
+            // switched to while running. Persisting here would hand the scratch project to the next
+            // ordinary launch.
+            if (_persistProjectPath)
+            {
+                PlayerPrefs.SetString(kProjectPathKey, folderPath);
+                PlayerPrefs.Save();
+            }
 
             // Apply the state directory before loading so the load path writes startup.json under
             // the newly opened project (not the previous one).

@@ -251,8 +251,8 @@ namespace Lilium.RemoteControl.LiveScene
 
             if (!Application.isPlaying) return;
 
-            _StartServerAndRegister();
-
+            // The server is NOT opened here: it opens in Start(), once the startup restore has
+            // actually been applied. See _LoadInitialDataThenStartServer.
             _sceneSave.OnEnable();
 
             // The project-directory override that selects the startup-state directory is set by the
@@ -288,10 +288,40 @@ namespace Lilium.RemoteControl.LiveScene
             if (_isDuplicate) return;
             if (!Application.isPlaying) return;
 
-            // The pass-through arms the deferred re-deserialize when a base-scene switch is triggered
-            // (persistent host); a non-persistent host is destroyed by the reload and its replacement
-            // re-enters Start.
-            LoadCurrentData();
+            _LoadInitialDataThenStartServer();
+        }
+
+        /// <summary>
+        /// Applies the startup live scene, then opens the server.
+        /// </summary>
+        /// <remarks>
+        /// The order is the point. Applying a live scene ends by adopting everything now live as the
+        /// "nothing is unsaved" baseline, because everything it just applied came from disk rather
+        /// than from the operator. A REST write that lands before that runs is swallowed by it: the
+        /// value stays, but the app stops counting it as an edit, so the quit check finds nothing
+        /// unsaved and the change is dropped without a prompt. Worse, the restore can overwrite the
+        /// value outright when the file carries that member.
+        /// <para/>
+        /// So answering on the port is the app's promise that an edit made now will be kept, and the
+        /// server must not make it while the restore is still ahead of it. The window used to be
+        /// about a second wide (the host's OnEnable to its Start), which is exactly long enough for a
+        /// remote app or a test to connect and write into it.
+        /// <para/>
+        /// A load that triggers a base-scene switch defers its deserialize to the reloaded scene, so
+        /// the server waits for that too: a persistent host re-enters this from
+        /// <see cref="_OnSceneLoaded"/>, and a non-persistent one is destroyed by the reload, its
+        /// replacement running this again from <see cref="Start"/>.
+        /// </remarks>
+        private void _LoadInitialDataThenStartServer()
+        {
+            bool switched = _sceneSave?.LoadCurrentData() ?? false;
+            if (switched)
+            {
+                if (persistAcrossScenes) _switchPendingReload = true;
+                return;
+            }
+
+            _StartServerAndRegister();
         }
 
         protected override void OnDisable()
@@ -391,8 +421,9 @@ namespace Lilium.RemoteControl.LiveScene
             // The new base scene's RemoteControlContainer registered during its OnEnable (before this
             // callback), so the host container now resolves the new scene's objects. The active scene
             // now matches the saved baseSceneName, so LoadCurrentData deserializes in place without
-            // switching again.
-            _sceneSave.LoadCurrentData();
+            // switching again. Opening the server is a no-op once it is already open, and is what
+            // ends the startup wait when the very first load switched the base scene.
+            _LoadInitialDataThenStartServer();
         }
 
         private void _OnContainerUnregistered(RemoteControlContainer container)

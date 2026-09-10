@@ -88,6 +88,12 @@ namespace Lilium.LiveStudio.Virgo
         {
             if (IsRunning) return;
 
+            // An integration test starts Fusion itself, with a record folder and a saved-file
+            // location of its own. Left to itself this build starts a second one: it loses the
+            // race for the port, retreats to the tray, and -- having none of those arguments --
+            // writes its startup state into the operator's real project folder.
+            if (Lilium.LiveStudio.LaunchArgs.Has(Lilium.LiveStudio.LaunchArgs.kNoCompanionApp)) return;
+
             var fullPath = ToolAppLauncher.ResolveToolApplicationPath(
                 _fusionPathType, _fusionApplicationPath, _fusionPackageName);
 

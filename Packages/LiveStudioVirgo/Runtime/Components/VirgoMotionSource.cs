@@ -45,10 +45,21 @@ namespace Lilium.LiveStudio.Virgo
             set { _port = value; }
         }
 
+        // The two counters below are read-only and exposed so an integration test can tell whether
+        // motion is actually arriving. Two reads a moment apart that show no increase mean the
+        // Fusion -> UDP -> here path is broken, which is this rig's most common failure and the one
+        // a picture cannot prove: an avatar standing still looks the same as an avatar getting
+        // nothing. Hidden because they are diagnostics rather than something to operate.
+        //
+        // Off the live data, as read-only values are: replaying one would inject a result rather
+        // than reproduce it (FrameLaneRules).
+
         /// <summary>これまでに受信したフレーム数。受信検知のインジケータ用。</summary>
+        [LiveProperty, Hide]
         public int receivedFrameCount => _receivedFrameCount;
 
         /// <summary>これまでに受信した valid な AvatarAnimationData のフレーム数。カメラリセットの基準に使う。</summary>
+        [LiveProperty, Hide]
         public int validFrameCount => _validFrameCount;
 
         /// <summary>UDP 受信ソケットが開いているか。</summary>

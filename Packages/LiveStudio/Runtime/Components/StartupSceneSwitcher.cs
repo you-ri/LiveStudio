@@ -31,9 +31,12 @@ namespace Lilium.LiveStudio
         {
             if (!Application.isPlaying) return;
 
-            // Read the persisted project path directly (no dependency on ProjectManager state and no
-            // reliance on static-init ordering). Fall back to persistentDataPath when no project is set.
-            var projectPath = PlayerPrefs.GetString(ProjectManager.kProjectPathKey, "");
+            // Resolve the project the same way the startup open does, through a call that reads only
+            // the command line and PlayerPrefs (no dependency on ProjectManager state and no reliance
+            // on static-init ordering between the two BeforeSceneLoad callbacks). Reading PlayerPrefs
+            // directly here would ignore a command-line project and load the wrong project's base
+            // scene. Fall back to persistentDataPath when no project is set.
+            var projectPath = ProjectManager.ResolveStartupProjectPath();
             var stateDir = string.IsNullOrEmpty(projectPath) ? Application.persistentDataPath : projectPath;
 
             var baseSceneName = ReadBaseSceneName(stateDir);
