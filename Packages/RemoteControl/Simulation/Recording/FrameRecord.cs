@@ -57,34 +57,22 @@ namespace Lilium.RemoteControl.Frames.Recording
         public static readonly byte[] kFooterMagic = { (byte)'L', (byte)'V', (byte)'D', (byte)'E' };
 
         /// <summary>
-        /// 2 added the keyframe list to the tail; 3 added the verb to an event entry; 4 made an
-        /// event payload typed bytes rather than text; 5 added the recipe to an inventory entry, so
-        /// a replay can build back what it lists rather than only recognise it. Refused rather than
-        /// guessed at: an older layout read at the newer offsets produces values that look
-        /// plausible, which is worse than a file that will not open.
+        /// Generation of the layout. Refused rather than guessed at: an older layout read at the
+        /// newer offsets produces values that look plausible, which is worse than a file that will
+        /// not open.
         ///
-        /// The marks above changed with the rename to live data, which is a clean break: a file
-        /// written before it is refused at the first four bytes rather than at the version.
+        /// Shared with the Unreal side, which writes the same layout: whichever engine changes the
+        /// layout raises it in both, or the same number comes to mean two layouts.
         ///
-        /// 6 added a flag byte to the header saying whether the entries are compressed, and gave a
-        /// compressed file a frame index that names a chunk and carries its own frame numbers.
+        /// Restarted at 1 on 2026-09-11, before live data first shipped. The generations before it
+        /// were development-era, so a take carrying one is refused rather than migrated. Those takes
+        /// carry numbers up to 8 in this field: clear them out before this one climbs that far.
         ///
-        /// 7 widened an inventory entry from 16 to 28 bytes: a collection element carries the member
-        /// holding it, its key within that member, and its position. Before this the inventory could
-        /// only name objects with a registry id, so the elements of an exposed collection were in
-        /// neither lane -- the state lane carried their values and nothing carried the fact that they
-        /// existed, which left a seek unable to stand one back up or take one away.
-        /// 8 replaced the layout hash on a state entry with the id of a description of the block:
-        /// what it holds, member by member. The hash could only say "these two builds disagree",
-        /// which cost the whole type its state whenever one member was added or taken away; the
-        /// description says which members they still agree on, so the rest of the take plays.
-        ///
-        /// 8 stands, unchanged, through the retirement of two EventKind values on 2026-09-08: the
-        /// kind is still one int at the same offset, only two of the four values it could hold are
-        /// no longer written. A version is for a layout a reader cannot walk, and this one it can --
-        /// the reader maps the retired values instead, see FrameRecordPlayer.
+        /// A version is for a layout a reader cannot walk. Retiring an enum value whose field keeps
+        /// its width and offset does not raise it -- the reader maps the retired value instead, see
+        /// FrameRecordPlayer.
         /// </summary>
-        public const int kVersion = 8;
+        public const int kVersion = 1;
 
         /// <summary>
         /// Bytes a chunk spends before its compressed body: what it takes on disk, and what it

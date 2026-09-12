@@ -531,8 +531,10 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// Reads the kind a recording holds, mapping values this build no longer writes.
         ///
         /// EventKind lost StructureChange (2) and RegisteredSource (3) on 2026-09-08. The field is
-        /// still an int and the layout is unchanged, so kVersion stays where it is and old takes
-        /// stay readable -- this is the one point that has to know they used four values.
+        /// still an int and the layout is unchanged, so that alone did not call for a new version --
+        /// this is the one point that has to know they used four values. Since the format restarted
+        /// at version 1 on 2026-09-11, a take from before the change is refused at the version check
+        /// and never reaches here; what the mapping still does is keep an unknown value out.
         ///
         /// 2 becomes Call: of the six routes that ever wrote it, five were calls (scene export and
         /// import, orphan removal, manipulator open and close) and one -- @parent -- was a write.
