@@ -117,30 +117,24 @@ namespace Lilium.LiveStudio.Virgo
         [LiveField(persistScope = PersistScope.Project)]
         private float _cameraDistance = 0.7f;
 
-        // 撮影カメラの基準点のうち、カメラ合わせが算出する分。ResetCamera が書き、配置行列が読む。
+        // The camera fit: the part of the reference point derived from the capture camera. Written by
+        // _FitCamera, read by the placement matrix. Derived rather than set by anyone, so it is
+        // neither exposed nor saved.
         //
-        // 収録はするが保存はしない (persistable = false + lane を明示)。これは FrameLaneRules が
-        // 名前を挙げている例外そのもの — 姿勢や表情ウェイトと同じ「シーンは保存しないがテイクが
-        // 運ぶメンバー」。基準点を記録に残さないと、再生は「再生機の今のリグ設定で置き直す」
-        // ことしかできず、収録時の立ち位置が再現しない。値そのものは毎フレーム変わらないが、
-        // テイクの途中でカメラリセットが走れば変わるし、状態レーンなら開始前の値もどのフレーム
-        // からでも自己完結して読める。
+        // Not on the live data either, because a take already carries what it is derived from: the
+        // capture camera travels on the state lane with every pose. A replay takes a fit of its own
+        // from the take when it starts (OnSampleResolved), the way a live run takes one when motion
+        // starts arriving -- so a machine that has never received anything, with no Fusion running,
+        // still places a take where it was shot. Recording the fit as well only kept a second copy,
+        // and one that reached the placement a frame late depending on handler order.
         //
-        // ⚠ シーンに保存してはいけない。resetCameraAtReceived (既定 true) により受信開始で必ず
-        // 再算出されるので保存値は毎起動で捨てられ、しかも実測値なので毎回わずかに違う。保存対象に
-        // すると「起動して何もせず終了」が未保存の編集として数えられ、終了時に保存ダイアログが
-        // 出続ける (dirty 判定は Scene スコープの永続化メンバーを見るため)。
-        //
-        // internal なのは「人が手で書き換える値ではないが、記録には要る」という位置づけのため。
-        // 算出するのは ResetCamera で、リグの実寸 (cameraHeight / cameraDistance) のように
-        // 人が決める設定ではない。
+        // ⚠ Accepted cost: a Reset Camera pressed during a take is not replayed. The replay keeps the
+        // fit it took at its start.
         [SerializeField]
-        [LiveField(persistable = false, lane = FrameLane.State)]
-        internal Vector3 _offsetPosition = Vector3.zero;
+        private Vector3 _offsetPosition = Vector3.zero;
 
         [SerializeField]
-        [LiveField(persistable = false, lane = FrameLane.State)]
-        internal Vector3 _offsetRotation = Vector3.zero;
+        private Vector3 _offsetRotation = Vector3.zero;
 
         private AnimationFrameData _lastReceivedFrameData;
 
@@ -182,6 +176,12 @@ namespace Lilium.LiveStudio.Virgo
         // being written. The flag is volatile and set once, so the copy is complete by the time the
         // frame head sees it.
         private AnimationFrameData _resetCameraSample;
+
+        // The replay the current camera fit was taken for, or null while live. Compared by identity
+        // rather than cleared on the way out, because a replay can start straight after another with
+        // no live frame between them -- the recorder stops one and attaches the next in the same
+        // call. A seek or a loop stays within one source, and keeps the fit.
+        private IFrameSource _replayFitSource;
 
         protected override void OnEnable()
         {
@@ -292,14 +292,44 @@ namespace Lilium.LiveStudio.Virgo
         protected override void OnFrameHeadBegin()
         {
             _UpdatePlacementOrigin();
+        }
 
-            // Consumed here rather than run on the receive thread, so the placement offsets have a
-            // single writer.
-            if (_resetCameraRequested)
+        /// <summary>
+        /// Takes the camera fit. Live, that is the reset the receive thread queued; on a replay, a fit
+        /// of the replay's own, taken off the take's capture camera the first time it offers a valid
+        /// one.
+        ///
+        /// Here rather than at the top of the frame head because a replay has nothing else to take
+        /// its fit from: nothing was received, and the sample is the only camera there is. The live
+        /// reset is consumed here too, and only on a live frame, so the two never both write: a reset
+        /// queued by a stream that starts arriving during a replay waits for the replay to end
+        /// instead of replacing the fit the take is being placed by. Either way the fit is written
+        /// on the main thread, just before the placement that reads it.
+        /// </summary>
+        protected override void OnSampleResolved(in AvatarAnimationData sample, bool supplied)
+        {
+            if (!supplied)
             {
-                _resetCameraRequested = false;
-                _ResetCameraFrom(in _resetCameraSample);
+                // Back on the live stream, so the next replay takes a fit of its own.
+                _replayFitSource = null;
+
+                if (_resetCameraRequested)
+                {
+                    _resetCameraRequested = false;
+                    _ResetCameraFrom(in _resetCameraSample);
+                }
+                return;
             }
+
+            var source = FrameGate.source;
+            if (ReferenceEquals(source, _replayFitSource) || !sample.isValid) return;
+
+            _replayFitSource = source;
+
+            // Copied because AsCamera hands back a ref, which needs somewhere mutable to point at.
+            var copy = sample;
+            ref var camera = ref copy.AsCamera(0);
+            _FitCamera(camera.position, camera.rotation, copy.root.scale.x);
         }
 
         /// <summary>Fusion, as the frame says it. Declared in this assembly, so resolving it is safe here.</summary>
@@ -603,8 +633,6 @@ namespace Lilium.LiveStudio.Virgo
 
         private void _ResetCameraFrom(in AnimationFrameData reference)
         {
-            // Pin the capture camera (cam0) to the placement origin (_position = VirgoMotionSource, the camera
-            // reference at cameraHeight/cameraDistance from the mark) — camera-anchored position.
             // (ref var avoids naming CameraData: the wire-side Lilium.LiveStudio.Virgo.CameraData would shadow
             //  the Lilium.LiveStudio.CameraData returned here.)
             //
@@ -613,6 +641,17 @@ namespace Lilium.LiveStudio.Virgo
             var sample = reference;
             ref var camera = ref sample.AsCamera(0);
 
+            _FitCamera(camera.position, camera.rotation, sample.scale.x);
+        }
+
+        /// <summary>
+        /// Pins the capture camera (cam0) to the placement origin (_position = VirgoMotionSource, the
+        /// camera reference at cameraHeight/cameraDistance from the mark) -- camera-anchored position.
+        /// Taken from a received frame live and from the take on a replay; both carry the same
+        /// camera and scale (AnimationFrameBridge copies them verbatim), so the two fits agree.
+        /// </summary>
+        private void _FitCamera(Vector3 cameraPosition, Quaternion cameraRotation, float scale)
+        {
             // Align the capture camera (cam0) so its +Z faces the mark, matching this GameObject's own
             // placement orientation (source.rotation * 180°, which points back at the mark). The avatar then
             // keeps its captured orientation *relative to the camera* and lands laterally on the mark.
@@ -620,11 +659,11 @@ namespace Lilium.LiveStudio.Virgo
             // which swings the avatar sideways off the mark (the reported symptom). The +180 is required because
             // the placement itself is flipped to face back at the mark — dropping it (using -cameraYaw) points
             // the camera away and flips the avatar backwards.
-            _offsetRotation = new Vector3(0, 180f - camera.rotation.eulerAngles.y, 0);
+            _offsetRotation = new Vector3(0, 180f - cameraRotation.eulerAngles.y, 0);
 
             // オフセット適用後のカメラワールド位置を原点 (_position = VirgoMotionSource) に合わせる（cam.pos≈0）。
             var rotation = Quaternion.Euler(_offsetRotation);
-            _offsetPosition = -(rotation * camera.position) / sample.scale.x;
+            _offsetPosition = -(rotation * cameraPosition) / scale;
         }
     }
 }

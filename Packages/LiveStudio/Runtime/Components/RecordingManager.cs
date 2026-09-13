@@ -41,7 +41,7 @@ namespace Lilium.LiveStudio
     }
 
     /// <summary>
-    /// Takes of live data: the app's side of <see cref="FrameRecorderController"/>.
+    /// Takes of live data: the app's side of <see cref="LiveDataRecorder"/>.
     ///
     /// A take and a snapshot are the same thing at two lengths — a snapshot is live data that lasts
     /// one frame — so they are listed and operated together, and this is the half of that pair the
@@ -57,10 +57,10 @@ namespace Lilium.LiveStudio
     public static class RecordingManager
     {
         /// <summary>Extension of a take. One take, one file.</summary>
-        public const string kFileExtension = FrameRecorderController.kExtension;
+        public const string kFileExtension = LiveDataRecorder.kExtension;
 
         /// <summary>Extension takes were written with before <see cref="kFileExtension"/>.</summary>
-        public const string kLegacyFileExtension = FrameRecorderController.kLegacyExtension;
+        public const string kLegacyFileExtension = LiveDataRecorder.kLegacyExtension;
 
         /// <summary>Picture of what was on screen when the take began, written beside it.</summary>
         public const string kThumbnailFileExtension = ".live.png";
@@ -70,7 +70,7 @@ namespace Lilium.LiveStudio
         /// thing one frame long (<see cref="SnapshotManager.kSnapshotDirName"/>). One folder, because
         /// one page lists both.
         ///
-        /// The machinery has a default of its own (<see cref="FrameRecorderController.kFolderName"/>,
+        /// The machinery has a default of its own (<see cref="LiveDataRecorder.kFolderName"/>,
         /// used when nothing says where to file takes); this is the answer this application installs.
         /// </summary>
         public const string kFolderName = "Recordings";
@@ -117,19 +117,19 @@ namespace Lilium.LiveStudio
 
         // ---- Transport ----
         //
-        // Plain properties reaching through to the component rather than LivePropertyRef: a ref
-        // delegates the value, the dirty flag and the persistence to the component, which a saved
+        // Plain properties reaching through to the recorder rather than LivePropertyRef: a ref
+        // delegates the value, the dirty flag and the persistence to the recorder, which a saved
         // setting needs -- and nothing here is saved. The encoding settings (keyframe interval,
-        // compression) stay on the component, where they are project settings and appear with the
+        // compression) stay on the recorder, where they are project settings and appear with the
         // rest of them; they are not something an operator reaches for between takes.
 
         /// <summary>True while a take is being recorded.</summary>
         [LiveProperty, Hide]
-        public static bool isRecording => FrameRecorderController.instance?.isRecording ?? false;
+        public static bool isRecording => LiveDataRecorder.instance?.isRecording ?? false;
 
         /// <summary>True while a take is being played back.</summary>
         [LiveProperty, Hide]
-        public static bool isReplaying => FrameRecorderController.instance?.isReplaying ?? false;
+        public static bool isReplaying => LiveDataRecorder.instance?.isReplaying ?? false;
 
         /// <summary>
         /// The take being played back, by the same name <see cref="recordings"/> lists it under, or
@@ -141,7 +141,7 @@ namespace Lilium.LiveStudio
         {
             get
             {
-                var recorder = FrameRecorderController.instance;
+                var recorder = LiveDataRecorder.instance;
                 if (recorder == null || !recorder.isReplaying) return string.Empty;
 
                 return NameFromPath(recorder.replayFilename) ?? string.Empty;
@@ -157,10 +157,10 @@ namespace Lilium.LiveStudio
         [LiveProperty, Hide]
         public static bool paused
         {
-            get => FrameRecorderController.instance?.replayPaused ?? false;
+            get => LiveDataRecorder.instance?.replayPaused ?? false;
             set
             {
-                var recorder = FrameRecorderController.instance;
+                var recorder = LiveDataRecorder.instance;
                 if (recorder != null) recorder.replayPaused = value;
             }
         }
@@ -169,10 +169,10 @@ namespace Lilium.LiveStudio
         [LiveProperty, Hide]
         public static bool loop
         {
-            get => FrameRecorderController.instance?.loop ?? false;
+            get => LiveDataRecorder.instance?.loop ?? false;
             set
             {
-                var recorder = FrameRecorderController.instance;
+                var recorder = LiveDataRecorder.instance;
                 if (recorder != null) recorder.loop = value;
             }
         }
@@ -189,7 +189,7 @@ namespace Lilium.LiveStudio
         /// Writing it pauses the replay. Dragging a position and a recording walking on are two
         /// things fighting over the same world, so a scrub holds the take where it was let go; the
         /// operator carries on with the play button. The machinery deliberately does not decide this
-        /// (<see cref="FrameRecorderController.SeekReplay"/> lands and carries on, which is what a
+        /// (<see cref="LiveDataRecorder.SeekReplay"/> lands and carries on, which is what a
         /// jump means) — pausing is what this product's transport does with a drag, so it is said here.
         /// </summary>
         [LiveProperty, Hide]
@@ -197,7 +197,7 @@ namespace Lilium.LiveStudio
         {
             get
             {
-                var recorder = FrameRecorderController.instance;
+                var recorder = LiveDataRecorder.instance;
                 if (recorder == null) return 0f;
 
                 var count = recorder.replayFrameCount;
@@ -210,7 +210,7 @@ namespace Lilium.LiveStudio
             }
             set
             {
-                var recorder = FrameRecorderController.instance;
+                var recorder = LiveDataRecorder.instance;
                 if (recorder == null) return;
 
                 var count = recorder.replayFrameCount;
@@ -223,18 +223,18 @@ namespace Lilium.LiveStudio
             }
         }
 
-        /// <summary>Starts recording a take. Named after the take number the component keeps.</summary>
+        /// <summary>Starts recording a take. Named after the take number the recorder keeps.</summary>
         [LiveFunction(label = "RECORD", icon = "fiber_manual_record"), Hide]
         public static void Record()
         {
-            var recorder = FrameRecorderController.instance;
+            var recorder = LiveDataRecorder.instance;
             if (recorder == null)
             {
-                Debug.LogError("[Studio] Record: no FrameRecorderController is registered.");
+                Debug.LogError("[Studio] Record: no LiveDataRecorder is registered.");
                 return;
             }
 
-            // Already recording: the component ignores this, so saying a take started would be a lie.
+            // Already recording: the recorder ignores this, so saying a take started would be a lie.
             // A second press reaches here whenever two clients hold the page open at once.
             if (recorder.isRecording) return;
 
@@ -250,13 +250,13 @@ namespace Lilium.LiveStudio
 
         /// <summary>
         /// Stops whichever of the two is running. One call rather than a stop each, because an
-        /// operator stops what is happening and only this knows which that was — the component
+        /// operator stops what is happening and only this knows which that was — the recorder
         /// already tears down a replay before it stops a recording.
         /// </summary>
         [LiveFunction(label = "STOP", icon = "stop"), Hide]
         public static void Stop()
         {
-            var recorder = FrameRecorderController.instance;
+            var recorder = LiveDataRecorder.instance;
             if (recorder == null) return;
 
             var wasRecording = recorder.isRecording;
@@ -277,10 +277,10 @@ namespace Lilium.LiveStudio
             var filePath = _ResolveExistingFile(name);
             if (filePath == null) return;
 
-            var recorder = FrameRecorderController.instance;
+            var recorder = LiveDataRecorder.instance;
             if (recorder == null)
             {
-                Debug.LogError("[Studio] Play: no FrameRecorderController is registered.");
+                Debug.LogError("[Studio] Play: no LiveDataRecorder is registered.");
                 return;
             }
 
@@ -295,7 +295,7 @@ namespace Lilium.LiveStudio
             var filePath = _ResolveExistingFile(name);
             if (filePath == null) return;
 
-            var recorder = FrameRecorderController.instance;
+            var recorder = LiveDataRecorder.instance;
             // Deleting the file being written, or the one being played, leaves the stream reading a
             // file that is no longer there. Stop first -- the operator asked for the take to go.
             if (recorder != null &&
@@ -350,7 +350,7 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>Where this application's takes are, or null when nothing has said.</summary>
-        public static string GetRecordingDirectory() => FrameRecorderController.recordingFolder;
+        public static string GetRecordingDirectory() => LiveDataRecorder.recordingFolder;
 
         // The recording extension the path ends with, or null for a file that is not a take.
         private static string _MatchExtension(string filePath)

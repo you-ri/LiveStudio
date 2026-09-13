@@ -11,7 +11,7 @@ namespace Lilium.LiveStudio.EditorTests
     /// only means anything in the project it came from -- it belongs to that project the same way
     /// scenes, decks and avatars do, and must not be shared across all of them.
     /// </summary>
-    public class FrameRecorderProjectTests
+    public class LiveDataRecorderProjectTests
     {
         private const string kOpen = "/projects/open";
         private const string kPersisted = "/projects/persisted";
@@ -22,7 +22,7 @@ namespace Lilium.LiveStudio.EditorTests
         {
             Assert.AreEqual(
                 Path.Combine(kOpen, RecordingManager.kFolderName),
-                FrameRecorderProject.ResolveRecordingFolder(kOpen, kPersisted, kFallback));
+                LiveDataRecorderProject.ResolveRecordingFolder(kOpen, kPersisted, kFallback));
         }
 
         [Test]
@@ -32,7 +32,7 @@ namespace Lilium.LiveStudio.EditorTests
             // project in. The picker still has to list the right project's takes.
             Assert.AreEqual(
                 Path.Combine(kPersisted, RecordingManager.kFolderName),
-                FrameRecorderProject.ResolveRecordingFolder("", kPersisted, kFallback));
+                LiveDataRecorderProject.ResolveRecordingFolder("", kPersisted, kFallback));
         }
 
         [Test]
@@ -42,7 +42,7 @@ namespace Lilium.LiveStudio.EditorTests
             // persisted value would drop takes somewhere else than everything else in that project.
             Assert.AreEqual(
                 Path.Combine(kOpen, RecordingManager.kFolderName),
-                FrameRecorderProject.ResolveRecordingFolder(kOpen, "", kFallback));
+                LiveDataRecorderProject.ResolveRecordingFolder(kOpen, "", kFallback));
         }
 
         [Test]
@@ -52,7 +52,7 @@ namespace Lilium.LiveStudio.EditorTests
             // a project at all.
             Assert.AreEqual(
                 Path.Combine(kFallback, RecordingManager.kFolderName),
-                FrameRecorderProject.ResolveRecordingFolder("", "", kFallback));
+                LiveDataRecorderProject.ResolveRecordingFolder("", "", kFallback));
         }
     }
 }

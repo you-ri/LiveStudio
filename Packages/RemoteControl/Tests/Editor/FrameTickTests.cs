@@ -1,4 +1,5 @@
 // Copyright (c) You-Ri, 2026
+using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEngine;
 using Lilium.RemoteControl.Frames;
@@ -216,6 +217,221 @@ namespace Lilium.RemoteControl.Tests
 
             FrameGate.Pump();
             FrameGate.Pump();
+
+            Assert.AreEqual(0f, Time.captureDeltaTime);
+        }
+
+        [Test]
+        public void AStepWiderThanAQuarterOfASecond_IsCutToThat()
+        {
+            // Six seconds in which nothing was pumped. Integrating over all of it at once would be a
+            // leap nothing lived through.
+            FrameGate.SetClock(new ScriptedClock(10, 370));
+
+            FrameGate.Pump();
+            FrameGate.Pump();
+
+            Assert.AreEqual(15f / 60f, FrameGate.deltaTime, 1e-6f);
+        }
+
+        [Test]
+        public void TheFirstSuppliedFrameAfterLiveOnes_IsOneInterval()
+        {
+            // The live clock counts the time of day and the take counts its own frames. The
+            // difference between one of each is not a duration.
+            FrameGate.SetClock(new ScriptedClock(0, 1));
+            FrameGate.Pump();
+
+            FrameGate.source = new ScriptedSource { frameNumber = 3_672_000 };
+            FrameGate.Pump();
+
+            Assert.AreEqual(1f / 60f, FrameGate.deltaTime, 1e-6f);
+        }
+
+        [Test]
+        public void ASuppliedFrameThatStoodStill_CoversNoTime_AndGivesTheEngineBack()
+        {
+            FrameGate.SetClock(new ScriptedClock(0, 1, 2));
+            FrameGate.driveEngineTimeOnSuppliedFrames = true;
+
+            var source = new ScriptedSource { frameNumber = 500 };
+            FrameGate.source = source;
+
+            FrameGate.Pump();
+            source.frameNumber = 501;
+            FrameGate.Pump();
+            Assert.AreEqual(1f / 60f, Time.captureDeltaTime, 1e-6f);
+
+            // Held: the take is on the record it was already on. There is no step to hand the
+            // engine, and keeping the last one would spend it again on every frame the hold lasts.
+            FrameGate.Pump();
+
+            Assert.AreEqual(0f, FrameGate.deltaTime);
+            Assert.AreEqual(0f, Time.captureDeltaTime);
+        }
+
+        /// <summary>
+        /// A clock that can be waited on, where waiting is what moves it: a wait for a frame arrives
+        /// at that frame, the way real time would, and is written down so a test can see what the
+        /// gate waited for.
+        /// </summary>
+        private sealed class WaitableClock : IFrameClock, IFrameClockSync
+        {
+            public long now;
+
+            /// <summary>Stands in for an external sync source that lost its signal.</summary>
+            public bool stuck;
+
+            public readonly List<long> waits = new List<long>();
+
+            public FrameRate frameRate => FrameRate.FPS60;
+
+            public long Advance() => now;
+
+            public void Reset() => now = 0;
+
+            public bool WaitUntil(long frameNumber, int timeoutMs)
+            {
+                waits.Add(frameNumber);
+                if (stuck) return false;
+
+                if (now < frameNumber) now = frameNumber;
+                return true;
+            }
+        }
+
+        /// <summary>A source that moves one frame a head and says it is due a fixed distance ahead.</summary>
+        private sealed class ScheduledSource : IFrameSource, IFrameSchedule
+        {
+            public long frameNumber;
+            public long dueIn = 1;
+            public bool moving = true;
+
+            public bool FillFrame(ref Frame frame)
+            {
+                frame.frameNumber = frameNumber++;
+                frame.frameRate = FrameRate.FPS60;
+                return true;
+            }
+
+            public bool TryGetNextDue(long lastClockFrame, FrameRate clockRate, out long dueClockFrame)
+            {
+                dueClockFrame = lastClockFrame + dueIn;
+                return moving;
+            }
+        }
+
+        [Test]
+        public void ADrivenReplay_WaitsForEachClockFrame()
+        {
+            var clock = new WaitableClock();
+            FrameGate.SetClock(clock);
+            FrameGate.driveEngineTimeOnSuppliedFrames = true;
+            FrameGate.source = new ScriptedSource { frameNumber = 500 };
+
+            FrameGate._PumpAtFrameHead();
+            FrameGate._PumpAtFrameHead();
+            FrameGate._PumpAtFrameHead();
+
+            // The first head has nothing before it to wait from. Every one after it waits for the
+            // next frame, so the engine renders one frame per step rather than as many as it can --
+            // which is what spent the same step several times over and ran the take fast.
+            CollectionAssert.AreEqual(new long[] { 1, 2 }, clock.waits);
+        }
+
+        [Test]
+        public void AScheduledSource_IsWaitedForUntilItIsDue()
+        {
+            var clock = new WaitableClock();
+            FrameGate.SetClock(clock);
+            FrameGate.driveEngineTimeOnSuppliedFrames = true;
+            FrameGate.source = new ScheduledSource { frameNumber = 500, dueIn = 3 };
+
+            FrameGate._PumpAtFrameHead();
+            FrameGate._PumpAtFrameHead();
+
+            CollectionAssert.AreEqual(new long[] { 3 }, clock.waits);
+        }
+
+        [Test]
+        public void AScheduleFarAhead_IsWaitedForAQuarterOfASecondAtATime()
+        {
+            // A take that stood still for a long stretch. Waiting all of it out at once would freeze
+            // the application for the length of the gap.
+            var clock = new WaitableClock();
+            FrameGate.SetClock(clock);
+            FrameGate.driveEngineTimeOnSuppliedFrames = true;
+            FrameGate.source = new ScheduledSource { frameNumber = 500, dueIn = 1000 };
+
+            FrameGate._PumpAtFrameHead();
+            FrameGate._PumpAtFrameHead();
+
+            CollectionAssert.AreEqual(new long[] { 15 }, clock.waits);
+        }
+
+        [Test]
+        public void AHeldSchedule_StillWaitsOneFrame()
+        {
+            // A paused take is not due at all, but a head that did not wait would run the editor as
+            // fast as it can go for the length of the pause.
+            var clock = new WaitableClock();
+            FrameGate.SetClock(clock);
+            FrameGate.driveEngineTimeOnSuppliedFrames = true;
+            FrameGate.source = new ScheduledSource { frameNumber = 500, dueIn = 1000, moving = false };
+
+            FrameGate._PumpAtFrameHead();
+            FrameGate._PumpAtFrameHead();
+
+            CollectionAssert.AreEqual(new long[] { 1 }, clock.waits);
+        }
+
+        [Test]
+        public void ALiveRun_IsNeverWaitedFor()
+        {
+            var clock = new WaitableClock();
+            FrameGate.SetClock(clock);
+            FrameGate.driveEngineTimeOnSuppliedFrames = true;
+
+            FrameGate._PumpAtFrameHead();
+            clock.now = 1;
+            FrameGate._PumpAtFrameHead();
+
+            CollectionAssert.IsEmpty(clock.waits);
+        }
+
+        [Test]
+        public void AReplayHeldForLoading_IsNotWaitedFor()
+        {
+            var clock = new WaitableClock();
+            FrameGate.SetClock(clock);
+            FrameGate.driveEngineTimeOnSuppliedFrames = true;
+            FrameGate.source = new ScriptedSource { frameNumber = 500 };
+
+            FrameGate._PumpAtFrameHead();
+
+            FrameGate.HoldSupply("[test] loading");
+            clock.now = 1;
+            FrameGate._PumpAtFrameHead();
+            FrameGate.ReleaseSupply("[test] loading");
+
+            CollectionAssert.IsEmpty(clock.waits);
+        }
+
+        [Test]
+        public void ABarrierThatGaveUp_GivesTheEngineBack()
+        {
+            var clock = new WaitableClock();
+            FrameGate.SetClock(clock);
+            FrameGate.driveEngineTimeOnSuppliedFrames = true;
+            FrameGate.source = new ScheduledSource { frameNumber = 500 };
+
+            FrameGate._PumpAtFrameHead();
+            Assert.AreNotEqual(0f, Time.captureDeltaTime);
+
+            // The clock did not move while the gate waited. No frame is committed, and the step the
+            // engine already holds must not be spent a second time on this one.
+            clock.stuck = true;
+            FrameGate._PumpAtFrameHead();
 
             Assert.AreEqual(0f, Time.captureDeltaTime);
         }

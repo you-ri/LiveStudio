@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.26.0] - 2026-08-20
+## [0.26.0] - 2026-09-12
 <!-- changelog-sha: c639c1ec8e82903d9b2fce176fb5ad194df87332 -->
 
 ### Fixed

@@ -1,7 +1,25 @@
 # Changelog
 
-## [0.26.0] - 2026-08-20
-<!-- changelog-sha: c41546bfecf2c2854bd2032780ab482d6ce1a63d -->
+## [Unreleased]
+
+### Changed
+
+- **`FrameRecorderController` is renamed `LiveDataRecorder`, and its exposed class name changes from `FrameRecorder` to `LiveDataRecorder`.** Users see recordings called "live data" everywhere, as in the LiveData Viewer and LiveData Sequencer windows, while `Frame*` stays the name of the machinery underneath (`FrameRecorder`, `FrameReplayer`). The old exposed name was also the name of the lower-level recorder class this one drives. This is a breaking change for source. Existing data carries over:
+  - A project's `FrameRecorder.settings.json` still applies, because entries are matched by the recorder's fixed id. `[FormerlyNamedAs("FrameRecorder")]` keeps the old type name from being reported as a mismatch. The next save writes `LiveDataRecorder.settings.json` and removes the old file.
+  - `[MovedFrom]` lets a serialized reference to the old C# type load.
+
+- **`FrameRecorderController` exposes only its two project settings, `keyframeInterval` and `compress`.** The take number, the replay file, the loop switch and the readouts (`isRecording`, `recordedFrames`, `recordedMegabytes`, `isReplaying`, `replayPaused`, `replayFrameCount`, `replayIndex`) are no longer exposed. They remain public C# members for the LiveData Sequencer window and for whatever drives the controller. A remote page drives the application's own transport instead (`RecordingManager` in `jp.lilium.livestudio`), so the exposed copies were only a second, unused set of the same controls on the project's settings page. `replayFrame` is removed because nothing read it.
+
+### Fixed
+
+- **Replaying a take no longer fast-forwards everything that runs on `Time.deltaTime`.** Springs, particles and animators ran at the render rate divided by sixty — two and a half times fast at 144 Hz, far more in an editor with vSync off. Two things combined: `Time.captureDeltaTime` was set on the engine frames that pumped the gate and then stayed set on every frame in between, so one step of the take was spent once per rendered frame; and the step itself was measured on the live clock, because `FrameReplayer` never stamped the take's own frame number on the frames it supplied. It now does — a supplied frame carries the take's number and rate, so `FrameGate.deltaTime` is the take's step (several records at one head make one wide step, and a head that holds where it is covers none), and the timecode read off a supplied frame is the take's. While a replay drives the engine's clock, the gate also waits at the head until the next record is due, so the engine renders one frame per step of the take: the take is the primary of a render cluster and the replay applies its time. A head where the take does not move (a pause, a load being waited for) gives the engine back to real time, a wait that gives up without a frame does the same, and a tick is never wider than a quarter of a second. If something else already holds `Time.captureDeltaTime` (a recorder), the replay leaves it alone and warns once.
+
+### Added
+
+- **`IFrameSchedule` and `IFrameClockSync` — the frame barrier's two halves.** A source that implements `IFrameSchedule` says at which clock frame its next frame is due (`PacedFrameSource` does); a clock that implements `IFrameClockSync` can be waited on (`RealtimeFrameClock` does, sleeping while it has time to spare and spinning the rest). This is where an external sync source such as LTC takes over the pacing: implement the wait on its own tick and install it with `FrameGate.SetClock`. Both are optional — a clock that cannot be waited on, like `FrameCounterClock` for an offline redraw, is simply not waited for.
+
+## [0.26.0] - 2026-09-12
+<!-- changelog-sha: 8bbe5c24b8ab8bdd3479a081a6c33cc01e19293d -->
 
 ### Added
 
@@ -67,6 +85,8 @@
   **Five of the six routes that wrote `StructureChange` are calls now** (scene export and import, orphan removal, manipulator open and close). Being outside `FunctionCall` had put them in the fold, where `removeOrphan` -- whose target is a constant path -- applied only its last invocation across a seek, and manipulator open and close, which share a target and differ only by verb, collapsed into one. ⚠ **`@parent` stays a `Set`**: the structure lane records `parentId` but does not apply it (`ApplyFrom` only creates, destroys and reconciles elements), so the fold on this event is the only path by which a seek restores a hierarchy -- and since the target is one child's `@parent`, folding gives exactly "where each child ended up".
 
   **The recording format is unchanged.** The kind is still one int at the same offset; two of the four values it could hold are simply no longer written, and the reader maps the retired ones (`2` becomes `Call`, an unknown value becomes `Set`).
+
+- ⚠ **The take format starts its public life at version 1: `FrameRecord.kVersion` is 1 (was 8).** Live data ships for the first time in this release, so the generations the format went through during development are not carried into the public one. The byte layout is unchanged; only the number resets. A take recorded by a development build is refused when it is opened rather than migrated -- record it again. The Unreal side writes the same layout and resets in step, so a take still opens in either engine.
 
 - ⚠ **Which instances are exposed is said by the scene, not by the live class asset: `LiveClassAsset.bindings` is gone.** An entry in the container's own object list -- a `LiveComponent` or `LiveAsset` pointing at the object, carrying the id it is exposed under -- is now the only way to give an object an id of its own. Breaking for any asset carrying instance bindings and for the scene half that fed them: `RemoteControlContainer` no longer implements `IExposedPropertyTable` (`SetReferenceValue` / `GetReferenceValue` / `ClearReferenceValue` / `ResolveKey` are removed), `bindingObjects` and the `LiveBinding` wrapper go with it, and so do `LiveObjectContainer.ResolveAllReferences` / `RebindLiveObject` and the `ResolveReferences(IExposedPropertyTable)` overrides -- which had no callers at all, since every reference was resolved eagerly when the container applied its assets and never through the table. To migrate a binding: add an entry to the container's object list, point it at the same object, and give it the binding's key as its id. The id is what live.json addresses, so keeping it keeps the saved values.
 

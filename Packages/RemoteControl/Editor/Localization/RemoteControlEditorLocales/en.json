@@ -33,7 +33,7 @@
     "LDS_TAKE_COUNT": "{0} files",
     "LDS_NO_TAKES": "No recordings yet.\n{0}",
     "LDS_BANNER_PLAY_MODE_ONLY": "Recording and playback only work in play mode (the gate is pumped from the player loop).",
-    "LDS_BANNER_NO_CONTROLLER": "No FrameRecorderController in the scene. Add one to a GameObject of the app that records and plays back.",
+    "LDS_BANNER_NO_CONTROLLER": "No LiveDataRecorder is registered. Add one to the object list of the app's Remote Control host (RemoteControlBehaviour).",
     "LDS_BANNER_NO_INDEX": "This recording has no index (it may not have been closed properly). It plays from the start, but cannot be scrubbed.",
     "LDV_DISCONNECTED": "not connected",
     "LDV_STATE_SUMMARY": "{0} types / {1} elements / {2} per frame",

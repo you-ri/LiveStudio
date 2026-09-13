@@ -21,7 +21,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
     /// drives the transport is one where the thing that moved and the thing that moved it cannot be
     /// told apart.
     ///
-    /// Everything here reaches through to the registered <see cref="FrameRecorderController"/>.
+    /// Everything here reaches through to the registered <see cref="LiveDataRecorder"/>.
     /// This window owns no recorder of its own: a take is recorded by the running application, not by
     /// the editor watching it, and a second recorder would fight the first over the gate's one sink
     /// -- which is also why a page in the remote app and this window can be open at once.
@@ -371,8 +371,8 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
         /// stopped editor is an object that cannot record. Answering null there is what makes every
         /// control disable itself for the right reason.
         /// </summary>
-        private static FrameRecorderController _Controller
-            => EditorApplication.isPlaying ? FrameRecorderController.instance : null;
+        private static LiveDataRecorder _Controller
+            => EditorApplication.isPlaying ? LiveDataRecorder.instance : null;
 
         private void _ToggleRecord()
         {
@@ -452,7 +452,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
         /// </summary>
         private void _RevealFolder()
         {
-            var folder = FrameRecorderController.recordingFolder;
+            var folder = LiveDataRecorder.recordingFolder;
 
             Directory.CreateDirectory(folder);
             EditorUtility.RevealInFinder(folder.TrimEnd('/', '\\') + Path.DirectorySeparatorChar);
@@ -718,7 +718,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
         /// </summary>
         private void _RefreshTakes(bool force)
         {
-            var folder = FrameRecorderController.recordingFolder;
+            var folder = LiveDataRecorder.recordingFolder;
 
             if (!Directory.Exists(folder))
             {
@@ -740,10 +740,10 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
             var recordingPath = controller != null && controller.isRecording ? controller.recordingPath : null;
 
             _takes.Clear();
-            var files = Directory.GetFiles(folder, "*" + FrameRecorderController.kExtension);
+            var files = Directory.GetFiles(folder, "*" + LiveDataRecorder.kExtension);
             for (int i = 0; i < files.Length; i++) _takes.Add(_Describe(files[i], recordingPath));
             // Takes recorded under the previous extension stay listed and playable.
-            var legacy = Directory.GetFiles(folder, "*" + FrameRecorderController.kLegacyExtension);
+            var legacy = Directory.GetFiles(folder, "*" + LiveDataRecorder.kLegacyExtension);
             for (int i = 0; i < legacy.Length; i++) _takes.Add(_Describe(legacy[i], recordingPath));
 
             _takes.Sort((a, b) => b.modified.CompareTo(a.modified));
@@ -843,7 +843,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
             var controller = _Controller;
 
             var activePath = controller != null && controller.isReplaying
-                ? Path.Combine(FrameRecorderController.recordingFolder, controller.replayFilename)
+                ? Path.Combine(LiveDataRecorder.recordingFolder, controller.replayFilename)
                 : null;
             var recordingPath = controller != null && controller.isRecording ? controller.recordingPath : null;
 
@@ -851,7 +851,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
 
             // The folder moves with the open project, so the tooltip is the one place the path is
             // actually readable before pressing anything.
-            if (_revealButton != null) _revealButton.tooltip = FrameRecorderController.recordingFolder;
+            if (_revealButton != null) _revealButton.tooltip = LiveDataRecorder.recordingFolder;
 
             var shape = _Shape();
             if (shape != _listShape)
@@ -904,7 +904,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataSequencer
 
             if (_takes.Count == 0)
             {
-                var empty = new Label(_Tr("LDS_NO_TAKES", FrameRecorderController.recordingFolder));
+                var empty = new Label(_Tr("LDS_NO_TAKES", LiveDataRecorder.recordingFolder));
                 empty.AddToClassList("lds-empty");
                 empty.AddToClassList(RemoteControlEditorStyles.kSubtle);
                 _takeList.Add(empty);

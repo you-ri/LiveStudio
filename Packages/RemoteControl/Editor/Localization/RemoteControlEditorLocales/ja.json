@@ -33,7 +33,7 @@
     "LDS_TAKE_COUNT": "{0} 件",
     "LDS_NO_TAKES": "収録がまだありません。\n{0}",
     "LDS_BANNER_PLAY_MODE_ONLY": "収録と再生は再生モード中のみ動作します (ゲートはプレイヤーループから回ります)。",
-    "LDS_BANNER_NO_CONTROLLER": "シーンに FrameRecorderController がありません。収録・再生するアプリの GameObject に追加してください。",
+    "LDS_BANNER_NO_CONTROLLER": "LiveDataRecorder が登録されていません。アプリの Remote Control ホスト (RemoteControlBehaviour) のオブジェクト一覧に追加してください。",
     "LDS_BANNER_NO_INDEX": "この収録には索引がありません (収録が正常に終了していない可能性があります)。先頭から再生はできますが、スクラブはできません。",
     "LDV_DISCONNECTED": "未接続",
     "LDV_STATE_SUMMARY": "{0} 型 / {1} 要素 / フレームあたり {2}",

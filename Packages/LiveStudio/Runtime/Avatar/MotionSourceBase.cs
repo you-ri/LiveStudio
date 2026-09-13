@@ -91,6 +91,16 @@ namespace Lilium.LiveStudio
         /// </summary>
         protected virtual Matrix4x4 PlacementMatrix() => Matrix4x4.identity;
 
+        /// <summary>
+        /// Runs once this frame's sample is resolved and before it is placed, with whether the frame
+        /// was supplied (a replay, or another machine being followed) rather than produced here.
+        ///
+        /// For a source whose reference point is derived from the sample itself -- a fit taken off
+        /// the capture camera, say. On a supplied frame this is the only place a source sees the
+        /// capture at all: nothing was received to derive it from.
+        /// </summary>
+        protected virtual void OnSampleResolved(in AvatarAnimationData sample, bool supplied) { }
+
         protected virtual void OnEnable()
         {
             // Sampling runs at the head of a frame rather than in Update, so the pose for frame N
@@ -129,6 +139,8 @@ namespace Lilium.LiveStudio
             OnFrameHeadBegin();
 
             if (!_TryResolveFrame(ref frame, out var sampled)) return;
+
+            OnSampleResolved(in sampled, frame.isSupplied);
 
             // Runs on a supplied frame too, and that is the point: what is on the state lane is the
             // sample before placement, so the reference point can be edited and the take drawn

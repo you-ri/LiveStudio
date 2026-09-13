@@ -26,7 +26,7 @@ namespace Lilium.LiveStudio.Tests
             {
                 typeof(ExternalAssetManager).Assembly,      // Lilium.LiveStudio
                 typeof(LiveClass).Assembly,                 // Lilium.RemoteControl
-                typeof(FrameRecorderController).Assembly,   // Lilium.RemoteControl.Server
+                typeof(LiveDataRecorder).Assembly,          // Lilium.RemoteControl.Server
             };
 
             foreach (var assembly in assemblies)

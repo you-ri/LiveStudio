@@ -29,4 +29,29 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         bool FillFrame(ref Frame frame);
     }
+
+    /// <summary>
+    /// A source that knows when its next frame is due, so the gate can wait for it instead of
+    /// running heads that have nothing to play.
+    ///
+    /// The counterpart of a cluster's frame barrier. A replay drives the engine's clock with the
+    /// take's own step, and that is only right if the engine renders one frame per step: every frame
+    /// in between would advance the clock by a step that was already spent. So while a replay is
+    /// driving time, the gate asks here where on its clock the next step falls and waits for it
+    /// (<see cref="IFrameClockSync"/>).
+    ///
+    /// Optional. A source that does not implement it is waited for one clock frame at a time.
+    /// </summary>
+    public interface IFrameSchedule
+    {
+        /// <summary>
+        /// The clock frame at which the next supplied frame will move, given the one the gate last
+        /// pumped. False when the source is not moving at all (held, or running at speed zero); the
+        /// gate then waits a single frame, so a held replay neither spins nor stalls.
+        ///
+        /// Must not change anything: it is asked before the head it predicts, and the head itself
+        /// has to find the source exactly as it was.
+        /// </summary>
+        bool TryGetNextDue(long lastClockFrame, FrameRate clockRate, out long dueClockFrame);
+    }
 }

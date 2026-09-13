@@ -1,6 +1,20 @@
 # Changelog
 
-## [0.26.0] - 2026-08-20
+## [Unreleased]
+
+### Added
+
+- **`MotionSourceBase.OnSampleResolved(sample, supplied)` lets a source derive its reference point from the sample itself.** It runs once the frame's sample is resolved and before the sample is placed, whether the sample was taken live or read back off a supplied frame. On a supplied frame this is the only place a source sees the capture at all, so a placement derived from it (a camera fit, say) belongs here. `VirgoMotionSource` uses it to fit a replay to the take's own capture camera.
+
+### Changed
+
+- **`FrameRecorderProject` is renamed `LiveDataRecorderProject`.** This follows the rename of `FrameRecorderController` to `LiveDataRecorder` in `jp.lilium.remotecontrol`. This is a breaking change for source.
+
+### Fixed
+
+- **An avatar's meshes share one light/reflection probe anchor, so its parts are no longer lit differently.** Each renderer used to sample probes at its own bounds center — nothing on the VRM 1.0 load path, in a `.lsavatar` or in a built-in prefab set `Renderer.probeAnchor` — so hair, body and clothing could pick up visibly different ambient light. `AvatarController` now points every `SkinnedMeshRenderer` / `MeshRenderer` under the avatar (inactive ones included) at the Chest bone, falling back to Spine and then Hips when the rig lacks it. A renderer whose anchor was already set in the prefab is left as the author set it.
+
+## [0.26.0] - 2026-09-12
 <!-- changelog-sha: c41546bfecf2c2854bd2032780ab482d6ce1a63d -->
 
 ### Added

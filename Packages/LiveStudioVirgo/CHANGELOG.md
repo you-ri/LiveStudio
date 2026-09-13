@@ -1,6 +1,17 @@
 # Changelog
 
-## [0.26.0] - 2026-08-20
+## [Unreleased]
+
+### Changed
+
+- **The camera fit is no longer recorded. A replay takes its own from the take.** `_offsetPosition` and `_offsetRotation` came off the state lane and are no longer exposed. When a replay starts, `VirgoMotionSource` fits the placement to the capture camera of the first valid frame the replay supplies. This is the same reset a live run does when motion starts arriving. The replay keeps that fit to its end: a seek or a loop keeps it, and a new replay takes its own. The take already carries the capture camera with every pose, so the recorded fit was a second copy of it.
+  - A machine that has never received anything, with no Fusion running, still places a take where it was shot.
+  - The first replayed frame no longer depends on handler order to be placed by the right fit.
+  - A live reset queued while a replay is running now waits for the replay to end instead of replacing the replay's fit.
+  - The cost: a Reset Camera pressed during a take is not replayed.
+  - Nothing on `VirgoMotionSource` is recorded now.
+
+## [0.26.0] - 2026-09-12
 <!-- changelog-sha: c41546bfecf2c2854bd2032780ab482d6ce1a63d -->
 
 ### Added

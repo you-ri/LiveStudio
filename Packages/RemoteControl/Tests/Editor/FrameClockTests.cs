@@ -65,5 +65,35 @@ namespace Lilium.RemoteControl.Tests
 
             Assert.IsInstanceOf<RealtimeFrameClock>(FrameGate.clock);
         }
+
+        [Test]
+        public void AWaitForAFrameAlreadyReached_ReturnsAtOnce()
+        {
+            var clock = new RealtimeFrameClock(FrameRate.FPS60);
+
+            Assert.IsTrue(clock.WaitUntil(clock.Advance() - 5, 0));
+        }
+
+        [Test]
+        public void AWaitForTheNextFrames_ArrivesAtThem()
+        {
+            // What a replay's barrier leans on: the clock can be waited on to the frame, so the
+            // engine renders one frame per step of the take rather than as many as it can.
+            var clock = new RealtimeFrameClock(FrameRate.FPS60);
+            var target = clock.Advance() + 2;
+
+            Assert.IsTrue(clock.WaitUntil(target, 1000));
+            Assert.GreaterOrEqual(clock.Advance(), target);
+        }
+
+        [Test]
+        public void AWaitThatCannotBeMet_GivesUpAtItsTimeout()
+        {
+            // Ten seconds ahead with twenty milliseconds to wait. An external sync source that lost
+            // its signal looks like this, and the application must not freeze along with it.
+            var clock = new RealtimeFrameClock(FrameRate.FPS60);
+
+            Assert.IsFalse(clock.WaitUntil(clock.Advance() + 600, 20));
+        }
     }
 }

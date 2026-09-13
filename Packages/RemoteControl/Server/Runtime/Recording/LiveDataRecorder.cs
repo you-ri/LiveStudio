@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
+using UnityEngine.Scripting.APIUpdating;
 using Lilium.RemoteControl.Frames;
 using Lilium.RemoteControl.Frames.Recording;
 using Lilium.RemoteControl.Replay;
@@ -41,18 +42,26 @@ namespace Lilium.RemoteControl
     /// Said in the declaration rather than left to <see cref="_excludeIds"/>, because that exclusion
     /// is applied to events only. A member on the state lane is copied by the walk, which does not
     /// consult it, so the exclusion silently stops covering a member the moment its lane changes.
+    ///
+    /// Formerly <c>FrameRecorderController</c>, exposed as <c>FrameRecorder</c> -- the same name as
+    /// the lower-level recorder it drives. The former names are declared so that what was saved
+    /// under them still loads: project settings are matched by the fixed id and the old type name
+    /// is accepted rather than reported as a mismatch, and a serialized reference to the old C#
+    /// type is moved over by Unity.
     /// </remarks>
     [Serializable]
     [LiveClass(kLiveClassName, Icon = "fiber_manual_record", Category = "Recorder",
         lane = FrameLane.None)]
-    public class FrameRecorderController : ILiveObject
+    [FormerlyNamedAs("FrameRecorder")]
+    [MovedFrom(false, sourceClassName: "FrameRecorderController")]
+    public class LiveDataRecorder : ILiveObject
     {
         // A GUID rather than a readable name: the remote app's object listing drops an entry whose id
         // is spelled like its wire type, reading it as a static class, and the wire type here is
         // kLiveClassName. Fixed, so project settings written under it restore into the same object.
         const string kId = "9d4f2b17-58ac-4e0b-a3d6-71c8e5f0b924";
 
-        public string name { get; set; } = "Frame Recorder";
+        public string name { get; set; } = "LiveData Recorder";
 
         public LiveObjectHandle? liveObject => LiveObjectRegistry.FindByTarget(this);
 
@@ -64,7 +73,7 @@ namespace Lilium.RemoteControl
         /// still be empty, and a lookup by type would fall back to the C# type name and quietly
         /// resolve to nothing.
         /// </summary>
-        public const string kLiveClassName = "FrameRecorder";
+        public const string kLiveClassName = "LiveDataRecorder";
 
         /// <summary>Extension of a live data recording. One take, one file.</summary>
         public const string kExtension = ".live.bin";
@@ -77,21 +86,15 @@ namespace Lilium.RemoteControl
 
         // ---- Recording ----
 
-        // The page reaches these by property path (LivePropertyRef), so they stay exposed here --
-        // that keeps the value, the dirty flag and the persistence in one place. Only how they are
-        // presented moved to the page.
+        // Only the encoding settings are exposed. They are project settings, and exposing them is
+        // what saves them and lists them with the rest of the project's settings.
         //
-        // All of them are off the live data, and where they are saved is what says so
-        // (FrameLaneRules): the interval and the compression are project settings, the take number
-        // and the replay file are values nothing persists.
-        //
-        // The class-wide lane is what keeps them off it, and it used to have to. As a component this
-        // was addressable twice -- by its own registry id, and as `{gameObject}/components/{n}/_take`
-        // through the GameObject holding it -- so an exclusion by id could not reach the second way
-        // in, and a take carried the take number and the compression it was written with, pressing
-        // them back over the operator's own on replay. A plain object has one address.
+        // Everything else here -- the take number, the replay file, the loop switch and the readouts
+        // below -- is reached from C#, not by the remote app. The transport a remote page drives is
+        // the application's (RecordingManager in LiveStudio), and what it shows is the application's
+        // answer to what an operator needs; exposing the machinery as well only listed a second,
+        // unused copy of the same controls on the project's settings page.
         [SerializeField]
-        [LiveField(persistable = false)]
         private int _take = 1;
 
         [SerializeField]
@@ -105,11 +108,9 @@ namespace Lilium.RemoteControl
         // ---- Replay ----
 
         [SerializeField]
-        [LiveField(persistable = false)]
         private string _replayFilename = string.Empty;
 
         [SerializeField]
-        [LiveField(persistable = false)]
         private bool _loop = false;
 
         private readonly FrameRecorder _recorder = new FrameRecorder();
@@ -126,7 +127,7 @@ namespace Lilium.RemoteControl
 
         private static readonly List<string> _excludedControlObjectIds = new List<string>();
 
-        private static FrameRecorderController _instance;
+        private static LiveDataRecorder _instance;
 
         /// <summary>
         /// The registered recorder, or null when none is in the host's object list. Whatever drives it
@@ -135,7 +136,7 @@ namespace Lilium.RemoteControl
         /// Set in <see cref="OnEnable"/>, which the host runs while the editor is not playing too --
         /// the remote app serves this page from a stopped editor, and this is what answers it.
         /// </summary>
-        public static FrameRecorderController instance => _instance;
+        public static LiveDataRecorder instance => _instance;
 
         // Reset on subsystem registration for safety when Domain Reload is disabled.
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -245,13 +246,11 @@ namespace Lilium.RemoteControl
             }
         }
 
-        [LiveProperty]
         public bool isRecording => _recorder.isRecording;
 
-        [LiveProperty]
+        /// <summary>Records written to the take in progress, or zero when nothing is being recorded.</summary>
         public int recordedFrames => _recorder.frameCount;
 
-        [LiveProperty]
         public float recordedMegabytes => _recorder.length / (1024f * 1024f);
 
         /// <summary>
@@ -263,11 +262,7 @@ namespace Lilium.RemoteControl
         /// </summary>
         public string recordingPath => _recorder.path;
 
-        [LiveProperty]
         public bool isReplaying => _replayer != null;
-
-        [LiveProperty]
-        public long replayFrame => _replayer?.frameNumber ?? -1;
 
         /// <summary>
         /// Holds the replay on the frame it is showing. Scrubbing is a pause plus a
@@ -276,11 +271,7 @@ namespace Lilium.RemoteControl
         ///
         /// Reads false when nothing is being replayed, so a control bound to it does not report a
         /// pause that has nothing to pause.
-        ///
-        /// Off the live data for the same reason as the settings above, and more sharply: this drives
-        /// the replay itself, so a recorded pause would pause the replay that is playing it back.
         /// </summary>
-        [LiveProperty]
         public bool replayPaused
         {
             get => _replayer != null && _replayer.isPaused;
@@ -293,18 +284,15 @@ namespace Lilium.RemoteControl
         /// Zero also for a recording that was cut short: without a tail index there is nothing to
         /// seek by, so it plays from the top and cannot be scrubbed.
         /// </summary>
-        [LiveProperty]
         public int replayFrameCount => _replayer?.player.frameCount ?? 0;
 
         /// <summary>
         /// Position within <see cref="replayFrameCount"/>, or -1 before the first frame.
         ///
-        /// A position rather than <see cref="replayFrame"/>, which is the gate's frame number from
-        /// the run that was recorded: a scrubber wants 0..count-1, and the two are not the same
-        /// number offset by a constant -- a run that drops below rate skips frame numbers, so only
-        /// the recording can say where one of them sits.
+        /// A position rather than the gate's frame number from the run that was recorded: a scrubber
+        /// wants 0..count-1, and the two are not the same number offset by a constant -- a run that
+        /// drops below rate skips frame numbers, so only the recording can say where one of them sits.
         /// </summary>
-        [LiveProperty]
         public int replayIndex
         {
             get
@@ -536,9 +524,10 @@ namespace Lilium.RemoteControl
             // without it scrubbing back past a spawn leaves the spawn standing.
             LiveStructureSystem.applyOnSuppliedFrames = true;
 
-            // And the same for time: with this on, the engine's clock steps by the recorded tick, so
-            // everything that advances with time -- including code that still reads Time.deltaTime --
-            // follows the take rather than whatever this machine managed to render.
+            // And the same for time: with this on, the engine's clock steps by the take's own tick and
+            // the gate waits for each step to fall due, so everything that advances with time --
+            // including code that still reads Time.deltaTime -- follows the take at the speed it was
+            // recorded rather than at whatever rate this machine manages to render.
             FrameGate.driveEngineTimeOnSuppliedFrames = true;
 
             // The replay is where the frame comes from now, not something that runs during one. That
@@ -589,7 +578,7 @@ namespace Lilium.RemoteControl
         {
             _instance = this;
 
-            LiveObjectRegistry.Create<FrameRecorderController>(this, kId);
+            LiveObjectRegistry.Create<LiveDataRecorder>(this, kId);
         }
 
         public void OnDisable()

@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.26.0] - 2026-08-20
+## [0.26.0] - 2026-09-12
 <!-- changelog-sha: c41546bfecf2c2854bd2032780ab482d6ce1a63d -->
 
 - Added the package: normalized `SocialEvent` schema and the thread-safe `SocialEventHub` intake with frame-stable delivery and a bounded, counted drop policy.

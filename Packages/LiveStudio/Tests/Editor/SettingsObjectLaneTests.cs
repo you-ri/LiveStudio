@@ -113,13 +113,13 @@ namespace Lilium.LiveStudio.Tests
         [Test]
         public void NothingOnTheRecorder_IsRecorded()
         {
-            _AssertNothingIsRecorded(LiveClass.Get(typeof(FrameRecorderController)));
+            _AssertNothingIsRecorded(LiveClass.Get(typeof(LiveDataRecorder)));
         }
 
         [Test]
         public void TheRecorderHasNoStateBlock()
         {
-            Assert.IsNull(StateBridgeRegistry.Find(typeof(FrameRecorderController)),
+            Assert.IsNull(StateBridgeRegistry.Find(typeof(LiveDataRecorder)),
                 "a replayed pause would pause the replay that is playing it back");
         }
 

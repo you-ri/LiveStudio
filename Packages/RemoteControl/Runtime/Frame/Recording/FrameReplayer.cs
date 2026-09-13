@@ -239,6 +239,7 @@ namespace Lilium.RemoteControl.Frames.Recording
                 frame.structure = _player.structure;
                 frame.state = _player.state;
                 frame.symbols = _player.symbols;
+                _StampPosition(ref frame);
                 _PublishReplayed(frame.events);
                 return true;
             }
@@ -251,6 +252,7 @@ namespace Lilium.RemoteControl.Frames.Recording
             // With the lanes, because the ids in them index this table and not the one the gate
             // hands a live frame.
             frame.symbols = _player.symbols;
+            _StampPosition(ref frame);
 
             _ApplyEventsOfCurrentFrame();
 
@@ -279,11 +281,34 @@ namespace Lilium.RemoteControl.Frames.Recording
             frame.structure = _player.structure;
             frame.state = _player.state;
             frame.symbols = _player.symbols;
+            _StampPosition(ref frame);
 
             // Nothing played, but a seek may have put events back since the last frame: they
             // belong to this head, because this is the head they became visible at.
             _PublishReplayed(frame.events);
             return true;
+        }
+
+        /// <summary>
+        /// Stamps the frame with where it sits in the take: the take's own frame number and rate.
+        ///
+        /// This is the time data a replay hands on, the way a cluster's primary hands its followers
+        /// the frame's timecode. The gate works the tick out from the difference between consecutive
+        /// numbers, so a head that plays a record covers the gap the take had there, several records
+        /// at one head make one wide step, and a head that holds the record it is on covers no time
+        /// at all -- which is what lets a replay drive the engine's clock with the take's time rather
+        /// than this machine's, and what makes the timecode read off a supplied frame the take's.
+        ///
+        /// A take that does not say its rate keeps the live number as well: a number is only
+        /// meaningful against the rate it was counted at.
+        /// </summary>
+        private void _StampPosition(ref Frame frame)
+        {
+            var rate = _player.header.frameRate;
+            if (rate.numerator == 0 || rate.denominator == 0) return;
+
+            frame.frameNumber = _player.frameNumber;
+            frame.frameRate = rate;
         }
 
         /// <summary>

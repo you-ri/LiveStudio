@@ -33,7 +33,7 @@
     "LDS_TAKE_COUNT": "{0} 个",
     "LDS_NO_TAKES": "还没有任何录制。\n{0}",
     "LDS_BANNER_PLAY_MODE_ONLY": "录制与播放仅在运行模式下有效 (帧闸由播放器循环驱动)。",
-    "LDS_BANNER_NO_CONTROLLER": "场景中没有 FrameRecorderController。请将其添加到用于录制和播放的应用 GameObject 上。",
+    "LDS_BANNER_NO_CONTROLLER": "未注册 LiveDataRecorder。请将其添加到应用的 Remote Control 主机 (RemoteControlBehaviour) 的对象列表中。",
     "LDS_BANNER_NO_INDEX": "此录制没有索引 (录制可能没有正常结束)。可以从头播放，但无法拖动定位。",
     "LDV_DISCONNECTED": "未连接",
     "LDV_STATE_SUMMARY": "{0} 个类型 / {1} 个元素 / 每帧 {2}",

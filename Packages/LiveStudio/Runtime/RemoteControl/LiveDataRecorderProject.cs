@@ -9,12 +9,12 @@ namespace Lilium.LiveStudio
     /// Files this application's takes with the rest of its project, and keeps the page that drives
     /// them out of what they record.
     ///
-    /// Both are answers only the application has. <see cref="FrameRecorderController"/> holds the
+    /// Both are answers only the application has. <see cref="LiveDataRecorder"/> holds the
     /// machinery and deliberately has no opinion about where a project lives -- a package that
     /// records live data should not have to know that this one keeps scenes, decks and avatars under
     /// a per-project folder.
     /// </summary>
-    public static class FrameRecorderProject
+    public static class LiveDataRecorderProject
     {
         // Runs on every domain (re)load and on entering play mode, so the answer is installed whether
         // or not Domain Reload is enabled. InitializeOnLoadMethod also covers the stopped editor,
@@ -25,16 +25,16 @@ namespace Lilium.LiveStudio
 #endif
         private static void _Initialize()
         {
-            FrameRecorderController.recordingFolderProvider = RecordingFolder;
+            LiveDataRecorder.recordingFolderProvider = RecordingFolder;
 
-            // The manager carries the buttons and the listing; the component carries the values they
+            // The manager carries the buttons and the listing; the recorder carries the values they
             // write. Both are exposed objects, and neither is part of the world being recorded.
-            FrameRecorderController.ExcludeControlObject(nameof(RecordingManager));
+            LiveDataRecorder.ExcludeControlObject(nameof(RecordingManager));
 
             // Detached first: with Domain Reload off this runs again over handlers that survived the
             // last play, and a take would get its picture written once per run since.
-            FrameRecorderController.onRecordingStarted -= _WriteRecordingThumbnail;
-            FrameRecorderController.onRecordingStarted += _WriteRecordingThumbnail;
+            LiveDataRecorder.onRecordingStarted -= _WriteRecordingThumbnail;
+            LiveDataRecorder.onRecordingStarted += _WriteRecordingThumbnail;
         }
 
         /// <summary>

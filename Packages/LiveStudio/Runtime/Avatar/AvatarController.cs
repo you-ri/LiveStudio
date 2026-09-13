@@ -563,6 +563,8 @@ namespace Lilium.LiveStudio
             // camera view, so disable Animator culling on every setup pass.
             if (avatarTarget != null) avatarTarget.cullingMode = AnimatorCullingMode.AlwaysAnimate;
 
+            _ShareProbeAnchor(avatarTarget, avatar);
+
             var avatarRotation = avatarTransform.rotation; // root rotation; independent of bone pose
 
             // Standard prop attachment sockets. Each is normalized to the avatar-root rotation so a
@@ -598,6 +600,31 @@ namespace Lilium.LiveStudio
             // Start path and _ReplaceAvatar path since both flow through here. The argument is
             // the GameObject whose name corresponds to TransformRef.ownerName ("Main Avatar" etc.).
             TransformStructureService.NotifyStructureChanged(this.gameObject);
+        }
+
+        // Point every mesh of the avatar at one shared light/reflection probe anchor. Without it each
+        // renderer samples probes at its own bounds center, so the body, hair and clothing are lit
+        // differently and the seams show. Neither the VRM 1.0 loader nor .lsavatar / built-in prefabs set
+        // this. The chest keeps the sample point inside the body for both upper-body and full-body shots.
+        // Renderers whose anchor was already set in the prefab are left untouched to respect the author's
+        // choice, which also keeps repeated setup passes idempotent.
+        private static void _ShareProbeAnchor(Animator animator, GameObject avatar)
+        {
+            if (animator == null || !animator.isHuman) return;
+
+            // Chest is optional in the humanoid rig; fall back toward the hips.
+            var anchor = animator.GetBoneTransform(HumanBodyBones.Chest);
+            if (anchor == null) anchor = animator.GetBoneTransform(HumanBodyBones.Spine);
+            if (anchor == null) anchor = animator.GetBoneTransform(HumanBodyBones.Hips);
+            if (anchor == null) return;
+
+            // Inactive meshes are included so ones toggled on later by meshStateOverrides match too.
+            foreach (var renderer in avatar.GetComponentsInChildren<Renderer>(includeInactive: true))
+            {
+                if (!(renderer is SkinnedMeshRenderer) && !(renderer is MeshRenderer)) continue;
+                if (renderer.probeAnchor != null) continue;
+                renderer.probeAnchor = anchor;
+            }
         }
 
         // Create a normalized Socket on a humanoid bone, skipping optional bones the rig lacks

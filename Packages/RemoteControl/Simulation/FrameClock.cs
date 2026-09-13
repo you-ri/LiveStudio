@@ -1,4 +1,6 @@
 // Copyright (c) You-Ri, 2026
+using System;
+using System.Threading;
 
 namespace Lilium.RemoteControl.Frames
 {
@@ -39,6 +41,27 @@ namespace Lilium.RemoteControl.Frames
 
         /// <summary>Return to the start of the timeline.</summary>
         void Reset();
+    }
+
+    /// <summary>
+    /// A clock that can be waited on.
+    ///
+    /// What genlock is to a camera and a custom time step is to an engine: the clock decides when
+    /// the next frame starts, and whoever renders waits for it. A replay driving the engine's time
+    /// uses it to render one frame per step of the take rather than as many as the machine can
+    /// manage. An external sync source (LTC, a house clock) implements it by blocking on its own
+    /// tick, which is how it takes over the pacing without anything else changing.
+    ///
+    /// Optional. A clock that cannot be waited on -- a counter a test drives, or one standing in
+    /// for an offline redraw -- is simply not waited for.
+    /// </summary>
+    public interface IFrameClockSync
+    {
+        /// <summary>
+        /// Blocks until <see cref="IFrameClock.Advance"/> would report at least
+        /// <paramref name="frameNumber"/>, or the timeout passes. True when the frame was reached.
+        /// </summary>
+        bool WaitUntil(long frameNumber, int timeoutMs);
     }
 
     /// <summary>
@@ -98,12 +121,50 @@ namespace Lilium.RemoteControl.Frames
     // frame, and everything downstream reads it from the frame. A replay reads it from the frame
     // too: it does not replace this clock, it spends its records against what this one stamped.
 #pragma warning disable LRC011
-    public sealed class RealtimeFrameClock : IFrameClock
+    public sealed class RealtimeFrameClock : IFrameClock, IFrameClockSync
     {
         private readonly System.Diagnostics.Stopwatch _sinceAnchor = new System.Diagnostics.Stopwatch();
 
         /// <summary>Seconds past midnight when the anchor was taken.</summary>
         private double _anchor;
+
+        // Longest a one-millisecond sleep has been seen to take, in seconds. A sleep on Windows can
+        // overrun by the timer resolution -- fifteen milliseconds unless something raised it -- so
+        // the wait only naps while it has at least this much to spare, and spins the rest.
+        private double _sleepCost = 0.002;
+
+        /// <summary>
+        /// Sleeps while there is time to spare and spins the remainder, re-reading the clock after
+        /// every nap rather than trusting how long it was asked to take.
+        /// </summary>
+        public bool WaitUntil(long frameNumber, int timeoutMs)
+        {
+            var deadline = _sinceAnchor.Elapsed.TotalSeconds + Math.Max(0, timeoutMs) / 1000.0;
+
+            // Where the frame starts, on the same axis the anchor is measured along.
+            var start = frameRate.AsSecounds(frameNumber) - _anchor;
+
+            while (true)
+            {
+                if (Advance() >= frameNumber) return true;
+
+                var elapsed = _sinceAnchor.Elapsed.TotalSeconds;
+                if (elapsed >= deadline) return false;
+
+                var remaining = Math.Min(start, deadline) - elapsed;
+                if (remaining > _sleepCost + 0.001)
+                {
+                    Thread.Sleep(1);
+
+                    var took = _sinceAnchor.Elapsed.TotalSeconds - elapsed;
+                    if (took > _sleepCost) _sleepCost = Math.Min(took, 0.02);
+                }
+                else
+                {
+                    Thread.Yield();
+                }
+            }
+        }
 
         public RealtimeFrameClock(FrameRate rate)
         {

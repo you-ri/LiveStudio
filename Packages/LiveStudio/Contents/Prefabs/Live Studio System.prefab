@@ -109,7 +109,7 @@ MonoBehaviour:
     version: 2
     RefIds:
     - rid: 3556020933021925385
-      type: {class: FrameRecorderController, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl.Server}
+      type: {class: LiveDataRecorder, ns: Lilium.RemoteControl, asm: Lilium.RemoteControl.Server}
       data:
         _take: 1
         _keyframeInterval: 60

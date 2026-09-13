@@ -1,5 +1,6 @@
 // Copyright (c) You-Ri, 2026
 
+using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -23,7 +24,6 @@ namespace Lilium.LiveStudio.Virgo.EditorTests
     {
         private const string kOwnerAddress = "motion-source-under-test";
 
-        private bool _retainedStateSystem;
         private GameObject _go;
         private VirgoMotionSource _source;
         private LiveGameObject _wrapper;
@@ -70,12 +70,6 @@ namespace Lilium.LiveStudio.Virgo.EditorTests
         public void TearDown()
         {
             FrameGate.source = null;
-
-            if (_retainedStateSystem)
-            {
-                LiveStateSystem.Release();
-                _retainedStateSystem = false;
-            }
 
             // Matches the OnEnable in SetUp: unsubscribes the frame head and closes the socket.
             if (_source != null) _Lifecycle("OnDisable");
@@ -161,98 +155,107 @@ namespace Lilium.LiveStudio.Virgo.EditorTests
         }
 
         /// <summary>
-        /// The camera-fit offset is part of the reference point, and the reference point is what the
-        /// recorded pose is placed by. Left off the lane, a take replays placed by whatever the
-        /// replaying machine's offset happens to be -- which is not where it was shot.
+        /// A replay on a machine that has never received anything -- no Fusion running -- still
+        /// places the take where it was shot. The camera fit is not carried by the take; it is taken
+        /// again from the capture camera the take does carry, the way a live run takes one when
+        /// motion starts arriving.
+        ///
+        /// The source under test has never received a frame, so its own fit is zero: a replay placed
+        /// by it would leave the capture camera one metre off the reference point.
         /// </summary>
         [Test]
-        public void TheReferencePointOffset_IsCarriedOnTheStateLane()
+        public void OnAMachineThatNeverReceived_TheReplayFitsTheCameraFromTheTake()
         {
-            _source._offsetPosition = new Vector3(0.5f, 0f, -1.25f);
-            _source._offsetRotation = new Vector3(0f, 170f, 0f);
-
-            using var state = new StateBlockSet();
-            LiveStateSystem.CaptureInto(state, time: 0);
-
-            // Whatever the machine happens to hold now, standing in for a different rig on replay.
-            _source._offsetPosition = Vector3.zero;
-            _source._offsetRotation = Vector3.zero;
-
-            LiveStateSystem.ApplyFrom(state);
-
-            Assert.AreEqual(new Vector3(0.5f, 0f, -1.25f), _source._offsetPosition,
-                "the camera-fit offset was not carried on the state lane");
-            Assert.AreEqual(new Vector3(0f, 170f, 0f), _source._offsetRotation,
-                "the camera-fit rotation offset was not carried on the state lane");
-        }
-
-        /// <summary>
-        /// And it reaches the placement: a restored offset moves where the pose lands, which is the
-        /// whole point of recording it.
-        /// </summary>
-        [Test]
-        public void ARestoredOffset_MovesWhereThePoseLands()
-        {
-            var recorded = _PoseWith(muscle: 0, value: 0.1f);
-            recorded.root.position = Vector3.zero;
-
-            _source._offsetPosition = new Vector3(1f, 0f, 0f);
+            var cameraPosition = new Vector3(1f, 0f, 0f);
+            var recorded = _PoseWithCamera(cameraPosition, yaw: 90f);
+            // Standing where the camera is, so a fitted placement lands it on the reference point.
+            recorded.root.position = cameraPosition;
 
             FrameGate.source = new RecordedFrameSource { ownerAddress = kOwnerAddress, frame = recorded };
             FrameGate.Pump();
 
-            // The source sits at (2,3,4) and is its own placement origin, so the offset rides on top.
-            Assert.AreEqual(new Vector3(3f, 3f, 4f), _source.frameData.root.position,
-                "the offset did not reach the placement");
+            // No anchor, so the reference point is this source's own transform.
+            _AssertNear(new Vector3(2f, 3f, 4f), _source.frameData.root.position,
+                "the capture camera was not fitted to the reference point on replay");
         }
 
         /// <summary>
-        /// The recorded offset reaches the replay, and the replay is placed by it.
-        ///
-        /// ⚠ Which frame it starts on is not fixed. The exposed state is applied by
-        /// <see cref="LiveStateSystem"/>'s own frame-head handler, and frame-head handlers run in
-        /// registration order with no way to ask for a position -- the state system is registered by
-        /// whoever retains it first (a recorder, an open viewer), which may be before or after a
-        /// scene component enabled. So the recorded offset lands either on the first replayed frame
-        /// or the second, and at most one frame at the start of playback is placed by the replaying
-        /// machine's own offset instead. This asserts what holds either way rather than pinning an
-        /// order that the next scene arrangement would change.
+        /// The fit is taken once, when the replay starts, not every frame. A capture camera that moves
+        /// during the take moves the avatar with it, as it did live -- refitting every frame would pin
+        /// the camera and cancel that motion.
         /// </summary>
         [Test]
-        public void OnReplay_ThePlacementFollowsTheRecordedOffset()
+        public void TheFit_IsTakenOnceAtTheStartOfAReplay()
         {
-            var recordedOffset = new Vector3(1f, 0f, 0f);
+            var cameraPosition = new Vector3(1f, 0f, 0f);
+            var recorded = _PoseWithCamera(cameraPosition, yaw: 90f);
+            recorded.root.position = cameraPosition;
 
-            _source._offsetPosition = recordedOffset;
-            var recordedState = new StateBlockSet();
-            LiveStateSystem.CaptureInto(recordedState, time: 0);
-
-            // What this machine happens to hold: a different rig, or simply a run that never reset.
-            _source._offsetPosition = new Vector3(-4f, 0f, 0f);
-
-            LiveStateSystem.Retain();
-            _retainedStateSystem = true;
-
-            var recorded = _PoseWith(muscle: 0, value: 0.1f);
-            recorded.root.position = Vector3.zero;
-            var supply = new RecordedFrameSource
-            {
-                ownerAddress = kOwnerAddress,
-                frame = recorded,
-                stateOverride = recordedState,
-            };
-
+            var supply = new RecordedFrameSource { ownerAddress = kOwnerAddress, frame = recorded };
             FrameGate.source = supply;
             FrameGate.Pump();
 
-            Assert.AreEqual(recordedOffset, _source._offsetPosition,
-                "the recorded offset never reached the machine replaying the take");
-
+            // The camera moves; the performer does not.
+            supply.frame = _PoseWithCamera(new Vector3(1f, 0f, 1f), yaw: 90f);
+            supply.frame.root.position = cameraPosition;
             FrameGate.Pump();
 
-            // The source sits at (2,3,4) and is its own placement origin, so the offset rides on top.
-            Assert.AreEqual(new Vector3(2f, 3f, 4f) + recordedOffset, _source.frameData.root.position,
-                "the replay is placed by this machine's offset rather than the recorded one");
+            _AssertNear(new Vector3(2f, 3f, 4f), _source.frameData.root.position,
+                "the fit was taken again mid-replay, cancelling the camera's own motion");
+        }
+
+        /// <summary>
+        /// A replay started straight after another takes its own fit. No live frame comes between the
+        /// two -- the recorder stops one and attaches the next in the same call -- so the fit has to
+        /// be tied to the replay it was taken for rather than dropped on going live.
+        /// </summary>
+        [Test]
+        public void ANewReplay_TakesItsOwnFit()
+        {
+            var first = _PoseWithCamera(new Vector3(1f, 0f, 0f), yaw: 90f);
+            FrameGate.source = new RecordedFrameSource { ownerAddress = kOwnerAddress, frame = first };
+            FrameGate.Pump();
+
+            var cameraPosition = new Vector3(1f, 0f, 1f);
+            var second = _PoseWithCamera(cameraPosition, yaw: 90f);
+            second.root.position = cameraPosition;
+            FrameGate.source = new RecordedFrameSource { ownerAddress = kOwnerAddress, frame = second };
+            FrameGate.Pump();
+
+            _AssertNear(new Vector3(2f, 3f, 4f), _source.frameData.root.position,
+                "the second replay was placed by the fit taken for the first");
+        }
+
+        /// <summary>
+        /// Nothing on the motion source is recorded. Its members are how this machine is wired and
+        /// where its rig stands, and the one value derived from the capture -- the camera fit -- is
+        /// taken again on replay from what the take does carry. A member that reached a recording
+        /// lane would be pressed back over the replaying machine's own.
+        ///
+        /// A sweep rather than a list, because what goes wrong is a member added later without the
+        /// declaration. Read-only members are exempt: a lane means nothing on a value the application
+        /// produced.
+        /// </summary>
+        [Test]
+        public void NothingOnTheMotionSource_IsRecorded()
+        {
+            var liveClass = LiveClass.Get<VirgoMotionSource>();
+            var recorded = new List<string>();
+
+            foreach (var member in liveClass.propertyTypes)
+            {
+                if (member == null || member.isReadOnly || member.lane == FrameLane.None) continue;
+                recorded.Add($"{member.name} ({member.lane})");
+            }
+
+            foreach (var function in liveClass.functionTypes)
+            {
+                if (function == null || function.lane == FrameLane.None) continue;
+                recorded.Add($"{function.name}() ({function.lane})");
+            }
+
+            Assert.IsEmpty(recorded,
+                "nothing on VirgoMotionSource belongs in a take. Recorded: " + string.Join(", ", recorded));
         }
 
         private static AvatarAnimationData _PoseWith(int muscle, float value)
@@ -266,6 +269,26 @@ namespace Lilium.LiveStudio.Virgo.EditorTests
             return frame;
         }
 
+        /// <summary>A valid pose whose capture camera stands at <paramref name="position"/>, turned by <paramref name="yaw"/>.</summary>
+        private static AvatarAnimationData _PoseWithCamera(Vector3 position, float yaw)
+        {
+            var frame = _PoseWith(muscle: 0, value: 0.1f);
+
+            ref var camera = ref frame.AsCamera(0);
+            camera.position = position;
+            camera.rotation = Quaternion.Euler(0f, yaw, 0f);
+            // A zero field of view reads as no camera, and a frame without one is not fitted.
+            camera.fieldOfView = 60f;
+
+            return frame;
+        }
+
+        private static void _AssertNear(Vector3 expected, Vector3 actual, string message)
+        {
+            Assert.That(Vector3.Distance(expected, actual), Is.LessThan(1e-4f),
+                $"{message}: expected {expected}, got {actual}");
+        }
+
         /// <summary>Supplies one frame carrying a pose row, the way a recording does.</summary>
         private sealed class RecordedFrameSource : IFrameSource
         {
@@ -273,29 +296,14 @@ namespace Lilium.LiveStudio.Virgo.EditorTests
             public string ownerAddress;
             public AvatarAnimationData frame;
 
-            /// <summary>The recording's own state, replacing this run's lanes the way a take does.</summary>
-            public StateBlockSet stateOverride;
-
             /// <summary>A row under a different owner number, to catch a read through the wrong table.</summary>
             public int decoyOwner = FrameSymbolTable.kNone;
             public AvatarAnimationData decoyFrame;
 
             public bool FillFrame(ref Frame target)
             {
-                // The recording's table replaces this run's, ids and all -- except when the caller
-                // supplied a block set captured here, whose ids belong to this run's table. Mixing
-                // the two would resolve every address against the wrong numbering, which is the
-                // failure OnASuppliedFrame_ThePoseIsFoundThroughTheFramesOwnTable is about.
-                var table = symbols;
-                if (stateOverride != null)
-                {
-                    target.state = stateOverride;
-                    table = target.symbols;
-                }
-                else
-                {
-                    target.symbols = symbols;
-                }
+                // The recording's table replaces this run's, ids and all.
+                target.symbols = symbols;
 
                 var block = target.state.GetOrCreate<AvatarAnimationData>();
 
@@ -306,7 +314,7 @@ namespace Lilium.LiveStudio.Virgo.EditorTests
                     decoy.value = decoyFrame;
                 }
 
-                ref var element = ref block.GetOrCreate(table.Intern(ownerAddress));
+                ref var element = ref block.GetOrCreate(symbols.Intern(ownerAddress));
                 element.time = target.frameNumber;
                 element.value = frame;
                 return true;

@@ -537,5 +537,158 @@ namespace Lilium.RemoteControl.Tests
                 return false;
             }
         }
+
+        [Test]
+        public void ASuppliedFrame_CarriesTheTakesNumberAndRate()
+        {
+            // The time data a replay hands on: where in the take the frame is, counted at the take's
+            // own rate rather than at the live clock's.
+            var bytes = Record(6, step: 1, new FrameRate(1, 30));
+
+            using (var source = Open(bytes, new NullApplier()))
+            {
+                FrameGate.source = source;
+
+                var frame = new Frame { frameNumber = 1000, frameRate = FrameRate.FPS60 };
+                Assert.IsTrue(source.FillFrame(ref frame));
+
+                Assert.AreEqual(source.replayer.frameNumber, frame.frameNumber);
+                Assert.AreEqual(new FrameRate(1, 30), frame.frameRate);
+            }
+        }
+
+        [Test]
+        public void TheStepsHandedOut_AddUpToTheTake()
+        {
+            // Frames lost unevenly on the machine that recorded it. Whatever the heads in between do,
+            // by the time the last record is on screen the gate has handed out exactly the take's
+            // length: the first frame's one interval, plus the distance to the last.
+            var bytes = RecordAt(0, 3, 7, 8, 14, 15, 16, 30);
+            FrameGate.SetClock(new SteppingClock(1, FrameRate.FPS60));
+
+            using (var source = Open(bytes, new NullApplier()))
+            {
+                FrameGate.source = source;
+
+                var total = 0.0;
+                for (int head = 0; head < 100 && source.replayer.frameNumber < 30; head++)
+                {
+                    FrameGate.Pump();
+                    total += FrameGate.deltaTime;
+                }
+
+                Assert.AreEqual(30, source.replayer.frameNumber);
+                Assert.AreEqual(31.0 / 60.0, total, 1e-5);
+            }
+        }
+
+        [Test]
+        public void SeveralRecordsSpentAtOneHead_AreOneWideStep()
+        {
+            var bytes = Record(12, step: 1);
+
+            // The machine playing it manages one head every three frame numbers.
+            FrameGate.SetClock(new SteppingClock(3, FrameRate.FPS60));
+
+            using (var source = Open(bytes, new NullApplier()))
+            {
+                FrameGate.source = source;
+
+                FrameGate.Pump();
+                FrameGate.Pump();
+
+                Assert.AreEqual(3, source.replayer.frameNumber);
+                Assert.AreEqual(3f / 60f, FrameGate.deltaTime, 1e-6f);
+            }
+        }
+
+        [Test]
+        public void TheSchedule_NamesTheHeadThatPlaysTheNextRecord()
+        {
+            // The barrier waits for the head the schedule names, so a prediction one head early
+            // renders a frame with nothing due in it, and one head late holds a record too long.
+            var bytes = RecordAt(0, 3, 7, 8, 14, 15, 16, 30);
+
+            using (var source = Open(bytes, new NullApplier()))
+            {
+                FrameGate.source = source;
+
+                long live = 0;
+                Pump(source, live);
+
+                while (source.replayer.frameNumber < 30)
+                {
+                    Assert.IsTrue(source.TryGetNextDue(live, FrameRate.FPS60, out var due));
+                    var standing = source.replayer.frameNumber;
+
+                    for (live++; live < due; live++)
+                    {
+                        Pump(source, live);
+                        Assert.AreEqual(standing, source.replayer.frameNumber,
+                            $"the take moved at {live}, before the {due} it was due at");
+                    }
+
+                    Pump(source, live);
+                    Assert.AreNotEqual(standing, source.replayer.frameNumber,
+                        $"the take did not move at {live}, where it was due");
+                }
+            }
+        }
+
+        [Test]
+        public void TheSchedule_CountsTheTakeInItsOwnFrames()
+        {
+            // A take at thirty played against a clock at sixty: one of its frames is two of this
+            // clock's.
+            var bytes = Record(4, step: 1, new FrameRate(1, 30));
+
+            using (var source = Open(bytes, new NullApplier()))
+            {
+                FrameGate.source = source;
+                Pump(source, 0);
+
+                Assert.IsTrue(source.TryGetNextDue(0, FrameRate.FPS60, out var due));
+                Assert.AreEqual(2, due);
+            }
+        }
+
+        [Test]
+        public void AHeldOrStoppedTake_IsNotScheduled()
+        {
+            var bytes = Record(4, step: 1);
+
+            using (var source = Open(bytes, new NullApplier()))
+            {
+                FrameGate.source = source;
+                Pump(source, 0);
+
+                source.replayer.isPaused = true;
+                Assert.IsFalse(source.TryGetNextDue(0, FrameRate.FPS60, out _), "a paused take was scheduled");
+
+                source.replayer.isPaused = false;
+                source.speed = 0;
+                Assert.IsFalse(source.TryGetNextDue(0, FrameRate.FPS60, out _), "a take at speed zero was scheduled");
+            }
+        }
+
+        [Test]
+        public void BeforeTheFirstHeadOrAfterAJump_TheScheduleSaysTheNextFrame()
+        {
+            var bytes = Record(60, step: 3);
+
+            using (var source = Open(bytes, new NullApplier()))
+            {
+                FrameGate.source = source;
+
+                Assert.IsTrue(source.TryGetNextDue(-1, FrameRate.FPS60, out var due));
+                Assert.AreEqual(0, due, "the first head was predicted from nothing");
+
+                Pump(source, 0);
+                Assert.IsTrue(source.replayer.TrySeek(source.replayer.player.FrameNumberAt(20)));
+
+                Assert.IsTrue(source.TryGetNextDue(0, FrameRate.FPS60, out due));
+                Assert.AreEqual(1, due, "a take somebody else moved was predicted from where it used to be");
+            }
+        }
     }
 }
