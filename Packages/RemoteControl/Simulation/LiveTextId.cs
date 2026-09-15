@@ -102,7 +102,7 @@ namespace Lilium.RemoteControl.Frames
 
             if (symbols == null || !symbols.TryResolve(_state - 1, out var text) || text == null)
             {
-                LiveTextIdStats.CountUnresolved();
+                LiveTextStats.CountUnresolved();
                 return false;
             }
 
@@ -145,26 +145,5 @@ namespace Lilium.RemoteControl.Frames
 
             return "#" + (_state - 1).ToString();
         }
-    }
-
-    /// <summary>
-    /// How often a state-lane string could not be read back because its id resolved to nothing.
-    ///
-    /// Counted rather than logged, for the reason <see cref="LiveFixedStringStats"/> is: it would
-    /// otherwise say the same thing on every frame of a take. A climbing count means a recording is
-    /// being read against a table that does not have what it names -- a file cut short, or one whose
-    /// symbols were never flushed.
-    /// </summary>
-    public static class LiveTextIdStats
-    {
-        private static long _unresolvedCount;
-
-        /// <summary>Ids passed over because the table had nothing at them, since the last reset.</summary>
-        public static long unresolvedCount => _unresolvedCount;
-
-        /// <summary>Forgets the count. For tests and for the start of a recording.</summary>
-        public static void Reset() => _unresolvedCount = 0;
-
-        internal static void CountUnresolved() => _unresolvedCount++;
     }
 }

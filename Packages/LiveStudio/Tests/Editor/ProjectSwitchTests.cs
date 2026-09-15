@@ -140,6 +140,20 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
+        public void ProjectWithoutRecordedScene_DefaultFileStaysInsideThatProject()
+        {
+            // An app that never records its scene (switchSceneOnLoad off, e.g. Fusion) always lands here.
+            StartupStateStore.Delete(_projectB);
+            LiveSceneSaveSystem.SetStateProjectDirectory(_projectB);
+
+            var save = _NewSaveSystem();
+
+            Assert.AreEqual(
+                Path.GetFullPath(Path.Combine(_projectB, kDefaultSceneFileName)),
+                Path.GetFullPath(save.currentFullPath));
+        }
+
+        [Test]
         public void SceneRecordedAfterSwitch_GoesToTheNewProjectOnly()
         {
             var stateA = StartupStateStore.GetStartupFilePath(_projectA);

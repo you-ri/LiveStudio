@@ -68,7 +68,7 @@ namespace Lilium.RemoteControl.Tests
         public void Finish()
         {
             LiveObjectRegistry.ClearAll();
-            StateBridgeRegistry.Unregister(typeof(Fixture));
+            StateTypes.Unregister(typeof(Fixture));
             _state.Dispose();
         }
 

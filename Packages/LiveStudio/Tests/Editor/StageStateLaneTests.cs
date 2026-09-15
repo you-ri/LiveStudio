@@ -38,7 +38,7 @@ namespace Lilium.LiveStudio.Tests
         [Test]
         public void TheActiveStage_IsActuallyCarried()
         {
-            var bridge = StateBridgeRegistry.Find(typeof(StageManager));
+            var bridge = StateTypes.FindBridge(typeof(StageManager));
 
             Assert.IsNotNull(bridge, "nothing carries the stage manager's state");
             Assert.IsTrue(LiveStateCarriage.IsCarriedByState(_Member("activeSet"), bridge),

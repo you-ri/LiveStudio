@@ -27,6 +27,22 @@ namespace Lilium.RemoteControl
         internal static Type GetCollectionElementType(Type collectionType)
         {
             if (collectionType == null) return null;
+
+            // Cached: GetGenericArguments builds a new array on every call, and the frame's
+            // inventory asks this once per collection per frame. Concurrent because REST handlers
+            // ask it from worker threads.
+            if (_elementTypes.TryGetValue(collectionType, out var cached)) return cached;
+
+            var found = _FindCollectionElementType(collectionType);
+            _elementTypes[collectionType] = found;
+            return found;
+        }
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, Type> _elementTypes =
+            new System.Collections.Concurrent.ConcurrentDictionary<Type, Type>();
+
+        private static Type _FindCollectionElementType(Type collectionType)
+        {
             if (collectionType.IsArray) return collectionType.GetElementType();
             if (collectionType.IsGenericType)
             {

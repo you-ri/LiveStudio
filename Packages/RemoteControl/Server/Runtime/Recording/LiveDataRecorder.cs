@@ -101,10 +101,6 @@ namespace Lilium.RemoteControl
         [LiveField(persistScope = PersistScope.Project)]
         private int _keyframeInterval = FrameRecorder.kDefaultKeyframeInterval;
 
-        [SerializeField]
-        [LiveField(persistScope = PersistScope.Project)]
-        private bool _compress = true;
-
         // ---- Replay ----
 
         [SerializeField]
@@ -217,15 +213,6 @@ namespace Lilium.RemoteControl
         /// world -- the values are complete on every frame either way.
         /// </summary>
         public int keyframeInterval { get => _keyframeInterval; set => _keyframeInterval = Mathf.Max(0, value); }
-
-        /// <summary>
-        /// Compresses the recording -- measured about five times smaller over real takes.
-        ///
-        /// Turn it off to record something that will be read while it is still being written, or
-        /// where losing the last second to a crash matters more than the size: entries only reach
-        /// the file a chunk at a time.
-        /// </summary>
-        public bool compress { get => _compress; set => _compress = value; }
 
         /// <summary>Recording to play, chosen from <see cref="GetAvailableRecordings"/>.</summary>
         public string replayFilename { get => _replayFilename; set => _replayFilename = value; }
@@ -424,7 +411,6 @@ namespace Lilium.RemoteControl
             var path = Path.Combine(recordingFolder, $"take{_take:D3}_{DateTime.Now:yyyyMMdd_HHmmss}{kExtension}");
 
             _recorder.keyframeInterval = _keyframeInterval;
-            _recorder.compress = _compress;
 
             // The recorder's own controls are not part of the take. Recording them means the replay
             // presses them again -- a recorded Record starts a second recording, and a recorded Stop
@@ -563,7 +549,6 @@ namespace Lilium.RemoteControl
 
             var applied = replayer.appliedEventCount;
             var failed = replayer.failedEventCount;
-            var skipped = replayer.skippedTruncatedCount;
 
             // Through the pacer, which owns the replayer once it wraps it.
             if (source != null) source.Dispose();
@@ -571,7 +556,7 @@ namespace Lilium.RemoteControl
 
             _StopStateSystem();
 
-            Debug.Log($"[RemoteControl] Replay stopped: {applied} events applied, {failed} failed, {skipped} skipped as truncated");
+            Debug.Log($"[RemoteControl] Replay stopped: {applied} events applied, {failed} failed");
         }
 
         public void OnEnable()

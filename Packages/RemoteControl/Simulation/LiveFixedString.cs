@@ -20,8 +20,11 @@ namespace Lilium.RemoteControl.Frames
     /// missing value it would be written back on replay and agree with itself under comparison. The
     /// slot is marked <see cref="kUnrepresentable"/> instead, which the apply side reads as "say
     /// nothing" and leaves the target as it stands. That is a hole in what the recording carries,
-    /// and it is meant to be a visible one -- see <see cref="LiveFixedStringStats"/>.
+    /// and it is meant to be a visible one -- see <see cref="LiveTextStats"/>.
     /// </para>
+    ///
+    /// Everything a width does is here, over a length and a pointer; the four widths below are
+    /// only the storage, since C# cannot make a fixed buffer's length a type parameter.
     /// </summary>
     internal static unsafe class FixedText
     {
@@ -52,7 +55,7 @@ namespace Lilium.RemoteControl.Frames
             var byteCount = Encoding.UTF8.GetByteCount(value);
             if (byteCount > capacity)
             {
-                LiveFixedStringStats.CountUnrepresentable();
+                LiveTextStats.CountUnrepresentable();
                 return kUnrepresentable;
             }
 
@@ -121,27 +124,61 @@ namespace Lilium.RemoteControl.Frames
             if (length == kNull || length == kUnrepresentable) return null;
             return length == 0 ? string.Empty : Encoding.UTF8.GetString(buffer, length);
         }
+
+        /// <summary>Whether two slots say the same thing. The markers compare as themselves.</summary>
+        public static bool Equals(ushort length, byte* buffer, ushort otherLength, byte* otherBuffer)
+        {
+            if (length != otherLength) return false;
+            if (length == kNull || length == kUnrepresentable) return true;
+
+            for (int i = 0; i < length; i++)
+            {
+                if (buffer[i] != otherBuffer[i]) return false;
+            }
+
+            return true;
+        }
+
+        public static int Hash(ushort length, byte* buffer)
+        {
+            var hash = (int)length;
+            if (length == kNull || length == kUnrepresentable) return hash;
+
+            for (int i = 0; i < length; i++) hash = hash * 31 + buffer[i];
+            return hash;
+        }
     }
 
     /// <summary>
-    /// How often a state-lane string did not fit the width its declaration asked for.
+    /// How often state-lane text could not be carried: a value that outgrew its declared width, or
+    /// an id that resolved to nothing.
     ///
-    /// Counted rather than logged per occurrence: an undersized width is a property of the
-    /// declaration, so it recurs every frame for the length of a take and a warning would say the
-    /// same thing sixty times a second. A recording made while this was climbing is one whose state
-    /// lane is missing a member, which is worth showing next to the recorder.
+    /// Counted rather than logged per occurrence: both recur every frame for the length of a take,
+    /// and a warning would say the same thing sixty times a second. A climbing count is a hole in
+    /// what the recording carries -- a width declared too small, or a recording read against a
+    /// table that does not have what it names (a file cut short).
     /// </summary>
-    public static class LiveFixedStringStats
+    public static class LiveTextStats
     {
         private static long _unrepresentableCount;
+        private static long _unresolvedCount;
 
         /// <summary>Values passed over because they outgrew their width, since the last reset.</summary>
-        public static long unrepresentableCount => _unrepresentableCount;
+        public static long unrepresentableCount => System.Threading.Interlocked.Read(ref _unrepresentableCount);
 
-        /// <summary>Forgets the count. For tests and for the start of a recording.</summary>
-        public static void Reset() => _unrepresentableCount = 0;
+        /// <summary>Ids passed over because the table had nothing at them, since the last reset.</summary>
+        public static long unresolvedCount => System.Threading.Interlocked.Read(ref _unresolvedCount);
 
-        internal static void CountUnrepresentable() => _unrepresentableCount++;
+        /// <summary>Forgets both counts. For tests and for the start of a recording.</summary>
+        public static void Reset()
+        {
+            System.Threading.Interlocked.Exchange(ref _unrepresentableCount, 0);
+            System.Threading.Interlocked.Exchange(ref _unresolvedCount, 0);
+        }
+
+        internal static void CountUnrepresentable() => System.Threading.Interlocked.Increment(ref _unrepresentableCount);
+
+        internal static void CountUnresolved() => System.Threading.Interlocked.Increment(ref _unresolvedCount);
     }
 
     /// <summary>Up to 32 UTF-8 bytes of text inside a state block. See <see cref="FixedText"/>.</summary>
@@ -154,63 +191,24 @@ namespace Lilium.RemoteControl.Frames
         private fixed byte _utf8[kCapacity];
 
         /// <inheritdoc cref="FixedText.Write"/>
-        public static LiveFixedString32 From(string value)
-        {
-            var result = default(LiveFixedString32);
-            result.Set(value);
-            return result;
-        }
+        public static LiveFixedString32 From(string value) { var r = default(LiveFixedString32); r.Set(value); return r; }
 
         /// <inheritdoc cref="FixedText.Write"/>
-        public void Set(string value)
-        {
-            fixed (byte* buffer = _utf8) _length = FixedText.Write(value, buffer, kCapacity);
-        }
+        public void Set(string value) { fixed (byte* b = _utf8) _length = FixedText.Write(value, b, kCapacity); }
 
         /// <inheritdoc cref="FixedText.TryRead"/>
-        public bool TryGetValue(string current, out string value)
-        {
-            fixed (byte* buffer = _utf8) return FixedText.TryRead(_length, buffer, current, out value);
-        }
+        public bool TryGetValue(string current, out string value) { fixed (byte* b = _utf8) return FixedText.TryRead(_length, b, current, out value); }
 
         /// <summary>Whether this slot carries nothing because the value outgrew the width.</summary>
         public bool isUnrepresentable => _length == FixedText.kUnrepresentable;
 
-        public override string ToString()
-        {
-            fixed (byte* buffer = _utf8) return FixedText.Read(_length, buffer);
-        }
+        public override string ToString() { fixed (byte* b = _utf8) return FixedText.Read(_length, b); }
 
-        public bool Equals(LiveFixedString32 other)
-        {
-            if (_length != other._length) return false;
-            if (_length == FixedText.kNull || _length == FixedText.kUnrepresentable) return true;
-
-            fixed (byte* mine = _utf8)
-            {
-                for (int i = 0; i < _length; i++)
-                {
-                    if (mine[i] != other._utf8[i]) return false;
-                }
-            }
-
-            return true;
-        }
+        public bool Equals(LiveFixedString32 other) { fixed (byte* b = _utf8) return FixedText.Equals(_length, b, other._length, other._utf8); }
 
         public override bool Equals(object obj) => obj is LiveFixedString32 other && Equals(other);
 
-        public override int GetHashCode()
-        {
-            var hash = (int)_length;
-            if (_length == FixedText.kNull || _length == FixedText.kUnrepresentable) return hash;
-
-            fixed (byte* buffer = _utf8)
-            {
-                for (int i = 0; i < _length; i++) hash = hash * 31 + buffer[i];
-            }
-
-            return hash;
-        }
+        public override int GetHashCode() { fixed (byte* b = _utf8) return FixedText.Hash(_length, b); }
     }
 
     /// <summary>Up to 64 UTF-8 bytes of text inside a state block. See <see cref="FixedText"/>.</summary>
@@ -223,63 +221,24 @@ namespace Lilium.RemoteControl.Frames
         private fixed byte _utf8[kCapacity];
 
         /// <inheritdoc cref="FixedText.Write"/>
-        public static LiveFixedString64 From(string value)
-        {
-            var result = default(LiveFixedString64);
-            result.Set(value);
-            return result;
-        }
+        public static LiveFixedString64 From(string value) { var r = default(LiveFixedString64); r.Set(value); return r; }
 
         /// <inheritdoc cref="FixedText.Write"/>
-        public void Set(string value)
-        {
-            fixed (byte* buffer = _utf8) _length = FixedText.Write(value, buffer, kCapacity);
-        }
+        public void Set(string value) { fixed (byte* b = _utf8) _length = FixedText.Write(value, b, kCapacity); }
 
         /// <inheritdoc cref="FixedText.TryRead"/>
-        public bool TryGetValue(string current, out string value)
-        {
-            fixed (byte* buffer = _utf8) return FixedText.TryRead(_length, buffer, current, out value);
-        }
+        public bool TryGetValue(string current, out string value) { fixed (byte* b = _utf8) return FixedText.TryRead(_length, b, current, out value); }
 
         /// <inheritdoc cref="LiveFixedString32.isUnrepresentable"/>
         public bool isUnrepresentable => _length == FixedText.kUnrepresentable;
 
-        public override string ToString()
-        {
-            fixed (byte* buffer = _utf8) return FixedText.Read(_length, buffer);
-        }
+        public override string ToString() { fixed (byte* b = _utf8) return FixedText.Read(_length, b); }
 
-        public bool Equals(LiveFixedString64 other)
-        {
-            if (_length != other._length) return false;
-            if (_length == FixedText.kNull || _length == FixedText.kUnrepresentable) return true;
-
-            fixed (byte* mine = _utf8)
-            {
-                for (int i = 0; i < _length; i++)
-                {
-                    if (mine[i] != other._utf8[i]) return false;
-                }
-            }
-
-            return true;
-        }
+        public bool Equals(LiveFixedString64 other) { fixed (byte* b = _utf8) return FixedText.Equals(_length, b, other._length, other._utf8); }
 
         public override bool Equals(object obj) => obj is LiveFixedString64 other && Equals(other);
 
-        public override int GetHashCode()
-        {
-            var hash = (int)_length;
-            if (_length == FixedText.kNull || _length == FixedText.kUnrepresentable) return hash;
-
-            fixed (byte* buffer = _utf8)
-            {
-                for (int i = 0; i < _length; i++) hash = hash * 31 + buffer[i];
-            }
-
-            return hash;
-        }
+        public override int GetHashCode() { fixed (byte* b = _utf8) return FixedText.Hash(_length, b); }
     }
 
     /// <summary>Up to 128 UTF-8 bytes of text inside a state block. See <see cref="FixedText"/>.</summary>
@@ -292,63 +251,24 @@ namespace Lilium.RemoteControl.Frames
         private fixed byte _utf8[kCapacity];
 
         /// <inheritdoc cref="FixedText.Write"/>
-        public static LiveFixedString128 From(string value)
-        {
-            var result = default(LiveFixedString128);
-            result.Set(value);
-            return result;
-        }
+        public static LiveFixedString128 From(string value) { var r = default(LiveFixedString128); r.Set(value); return r; }
 
         /// <inheritdoc cref="FixedText.Write"/>
-        public void Set(string value)
-        {
-            fixed (byte* buffer = _utf8) _length = FixedText.Write(value, buffer, kCapacity);
-        }
+        public void Set(string value) { fixed (byte* b = _utf8) _length = FixedText.Write(value, b, kCapacity); }
 
         /// <inheritdoc cref="FixedText.TryRead"/>
-        public bool TryGetValue(string current, out string value)
-        {
-            fixed (byte* buffer = _utf8) return FixedText.TryRead(_length, buffer, current, out value);
-        }
+        public bool TryGetValue(string current, out string value) { fixed (byte* b = _utf8) return FixedText.TryRead(_length, b, current, out value); }
 
         /// <inheritdoc cref="LiveFixedString32.isUnrepresentable"/>
         public bool isUnrepresentable => _length == FixedText.kUnrepresentable;
 
-        public override string ToString()
-        {
-            fixed (byte* buffer = _utf8) return FixedText.Read(_length, buffer);
-        }
+        public override string ToString() { fixed (byte* b = _utf8) return FixedText.Read(_length, b); }
 
-        public bool Equals(LiveFixedString128 other)
-        {
-            if (_length != other._length) return false;
-            if (_length == FixedText.kNull || _length == FixedText.kUnrepresentable) return true;
-
-            fixed (byte* mine = _utf8)
-            {
-                for (int i = 0; i < _length; i++)
-                {
-                    if (mine[i] != other._utf8[i]) return false;
-                }
-            }
-
-            return true;
-        }
+        public bool Equals(LiveFixedString128 other) { fixed (byte* b = _utf8) return FixedText.Equals(_length, b, other._length, other._utf8); }
 
         public override bool Equals(object obj) => obj is LiveFixedString128 other && Equals(other);
 
-        public override int GetHashCode()
-        {
-            var hash = (int)_length;
-            if (_length == FixedText.kNull || _length == FixedText.kUnrepresentable) return hash;
-
-            fixed (byte* buffer = _utf8)
-            {
-                for (int i = 0; i < _length; i++) hash = hash * 31 + buffer[i];
-            }
-
-            return hash;
-        }
+        public override int GetHashCode() { fixed (byte* b = _utf8) return FixedText.Hash(_length, b); }
     }
 
     /// <summary>Up to 256 UTF-8 bytes of text inside a state block. See <see cref="FixedText"/>.</summary>
@@ -361,62 +281,23 @@ namespace Lilium.RemoteControl.Frames
         private fixed byte _utf8[kCapacity];
 
         /// <inheritdoc cref="FixedText.Write"/>
-        public static LiveFixedString256 From(string value)
-        {
-            var result = default(LiveFixedString256);
-            result.Set(value);
-            return result;
-        }
+        public static LiveFixedString256 From(string value) { var r = default(LiveFixedString256); r.Set(value); return r; }
 
         /// <inheritdoc cref="FixedText.Write"/>
-        public void Set(string value)
-        {
-            fixed (byte* buffer = _utf8) _length = FixedText.Write(value, buffer, kCapacity);
-        }
+        public void Set(string value) { fixed (byte* b = _utf8) _length = FixedText.Write(value, b, kCapacity); }
 
         /// <inheritdoc cref="FixedText.TryRead"/>
-        public bool TryGetValue(string current, out string value)
-        {
-            fixed (byte* buffer = _utf8) return FixedText.TryRead(_length, buffer, current, out value);
-        }
+        public bool TryGetValue(string current, out string value) { fixed (byte* b = _utf8) return FixedText.TryRead(_length, b, current, out value); }
 
         /// <inheritdoc cref="LiveFixedString32.isUnrepresentable"/>
         public bool isUnrepresentable => _length == FixedText.kUnrepresentable;
 
-        public override string ToString()
-        {
-            fixed (byte* buffer = _utf8) return FixedText.Read(_length, buffer);
-        }
+        public override string ToString() { fixed (byte* b = _utf8) return FixedText.Read(_length, b); }
 
-        public bool Equals(LiveFixedString256 other)
-        {
-            if (_length != other._length) return false;
-            if (_length == FixedText.kNull || _length == FixedText.kUnrepresentable) return true;
-
-            fixed (byte* mine = _utf8)
-            {
-                for (int i = 0; i < _length; i++)
-                {
-                    if (mine[i] != other._utf8[i]) return false;
-                }
-            }
-
-            return true;
-        }
+        public bool Equals(LiveFixedString256 other) { fixed (byte* b = _utf8) return FixedText.Equals(_length, b, other._length, other._utf8); }
 
         public override bool Equals(object obj) => obj is LiveFixedString256 other && Equals(other);
 
-        public override int GetHashCode()
-        {
-            var hash = (int)_length;
-            if (_length == FixedText.kNull || _length == FixedText.kUnrepresentable) return hash;
-
-            fixed (byte* buffer = _utf8)
-            {
-                for (int i = 0; i < _length; i++) hash = hash * 31 + buffer[i];
-            }
-
-            return hash;
-        }
+        public override int GetHashCode() { fixed (byte* b = _utf8) return FixedText.Hash(_length, b); }
     }
 }

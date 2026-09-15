@@ -58,7 +58,7 @@ namespace Lilium.LiveStudio.Tests
         [Test]
         public void TheOverrideClipKey_IsActuallyCarried()
         {
-            var bridge = StateBridgeRegistry.Find(typeof(AvatarController));
+            var bridge = StateTypes.FindBridge(typeof(AvatarController));
 
             Assert.IsNotNull(bridge, "nothing carries the avatar controller's state");
             Assert.IsTrue(LiveStateCarriage.IsCarriedByState(_Member("bodyOverrideClipKey"), bridge),
@@ -73,7 +73,7 @@ namespace Lilium.LiveStudio.Tests
         [Test]
         public void TheTwoFacesOfTheChoice_AreCarriedByTheKey()
         {
-            var bridge = StateBridgeRegistry.Find(typeof(AvatarController));
+            var bridge = StateTypes.FindBridge(typeof(AvatarController));
 
             Assert.IsTrue(LiveStateCarriage.IsCarriedByState(_Member("_bodyOverrideClip"), bridge),
                 "the baked clip reads as not recorded, which is the opposite of the truth");

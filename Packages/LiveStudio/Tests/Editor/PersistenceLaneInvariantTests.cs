@@ -193,7 +193,7 @@ namespace Lilium.LiveStudio.Tests
 
             foreach (var type in _ExposedTypes())
             {
-                var bridge = StateBridgeRegistry.Find(type);
+                var bridge = StateTypes.FindBridge(type);
                 if (bridge == null) continue;
 
                 var liveClass = LiveClass.Get(type);

@@ -18,19 +18,13 @@ namespace Lilium.RemoteControl.Frames
     /// same ones the property holds -- which is also what lets a viewer walk a payload with the
     /// machinery it already walks a state element with.
     ///
-    /// Text is not an exception to that, only a shape: a filename has no fixed width, so it travels
-    /// as a length-prefixed string -- the byte count first, then the UTF-8 -- and is read back the
-    /// same way. See <see cref="kStringTypeName"/>.
+    /// Text is not an exception to that, only a shape: its bytes are UTF-8, and how many there are
+    /// is the record's <see cref="EventRecord.payloadLength"/>. See <see cref="kStringTypeName"/>.
     /// </summary>
     public static class EventPayload
     {
         /// <summary>
-        /// A string value, held inline as a length-prefixed string: a two-byte UTF-8 length
-        /// followed by that many bytes.
-        ///
-        /// The length goes in front so the bytes describe themselves. A reader knows where the
-        /// text ends without scanning for a terminator, and the same encoding nests -- a string
-        /// inside a payload that holds more than one thing still says where it stops.
+        /// A string value, held inline as UTF-8. The record says how long it is.
         ///
         /// Inline, not interned: a payload is a value, and values change per event. Putting them
         /// in the symbol table would add an entry per distinct value, so a text field being typed
@@ -48,9 +42,6 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         public const string kRequestTypeName = "@request";
 
-        /// <summary>Bytes the length prefix occupies. Two, because a payload cannot exceed 64 KB.</summary>
-        public const int kLengthPrefixSize = 2;
-
         private delegate void Packer(object value, Span<byte> destination);
 
         private delegate object Unpacker(ReadOnlySpan<byte> source);
@@ -63,7 +54,7 @@ namespace Lilium.RemoteControl.Frames
         }
 
         // Reflection is done once per type and the result kept: the same handful of types come
-        // through on every frame, and MakeGenericMethod is far too slow to sit on that path.
+        // through on every event, and MakeGenericMethod is far too slow to sit on that path.
         private static readonly ConcurrentDictionary<Type, Layout> _layouts =
             new ConcurrentDictionary<Type, Layout>();
 
@@ -73,7 +64,7 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>The name a payload of this type is recorded under.</summary>
         public static string NameOf(Type type) => type == null ? null : type.FullName;
 
-        /// <summary>True when the payload under this name is a length-prefixed string value.</summary>
+        /// <summary>True when the payload under this name is a string value.</summary>
         public static bool IsString(string typeName) => typeName == kStringTypeName;
 
         /// <summary>True when the bytes under this name are an unexplained request body.</summary>
@@ -105,7 +96,7 @@ namespace Lilium.RemoteControl.Frames
             }
 
             // Misses are cached too. A name that is not here now will not be here on the next
-            // frame either, and the assembly scan behind that answer is not cheap.
+            // event either, and the assembly scan behind that answer is not cheap.
             _typesByName[typeName] = found;
             return found;
         }
@@ -121,9 +112,12 @@ namespace Lilium.RemoteControl.Frames
         }
 
         /// <summary>
-        /// Writes <paramref name="value"/> into <paramref name="destination"/>. False when the type
-        /// has no fixed width, or when the value does not fit -- both mean the caller should fall
-        /// back to text rather than keep a partial value.
+        /// Writes a boxed value into <paramref name="destination"/>. For a caller that only has the
+        /// value as an object -- a REST body parsed against a type found at run time. A caller that
+        /// knows the type writes it with <see cref="Write{T}"/> and boxes nothing.
+        ///
+        /// False when the type has no fixed width, or when the destination is too small -- both
+        /// mean the caller should keep the text rather than a partial value.
         /// </summary>
         public static bool TryPack(Type type, object value, Span<byte> destination, out int written)
         {
@@ -138,10 +132,17 @@ namespace Lilium.RemoteControl.Frames
             return true;
         }
 
+        /// <summary>Writes a value of a known type. The destination must hold <c>sizeof(T)</c> bytes.</summary>
+        public static void Write<T>(in T value, Span<byte> destination) where T : unmanaged
+        {
+            var copy = value;
+            MemoryMarshal.Write(destination, ref copy);
+        }
+
         /// <summary>
-        /// Reads a value back out. False when the type has no fixed width, or when the recording
-        /// holds fewer bytes than it takes -- reading past that would produce a plausible number
-        /// out of whatever followed.
+        /// Reads a value back out as an object. False when the type has no fixed width, or when the
+        /// recording holds fewer bytes than it takes -- reading past that would produce a plausible
+        /// number out of whatever followed.
         /// </summary>
         public static bool TryUnpack(Type type, ReadOnlySpan<byte> source, out object value)
         {
@@ -154,81 +155,20 @@ namespace Lilium.RemoteControl.Frames
             return true;
         }
 
-        /// <summary>
-        /// Writes a length-prefixed string: a two-byte UTF-8 length, then that many bytes.
-        ///
-        /// False when the text did not all fit, in which case <paramref name="written"/> covers
-        /// what was kept and the prefix says so -- the value is still readable, just shorter than
-        /// what arrived. The caller decides whether that matters, because half a filename is a
-        /// different problem from half a log line.
-        /// </summary>
-        public static bool TryWriteString(string text, Span<byte> destination, out int written)
-        {
-            written = 0;
-            if (destination.Length < kLengthPrefixSize) return false;
-
-            var body = destination.Slice(kLengthPrefixSize);
-            var length = 0;
-            var fits = true;
-
-            if (!string.IsNullOrEmpty(text))
-            {
-                var needed = Encoding.UTF8.GetByteCount(text);
-
-                if (needed <= body.Length)
-                {
-                    length = Encoding.UTF8.GetBytes(text, body);
-                }
-                else
-                {
-                    // Cut on a character boundary, so what is kept is still readable text rather
-                    // than a string ending in half a rune.
-                    var kept = _FitCharacters(text, body.Length);
-                    length = Encoding.UTF8.GetBytes(text.AsSpan(0, kept), body);
-                    fits = false;
-                }
-            }
-
-            var prefix = (ushort)length;
-            MemoryMarshal.Write(destination, ref prefix);
-
-            written = kLengthPrefixSize + length;
-            return fits;
-        }
+        /// <summary>Bytes a string takes as a payload.</summary>
+        public static int ByteCountOf(string text)
+            => string.IsNullOrEmpty(text) ? 0 : Encoding.UTF8.GetByteCount(text);
 
         /// <summary>
-        /// Reads a length-prefixed string back, or null when the payload cannot hold one.
-        ///
-        /// The prefix is trusted only as far as what is actually there: a truncated file would
-        /// otherwise have its last record read past the end of its own bytes.
+        /// Writes a string as a payload. The destination must hold <see cref="ByteCountOf"/> bytes;
+        /// returns how many were written.
         /// </summary>
+        public static int WriteString(string text, Span<byte> destination)
+            => string.IsNullOrEmpty(text) ? 0 : Encoding.UTF8.GetBytes(text.AsSpan(), destination);
+
+        /// <summary>Reads a string payload back. Empty for an empty payload.</summary>
         public static string ReadString(ReadOnlySpan<byte> source)
-        {
-            if (source.Length < kLengthPrefixSize) return null;
-
-            int length = MemoryMarshal.Read<ushort>(source);
-            var available = source.Length - kLengthPrefixSize;
-            if (length > available) length = available;
-
-            return length == 0
-                ? string.Empty
-                : Encoding.UTF8.GetString(source.Slice(kLengthPrefixSize, length));
-        }
-
-        private static int _FitCharacters(string text, int budget)
-        {
-            var encoder = Encoding.UTF8;
-            int low = 0, high = text.Length;
-
-            while (low < high)
-            {
-                var middle = (low + high + 1) / 2;
-                if (encoder.GetByteCount(text.AsSpan(0, middle)) <= budget) low = middle;
-                else high = middle - 1;
-            }
-
-            return low;
-        }
+            => source.Length == 0 ? string.Empty : Encoding.UTF8.GetString(source);
 
         private static Layout _LayoutOf(Type type)
         {

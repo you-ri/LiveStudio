@@ -10,22 +10,22 @@ namespace Lilium.RemoteControl.Frames
     /// stamped with the frame number they belong to.
     ///
     /// Position is held as a frame number plus a <see cref="FrameRate"/>, matching how the rest of
-    /// the product indexes time (<see cref="FrameBuffer{T}"/>, the capture receivers, the recorded
-    /// stream). <see cref="timecode"/> derives the readable form from those two; it is not stored,
-    /// so the two can never disagree.
+    /// the product indexes time. <see cref="timecode"/> derives the readable form from those two; it
+    /// is not stored, so the two can never disagree.
     ///
-    /// The records sit in native storage, like the state blocks: they were always unmanaged, and
-    /// holding them where the address does not move keeps a copy between frames a block move and
-    /// leaves the door open to reading them from a job.
+    /// Records and the values they carry sit in two native lists: the records at a fixed width, the
+    /// values back to back in an arena each record points into. A value costs what it says rather
+    /// than a fixed slot, and has no ceiling -- a long text write is carried whole instead of being
+    /// cut short and marked.
     ///
-    /// Instances are owned and reused by <see cref="EventFrameBuffer"/>, so the storage is a
-    /// capacity buffer. Read <see cref="eventCount"/>, never the storage length. Whoever creates one
-    /// disposes it; a frame that never received a record never allocates and costs nothing to drop.
+    /// Instances are owned and reused (<see cref="EventFrameBuffer"/>, a player, a replayer), so the
+    /// storage is a capacity buffer that settles at its high-water mark. Whoever creates one
+    /// disposes it; a frame that never received a record never allocates.
     /// </summary>
     public sealed unsafe class EventFrame : IDisposable
     {
-        private NativeArray<EventRecord> _events;
-        private int _eventCount;
+        private UnsafeList<EventRecord> _events;
+        private UnsafeList<byte> _payloads;
 
         /// <summary>Monotonic frame number since the start of the run.</summary>
         public long frameNumber { get; private set; }
@@ -36,35 +36,76 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>Readable position, derived from the frame number and the rate.</summary>
         public Timecode timecode => new Timecode(frameNumber, frameRate);
 
-        /// <summary>Number of valid entries in <see cref="events"/>.</summary>
-        public int eventCount => _eventCount;
+        /// <summary>Number of records held.</summary>
+        public int eventCount => _events.IsCreated ? _events.Length : 0;
 
-        /// <summary>Storage. Only the first <see cref="eventCount"/> entries are valid.</summary>
-        public NativeArray<EventRecord> events => _events;
-
-        public EventRecord this[int index]
+        /// <summary>The record at an index, read in place.</summary>
+        public ref readonly EventRecord this[int index]
         {
             get
             {
-                if ((uint)index >= (uint)_eventCount) throw new ArgumentOutOfRangeException(nameof(index));
+                if ((uint)index >= (uint)eventCount) throw new ArgumentOutOfRangeException(nameof(index));
 
-                return _events[index];
+                return ref _events.ElementAt(index);
             }
         }
+
+        /// <summary>
+        /// The value a record held here carries. Valid until this frame is next written to -- the
+        /// arena moves when it grows.
+        /// </summary>
+        public ReadOnlySpan<byte> PayloadOf(in EventRecord record)
+        {
+            if (record.payloadLength <= 0) return ReadOnlySpan<byte>.Empty;
+
+            if (record.payloadOffset < 0 || record.payloadOffset + record.payloadLength > _payloads.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(record),
+                    "[RemoteControl] The record's payload does not lie in this frame.");
+            }
+
+            return new ReadOnlySpan<byte>(_payloads.Ptr + record.payloadOffset, record.payloadLength);
+        }
+
+        /// <summary>The value the record at an index carries.</summary>
+        public ReadOnlySpan<byte> PayloadAt(int index) => PayloadOf(in this[index]);
 
         internal void Reset(long number, FrameRate rate)
         {
             frameNumber = number;
             frameRate = rate;
-            _eventCount = 0;
+            Clear();
         }
 
-        internal void Add(in EventRecord record)
+        /// <summary>Drops every record and value, keeping the storage.</summary>
+        internal void Clear()
         {
-            _EnsureCapacity(_eventCount + 1);
+            if (_events.IsCreated) _events.Clear();
+            if (_payloads.IsCreated) _payloads.Clear();
+        }
 
-            UnsafeUtility.WriteArrayElement(_events.GetUnsafePtr(), _eventCount, record);
-            _eventCount++;
+        /// <summary>
+        /// Appends a record and the value it carries. The record's payload position is rewritten to
+        /// where the bytes land here, so whatever arena it came from is not referred to again.
+        /// </summary>
+        internal void Add(in EventRecord record, ReadOnlySpan<byte> payload)
+        {
+            _EnsureCreated();
+
+            var stored = record;
+            stored.payloadOffset = _payloads.Length;
+            stored.payloadLength = payload.Length;
+
+            if (payload.Length > 0)
+            {
+                var at = _payloads.Length;
+                _Reserve(ref _payloads, at + payload.Length);
+                _payloads.Resize(at + payload.Length);
+                payload.CopyTo(new Span<byte>(_payloads.Ptr + at, payload.Length));
+            }
+
+            _Reserve(ref _events, _events.Length + 1);
+            _events.Add(stored);
         }
 
         /// <summary>
@@ -75,14 +116,23 @@ namespace Lilium.RemoteControl.Frames
         {
             destination.frameNumber = frameNumber;
             destination.frameRate = frameRate;
-            destination._eventCount = _eventCount;
+            destination.Clear();
 
-            if (_eventCount == 0) return;
+            var count = eventCount;
+            if (count == 0) return;
 
-            destination._EnsureCapacity(_eventCount);
+            destination._EnsureCreated();
 
-            UnsafeUtility.MemCpy(destination._events.GetUnsafePtr(), _events.GetUnsafeReadOnlyPtr(),
-                (long)_eventCount * sizeof(EventRecord));
+            _Reserve(ref destination._events, count);
+            destination._events.Resize(count);
+            UnsafeUtility.MemCpy(destination._events.Ptr, _events.Ptr, (long)count * sizeof(EventRecord));
+
+            var bytes = _payloads.Length;
+            if (bytes == 0) return;
+
+            _Reserve(ref destination._payloads, bytes);
+            destination._payloads.Resize(bytes);
+            UnsafeUtility.MemCpy(destination._payloads.Ptr, _payloads.Ptr, bytes);
         }
 
         /// <summary>
@@ -92,32 +142,24 @@ namespace Lilium.RemoteControl.Frames
         public void Dispose()
         {
             if (_events.IsCreated) _events.Dispose();
+            if (_payloads.IsCreated) _payloads.Dispose();
 
             _events = default;
-            _eventCount = 0;
+            _payloads = default;
         }
 
-        private void _EnsureCapacity(int required)
+        public override string ToString() => $"frame {frameNumber} @ {timecode} ({eventCount} events)";
+
+        private void _EnsureCreated()
         {
-            var capacity = _events.IsCreated ? _events.Length : 0;
-            if (capacity >= required) return;
-
-            // Grow to the high-water mark and stay there; steady state does not reallocate.
-            var grown = Math.Max(required, capacity == 0 ? 8 : capacity * 2);
-            var replacement = new NativeArray<EventRecord>(grown, Allocator.Persistent,
-                NativeArrayOptions.ClearMemory);
-
-            if (_events.IsCreated)
-            {
-                UnsafeUtility.MemCpy(replacement.GetUnsafePtr(), _events.GetUnsafeReadOnlyPtr(),
-                    (long)_eventCount * sizeof(EventRecord));
-
-                _events.Dispose();
-            }
-
-            _events = replacement;
+            if (!_events.IsCreated) _events = new UnsafeList<EventRecord>(8, Allocator.Persistent);
+            if (!_payloads.IsCreated) _payloads = new UnsafeList<byte>(256, Allocator.Persistent);
         }
 
-        public override string ToString() => $"frame {frameNumber} @ {timecode} ({_eventCount} events)";
+        // Doubling, so a frame that settles at its high-water mark stops reallocating.
+        private static void _Reserve<T>(ref UnsafeList<T> list, int required) where T : unmanaged
+        {
+            if (required > list.Capacity) list.SetCapacity(Math.Max(required, list.Capacity * 2));
+        }
     }
 }

@@ -217,7 +217,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             var size = block.elementSize;
             if (_snapshot.selectedValue.Length < size) _snapshot.selectedValue = new byte[size];
 
-            block.CopyValueTo(index, _snapshot.selectedValue);
+            block.ValueBytes(index).CopyTo(_snapshot.selectedValue);
             _snapshot.selectedValueLength = size;
             _snapshot.selectedType = row.typeName;
             _snapshot.selectedOwnerId = selectedOwnerId;
@@ -262,10 +262,10 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
 
             for (int i = 0; i < events.eventCount; i++)
             {
-                var record = events[i];
+                ref readonly var record = ref events[i];
 
-                var payload = record.payloadLength == 0 ? null : new byte[record.payloadLength];
-                if (payload != null) record.CopyPayloadTo(payload);
+                var bytes = events.PayloadOf(in record);
+                var payload = bytes.Length == 0 ? null : bytes.ToArray();
 
                 _events[_eventHead] = new EventRow
                 {
@@ -279,7 +279,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                     payloadTypeName = resolve(record.payloadTypeId),
                     payload = payload,
                     faulted = record.faulted,
-                    truncated = record.payloadTruncated,
                 };
 
                 _eventHead = (_eventHead + 1) % kEventCapacity;

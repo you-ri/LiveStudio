@@ -292,11 +292,11 @@ namespace Lilium.RemoteControl
             // the type keeps being read every frame for members it no longer declares.
             if (bridge == null)
             {
-                Frames.StateBridgeRegistry.Unregister(liveClass.type);
+                Frames.StateTypes.Unregister(liveClass.type);
                 return;
             }
 
-            Frames.StateBridgeRegistry.Register(bridge);
+            Frames.StateTypes.Register(bridge);
         }
 
         private static void _UnregisterType(LiveClassAsset asset, Type type)

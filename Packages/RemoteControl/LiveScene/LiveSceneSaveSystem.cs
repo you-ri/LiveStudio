@@ -89,7 +89,8 @@ namespace Lilium.RemoteControl.LiveScene
         public bool allowQuit { get; set; }
 
         /// <summary>
-        /// Current scene file path. Relative paths resolve against persistentDataPath.
+        /// Current scene file path. Relative paths resolve against the open project folder
+        /// (persistentDataPath when no project is set).
         /// Setter persists the value to the per-project startup state file.
         /// </summary>
         public string currentFilePath
@@ -165,12 +166,15 @@ namespace Lilium.RemoteControl.LiveScene
                 return null;
             }
 
-            var fullPath = _ResolvePath(legacy);
+            // Earlier builds stored this relative to persistentDataPath, not to the project.
+            var fullPath = System.IO.Path.IsPathRooted(legacy)
+                ? legacy
+                : System.IO.Path.Combine(Application.persistentDataPath, legacy);
             StartupStateStore.Write(_StateDir(), _switchSceneOnLoad ? fullPath : "");
             PlayerPrefs.DeleteKey(legacyKey);
             PlayerPrefs.DeleteKey(kLegacyLastScenePathKey);
             PlayerPrefs.Save();
-            return legacy;
+            return fullPath;
         }
 
         // The startup base-scene switch (a BeforeSceneLoad hook that redirects to the live scene
@@ -667,15 +671,16 @@ namespace Lilium.RemoteControl.LiveScene
             return dir;
         }
 
+        // Same base as the startup state, so an app pointed at a project never uses a machine-wide scene file.
         private string _ResolvePath(string path)
         {
             if (string.IsNullOrEmpty(path))
-                return System.IO.Path.Combine(Application.persistentDataPath, _defaultFileName);
+                return System.IO.Path.Combine(_StateDir(), _defaultFileName);
 
             if (System.IO.Path.IsPathRooted(path))
                 return path;
 
-            return System.IO.Path.Combine(Application.persistentDataPath, path);
+            return System.IO.Path.Combine(_StateDir(), path);
         }
 
         private void _LoadFrom(string fullPath)

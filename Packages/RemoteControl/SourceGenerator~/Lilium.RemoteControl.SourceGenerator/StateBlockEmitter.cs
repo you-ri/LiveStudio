@@ -1330,10 +1330,25 @@ namespace Lilium.RemoteControl.SourceGenerator
             sb.AppendLine($"{indent}        target.{member.AppliedCallback}();");
         }
 
-        /// <summary>Emits the registration line for one type.</summary>
+        /// <summary>
+        /// Emits the registration for one type: its movers and what its block holds, in one call.
+        ///
+        /// The members listed are the ones that actually reached the block, so the runtime can tell
+        /// "asked for the state lane" from "carried by it" -- a member the generator turned away (a
+        /// type that is not unmanaged, a width too wide) is absent here, which is how the write path
+        /// learns to keep recording it as an event. The same list describes the block member by
+        /// member, so a recording made before this type changed can still be read: the members both
+        /// builds have are put back where they now live, and the rest are left out rather than
+        /// taking the whole type down.
+        ///
+        /// Only the names and the shapes go out from here. Where each member sits and how wide it is
+        /// are read off the block struct at load (see StateSchemaBuilder), because the struct decides
+        /// those and asking it cannot disagree with it -- and because working them out here would
+        /// mean emitting pointer arithmetic into assemblies that do not all allow it.
+        /// </summary>
         public static void EmitRegistration(StringBuilder sb, StateInfo info)
         {
-            sb.Append("            global::Lilium.RemoteControl.Frames.StateBridgeRegistry.Register<");
+            sb.Append("            global::Lilium.RemoteControl.Frames.StateTypes.Register<");
             sb.Append(info.FullyQualifiedName);
             sb.Append(", ");
             sb.Append(info.BlockReference);
@@ -1345,47 +1360,20 @@ namespace Lilium.RemoteControl.SourceGenerator
             sb.Append(info.MoverReference);
             sb.Append('.');
             sb.Append(kApplyMethodName);
-
-            // The members that actually reached the block, so the runtime can tell "asked for the
-            // state lane" from "carried by it". A member the generator turned away (no width for
-            // its text, a type that is not unmanaged) is absent here, which is how the write path
-            // learns to keep recording it as an event.
-            foreach (var member in info.Members)
-            {
-                sb.Append(", \"");
-                sb.Append(member.Name);
-                sb.Append('"');
-            }
-
-            sb.AppendLine(");");
-
-            // What the block holds, member by member, so a recording made before this type changed
-            // can still be read: the members both builds have are put back where they now live, and
-            // the ones only one build has are left out rather than taking the whole type down.
-            //
-            // Only the names and the shapes go out from here. Where each member sits and how wide it
-            // is are read off the block struct at load (see StateSchemaBuilder), because the struct
-            // decides those and asking it cannot disagree with it -- and because working them out
-            // here would mean emitting pointer arithmetic into assemblies that do not all allow it.
-            sb.Append("            global::Lilium.RemoteControl.Frames.StateSchemaRegistry.Declare(\"");
-            sb.Append(info.RuntimeFullName);
-            sb.AppendLine("\",");
-            sb.Append("                global::Lilium.RemoteControl.Frames.StateSchemaBuilder.For<");
-            sb.Append(info.BlockReference);
-            sb.AppendLine(">(");
-            sb.AppendLine("                    new global::Lilium.RemoteControl.Frames.StateSchemaMemberSpec[]");
-            sb.AppendLine("                    {");
+            sb.AppendLine(",");
+            sb.AppendLine("                new global::Lilium.RemoteControl.Frames.StateSchemaMemberSpec[]");
+            sb.AppendLine("                {");
 
             foreach (var member in info.Members)
             {
-                sb.Append("                        new global::Lilium.RemoteControl.Frames.StateSchemaMemberSpec(\"");
+                sb.Append("                    new global::Lilium.RemoteControl.Frames.StateSchemaMemberSpec(\"");
                 sb.Append(member.Name);
                 sb.Append("\", 0x");
                 sb.Append(member.Layout.ToString("x"));
                 sb.AppendLine("UL),");
             }
 
-            sb.AppendLine("                    }));");
+            sb.AppendLine("                });");
         }
 
         /// <summary>

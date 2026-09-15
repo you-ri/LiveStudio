@@ -22,7 +22,7 @@ namespace Lilium.RemoteControl.Frames.Recording
     public sealed class FrameRecordPlayer : IDisposable
     {
         private readonly FrameRecordReader _reader;
-        private readonly List<EventRecord> _events = new List<EventRecord>();
+        private readonly EventFrame _events = new EventFrame();
         private readonly HashSet<string> _reportedUnknownTypes = new HashSet<string>();
 
         // Descriptions this recording carries, by the id it names them with, and the plan for
@@ -34,6 +34,9 @@ namespace Lilium.RemoteControl.Frames.Recording
             new Dictionary<int, (StateBlock, StateReadPlan)>();
 
         private readonly Dictionary<string, StateReadPlan> _drift = new Dictionary<string, StateReadPlan>();
+
+        // What the inventory entry being read lists, reused so a keyframe does not allocate a set.
+        private readonly HashSet<int> _seenInStructure = new HashSet<int>();
 
         private long _frameNumber = -1;
         private bool _atEnd;
@@ -65,8 +68,11 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// </summary>
         public StateBlockSet state { get; } = new StateBlockSet();
 
-        /// <summary>Events applied at the current frame's head, in the order they were applied.</summary>
-        public IReadOnlyList<EventRecord> events => _events;
+        /// <summary>
+        /// Events applied at the current frame's head, in the order they were applied, with the
+        /// values they carry. Rewritten by the next move.
+        /// </summary>
+        public EventFrame events => _events;
 
         /// <summary>
         /// Type names carried by the recording that nothing here knows how to hold. Not empty means
@@ -287,6 +293,7 @@ namespace Lilium.RemoteControl.Frames.Recording
             _reader.Dispose();
             structure.Dispose();
             state.Dispose();
+            _events.Dispose();
         }
 
         private bool _AdvanceToNextBoundary()
@@ -355,7 +362,8 @@ namespace Lilium.RemoteControl.Frames.Recording
 
             // Reconciled rather than assigned: what the recording does not list has to go, or an
             // object spawned later in the run would survive a scrub back past its own creation.
-            var seen = new HashSet<int>();
+            var seen = _seenInStructure;
+            seen.Clear();
             var offset = 12;
 
             for (int i = 0; i < count; i++)
@@ -392,7 +400,7 @@ namespace Lilium.RemoteControl.Frames.Recording
             // type that has announced itself can be given a block here -- otherwise a take plays
             // into an application that has the producer but has not published that type yet, and
             // the whole lane is dropped with only a warning.
-            var block = StateTypeRegistry.EnsureBlock(state, typeName);
+            var block = StateTypes.EnsureBlock(state, typeName);
 
             if (block == null)
             {
@@ -412,7 +420,7 @@ namespace Lilium.RemoteControl.Frames.Recording
             var recorded = schemaId == FrameSymbolTable.kNone
                 ? null
                 : _SchemaOf(schemaId);
-            var mine = StateSchemaRegistry.Find(typeName);
+            var mine = StateTypes.FindSchema(typeName);
 
             if (recorded == null || mine == null)
             {
@@ -527,40 +535,16 @@ namespace Lilium.RemoteControl.Frames.Recording
                 $"Here but not in the recording, so left as the object already has them: {unwritten}.");
         }
 
-        /// <summary>
-        /// Reads the kind a recording holds, mapping values this build no longer writes.
-        ///
-        /// EventKind lost StructureChange (2) and RegisteredSource (3) on 2026-09-08. The field is
-        /// still an int and the layout is unchanged, so that alone did not call for a new version --
-        /// this is the one point that has to know they used four values. Since the format restarted
-        /// at version 1 on 2026-09-11, a take from before the change is refused at the version check
-        /// and never reaches here; what the mapping still does is keep an unknown value out.
-        ///
-        /// 2 becomes Call: of the six routes that ever wrote it, five were calls (scene export and
-        /// import, orphan removal, manipulator open and close) and one -- @parent -- was a write.
-        /// A take from before the change replays the calls correctly and loses only the fold that
-        /// used to restore a hierarchy on seek, which forward play still does. Splitting them by
-        /// target path would put routing knowledge in the reader, and the takes it would rescue
-        /// are development-era ones already treated as disposable.
-        ///
-        /// 3 never reached a recording: nothing wrote RegisteredSource. Mapped for completeness so
-        /// an unknown value cannot arrive as a kind no switch here has a case for.
-        /// </summary>
-        private static EventKind _NormaliseKind(int stored)
-        {
-            switch (stored)
-            {
-                case 0: return EventKind.Set;
-                case 1: return EventKind.Call;
-                case 2: return EventKind.Call;
-                default: return EventKind.Set;
-            }
-        }
-
         private void _ApplyEvent(ReadOnlySpan<byte> payload)
         {
             var sequence = BitConverter.ToInt64(payload.Slice(0, 8));
-            var kind = _NormaliseKind(BitConverter.ToInt32(payload.Slice(8, 4)));
+
+            // Only two kinds exist; anything else is read as the one that folds, so an unknown value
+            // cannot arrive as a kind no switch downstream has a case for.
+            var kind = BitConverter.ToInt32(payload.Slice(8, 4)) == (int)EventKind.Call
+                ? EventKind.Call
+                : EventKind.Set;
+
             var sourceId = BitConverter.ToInt32(payload.Slice(12, 4));
             var targetId = BitConverter.ToInt32(payload.Slice(16, 4));
             var verbId = BitConverter.ToInt32(payload.Slice(20, 4));
@@ -568,16 +552,16 @@ namespace Lilium.RemoteControl.Frames.Recording
             var flags = (EventFlags)payload[28];
             var payloadLength = BitConverter.ToInt32(payload.Slice(29, 4));
 
-            var record = new EventRecord(sequence, kind, sourceId, targetId, flags, verbId);
+            var record = new EventRecord(sequence, kind, sourceId, targetId, flags, verbId)
+            {
+                payloadTypeId = payloadTypeId,
+            };
 
             // Copied as bytes, not decoded: what the payload means is the reader's business, and
-            // going through text on the way in would round-trip a value that never was one.
-            if (payloadLength > 0)
-            {
-                record.SetPayload(payload.Slice(33, payloadLength), payloadTypeId);
-            }
-
-            _events.Add(record);
+            // going through text on the way in would round-trip a value that never was one. Trusted
+            // only as far as the entry actually reaches.
+            var available = Math.Max(0, Math.Min(payloadLength, payload.Length - 33));
+            _events.Add(in record, payload.Slice(33, available));
         }
     }
 }

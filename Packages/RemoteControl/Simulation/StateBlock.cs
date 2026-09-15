@@ -1,8 +1,6 @@
 // Copyright (c) You-Ri, 2026
 using System;
 using System.Collections.Generic;
-using System.Runtime.InteropServices;
-using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 
 namespace Lilium.RemoteControl.Frames
@@ -18,6 +16,10 @@ namespace Lilium.RemoteControl.Frames
     /// That the meta is here is also what makes tracks work: <see cref="source"/> says which
     /// producer an element came from, so playback can select, disable or offset by producer without
     /// the recording having been split into separate files.
+    ///
+    /// ⚠ The field order is the element layout every block shares -- owner at 0, producer at 4,
+    /// stamp at 8 -- and <see cref="StateBlock"/> reads the meta at those offsets without knowing
+    /// the value type. Checked once per type when its first block is made.
     /// </summary>
     public struct StateElement<T> where T : unmanaged
     {
@@ -47,11 +49,33 @@ namespace Lilium.RemoteControl.Frames
     }
 
     /// <summary>
-    /// Non-generic view of a state block, so a <see cref="StateBlockSet"/> can hold blocks of
-    /// different element types together.
+    /// The elements of one type, packed densely in unmanaged memory.
+    ///
+    /// Dense and same-shaped every frame is what makes the things that read it cheap: a keyframe is
+    /// a straight copy of the array and applying a recording is a write-back. Sparse or
+    /// delta-encoded storage would break both to save space that general-purpose compression
+    /// recovers anyway.
+    ///
+    /// Every element starts the same way -- owner, producer, stamp -- and only the value after that
+    /// differs by type. So storage, lookup, the byte view and reading back from a recording live
+    /// here once, and the two kinds of block differ only in how their value is reached: through a
+    /// struct the generator wrote (<see cref="StateBlock{T}"/>) or at offsets a declaration
+    /// computed (<see cref="DeclaredStateBlock"/>).
     /// </summary>
-    public abstract class StateBlock : IDisposable
+    public abstract unsafe class StateBlock : IDisposable
     {
+        private const int kSourceOffset = 4;
+        private const int kTimeOffset = 8;
+
+        private RecordList _elements;
+        private readonly int _metaSize;
+
+        protected StateBlock(int stride, int metaSize)
+        {
+            _elements = new RecordList(stride);
+            _metaSize = metaSize;
+        }
+
         /// <summary>Element type this block carries.</summary>
         public abstract Type elementType { get; }
 
@@ -67,25 +91,54 @@ namespace Lilium.RemoteControl.Frames
         public abstract string typeName { get; }
 
         /// <summary>Number of elements currently held.</summary>
-        public abstract int count { get; }
+        public int count => _elements.count;
 
         /// <summary>Size of one element in bytes, as it is written to a recording.</summary>
-        public abstract int elementSize { get; }
+        public int elementSize => _elements.stride;
+
+        /// <summary>
+        /// Bytes an element spends on metadata before its value: the owner, the producer and the
+        /// stamp. Fixed by the layout of the element, which is what the recording stores.
+        /// </summary>
+        public int metaSize => _metaSize;
+
+        /// <summary>
+        /// Which members of this block were actually spoken for by whatever last filled it.
+        ///
+        /// Every member, unless a recording made from a different build filled it. Read by the
+        /// bridge on the way back to the object, so a member the recording did not carry keeps
+        /// whatever the object already had rather than being written with the zero sitting in its
+        /// place.
+        /// </summary>
+        public ulong appliedMemberMask { get; private set; } = StateReadPlan.kAllMembers;
+
+        /// <summary>
+        /// Whether what last filled this block described itself differently than this build does,
+        /// so its bytes were rearranged by a plan on the way in rather than copied.
+        /// </summary>
+        public bool readThroughPlan { get; private set; }
+
+        /// <summary>Index of an owner's element, or -1.</summary>
+        public int IndexOfOwner(int ownerId) => _elements.IndexOf(ownerId);
+
+        /// <summary>
+        /// Drops an owner's element. The remaining elements keep their relative order, because the
+        /// order is what a recording stores.
+        /// </summary>
+        public bool Remove(int ownerId) => _elements.Remove(ownerId);
 
         /// <summary>
         /// Drops every element. Not called between frames: a state block holds the current state,
         /// and an element that stops being written keeps its last value rather than snapping back
         /// to a default nobody asked for.
         /// </summary>
-        public abstract void Reset();
+        public void Reset() => _elements.Clear();
 
         /// <summary>
-        /// The elements as they sit in memory, for a recording to write out verbatim.
-        ///
-        /// Valid until the block is next written to. Elements are unmanaged and packed, so this is
-        /// the storage seen as bytes rather than a copy of it.
+        /// The elements as they sit in memory, for a recording to write out verbatim. Valid until
+        /// the block is next written to.
         /// </summary>
-        public abstract ReadOnlySpan<byte> AsBytes();
+        public ReadOnlySpan<byte> AsBytes() => _elements.AsBytes();
 
         /// <summary>
         /// Replaces the contents with elements read back from a recording.
@@ -95,7 +148,23 @@ namespace Lilium.RemoteControl.Frames
         /// here and is not in the recording is gone, which is the point -- a replayed frame is the
         /// state at that frame, not the state at that frame layered over whatever came before.
         /// </summary>
-        public abstract void ReadFrom(ReadOnlySpan<byte> bytes, int elementCount);
+        public void ReadFrom(ReadOnlySpan<byte> bytes, int elementCount)
+        {
+            var stride = elementSize;
+            if (elementCount < 0 || (long)elementCount * stride > bytes.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(elementCount),
+                    $"[RemoteControl] {elementCount} elements of {stride} bytes do not fit in {bytes.Length}.");
+            }
+
+            var destination = _elements.ResizeForOverwrite(elementCount);
+            appliedMemberMask = StateReadPlan.kAllMembers;
+            readThroughPlan = false;
+
+            if (elementCount == 0) return;
+
+            bytes.Slice(0, elementCount * stride).CopyTo(new Span<byte>(destination, elementCount * stride));
+        }
 
         /// <summary>
         /// Reads elements a build laid out differently, member by member.
@@ -107,35 +176,79 @@ namespace Lilium.RemoteControl.Frames
         /// A null or identical plan is the ordinary read, so a caller does not have to ask which
         /// case it is in.
         /// </summary>
-        public abstract void ReadFrom(ReadOnlySpan<byte> bytes, int elementCount, StateReadPlan plan);
+        public void ReadFrom(ReadOnlySpan<byte> bytes, int elementCount, StateReadPlan plan)
+        {
+            if (plan == null || plan.isIdentical)
+            {
+                ReadFrom(bytes, elementCount);
+                return;
+            }
+
+            if (elementCount < 0 || (long)elementCount * plan.sourceStride > bytes.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(elementCount),
+                    $"[RemoteControl] {elementCount} elements of {plan.sourceStride} bytes do not fit in {bytes.Length}.");
+            }
+
+            var destination = _elements.ResizeForOverwrite(elementCount);
+            appliedMemberMask = plan.appliedMemberMask;
+            readThroughPlan = true;
+
+            if (elementCount == 0) return;
+
+            _RunPlan(bytes, elementCount, plan, destination, elementSize);
+        }
+
+        /// <summary>Owner of the element at an index, so two runs can be lined up by owner.</summary>
+        public int OwnerIdAt(int index) => _elements.KeyAt(index);
+
+        /// <summary>The producer that wrote an element, as an interned id, or none.</summary>
+        public int SourceIdAt(int index)
+        {
+            var source = *(FrameSource*)(_elements.Get(index) + kSourceOffset);
+            return source.isValid ? source.id : FrameSymbolTable.kNone;
+        }
 
         /// <summary>
-        /// Which members of this block were actually spoken for by whatever last filled it.
-        ///
-        /// Every member, unless a recording made from a different build filled it. Read by the
-        /// bridge on the way back to the object, so a member the recording did not carry keeps
-        /// whatever the object already had rather than being written with the zero sitting in its
-        /// place.
+        /// The producer's own stamp on an element. Meaningful against that producer's clock only.
         /// </summary>
-        public ulong appliedMemberMask { get; protected set; } = StateReadPlan.kAllMembers;
+        public long TimeAt(int index) => *(long*)(_elements.Get(index) + kTimeOffset);
 
         /// <summary>
-        /// Whether what last filled this block described itself differently than this build does.
-        ///
-        /// The declared path keeps a hash of its layout at the head of every element and refuses an
-        /// element that does not match it. That check is right for bytes copied verbatim and wrong
-        /// for bytes a plan rearranged, where disagreeing about the layout is the premise rather
-        /// than the fault. ⚠ Two mechanisms saying the same thing, which is one more than there
-        /// should be -- the hash is on its way out, and until it goes this is what keeps it from
-        /// refusing the reads it was never asked about.
+        /// One element's value -- the part after the metadata -- as bytes, so a reader can take a
+        /// single element without knowing the element type. Valid until the block is next written to.
         /// </summary>
-        public bool readThroughPlan { get; protected set; }
+        public ReadOnlySpan<byte> ValueBytes(int index)
+            => new ReadOnlySpan<byte>(_elements.Get(index) + _metaSize, elementSize - _metaSize);
 
         /// <summary>
-        /// Runs a plan into raw element storage. Shared by the typed and the declared block, which
-        /// differ in how they hold their elements and not at all in how a plan is run.
+        /// Releases the storage. The block stays usable and allocates again on next write, so
+        /// tearing a run down and starting another does not have to rebuild the set of blocks.
         /// </summary>
-        protected static unsafe void RunPlan(ReadOnlySpan<byte> bytes, int elementCount,
+        public void Dispose() => _elements.Dispose();
+
+        /// <summary>The element at an index, for a derived block to reach its value through.</summary>
+        protected byte* ElementAt(int index) => _elements.Get(index);
+
+        /// <summary>
+        /// Index of an owner's element, appending a zeroed one stamped with the owner if this is
+        /// the first time it is seen.
+        /// </summary>
+        protected int GetOrCreateIndex(int ownerId) => _elements.GetOrAdd(ownerId);
+
+        /// <summary>Writes who produced an element and when.</summary>
+        protected void WriteMeta(int index, FrameSource source, long time)
+        {
+            var element = _elements.Get(index);
+
+            // Written as the struct rather than as its bits: the handle keeps its id offset by one
+            // so that a default reads as unresolved, and reproducing that here by hand would be a
+            // second place that has to know.
+            *(FrameSource*)(element + kSourceOffset) = source;
+            *(long*)(element + kTimeOffset) = time;
+        }
+
+        private static void _RunPlan(ReadOnlySpan<byte> bytes, int elementCount,
             StateReadPlan plan, byte* destination, int destinationStride)
         {
             fixed (byte* source = bytes)
@@ -150,10 +263,10 @@ namespace Lilium.RemoteControl.Frames
                     UnsafeUtility.MemCpy(to, from, Math.Min(plan.sourceMetaSize, plan.destinationMetaSize));
 
                     // Cleared rather than left standing. Nothing reads these bytes on the way to the
-                    // object -- the mask stops that -- but the block is also what the viewer shows
-                    // and what a comparison walks, and there the honest answer for a member the take
-                    // never carried is nothing, not the value the element at this index held for a
-                    // different owner one frame ago.
+                    // object -- the mask stops that -- but the block is also what the viewer shows,
+                    // and there the honest answer for a member the take never carried is nothing,
+                    // not the value the element at this index held for a different owner one frame
+                    // ago.
                     UnsafeUtility.MemClear(to + plan.destinationMetaSize, plan.destinationPayloadSize);
 
                     var runs = plan.runs;
@@ -168,67 +281,16 @@ namespace Lilium.RemoteControl.Frames
                 }
             }
         }
-
-        /// <summary>Owner of the element at an index, so two runs can be lined up by owner.</summary>
-        public abstract int OwnerIdAt(int index);
-
-        /// <summary>The producer that wrote an element, as an interned id, or none.</summary>
-        public abstract int SourceIdAt(int index);
-
-        /// <summary>
-        /// The producer's own stamp on an element. Meaningful against that producer's clock only.
-        /// </summary>
-        public abstract long TimeAt(int index);
-
-        /// <summary>
-        /// Copies one element's value -- the part after the metadata -- into <paramref name="destination"/>.
-        /// Written this way so a reader can take a single element without knowing the element type,
-        /// and without the metadata layout being guessed at anywhere else.
-        /// </summary>
-        public abstract void CopyValueTo(int index, byte[] destination);
-
-        /// <summary>
-        /// Bytes an element spends on metadata before its value: the owner, the producer and the
-        /// stamp. Fixed by the layout of the element, which is what the recording stores.
-        /// </summary>
-        public abstract int metaSize { get; }
-
-        /// <summary>Index of an owner's element, or -1. The non-generic form of the lookup.</summary>
-        public abstract int IndexOfOwner(int ownerId);
-
-        /// <summary>
-        /// Whether two elements are the same, meta and value.
-        ///
-        /// Exact rather than approximate. On one machine a deterministic run reproduces its floats
-        /// bit for bit, and anything less would hide the divergence this exists to find. Comparing
-        /// across machines needs a tolerance, and that belongs to whoever adds mirroring -- pretending
-        /// to have it now would make the first number look better than it is.
-        /// </summary>
-        public abstract bool ElementEquals(int index, StateBlock other, int otherIndex);
-
-        /// <summary>
-        /// Releases the storage. The block stays usable and allocates again on next write, so
-        /// tearing a run down and starting another does not have to rebuild the set of blocks.
-        /// </summary>
-        public abstract void Dispose();
     }
 
     /// <summary>
-    /// The elements of one type, packed densely in unmanaged memory.
-    ///
-    /// Dense and same-shaped every frame is what makes the three things that read it cheap: a
-    /// keyframe is a straight copy of the array, comparing two runs is an element-by-element
-    /// comparison, and applying a recording is a write-back. Sparse or delta-encoded storage would
-    /// break all three to save space that general-purpose compression recovers anyway.
-    ///
-    /// The storage is native rather than a managed array. The elements were always unmanaged; what
-    /// this adds is an address that does not move, so the byte view a recording writes is a plain
-    /// pointer with nothing to pin, and the data sits where a job can reach it.
+    /// A state block whose element is a struct: the value is <typeparamref name="T"/>, reached by
+    /// reference so a producer writes straight into the storage.
     /// </summary>
     public sealed unsafe class StateBlock<T> : StateBlock where T : unmanaged
     {
-        private NativeArray<StateElement<T>> _elements;
-        private int _count;
+        private static readonly int _valueOffset = _CheckedValueOffset();
+
         private readonly string _typeName;
 
         /// <param name="typeName">
@@ -236,7 +298,7 @@ namespace Lilium.RemoteControl.Frames
         /// for one. Null for a struct a producer publishes by hand, which has no owner and so is
         /// named after itself.
         /// </param>
-        public StateBlock(string typeName = null)
+        public StateBlock(string typeName = null) : base(sizeof(StateElement<T>), _valueOffset)
         {
             _typeName = string.IsNullOrEmpty(typeName) ? typeof(T).FullName : typeName;
         }
@@ -245,216 +307,41 @@ namespace Lilium.RemoteControl.Frames
 
         public override string typeName => _typeName;
 
-        public override int count => _count;
-
-        // sizeof rather than Marshal.SizeOf: this is the stride the elements actually sit at, and
-        // it folds to a constant instead of a call per frame.
-        public override int elementSize => sizeof(StateElement<T>);
-
-        /// <summary>Storage. Only the first <see cref="count"/> entries are valid.</summary>
-        public NativeArray<StateElement<T>> elements => _elements;
-
-        public ref StateElement<T> this[int index]
-        {
-            get
-            {
-                if ((uint)index >= (uint)_count) throw new ArgumentOutOfRangeException(nameof(index));
-
-                return ref UnsafeUtility.ArrayElementAsRef<StateElement<T>>(
-                    _elements.GetUnsafePtr(), index);
-            }
-        }
+        public ref StateElement<T> this[int index] => ref UnsafeUtility.AsRef<StateElement<T>>(ElementAt(index));
 
         /// <summary>Index of an owner's element, or -1.</summary>
-        public int IndexOf(int ownerId)
-        {
-            if (!_elements.IsCreated) return -1;
-
-            var items = (StateElement<T>*)_elements.GetUnsafeReadOnlyPtr();
-            for (int i = 0; i < _count; i++)
-            {
-                if (items[i].ownerId == ownerId) return i;
-            }
-
-            return -1;
-        }
+        public int IndexOf(int ownerId) => IndexOfOwner(ownerId);
 
         /// <summary>
         /// The element for an owner, appending one if this is the first time it is seen. Returned by
         /// reference so a producer writes into the storage in place; taking a copy and putting it
         /// back would double the cost of every frame for a struct this size.
-        ///
-        /// A linear scan rather than a side index: the owners of one type number in the ones and
-        /// tens, and a map would iterate in an order that is not the order of record.
         /// </summary>
         public ref StateElement<T> GetOrCreate(int ownerId)
+            => ref UnsafeUtility.AsRef<StateElement<T>>(ElementAt(GetOrCreateIndex(ownerId)));
+
+        public override string ToString() => $"{typeof(T).Name} x{count} ({elementSize} B each)";
+
+        // The meta is read at fixed offsets by the base, so the compiler's layout of this element
+        // has to agree. It does for every value type whose alignment is at most eight -- which is
+        // every one a producer writes -- and this says so once instead of trusting it.
+        private static int _CheckedValueOffset()
         {
-            var index = IndexOf(ownerId);
-            if (index < 0)
+            var type = typeof(StateElement<T>);
+
+            if (UnsafeUtility.GetFieldOffset(type.GetField(nameof(StateElement<T>.ownerId))) != 0
+                || UnsafeUtility.GetFieldOffset(type.GetField(nameof(StateElement<T>.source))) != kSourceOffset
+                || UnsafeUtility.GetFieldOffset(type.GetField(nameof(StateElement<T>.time))) != kTimeOffset)
             {
-                _EnsureCapacity(_count + 1);
-                index = _count++;
-
-                ref var created = ref UnsafeUtility.ArrayElementAsRef<StateElement<T>>(
-                    _elements.GetUnsafePtr(), index);
-
-                // Cleared explicitly: the storage can be left over from a longer earlier run, and an
-                // element inheriting a stranger's value would read as state rather than as garbage.
-                created = default;
-                created.ownerId = ownerId;
-                return ref created;
+                throw new NotSupportedException(
+                    $"[RemoteControl] {typeof(T).FullName} lays out its state element in a way the block cannot read.");
             }
 
-            return ref UnsafeUtility.ArrayElementAsRef<StateElement<T>>(_elements.GetUnsafePtr(), index);
+            return UnsafeUtility.GetFieldOffset(type.GetField(nameof(StateElement<T>.value)));
         }
 
-        /// <summary>
-        /// Drops an owner's element. The remaining elements keep their relative order, because the
-        /// order is what a recording stores.
-        /// </summary>
-        public bool Remove(int ownerId)
-        {
-            var index = IndexOf(ownerId);
-            if (index < 0) return false;
-
-            var items = (StateElement<T>*)_elements.GetUnsafePtr();
-            UnsafeUtility.MemMove(items + index, items + index + 1,
-                (long)(_count - index - 1) * sizeof(StateElement<T>));
-
-            _count--;
-            return true;
-        }
-
-        public override void Reset() => _count = 0;
-
-        public override ReadOnlySpan<byte> AsBytes()
-        {
-            if (_count == 0 || !_elements.IsCreated) return ReadOnlySpan<byte>.Empty;
-
-            // Legitimate here in a way it would not be over a managed array: native storage does not
-            // move, so a span built on the pointer stays valid with nothing pinning it.
-            return new ReadOnlySpan<byte>(_elements.GetUnsafeReadOnlyPtr(),
-                _count * sizeof(StateElement<T>));
-        }
-
-        public override void ReadFrom(ReadOnlySpan<byte> bytes, int elementCount)
-        {
-            var source = MemoryMarshal.Cast<byte, StateElement<T>>(bytes);
-            if (elementCount < 0 || elementCount > source.Length)
-            {
-                throw new ArgumentOutOfRangeException(nameof(elementCount),
-                    $"[RemoteControl] {elementCount} elements do not fit in {bytes.Length} bytes.");
-            }
-
-            _EnsureCapacity(elementCount);
-            _count = elementCount;
-            appliedMemberMask = StateReadPlan.kAllMembers;
-            readThroughPlan = false;
-
-            if (elementCount == 0) return;
-
-            source.Slice(0, elementCount)
-                .CopyTo(new Span<StateElement<T>>(_elements.GetUnsafePtr(), elementCount));
-        }
-
-        public override void ReadFrom(ReadOnlySpan<byte> bytes, int elementCount, StateReadPlan plan)
-        {
-            if (plan == null || plan.isIdentical)
-            {
-                ReadFrom(bytes, elementCount);
-                return;
-            }
-
-            if (elementCount < 0 || (long)elementCount * plan.sourceStride > bytes.Length)
-            {
-                throw new ArgumentOutOfRangeException(nameof(elementCount),
-                    $"[RemoteControl] {elementCount} elements of {plan.sourceStride} bytes do not fit in {bytes.Length}.");
-            }
-
-            _EnsureCapacity(elementCount);
-            _count = elementCount;
-            appliedMemberMask = plan.appliedMemberMask;
-            readThroughPlan = true;
-
-            if (elementCount == 0) return;
-
-            RunPlan(bytes, elementCount, plan, (byte*)_elements.GetUnsafePtr(), sizeof(StateElement<T>));
-        }
-
-        public override int OwnerIdAt(int index) => this[index].ownerId;
-
-        public override int SourceIdAt(int index)
-        {
-            var source = this[index].source;
-            return source.isValid ? source.id : FrameSymbolTable.kNone;
-        }
-
-        public override long TimeAt(int index) => this[index].time;
-
-        // Taken from the type rather than assumed: the value sits wherever the compiler put it after
-        // the three metadata fields, and that offset is what the recording's bytes already follow.
-        public override int metaSize => (int)UnsafeUtility.GetFieldOffset(
-            typeof(StateElement<T>).GetField(nameof(StateElement<T>.value)));
-
-        public override void CopyValueTo(int index, byte[] destination)
-        {
-            if (destination == null) throw new ArgumentNullException(nameof(destination));
-
-            var offset = metaSize;
-            var length = elementSize - offset;
-            if (destination.Length < length)
-                throw new ArgumentException("Destination is too small for one value.", nameof(destination));
-
-            ref var element = ref this[index];
-            fixed (byte* target = destination)
-            {
-                UnsafeUtility.MemCpy(target, (byte*)UnsafeUtility.AddressOf(ref element) + offset, length);
-            }
-        }
-
-        public override int IndexOfOwner(int ownerId) => IndexOf(ownerId);
-
-        public override bool ElementEquals(int index, StateBlock other, int otherIndex)
-        {
-            if (!(other is StateBlock<T> typed)) return false;
-            if ((uint)index >= (uint)_count) return false;
-            if ((uint)otherIndex >= (uint)typed._count) return false;
-
-            var mine = (byte*)_elements.GetUnsafeReadOnlyPtr() + (long)index * sizeof(StateElement<T>);
-            var theirs = (byte*)typed._elements.GetUnsafeReadOnlyPtr() + (long)otherIndex * sizeof(StateElement<T>);
-
-            return UnsafeUtility.MemCmp(mine, theirs, sizeof(StateElement<T>)) == 0;
-        }
-
-        public override void Dispose()
-        {
-            if (_elements.IsCreated) _elements.Dispose();
-
-            _elements = default;
-            _count = 0;
-        }
-
-        private void _EnsureCapacity(int required)
-        {
-            var capacity = _elements.IsCreated ? _elements.Length : 0;
-            if (capacity >= required) return;
-
-            var grown = Math.Max(required, capacity == 0 ? 4 : capacity * 2);
-            var replacement = new NativeArray<StateElement<T>>(grown, Allocator.Persistent,
-                NativeArrayOptions.ClearMemory);
-
-            if (_elements.IsCreated)
-            {
-                UnsafeUtility.MemCpy(replacement.GetUnsafePtr(), _elements.GetUnsafeReadOnlyPtr(),
-                    (long)_count * sizeof(StateElement<T>));
-
-                _elements.Dispose();
-            }
-
-            _elements = replacement;
-        }
-
-        public override string ToString() => $"{typeof(T).Name} x{_count} ({elementSize} B each)";
+        private const int kSourceOffset = 4;
+        private const int kTimeOffset = 8;
     }
 
     /// <summary>
@@ -470,6 +357,7 @@ namespace Lilium.RemoteControl.Frames
     public sealed class StateBlockSet : IDisposable
     {
         private readonly Dictionary<Type, StateBlock> _blocks = new Dictionary<Type, StateBlock>();
+        private readonly Dictionary<string, StateBlock> _byName = new Dictionary<string, StateBlock>(StringComparer.Ordinal);
         private readonly List<StateBlock> _ordered = new List<StateBlock>();
 
         /// <summary>
@@ -481,24 +369,16 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>The block for an element type, creating it on first use.</summary>
         public StateBlock<T> GetOrCreate<T>(string typeName = null) where T : unmanaged
         {
-            // Making a block is also how a type announces that it belongs on the lane, so a player
-            // meeting the name in a recording can make one too. Guarded per type rather than by a
-            // lookup, because this sits on the per-frame path of every producer.
-            //
-            // Ahead of the lookup, not after it: a set that already holds the block returns early,
-            // and a registry emptied underneath a long-lived set would then never be refilled by the
-            // calls that filled it the first time.
-            if (_Announced<T>.generation != StateTypeRegistry.generation)
-            {
-                _Announced<T>.generation = StateTypeRegistry.generation;
-                StateTypeRegistry.Register<T>(typeName);
-            }
-
             if (_blocks.TryGetValue(typeof(T), out var existing)) return (StateBlock<T>)existing;
 
             var created = new StateBlock<T>(typeName);
-            _blocks.Add(typeof(T), created);
-            _ordered.Add(created);
+
+            // Making a block is also how a struct published by hand announces that it belongs on the
+            // lane, so a player meeting the name in a recording can make one too. A type with a
+            // bridge was announced by it already, and this does not displace it.
+            StateTypes.RegisterStruct<T>(created.typeName);
+
+            _Add(typeof(T), created);
             return created;
         }
 
@@ -517,8 +397,7 @@ namespace Lilium.RemoteControl.Frames
         /// ⚠ Width alone is not enough to tell two declarations apart. Two of the same total size
         /// lay their members out differently, and reusing a block across that hands back values
         /// captured under one layout and read under another -- which looks like values rather than
-        /// like an error. It used to be caught per element by a hash led into every payload; the
-        /// description catches it here instead, once, where the block is fetched.
+        /// like an error. The description catches it here, once, where the block is fetched.
         /// </param>
         public DeclaredStateBlock GetOrCreateDeclared(Type ownerType, int payloadSize,
             string schemaSignature = null)
@@ -546,16 +425,15 @@ namespace Lilium.RemoteControl.Frames
                     return found;
                 }
 
-                _blocks.Remove(ownerType);
-                _ordered.Remove(found);
+                _Remove(ownerType, found);
                 found.Dispose();
             }
 
+            // Not announced from here: a declared type reaches the lane through its bridge, which
+            // is what makes its block on a replay (see StateTypes).
             var created = new DeclaredStateBlock(ownerType, payloadSize) { schemaSignature = schemaSignature };
-            StateTypeRegistry.RegisterDeclared(ownerType, payloadSize);
 
-            _blocks.Add(ownerType, created);
-            _ordered.Add(created);
+            _Add(ownerType, created);
             return created;
         }
 
@@ -564,18 +442,6 @@ namespace Lilium.RemoteControl.Frames
             => ownerType != null && _blocks.TryGetValue(ownerType, out var existing)
                 ? existing as DeclaredStateBlock
                 : null;
-
-        /// <summary>
-        /// Which generation of the registry this type last announced itself to.
-        ///
-        /// Not a bool: a static field outlives the registry being emptied, so a plain "already done"
-        /// left a cleared registry with no way of being refilled -- the calls that announced the
-        /// type the first time all skip it forever after.
-        /// </summary>
-        private static class _Announced<T> where T : unmanaged
-        {
-            public static int generation = -1;
-        }
 
         /// <summary>The block for an element type, or null when nothing has written one yet.</summary>
         public StateBlock<T> Find<T>() where T : unmanaged
@@ -589,15 +455,24 @@ namespace Lilium.RemoteControl.Frames
         /// and the caller is told rather than silently given an empty world.
         /// </summary>
         public StateBlock FindByTypeName(string fullName)
+            => !string.IsNullOrEmpty(fullName) && _byName.TryGetValue(fullName, out var block) ? block : null;
+
+        private void _Add(Type key, StateBlock block)
         {
-            if (string.IsNullOrEmpty(fullName)) return null;
+            _blocks.Add(key, block);
+            _byName[block.typeName] = block;
+            _ordered.Add(block);
+        }
 
-            for (int i = 0; i < _ordered.Count; i++)
+        private void _Remove(Type key, StateBlock block)
+        {
+            _blocks.Remove(key);
+            _ordered.Remove(block);
+
+            if (_byName.TryGetValue(block.typeName, out var named) && ReferenceEquals(named, block))
             {
-                if (_ordered[i].typeName == fullName) return _ordered[i];
+                _byName.Remove(block.typeName);
             }
-
-            return null;
         }
 
         /// <summary>

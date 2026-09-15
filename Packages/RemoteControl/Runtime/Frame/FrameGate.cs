@@ -2,8 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
-using System.Threading.Tasks;
-using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine;
 using UnityEngine.LowLevel;
 using UnityEngine.PlayerLoop;
@@ -27,8 +26,15 @@ namespace Lilium.RemoteControl.Frames
     ///
     /// A caller still gets its result back, and still gets it only once the event has actually been
     /// applied -- success responses have to stay byte for byte what they were.
+    ///
+    /// <para>
+    /// One class kept in four files by concern: this one numbers, applies and commits;
+    /// <c>FrameGate.Time.cs</c> works out the tick and drives the engine clock on a replay;
+    /// <c>FrameGate.Supply.cs</c> holds what fills a frame and what reads it back (source, sink,
+    /// observers, holds); <c>FrameGate.Submit.cs</c> is how an event gets into the queue.
+    /// </para>
     /// </summary>
-    public static class FrameGate
+    public static partial class FrameGate
     {
         /// <summary>Frames retained for read-back. A few frames is enough to absorb jitter.</summary>
         private const int kDefaultBufferFrames = 16;
@@ -37,38 +43,6 @@ namespace Lilium.RemoteControl.Frames
         private static readonly FrameSymbolTable _symbols = new FrameSymbolTable();
 
         private static EventFrameBuffer _buffer = new EventFrameBuffer(kDefaultBufferFrames);
-        private static IFrameClock _clock = _NewDefaultClock();
-
-        // Frame number the tick was last worked out for, and the width it came to. long.MinValue
-        // rather than -1: a frame number is a position on a time axis and negative ones are legal.
-        private static long _tickFrameNumber = long.MinValue;
-        private static double _deltaTime;
-
-        // Where the tick was last measured from: whether that frame was supplied, by whom, and at
-        // what rate. A number is only a position against the axis it was counted on, so a change in
-        // any of these makes the difference between two numbers meaningless rather than long.
-        private static bool _tickSupplied;
-        private static IFrameSource _tickSource;
-        private static FrameRate _tickFrameRate;
-
-        /// <summary>
-        /// Widest tick handed out, in seconds. Anything wider is a jump -- a forward scrub, a machine
-        /// that stalled -- and integrating over it would be a leap nothing lived through. Also the
-        /// furthest a replay's barrier waits ahead, which keeps it well inside the pacer's own
-        /// one-second stall rule.
-        /// </summary>
-        private const double kMaxTickSeconds = 0.25;
-
-        /// <summary>Extra time a barrier waits beyond when its frame is due before giving up.</summary>
-        private const int kBarrierSlackMs = 50;
-
-        private static bool _driveEngineTime;
-        private static bool _engineTimeDriven;
-        private static bool _engineTimeRefused;
-
-        private static int _supplyHolds;
-        private static long _heldFrameCount;
-        private static volatile string _supplyHoldReason;
 
         /// <summary>
         /// Number of the frame last committed, so a clock that reports the same position twice does
@@ -80,10 +54,7 @@ namespace Lilium.RemoteControl.Frames
         private static bool _pumpInstalled;
         private static volatile bool _gateClosed;
         private static long _bypassedCount;
-        private static long _truncatedPayloadCount;
         private static long _omittedRecordCount;
-        private static long _repeatedWriteCount;
-        private static int _lastRepeatedTargetId = FrameSymbolTable.kNone;
 
         // Declared source names, sorted, so interning them assigns the same ids on every reset.
         private static string[] _declaredSources;
@@ -91,18 +62,9 @@ namespace Lilium.RemoteControl.Frames
         private static readonly object _sourceLock = new object();
         private static readonly HashSet<string> _warnedUndeclaredSources = new HashSet<string>();
 
-        // Writes already seen this frame, keyed by (source, target). Reused across frames so the
-        // duplicate check costs nothing after the first frame.
-        private static readonly HashSet<long> _writeKeysThisFrame = new HashSet<long>();
-
         private static readonly List<FrameHeadDelegate> _frameHeadHandlers = new List<FrameHeadDelegate>();
         private static FrameHeadDelegate[] _frameHeadSnapshot = Array.Empty<FrameHeadDelegate>();
         private static bool _frameHeadSnapshotStale;
-
-        private static readonly List<IFrameObserver> _observers = new List<IFrameObserver>();
-        private static IFrameObserver[] _observerSnapshot = Array.Empty<IFrameObserver>();
-        private static bool _observerSnapshotStale;
-        private static int _detachedObserverCount;
 
         // The frame currently being built. Kept as a field rather than a local so it can be handed
         // out by reference without the callee's writes landing in a copy.
@@ -112,9 +74,6 @@ namespace Lilium.RemoteControl.Frames
         // are created once and reset only when a run restarts.
         private static readonly StructureBlock _structure = new StructureBlock();
         private static readonly StateBlockSet _state = new StateBlockSet();
-
-        private static IFrameSink _sink;
-        private static IFrameSource _source;
 
         /// <summary>Frames retained for read-back, indexed by frame number.</summary>
         public static EventFrameBuffer buffer => _buffer;
@@ -132,77 +91,23 @@ namespace Lilium.RemoteControl.Frames
         public static StateBlockSet state => _state;
 
         /// <summary>
-        /// Where completed frames go: a recorder, a mirror sender, or nothing.
-        ///
-        /// One at a time. Two consumers at once is a fan-out sink's job rather than a list here --
-        /// the gate should not be the place that decides what order they run in.
+        /// The batch holding the event currently being applied at a frame head, and where in it the
+        /// event sits; null outside one. Main thread only, because that is the only thread a frame
+        /// head runs on.
         /// </summary>
-        public static IFrameSink sink
-        {
-            get => _sink;
-            set => _sink = value;
-        }
+        private static EventBatch _applyingBatch;
 
-        /// <summary>
-        /// Where frames come from when they are not being produced here: a recording being played,
-        /// or another machine being followed. Null for an ordinary live run.
-        ///
-        /// One at a time, for the same reason as <see cref="sink"/>. Retired automatically when it
-        /// runs out, which raises <see cref="onSourceEnded"/>.
-        /// </summary>
-        public static IFrameSource source
-        {
-            get => _source;
-            set => _source = value;
-        }
-
-        /// <summary>
-        /// Raised on the main thread when a source runs out and is detached, so whoever attached it
-        /// can put the run back the way it was. Not raised when a source is cleared by hand -- the
-        /// caller doing that already knows.
-        /// </summary>
-        public static event Action onSourceEnded;
-
-        /// <summary>Observers watching frames go by. For diagnostics.</summary>
-        public static int observerCount => _observers.Count;
-
-        /// <summary>
-        /// Observers dropped for throwing, since the run started. Not zero means something that was
-        /// watching has stopped, which a viewer has to say out loud rather than just going quiet.
-        /// </summary>
-        public static int detachedObserverCount => _detachedObserverCount;
-
-        /// <summary>
-        /// Starts watching frames. Idempotent, and safe to call from inside a notification.
-        ///
-        /// Unlike <see cref="sink"/> there can be any number, and unlike <see cref="source"/> they
-        /// survive <see cref="ResetState"/>: watching is not owning, and a watcher that quietly
-        /// stopped at the start of a run is exactly the kind of silence this is here to find.
-        /// </summary>
-        public static void AddFrameObserver(IFrameObserver observer)
-        {
-            if (observer == null) throw new ArgumentNullException(nameof(observer));
-            if (_observers.Contains(observer)) return;
-
-            _observers.Add(observer);
-            _observerSnapshotStale = true;
-        }
-
-        /// <summary>
-        /// The event currently being applied at a frame head, or null outside one. Main thread only,
-        /// because that is the only thread a frame head runs on.
-        /// </summary>
-        private static PendingEvent _applyingEvent;
+        private static int _applyingIndex;
 
         /// <summary>
         /// True while an event is being applied at a frame head, which is the only time
-        /// <see cref="StampAppliedPayload"/> has a record to write onto.
+        /// <c>StampAppliedPayload</c> has a record to write onto.
         ///
         /// For a caller whose value costs something to work out: outside a frame head the stamp is a
         /// no-op, so the work would be for nothing. The same write reaches this code with the gate
         /// off (an editor write, a direct call), and that path should stay as cheap as it was.
         /// </summary>
-        public static bool isApplyingEvent => _applyingEvent != null;
+        public static bool isApplyingEvent => _applyingBatch != null;
 
         /// <summary>
         /// Says the event being applied does not need keeping.
@@ -219,18 +124,9 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         public static void OmitAppliedRecord(string target)
         {
-            var evt = _applyingEvent;
-            if (evt == null || string.IsNullOrEmpty(target)) return;
+            if (!_TryFindApplyingRecord(target, out var batch, out var index)) return;
 
-            var targetId = _symbols.Intern(target);
-
-            for (int i = 0; i < evt.recordCount; i++)
-            {
-                if (evt.records[i].targetId != targetId) continue;
-
-                evt.records[i].flags |= EventFlags.NotRecorded;
-                return;
-            }
+            batch.RecordAt(index).flags |= EventFlags.NotRecorded;
         }
 
         /// <summary>
@@ -242,66 +138,80 @@ namespace Lilium.RemoteControl.Frames
         /// a path. Outside a frame head this does nothing, which is what makes it safe to call from
         /// a write path that is also reachable without the gate.
         ///
-        /// A string is written length first, inline. A property that declares a maximum is a
-        /// FixedString, which is unmanaged and packs at its own width like any other value.
-        /// Anything else with no layout is left alone -- the request text already stands in for it,
-        /// and half a value would be worse than the text that produced it.
+        /// A string is written as its UTF-8, whole: the value sits in the frame's arena, which has no
+        /// ceiling. Anything else with no layout is left alone -- the request text already stands in
+        /// for it, and half a value would be worse than the text that produced it.
+        ///
+        /// Takes the value boxed, for a caller that only has it as an object (a REST body parsed
+        /// against a type found at run time). A caller that knows the type uses
+        /// <see cref="StampAppliedPayload{T}"/> and boxes nothing.
         /// </summary>
         public static void StampAppliedPayload(string target, Type type, object value)
         {
-            var evt = _applyingEvent;
-            if (evt == null || type == null || value == null || string.IsNullOrEmpty(target)) return;
-
-            Span<byte> packed = stackalloc byte[EventRecord.kPayloadCapacity];
-            int written;
-            string typeName;
-
-            var fitted = true;
+            if (type == null || value == null) return;
+            if (!_TryFindApplyingRecord(target, out var batch, out var index)) return;
 
             if (type == typeof(string))
             {
-                fitted = EventPayload.TryWriteString((string)value, packed, out written);
-                typeName = EventPayload.kStringTypeName;
-            }
-            else
-            {
-                if (!EventPayload.TryPack(type, value, packed, out written)) return;
-                typeName = EventPayload.NameOf(type);
+                var text = (string)value;
+                var bytes = batch.ReservePayload(ref batch.RecordAt(index), EventPayload.ByteCountOf(text),
+                    _symbols.Intern(EventPayload.kStringTypeName));
+
+                EventPayload.WriteString(text, bytes);
+                return;
             }
 
+            var size = EventPayload.SizeOf(type);
+            if (size < 0) return;
+
+            var destination = batch.ReservePayload(ref batch.RecordAt(index), size,
+                _symbols.Intern(EventPayload.NameOf(type)));
+
+            EventPayload.TryPack(type, value, destination, out _);
+        }
+
+        /// <summary>
+        /// Says what value an event actually wrote, for a caller that knows its type. The same as
+        /// <see cref="StampAppliedPayload(string, Type, object)"/> without the box.
+        /// </summary>
+        public static void StampAppliedPayload<T>(string target, in T value) where T : unmanaged
+        {
+            if (!_TryFindApplyingRecord(target, out var batch, out var index)) return;
+
+            var destination = batch.ReservePayload(ref batch.RecordAt(index), UnsafeUtility.SizeOf<T>(),
+                _symbols.Intern(_PayloadName<T>.value));
+
+            EventPayload.Write(in value, destination);
+        }
+
+        // The recorded name of a payload type, worked out once per type.
+        private static class _PayloadName<T>
+        {
+            public static readonly string value = EventPayload.NameOf(typeof(T));
+        }
+
+        /// <summary>
+        /// The record of the event being applied that addresses <paramref name="target"/>. False
+        /// outside a frame head, or when the event has no record for it.
+        /// </summary>
+        private static bool _TryFindApplyingRecord(string target, out EventBatch batch, out int recordIndex)
+        {
+            batch = _applyingBatch;
+            recordIndex = -1;
+            if (batch == null || string.IsNullOrEmpty(target)) return false;
+
             var targetId = _symbols.Intern(target);
-            var typeId = _symbols.Intern(typeName);
+            ref var evt = ref batch[_applyingIndex];
 
             for (int i = 0; i < evt.recordCount; i++)
             {
-                if (evt.records[i].targetId != targetId) continue;
+                if (batch.RecordAt(evt.firstRecord + i).targetId != targetId) continue;
 
-                evt.records[i].SetPayload(packed.Slice(0, written), typeId);
-
-                // The mark belongs to what is in the record now, not to the request text this
-                // replaced. A laid-out value is written at its own width and always fits; only a
-                // string long enough to overrun the record can still be short.
-                if (fitted)
-                {
-                    evt.records[i].flags &= ~EventFlags.PayloadTruncated;
-                }
-                else
-                {
-                    evt.records[i].flags |= EventFlags.PayloadTruncated;
-                    Interlocked.Increment(ref _truncatedPayloadCount);
-                }
-
-                return;
+                recordIndex = evt.firstRecord + i;
+                return true;
             }
-        }
 
-        /// <summary>Stops watching. Safe to call from inside a notification.</summary>
-        public static void RemoveFrameObserver(IFrameObserver observer)
-        {
-            if (observer == null) return;
-            if (!_observers.Remove(observer)) return;
-
-            _observerSnapshotStale = true;
+            return false;
         }
 
         /// <summary>
@@ -311,124 +221,10 @@ namespace Lilium.RemoteControl.Frames
         public static FrameSymbolTable symbols => _symbols;
 
         /// <summary>
-        /// Events whose payload did not fit in a record and was cut short. They applied correctly,
-        /// but what was kept of them cannot be replayed faithfully.
-        /// </summary>
-        public static long truncatedPayloadCount => Interlocked.Read(ref _truncatedPayloadCount);
-
-        /// <summary>
         /// Writes applied but left out of the frame because the state lane carries them. Counted so
         /// "the recording has no event for this" can be told from "the event went missing".
         /// </summary>
         public static long omittedRecordCount => Interlocked.Read(ref _omittedRecordCount);
-
-        /// <summary>Supplies the frame number stamped on each committed frame.</summary>
-        public static IFrameClock clock => _clock;
-
-        /// <summary>
-        /// Holds a replay where it is until something it needs has finished.
-        ///
-        /// A recording carries the write that asked for an avatar, not the avatar: replaying it
-        /// starts a load that takes as long as this machine takes, and the frames behind it address
-        /// an object that is not there yet. Waiting is what keeps the take honest -- the alternative
-        /// is a replay whose fidelity depends on disk speed.
-        ///
-        /// Only supplied frames are held. A live run has nothing to wait for, so a holder may take
-        /// one out whenever it starts loading without asking whether a replay is running.
-        ///
-        /// Balanced by <see cref="ReleaseSupply"/>, and counted: two loads at once are two holds,
-        /// and the replay goes on when the last of them is done.
-        /// </summary>
-        public static void HoldSupply(string reason)
-        {
-            Interlocked.Increment(ref _supplyHolds);
-            _supplyHoldReason = reason;
-        }
-
-        /// <summary>Gives back a hold taken by <see cref="HoldSupply"/>.</summary>
-        public static void ReleaseSupply(string reason)
-        {
-            if (Interlocked.Decrement(ref _supplyHolds) >= 0) return;
-
-            // Never below zero: an unbalanced release would let the next hold be cancelled by it,
-            // and a replay would then run past the load it was told to wait for.
-            Interlocked.Exchange(ref _supplyHolds, 0);
-            Debug.LogWarning($"[RemoteControl] Frame supply released more times than held ('{reason}').");
-        }
-
-        /// <summary>How many things a replay is currently waiting on.</summary>
-        public static int supplyHoldCount => Interlocked.CompareExchange(ref _supplyHolds, 0, 0);
-
-        /// <summary>What was most recently waited on, for a viewer to show while a replay stalls.</summary>
-        public static string supplyHoldReason => _supplyHoldReason;
-
-        /// <summary>
-        /// Frames a replay stood still for, waiting. Not an error -- but a replay that spends most
-        /// of its frames here is one whose timing no longer resembles the take.
-        /// </summary>
-        public static long heldFrameCount => Interlocked.Read(ref _heldFrameCount);
-
-        /// <summary>
-        /// Seconds the frame just committed covers: the distance from the previous one, worked out
-        /// from the frame numbers and the rate.
-        ///
-        /// **Anything that advances with time reads this rather than <c>Time.deltaTime</c>.** The
-        /// engine's tick is whatever this machine managed to render, so two machines fed the same
-        /// events integrate different amounts and drift apart -- which is the single largest source
-        /// of that drift. This is the recorded width of the step, identical on every machine
-        /// replaying the same take.
-        ///
-        /// A skipped frame number widens it rather than being hidden: the pump missed an interval,
-        /// and time really did pass. A step backwards in a take (a scrub) is one interval, because a
-        /// seek is not a duration anything should integrate over; so is the first frame of a run, of
-        /// a replay, or back live after one, since those numbers are counted on different axes. A
-        /// step wider than a quarter of a second is cut to that.
-        ///
-        /// A supplied frame carries the take's own number, so during a replay this is the take's
-        /// step -- several records spent at one head make one wide step -- and a head that held the
-        /// record it was on (a pause, nothing due yet) covers no time: zero.
-        /// </summary>
-        public static float deltaTime => (float)_deltaTime;
-
-        /// <summary>
-        /// Whether a supplied frame also drives the engine's clock (<c>Time.captureDeltaTime</c>).
-        ///
-        /// Off by default, and turned on by whoever is actually replaying. With it on, code that
-        /// still reads <c>Time.deltaTime</c> follows the recording without being touched -- which is
-        /// what makes a replay of existing code reproducible, and what a faster-than-real or a
-        /// slower-than-real redraw runs on. A viewer merely watching frames go by leaves it off:
-        /// stepping the engine's clock would stop the application it is being watched in from
-        /// running at its own speed.
-        ///
-        /// <para>
-        /// The same arrangement as a render cluster, with the take as the primary. The take is the
-        /// authority on how much time each frame covers, and the engine applies that rather than
-        /// measuring its own; and because a step handed to the engine is spent once per rendered
-        /// frame, the gate also holds the engine to one frame per step -- it waits at the head until
-        /// the source's next frame is due (<see cref="IFrameSchedule"/>) on a clock that can be
-        /// waited on (<see cref="IFrameClockSync"/>), which is where an external sync source takes
-        /// over the pacing. A head where the take did not move (a pause, a load being waited for)
-        /// gives the engine back to real time, since there is no step to hand it.
-        /// </para>
-        ///
-        /// <para>
-        /// ⚠ The step lands one frame late: the engine settles a frame's time before the head runs,
-        /// so a value set here is the one the next frame uses. The barrier keeps it at one frame per
-        /// head, so the total is exact and only the phase is shifted -- the same shift as any input
-        /// read at the head. Moving the head earlier to close it was rejected: it would make the
-        /// head run before the engine's time for the frame exists, for replays only.
-        /// </para>
-        /// </summary>
-        public static bool driveEngineTimeOnSuppliedFrames
-        {
-            get => _driveEngineTime;
-            set
-            {
-                _driveEngineTime = value;
-                _engineTimeRefused = false;
-                if (!value) _ReleaseEngineTime();
-            }
-        }
 
         /// <summary>True once a frame-head pump is running and events are being ordered.</summary>
         public static bool isGateRunning => _pumpInstalled;
@@ -442,53 +238,6 @@ namespace Lilium.RemoteControl.Frames
 
         /// <summary>Sequence number the next accepted event will get.</summary>
         public static long nextSequence => _sequencer.nextSequence;
-
-        /// <summary>
-        /// Writes that landed in the same frame as an earlier write to the same target from the same
-        /// source. Nothing is dropped -- the record stays exact -- but a target that keeps showing up
-        /// here is one that should be declared <see cref="FrameLane.State"/> instead.
-        ///
-        /// Coalescing these away was considered and rejected: it would be the only lossy step in the
-        /// design (a live run fires N callbacks where a replay would fire one), and the sending side
-        /// already coalesces, so at sixty writes a second on a sixty-hertz frame there is usually
-        /// nothing to fold.
-        /// </summary>
-        public static long repeatedWriteCount => Interlocked.Read(ref _repeatedWriteCount);
-
-        /// <summary>
-        /// The target most recently counted by <see cref="repeatedWriteCount"/>, so the number can be
-        /// acted on. Empty until one is seen.
-        /// </summary>
-        public static string lastRepeatedTarget => _symbols.Resolve(Volatile.Read(ref _lastRepeatedTargetId));
-
-        /// <summary>
-        /// Replaces the clock, for an external sync source or for replay. Main thread only, and not
-        /// while a frame is being filled -- <see cref="Pump"/> reads the clock and the buffer as a
-        /// pair.
-        /// </summary>
-        public static void SetClock(IFrameClock value)
-        {
-            _clock = value ?? throw new ArgumentNullException(nameof(value));
-            _clock.Reset();
-            _lastPumpedFrameNumber = -1;
-            _buffer.Reset();
-        }
-
-        /// <summary>
-        /// Puts the clock back to the one a live run uses.
-        ///
-        /// The clock is process-wide, so anything that installs one for its own purposes -- a test
-        /// driving the pump by hand, a tool stepping through a recording -- hands the rest of the
-        /// editor session whatever it left behind. A counter clock left in place makes the timecode
-        /// read as fast as the editor happens to tick, which is how it once ran ten times fast.
-        ///
-        /// Deliberately not done by <see cref="ResetState"/>: a restart must not throw away an
-        /// external sync source someone installed on purpose.
-        /// </summary>
-        public static void RestoreDefaultClock() => SetClock(_NewDefaultClock());
-
-        /// <summary>The clock a live run is driven by, unless something replaced it.</summary>
-        private static IFrameClock _NewDefaultClock() => new RealtimeFrameClock(FrameRate.FPS60);
 
         /// <summary>
         /// Resizes the retained window. Drops what is currently held. Main thread only, and not
@@ -726,7 +475,6 @@ namespace Lilium.RemoteControl.Frames
             _sink = null;
             _source = null;
             onSourceEnded = null;
-            _writeKeysThisFrame.Clear();
 
             // Cleared so a new run reports its undeclared sources again rather than staying quiet
             // about them because a previous run already mentioned them.
@@ -734,14 +482,11 @@ namespace Lilium.RemoteControl.Frames
 
             Interlocked.Exchange(ref _bypassedCount, 0);
             Interlocked.Exchange(ref _omittedRecordCount, 0);
-            Interlocked.Exchange(ref _truncatedPayloadCount, 0);
-            Interlocked.Exchange(ref _repeatedWriteCount, 0);
 
             // Reset with the other diagnostics even though the observers themselves stay attached:
             // the count says how much went quiet during this run, and carrying it over would report
             // a previous run's losses against a run that has not lost anything.
             _detachedObserverCount = 0;
-            Volatile.Write(ref _lastRepeatedTargetId, FrameSymbolTable.kNone);
         }
 
         /// <summary>
@@ -758,16 +503,26 @@ namespace Lilium.RemoteControl.Frames
 
         private static void _FaultPending(string reason)
         {
-            var drained = _sequencer.Drain();
+            var batch = _sequencer.Drain();
 
-            for (int i = 0; i < drained.Count; i++)
+            for (int i = 0; i < batch.Count; i++)
             {
-                var evt = drained[i];
-                evt.fault?.Invoke(new OperationCanceledException(reason));
-                evt.Clear();
+                ref var evt = ref batch[i];
+
+                if (evt.completion != null)
+                {
+                    evt.completion.Fault(new OperationCanceledException(reason));
+                    continue;
+                }
+
+                // Nobody is waiting on a posted event, so there is nobody to hand the failure to.
+                // Logged instead of dropped: an operation that silently stopped landing is the kind
+                // of quiet this whole layer exists to prevent.
+                Debug.LogWarning(
+                    $"[RemoteControl] Posted event ({_DescribeFirst(batch, in evt)}) never reached a frame: {reason}");
             }
 
-            drained.Clear();
+            batch.Clear();
         }
 
 #if UNITY_EDITOR
@@ -876,58 +631,6 @@ namespace Lilium.RemoteControl.Frames
         }
 
         /// <summary>
-        /// What the player loop runs every engine frame: while a replay drives the engine's clock,
-        /// wait for the frame to be due; then pump. Split from the hook so a test can drive it.
-        ///
-        /// The wait is outside <see cref="Pump"/> because tests and hosts call that directly to step
-        /// a frame, and a step that blocked on wall time would be neither.
-        /// </summary>
-        internal static void _PumpAtFrameHead()
-        {
-            if (_driveEngineTime && _source != null) _WaitUntilDue();
-
-            var before = _lastPumpedFrameNumber;
-            Pump();
-
-            // No frame this time -- the wait gave up, or the clock did not move. The step already
-            // handed to the engine would be spent a second time on this frame, which is exactly the
-            // fast-forward the barrier exists to prevent, so the engine goes back to real time.
-            if (_lastPumpedFrameNumber == before) _ReleaseEngineTime();
-        }
-
-        /// <summary>
-        /// Holds the engine at the head until the source's next frame is due: the frame barrier.
-        ///
-        /// At least one clock frame, so a source that cannot say when it is due still renders one
-        /// frame per step. At most <see cref="kMaxTickSeconds"/> ahead, so a take that stood still
-        /// for a long time is walked through in steps the tick would hand out anyway instead of
-        /// freezing the application for the length of the gap.
-        /// </summary>
-        private static void _WaitUntilDue()
-        {
-            if (!(_clock is IFrameClockSync sync)) return;
-
-            var last = _lastPumpedFrameNumber;
-            if (last < 0) return;
-
-            // Waiting for a load: nothing is supplied, the engine runs on real time, and there is
-            // nothing to be on time for.
-            if (supplyHoldCount > 0) return;
-
-            var rate = _clock.frameRate;
-            var ceiling = last + _MaxTickFrames(rate);
-            var due = last + 1;
-
-            if (_source is IFrameSchedule schedule && schedule.TryGetNextDue(last, rate, out var scheduled))
-            {
-                due = Math.Max(due, Math.Min(scheduled, ceiling));
-            }
-
-            var timeoutMs = (int)Math.Ceiling(rate.AsSecounds(due - last) * 1000.0) + kBarrierSlackMs;
-            sync.WaitUntil(due, timeoutMs);
-        }
-
-        /// <summary>
         /// Applies everything accepted since the last frame, in sequence order, then commits the
         /// frame. Main thread only.
         /// </summary>
@@ -962,8 +665,6 @@ namespace Lilium.RemoteControl.Frames
             // This run's table, unless a source replaces it along with the lanes below.
             _frame.symbols = _symbols;
 
-            _writeKeysThisFrame.Clear();
-
             // Before the queued events, so what the recording asked for lands first and an operator
             // acting right now lands on top of it rather than under it.
             _FillFromSource();
@@ -972,50 +673,57 @@ namespace Lilium.RemoteControl.Frames
             // replay hands out is the recorded one, not this machine's.
             _UpdateTick();
 
-            var drained = _sequencer.Drain();
-            for (int i = 0; i < drained.Count; i++)
+            var batch = _sequencer.Drain();
+            for (int i = 0; i < batch.Count; i++)
             {
-                var evt = drained[i];
+                ref var evt = ref batch[i];
 
                 try
                 {
                     // Published while the event runs so the code that applies it can say what value
                     // it wrote. Records are added to the lane below, after this, so a stamp made
                     // here is part of what gets recorded.
-                    _applyingEvent = evt;
-                    evt.apply?.Invoke();
+                    _applyingBatch = batch;
+                    _applyingIndex = i;
+
+                    if (evt.completion != null) evt.completion.Run();
+                    else evt.apply?.Invoke();
                 }
                 catch (Exception e)
                 {
                     // The caller was handed this through its own completion; log it here as well so
                     // a failure nobody awaited is still visible. A group applies as one unit, so
                     // every record it carries is marked.
-                    evt.SetFlags(EventFlags.Faulted);
-                    Debug.LogError($"[RemoteControl] Frame evt #{evt.firstSequence} ({_DescribeFirst(evt)}) failed: {e}");
+                    for (int r = 0; r < evt.recordCount; r++)
+                    {
+                        batch.RecordAt(evt.firstRecord + r).flags |= EventFlags.Faulted;
+                    }
+
+                    Debug.LogError(
+                        $"[RemoteControl] Frame event #{batch.RecordAt(evt.firstRecord).sequence} ({_DescribeFirst(batch, in evt)}) failed: {e}");
                 }
                 finally
                 {
-                    _applyingEvent = null;
+                    _applyingBatch = null;
                 }
 
                 for (int r = 0; r < evt.recordCount; r++)
                 {
+                    ref var record = ref batch.RecordAt(evt.firstRecord + r);
+
                     // Applied above, but the state lane is already carrying what it did. See
                     // EventFlags.NotRecorded.
-                    if ((evt.records[r].flags & EventFlags.NotRecorded) != 0)
+                    if ((record.flags & EventFlags.NotRecorded) != 0)
                     {
                         Interlocked.Increment(ref _omittedRecordCount);
                         continue;
                     }
 
-                    _CountIfRepeatedWrite(in evt.records[r]);
-                    events.Add(evt.records[r]);
+                    events.Add(in record, batch.PayloadOf(in record));
                 }
-
-                evt.Clear();
             }
 
-            drained.Clear();
+            batch.Clear();
 
             // State after event: an event can change the structure, and a state block is only
             // meaningful against the structure it belongs to.
@@ -1034,227 +742,6 @@ namespace Lilium.RemoteControl.Frames
             _frame.events = null;
 
             _buffer.Commit(frameNumber);
-        }
-
-        /// <summary>
-        /// Notes a write that follows an earlier write to the same target in this frame. The record
-        /// is kept either way; the count is a signal that the target belongs in the state lane.
-        /// </summary>
-        private static void _CountIfRepeatedWrite(in EventRecord record)
-        {
-            if (record.kind != EventKind.Set) return;
-            if (record.targetId == FrameSymbolTable.kNone) return;
-
-            var key = ((long)record.sourceId << 32) | (uint)record.targetId;
-            if (_writeKeysThisFrame.Add(key)) return;
-
-            Interlocked.Increment(ref _repeatedWriteCount);
-            Volatile.Write(ref _lastRepeatedTargetId, record.targetId);
-        }
-
-        private static void _FillFromSource()
-        {
-            var source = _source;
-            if (source == null) return;
-
-            // Something the take needs is still loading. The source is not asked for a frame, so it
-            // stays where it is and the replay resumes from the same place -- rather than playing
-            // frames into a world that has not finished being built.
-            if (supplyHoldCount > 0)
-            {
-                Interlocked.Increment(ref _heldFrameCount);
-                return;
-            }
-
-            try
-            {
-                if (source.FillFrame(ref _frame))
-                {
-                    _frame.isSupplied = true;
-                    return;
-                }
-            }
-            catch (Exception e)
-            {
-                // Detached rather than left to throw every frame, for the same reason as the sink:
-                // one failure must not become one per frame, and the run is still fine live.
-                Debug.LogError($"[RemoteControl] Frame source failed and was detached: {e}");
-                _RetireSource(source);
-                return;
-            }
-
-            // Ran out. The frame falls back to the live lanes it was already pointing at.
-            _RetireSource(source);
-        }
-
-        /// <summary>
-        /// Works out how much time the frame just filled covers, and lets a replay drive the engine
-        /// with it.
-        /// </summary>
-        private static void _UpdateTick()
-        {
-            var supplied = _frame.isSupplied;
-            var source = supplied ? _source : null;
-
-            // The first frame of a run, of a replay, or back live after one: the two numbers were
-            // counted on different axes, so their difference is not a duration. One interval.
-            var sameAxis = _tickFrameNumber != long.MinValue
-                && supplied == _tickSupplied
-                && ReferenceEquals(source, _tickSource)
-                && _frame.frameRate == _tickFrameRate;
-
-            var advanced = sameAxis ? _frame.frameNumber - _tickFrameNumber : 1;
-
-            // A supplied frame on the number it already stood on: the take held (paused, or nothing
-            // was due yet at this head). No time passed in it.
-            var stood = sameAxis && supplied && advanced == 0;
-
-            // A scrub backwards: one interval. A seek covers no time -- nothing integrating over it
-            // moved through those frames -- and a backwards one would otherwise hand out a negative
-            // tick.
-            if (advanced <= 0) advanced = 1;
-
-            var ceiling = _MaxTickFrames(_frame.frameRate);
-            if (advanced > ceiling) advanced = ceiling;
-
-            _deltaTime = stood ? 0 : _frame.frameRate.AsSecounds(advanced);
-            _tickFrameNumber = _frame.frameNumber;
-            _tickSupplied = supplied;
-            _tickSource = source;
-            _tickFrameRate = _frame.frameRate;
-
-            if (!stood && _CarriesTimeAuthority()) _DriveEngineTime();
-            else _ReleaseEngineTime();
-        }
-
-        /// <summary>
-        /// Whether this frame's step is the one the engine should run on.
-        ///
-        /// A frame filled by a source, with the switch on, is the only case today: its numbers are
-        /// the take's. Asked in one place because it is the question an external sync source will
-        /// change -- a live run clocked by a house timecode carries the authority too.
-        /// </summary>
-        private static bool _CarriesTimeAuthority() => _frame.isSupplied && _driveEngineTime;
-
-        /// <summary>Hands the engine this frame's step.</summary>
-        private static void _DriveEngineTime()
-        {
-            // Something else is already stepping the engine -- a screen recorder, a capture tool.
-            // Both writing it would make each frame whichever wrote last, so this stands aside, says
-            // so once, and only FrameGate.deltaTime follows the take.
-            if (!_engineTimeDriven && Time.captureDeltaTime != 0f)
-            {
-                if (!_engineTimeRefused)
-                {
-                    _engineTimeRefused = true;
-                    Debug.LogWarning(
-                        "[RemoteControl] Time.captureDeltaTime is already in use by something else; " +
-                        "the replay leaves the engine's clock alone.");
-                }
-
-                return;
-            }
-
-            _engineTimeDriven = true;
-            Time.captureDeltaTime = (float)_deltaTime;
-        }
-
-        /// <summary>The widest tick, in frames of <paramref name="rate"/>. At least one.</summary>
-        private static long _MaxTickFrames(FrameRate rate)
-        {
-            if (rate.numerator == 0 || rate.denominator == 0) return 1;
-
-            var frames = rate.AsFrameNumber(kMaxTickSeconds);
-            return frames < 1 ? 1 : frames;
-        }
-
-        /// <summary>
-        /// Gives the engine's clock back to real time.
-        ///
-        /// Only when this is what took it: <c>Time.captureDeltaTime</c> is process-wide and a screen
-        /// recorder is entitled to be holding it for its own reasons.
-        /// </summary>
-        private static void _ReleaseEngineTime()
-        {
-            if (!_engineTimeDriven) return;
-
-            _engineTimeDriven = false;
-            Time.captureDeltaTime = 0f;
-        }
-
-        /// <summary>
-        /// Detaches a source that has finished or failed, and says so.
-        ///
-        /// Only if it is still the one attached. A take can carry the requests that stop it and
-        /// start another (a replay of a session in which somebody replayed something), so by the
-        /// time the frame comes back the source may already have been replaced -- and clearing the
-        /// field then would detach the new one before its first frame.
-        /// </summary>
-        private static void _RetireSource(IFrameSource source)
-        {
-            if (!ReferenceEquals(_source, source)) return;
-
-            _source = null;
-            _RaiseSourceEnded();
-        }
-
-        private static void _RaiseSourceEnded()
-        {
-            try
-            {
-                onSourceEnded?.Invoke();
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[RemoteControl] Frame source teardown failed: {e}");
-            }
-        }
-
-        private static void _DeliverToSink()
-        {
-            var sink = _sink;
-            if (sink == null) return;
-
-            try
-            {
-                sink.OnFrameCompleted(in _frame, _symbols);
-            }
-            catch (Exception e)
-            {
-                // Detached rather than left to throw every frame: a recorder that has lost its disk
-                // would otherwise turn one failure into one per frame, and the run itself is still
-                // fine without it.
-                _sink = null;
-                Debug.LogError($"[RemoteControl] Frame sink failed and was detached: {e}");
-            }
-        }
-
-        private static void _NotifyObservers()
-        {
-            if (_observerSnapshotStale)
-            {
-                _observerSnapshot = _observers.ToArray();
-                _observerSnapshotStale = false;
-            }
-
-            var observers = _observerSnapshot;
-            for (int i = 0; i < observers.Length; i++)
-            {
-                var observer = observers[i];
-
-                try
-                {
-                    observer.OnFrameCompleted(in _frame, _symbols);
-                }
-                catch (Exception e)
-                {
-                    // Detached rather than left to throw every frame, like the sink. Counted as well
-                    // as logged, so a viewer can say it stopped watching instead of just freezing.
-                    RemoveFrameObserver(observer);
-                    _detachedObserverCount++;
-                    Debug.LogError($"[RemoteControl] Frame observer failed and was detached: {e}");
-                }
-            }
         }
 
         private static void _RunFrameHeadHandlers()
@@ -1279,294 +766,6 @@ namespace Lilium.RemoteControl.Frames
                     Debug.LogError($"[RemoteControl] Frame head handler failed: {e}");
                 }
             }
-        }
-
-        /// <summary>
-        /// Puts an event in the queue and completes once it has been applied at a frame head.
-        /// </summary>
-        public static Task<T> SubmitAsync<T>(EventKind kind, string sourceId, string verb,
-            string target, string requestText, Func<T> action)
-            => SubmitGroupAsync(new[] { new EventDescriptor(kind, verb, target, requestText) }, sourceId, action);
-
-        /// <summary>
-        /// Puts an event in the queue on behalf of a source resolved once with
-        /// <see cref="ResolveSource"/>. Preferred over the string form: the name has already been
-        /// checked against a declaration and interned, so nothing is hashed per call.
-        /// </summary>
-        public static Task<T> SubmitAsync<T>(EventKind kind, FrameSource source, string verb,
-            string target, string requestText, Func<T> action)
-            => SubmitGroupAsync(new[] { new EventDescriptor(kind, verb, target, requestText) }, source, action);
-
-        /// <summary>Group form of <see cref="SubmitAsync{T}(EventKind, FrameSource, string, string, Func{T})"/>.</summary>
-        public static Task<T> SubmitGroupAsync<T>(IReadOnlyList<EventDescriptor> operations,
-            FrameSource source, Func<T> action)
-        {
-            if (!source.isValid)
-            {
-                throw new ArgumentException(
-                    "[RemoteControl] Input source was never resolved. Use FrameGate.ResolveSource.",
-                    nameof(source));
-            }
-
-            return _SubmitGroup(operations, source.id, action);
-        }
-
-        /// <summary>
-        /// Puts several operations in the queue as one unit and completes once they have been
-        /// applied together at a frame head.
-        ///
-        /// For a bundled request, whose parts have to take effect in the same frame. They are
-        /// numbered as one run so they cannot be split, but recorded separately so each stays small
-        /// enough to be kept faithfully.
-        /// </summary>
-        public static Task<T> SubmitGroupAsync<T>(IReadOnlyList<EventDescriptor> operations,
-            string sourceId, Func<T> action)
-        {
-            // Resolved before the bypass checks so that an undeclared name is reported even when the
-            // event never reaches the queue.
-            return _SubmitGroup(operations, _ResolveSourceId(sourceId), action);
-        }
-
-        private static Task<T> _SubmitGroup<T>(IReadOnlyList<EventDescriptor> operations,
-            int sourceId, Func<T> action)
-        {
-            if (action == null) throw new ArgumentNullException(nameof(action));
-            if (operations == null) throw new ArgumentNullException(nameof(operations));
-            if (operations.Count == 0) throw new ArgumentException("No operations.", nameof(operations));
-
-            // Refused rather than queued: after shutdown begins no frame head is coming, so a
-            // queued event would keep its caller -- and the shutdown -- waiting indefinitely.
-            if (_gateClosed)
-            {
-                return Task.FromException<T>(new OperationCanceledException(
-                    "[RemoteControl] Frame gate is closed: the application is shutting down."));
-            }
-
-            // No pump, or already on the main thread. Waiting for a frame head from the main thread
-            // would deadlock, so apply straight away and count it as a hole in the ordering.
-            if (!_pumpInstalled || Thread.CurrentThread.ManagedThreadId == _mainThreadId)
-            {
-                Interlocked.Increment(ref _bypassedCount);
-                return _ApplyOutsideGate(action);
-            }
-
-            return _Enqueue(operations, sourceId, action);
-        }
-
-        /// <summary>Single-operation convenience for tests. See <see cref="_Enqueue{T}"/>.</summary>
-        internal static Task<T> _Enqueue<T>(EventKind kind, string sourceId, string target,
-            string requestText, Func<T> action, string verb = null)
-            => _Enqueue(new[] { new EventDescriptor(kind, verb, target, requestText) },
-                _ResolveSourceId(sourceId), action);
-
-        /// <summary>Group convenience for tests, resolving the source by name.</summary>
-        internal static Task<T> _Enqueue<T>(IReadOnlyList<EventDescriptor> operations,
-            string sourceId, Func<T> action)
-            => _Enqueue(operations, _ResolveSourceId(sourceId), action);
-
-        /// <summary>
-        /// Queues an event without the bypass checks. Split out so tests can drive the real queue
-        /// and <see cref="Pump"/> from the main thread, where <see cref="SubmitGroupAsync"/> would
-        /// deliberately refuse to wait.
-        /// </summary>
-        internal static Task<T> _Enqueue<T>(IReadOnlyList<EventDescriptor> operations,
-            int source, Func<T> action)
-        {
-            // Continuations run asynchronously so that whatever the caller does after its await --
-            // building a response, writing it out -- does not run inside the pump on the main
-            // thread. Every event funnels through one point, so inline continuations would pile
-            // the whole cost of a frame's callers onto the frame head.
-            var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-            // Targets are interned here rather than at the frame head: this runs on the worker
-            // thread that is going to wait anyway, and the main thread should not pay for it.
-            var records = new EventRecord[operations.Count];
-
-            // One buffer for the whole group. Payloads are copied into the records, so nothing
-            // outlives this frame's stack.
-            Span<byte> scratch = stackalloc byte[EventRecord.kPayloadCapacity];
-
-            for (int i = 0; i < operations.Count; i++)
-            {
-                var operation = operations[i];
-
-                // The sequence is stamped by the sequencer, which is where order is decided.
-                var record = new EventRecord(0, operation.kind, source,
-                    _symbols.Intern(operation.target), EventFlags.None,
-                    _symbols.Intern(operation.verb));
-
-                // The request text, until whoever applies it says what value it really wrote.
-                // The target has not been resolved yet here, so its type is not knowable -- see
-                // StampAppliedPayload for where the typed form arrives.
-                if (!string.IsNullOrEmpty(operation.requestText))
-                {
-                    // Held inline, length first: this is one request body, not a value that
-                    // recurs, and a table entry per distinct body would grow without bound.
-                    var fits = EventPayload.TryWriteString(operation.requestText, scratch, out var kept);
-
-                    record.SetPayload(scratch.Slice(0, kept), _symbols.Intern(EventPayload.kRequestTypeName));
-
-                    if (!fits)
-                    {
-                        record.flags |= EventFlags.PayloadTruncated;
-                        Interlocked.Increment(ref _truncatedPayloadCount);
-                    }
-                }
-
-                records[i] = record;
-            }
-
-            var evt = new PendingEvent
-            {
-                records = records,
-                recordCount = records.Length,
-            };
-
-            evt.apply = () =>
-            {
-                try
-                {
-                    completion.SetResult(action());
-                }
-                catch (Exception e)
-                {
-                    completion.SetException(e);
-                    throw;
-                }
-            };
-
-            evt.fault = reason => completion.TrySetException(reason);
-
-            _sequencer.Submit(evt);
-            return completion.Task;
-        }
-
-        /// <summary>
-        /// Queues an event to be applied at the next frame head and returns immediately.
-        ///
-        /// For a producer that is already inside the frame -- a deck button, a gamepad axis, a
-        /// script -- rather than a request waiting on an answer. Those cannot use
-        /// <see cref="SubmitAsync{T}(EventKind, FrameSource, string, string, string, Func{T})"/>:
-        /// it is called from a worker thread that then blocks on the frame head, and blocking the
-        /// main thread on a frame head the main thread is supposed to run would deadlock. Nothing
-        /// waits here, so there is nothing to deadlock.
-        ///
-        /// The cost is one frame of latency: what fires during this frame lands at the head of the
-        /// next one. That is what buys the ordering -- an operation and a remote write racing
-        /// within a frame would otherwise land in whichever order the two happened to run in.
-        ///
-        /// <paramref name="apply"/> does the work and is expected to say what it wrote, with
-        /// <see cref="StampAppliedPayload"/>, so the record keeps the value rather than nothing.
-        /// </summary>
-        public static void Post(EventKind kind, FrameSource source, string verb, string target,
-            Action apply, string requestText = null)
-        {
-            if (apply == null) throw new ArgumentNullException(nameof(apply));
-
-            if (!source.isValid)
-            {
-                throw new ArgumentException(
-                    "[RemoteControl] Input source was never resolved. Use FrameGate.ResolveSource.",
-                    nameof(source));
-            }
-
-            // Nothing is coming to apply it, and nobody is waiting to be told. Dropped silently
-            // would be a write that vanished, so it is applied here and counted as a hole.
-            if (_gateClosed || !_pumpInstalled)
-            {
-                Interlocked.Increment(ref _bypassedCount);
-                apply();
-                return;
-            }
-
-            _Post(kind, source, verb, target, apply, requestText);
-        }
-
-        /// <summary>
-        /// Queues a posted event without the bypass check, so tests can drive the real queue whether
-        /// or not a pump happens to be installed. See <see cref="Post"/>.
-        /// </summary>
-        internal static void _Post(EventKind kind, FrameSource source, string verb, string target,
-            Action apply, string requestText = null)
-        {
-            var record = new EventRecord(0, kind, source.id, _symbols.Intern(target),
-                EventFlags.None, _symbols.Intern(verb));
-
-            if (!string.IsNullOrEmpty(requestText))
-            {
-                Span<byte> scratch = stackalloc byte[EventRecord.kPayloadCapacity];
-                var fits = EventPayload.TryWriteString(requestText, scratch, out var kept);
-
-                record.SetPayload(scratch.Slice(0, kept), _symbols.Intern(EventPayload.kRequestTypeName));
-
-                if (!fits)
-                {
-                    record.flags |= EventFlags.PayloadTruncated;
-                    Interlocked.Increment(ref _truncatedPayloadCount);
-                }
-            }
-
-            var evt = new PendingEvent
-            {
-                records = new[] { record },
-                recordCount = 1,
-                apply = apply,
-
-                // Nobody is waiting, so a reset has nothing to hand the failure to. Logged instead
-                // of dropped: an operation that silently stopped landing is the kind of quiet this
-                // whole layer exists to prevent.
-                fault = reason => Debug.LogWarning(
-                    $"[RemoteControl] Posted evt ({verb} {target}) never reached a frame: {reason.Message}"),
-            };
-
-            _sequencer.Submit(evt);
-        }
-
-        private static string _DescribeFirst(PendingEvent evt)
-        {
-            if (evt.recordCount == 0) return "no records";
-
-            var first = evt.records[0];
-            var suffix = evt.recordCount > 1 ? $" (+{evt.recordCount - 1} more)" : string.Empty;
-            return $"{first.kind} {_symbols.Resolve(first.targetId)}{suffix}";
-        }
-
-        private static Task<T> _ApplyOutsideGate<T>(Func<T> action)
-        {
-            if (Thread.CurrentThread.ManagedThreadId == _mainThreadId)
-            {
-                try
-                {
-                    return Task.FromResult(action());
-                }
-                catch (Exception e)
-                {
-                    return Task.FromException<T>(e);
-                }
-            }
-
-            var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-            if (_mainThreadContext == null)
-            {
-                completion.SetException(new InvalidOperationException(
-                    "[RemoteControl] Frame gate has no main thread context."));
-                return completion.Task;
-            }
-
-            _mainThreadContext.Post(_ =>
-            {
-                try
-                {
-                    completion.SetResult(action());
-                }
-                catch (Exception e)
-                {
-                    completion.SetException(e);
-                }
-            }, null);
-
-            return completion.Task;
         }
     }
 }

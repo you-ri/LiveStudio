@@ -57,8 +57,7 @@ namespace Lilium.RemoteControl.Tests
             LiveClass.RegisterFromAttributes<TextTablePicker>();
 
             FrameGate.ResetState("[test] cleared");
-            LiveFixedStringStats.Reset();
-            LiveTextIdStats.Reset();
+            LiveTextStats.Reset();
 
             _subject = new TextTablePicker();
             _handle = LiveObjectRegistry.Create(typeof(TextTablePicker), _subject, kId);
@@ -161,7 +160,7 @@ namespace Lilium.RemoteControl.Tests
             LiveStateSystem.ApplyFrom(state, FrameGate.symbols);
 
             Assert.AreEqual("short", _subject.typed, "a value that outgrew its width must not overwrite what is there");
-            Assert.Greater(LiveFixedStringStats.unrepresentableCount, 0, "the drop went uncounted");
+            Assert.Greater(LiveTextStats.unrepresentableCount, 0, "the drop went uncounted");
         }
 
         [Test]
@@ -184,7 +183,7 @@ namespace Lilium.RemoteControl.Tests
             LiveStateSystem.ApplyFrom(state, partial);
 
             Assert.AreEqual("one", _subject.pick, "an unresolvable id overwrote a value that was there");
-            Assert.Greater(LiveTextIdStats.unresolvedCount, 0, "the miss went uncounted");
+            Assert.Greater(LiveTextStats.unresolvedCount, 0, "the miss went uncounted");
         }
 
         [Test]

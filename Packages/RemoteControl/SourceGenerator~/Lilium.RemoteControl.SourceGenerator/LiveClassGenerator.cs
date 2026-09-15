@@ -17,7 +17,7 @@ namespace Lilium.RemoteControl.SourceGenerator
         const string kLiveFieldAttributeName = "Lilium.RemoteControl.LiveFieldAttribute";
         const string kLiveFunctionAttributeName = "Lilium.RemoteControl.LiveFunctionAttribute";
 
-        // 状態ブロックが名指しする型 (StateBridgeRegistry / StateBlock) の居所。
+        // 状態ブロックが名指しする型 (StateTypes / StateBlock) の居所。
         const string kSimulationAssemblyName = "Lilium.RemoteControl.Simulation";
 
         public void Initialize(IncrementalGeneratorInitializationContext context)

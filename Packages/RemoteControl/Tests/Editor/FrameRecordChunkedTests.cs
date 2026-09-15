@@ -9,9 +9,9 @@ using Lilium.RemoteControl.Frames.Recording;
 namespace Lilium.RemoteControl.Tests
 {
     /// <summary>
-    /// Compression is only allowed to change the size of a recording. Everything read back out of
-    /// one -- the entries, their order, seeking, the index -- has to be what the same take says
-    /// uncompressed, so most of these tests write the take twice and compare the two.
+    /// A recording is written a chunk at a time: the entries from one keyframe to the next,
+    /// compressed together on the writer's own thread. The chunking is only allowed to change the
+    /// size -- every frame, its order, the index and seeking have to come back as they were written.
     /// </summary>
     public class FrameRecordChunkedTests
     {
@@ -30,20 +30,12 @@ namespace Lilium.RemoteControl.Tests
             buildId = "test-build",
         };
 
-        /// <summary>One entry as read back, kept so two recordings can be compared entry for entry.</summary>
-        private struct Read
-        {
-            public FrameEntryKind kind;
-            public long frameNumber;
-            public byte[] payload;
-        }
-
         /// <summary>
         /// Writes a take of <paramref name="frames"/> frames, with a keyframe every 20 and a pose
         /// where most of the values hold still -- close enough to a real recording that the chunking
         /// is exercised the way it will be in use.
         /// </summary>
-        private static byte[] WriteTake(int frames, bool chunked, bool close = true)
+        private static byte[] WriteTake(int frames, out long entryBytes, bool close = true)
         {
             var symbols = new FrameSymbolTable();
             var structure = new StructureBlock();
@@ -51,7 +43,7 @@ namespace Lilium.RemoteControl.Tests
 
             using (var stream = new MemoryStream())
             {
-                using (var writer = new FrameRecordWriter(stream, Header(), leaveOpen: true, chunked: chunked))
+                using (var writer = new FrameRecordWriter(stream, Header(), leaveOpen: true))
                 {
                     structure.AddOrUpdate(symbols.Intern("cam"), symbols.Intern("Camera"), FrameSymbolTable.kNone);
 
@@ -70,6 +62,7 @@ namespace Lilium.RemoteControl.Tests
                         writer.EndFrame();
                     }
 
+                    entryBytes = writer.entryBytes;
                     if (close) writer.Close(symbols);
                 }
 
@@ -80,86 +73,54 @@ namespace Lilium.RemoteControl.Tests
             }
         }
 
-        private static List<Read> ReadAll(byte[] bytes)
+        private static byte[] WriteTake(int frames, bool close = true) => WriteTake(frames, out _, close);
+
+        private static List<long> BoundariesOf(FrameRecordReader reader)
         {
-            var entries = new List<Read>();
-            using (var reader = new FrameRecordReader(new MemoryStream(bytes)))
+            var frames = new List<long>();
+            while (reader.TryReadEntry(out var entry))
             {
-                while (reader.TryReadEntry(out var entry))
+                if (entry.kind == FrameEntryKind.FrameBoundary) frames.Add(entry.frameNumber);
+            }
+
+            return frames;
+        }
+
+        [Test]
+        public void ATake_ReadsBackEveryFrameInOrder()
+        {
+            using (var reader = new FrameRecordReader(new MemoryStream(WriteTake(90))))
+            {
+                var frames = BoundariesOf(reader);
+
+                Assert.AreEqual(90, frames.Count);
+                for (int i = 0; i < frames.Count; i++) Assert.AreEqual(i, frames[i], $"frame {i}");
+            }
+        }
+
+        [Test]
+        public void ATake_IsSmallerThanItsEntries()
+        {
+            var bytes = WriteTake(120, out var entryBytes);
+
+            Assert.Less(bytes.Length, entryBytes,
+                        $"compressed should be smaller than what was written ({bytes.Length} vs {entryBytes})");
+        }
+
+        [Test]
+        public void TheIndex_CoversEveryFrame()
+        {
+            using (var reader = new FrameRecordReader(new MemoryStream(WriteTake(90))))
+            {
+                Assert.IsTrue(reader.hasIndex);
+                Assert.AreEqual(90, reader.indexedFrameCount);
+                Assert.AreEqual(0, reader.firstFrameNumber);
+                CollectionAssert.AreEqual(new long[] { 0, 20, 40, 60, 80 }, reader.keyframes);
+
+                for (int i = 0; i < 90; i++)
                 {
-                    entries.Add(new Read
-                    {
-                        kind = entry.kind,
-                        frameNumber = entry.frameNumber,
-                        payload = entry.payload.ToArray(),
-                    });
-                }
-            }
-
-            return entries;
-        }
-
-        private static void AssertSameEntries(List<Read> expected, List<Read> actual)
-        {
-            Assert.AreEqual(expected.Count, actual.Count, "a different number of entries came back");
-
-            for (int i = 0; i < expected.Count; i++)
-            {
-                Assert.AreEqual(expected[i].kind, actual[i].kind, $"entry {i} is a different kind");
-                Assert.AreEqual(expected[i].frameNumber, actual[i].frameNumber, $"entry {i} is on a different frame");
-                CollectionAssert.AreEqual(expected[i].payload, actual[i].payload, $"entry {i} carries different bytes");
-            }
-        }
-
-        [Test]
-        public void ACompressedTake_ReadsBackAsTheSameEntries()
-        {
-            AssertSameEntries(ReadAll(WriteTake(90, chunked: false)), ReadAll(WriteTake(90, chunked: true)));
-        }
-
-        [Test]
-        public void ACompressedTake_IsSmaller()
-        {
-            var plain = WriteTake(120, chunked: false);
-            var chunked = WriteTake(120, chunked: true);
-
-            Assert.Less(chunked.Length, plain.Length,
-                        $"compressed should be smaller ({chunked.Length} vs {plain.Length})");
-        }
-
-        [Test]
-        public void ACompressedTake_SaysItIsCompressed()
-        {
-            using (var reader = new FrameRecordReader(new MemoryStream(WriteTake(30, chunked: true))))
-            {
-                Assert.IsTrue(reader.isChunked);
-            }
-
-            using (var reader = new FrameRecordReader(new MemoryStream(WriteTake(30, chunked: false))))
-            {
-                Assert.IsFalse(reader.isChunked);
-            }
-        }
-
-        [Test]
-        public void TheIndexOfACompressedTake_MatchesThePlainOne()
-        {
-            using (var plain = new FrameRecordReader(new MemoryStream(WriteTake(90, chunked: false))))
-            using (var chunked = new FrameRecordReader(new MemoryStream(WriteTake(90, chunked: true))))
-            {
-                Assert.IsTrue(chunked.hasIndex);
-                Assert.AreEqual(plain.indexedFrameCount, chunked.indexedFrameCount);
-                Assert.AreEqual(plain.firstFrameNumber, chunked.firstFrameNumber);
-                CollectionAssert.AreEqual(plain.keyframes, chunked.keyframes);
-
-                for (int i = 0; i < plain.indexedFrameCount; i++)
-                {
-                    Assert.AreEqual(plain.FrameNumberAt(i), chunked.FrameNumberAt(i), $"frame {i}");
-                }
-
-                for (long f = 0; f < 90; f++)
-                {
-                    Assert.AreEqual(plain.IndexOfFrame(f), chunked.IndexOfFrame(f), $"looking up frame {f}");
+                    Assert.AreEqual(i, reader.FrameNumberAt(i), $"frame {i}");
+                    Assert.AreEqual(i, reader.IndexOfFrame(i), $"looking up frame {i}");
                 }
             }
         }
@@ -169,67 +130,46 @@ namespace Lilium.RemoteControl.Tests
         {
             // Every frame, not a sample of them: the frames near a chunk boundary are the ones a
             // mistake in the index would land wrong, and which those are is not obvious from here.
-            using (var reader = new FrameRecordReader(new MemoryStream(WriteTake(90, chunked: true))))
+            using (var reader = new FrameRecordReader(new MemoryStream(WriteTake(90))))
             {
                 for (long f = 0; f < 90; f++)
                 {
                     Assert.IsTrue(reader.TrySeekFrame(f), $"could not seek to frame {f}");
                     Assert.IsTrue(reader.TryReadEntry(out var entry), $"nothing to read at frame {f}");
+                    Assert.AreEqual(FrameEntryKind.FrameBoundary, entry.kind, $"seeking to frame {f} did not land on its boundary");
                     Assert.AreEqual(f, entry.frameNumber, $"seeking to frame {f} landed elsewhere");
                 }
             }
         }
 
         [Test]
-        public void ABookmarkTakenWhileWalking_GoesBackToTheSameEntry()
+        public void SeekingBackwards_StillReadsTheFramesInOrderAfterward()
         {
-            // This is what the viewer does: one pass noting where things are, then jumps back.
-            using (var reader = new FrameRecordReader(new MemoryStream(WriteTake(60, chunked: true))))
+            using (var reader = new FrameRecordReader(new MemoryStream(WriteTake(90))))
             {
-                var marks = new List<long>();
-                var kinds = new List<FrameEntryKind>();
-                var numbers = new List<long>();
+                Assert.IsTrue(reader.TrySeekFrame(70));
+                Assert.IsTrue(reader.TrySeekFrame(10));
 
-                while (true)
-                {
-                    var mark = reader.position;
-                    if (!reader.TryReadEntry(out var entry)) break;
-
-                    marks.Add(mark);
-                    kinds.Add(entry.kind);
-                    numbers.Add(entry.frameNumber);
-                }
-
-                Assert.Greater(marks.Count, 0);
-
-                for (int i = marks.Count - 1; i >= 0; i--)
-                {
-                    Assert.IsTrue(reader.TrySeekTo(marks[i]), $"could not go back to entry {i}");
-                    Assert.IsTrue(reader.TryReadEntry(out var entry), $"nothing at entry {i}");
-                    Assert.AreEqual(kinds[i], entry.kind, $"entry {i} came back as a different kind");
-                    Assert.AreEqual(numbers[i], entry.frameNumber, $"entry {i} came back on a different frame");
-                }
+                var frames = BoundariesOf(reader);
+                Assert.AreEqual(80, frames.Count, "frames 10 to 89");
+                Assert.AreEqual(10, frames[0]);
+                CollectionAssert.IsOrdered(frames);
             }
         }
 
         [Test]
-        public void ACompressedTakeThatWasNeverClosed_ReadsUpToTheLastWholeChunk()
+        public void ATakeThatWasNeverClosed_StillReadsFromTheTop()
         {
-            // What a crash leaves behind. The chunk in progress is gone -- that is the cost of
-            // compressing -- but everything before it has to still be there.
-            var bytes = WriteTake(90, chunked: true, close: false);
+            // An abandoned writer still puts its open chunk on disk; what it does not write is the
+            // tail. A crash would lose that last chunk too -- but everything before it is there.
+            var bytes = WriteTake(90, close: false);
 
             using (var reader = new FrameRecordReader(new MemoryStream(bytes)))
             {
                 Assert.IsFalse(reader.hasIndex, "an unclosed file has no tail");
 
-                var frames = new List<long>();
-                while (reader.TryReadEntry(out var entry))
-                {
-                    if (entry.kind == FrameEntryKind.FrameBoundary) frames.Add(entry.frameNumber);
-                }
-
-                Assert.Greater(frames.Count, 0, "the whole chunks before the cut should still read");
+                var frames = BoundariesOf(reader);
+                Assert.AreEqual(90, frames.Count);
                 CollectionAssert.IsOrdered(frames);
                 Assert.AreEqual(0, frames[0], "the take should still start where it started");
             }
@@ -240,18 +180,12 @@ namespace Lilium.RemoteControl.Tests
         {
             // The reason the two are tied together: a seek lands on a keyframe, and that costs one
             // chunk to expand only if the chunk starts there.
-            var bytes = WriteTake(90, chunked: true);
-
-            using (var reader = new FrameRecordReader(new MemoryStream(bytes)))
+            using (var reader = new FrameRecordReader(new MemoryStream(WriteTake(90))))
             {
                 foreach (var keyframe in reader.keyframes)
                 {
-                    Assert.IsTrue(reader.TrySeekFrame(keyframe), $"could not seek to keyframe {keyframe}");
-
-                    // Offset zero within its chunk is what "the chunk starts here" looks like from
-                    // outside: the low half of the bookmark is the position inside the chunk.
-                    Assert.AreEqual(0, (int)(reader.position & 0xFFFFFFFF),
-                                    $"keyframe {keyframe} is not at the start of a chunk");
+                    var index = reader.IndexOfFrame(keyframe);
+                    Assert.AreEqual(0, reader.CursorOfFrameAt(index), $"keyframe {keyframe} is not at the start of a chunk");
                 }
             }
         }
@@ -267,7 +201,7 @@ namespace Lilium.RemoteControl.Tests
 
             using (var stream = new MemoryStream())
             {
-                using (var writer = new FrameRecordWriter(stream, Header(), leaveOpen: true, chunked: true))
+                using (var writer = new FrameRecordWriter(stream, Header(), leaveOpen: true))
                 {
                     for (long f = 0; f < 40; f++)
                     {
@@ -290,13 +224,7 @@ namespace Lilium.RemoteControl.Tests
 
             using (var reader = new FrameRecordReader(new MemoryStream(bytes)))
             {
-                var frames = 0;
-                while (reader.TryReadEntry(out var entry))
-                {
-                    if (entry.kind == FrameEntryKind.FrameBoundary) frames++;
-                }
-
-                Assert.AreEqual(40, frames);
+                Assert.AreEqual(40, BoundariesOf(reader).Count);
             }
         }
     }

@@ -41,9 +41,25 @@ namespace Lilium.RemoteControl
         // --- 公開プロパティ ---
 
         /// <summary>
-        /// 登録されている全LiveObjectインスタンス
+        /// Every registered live object.
+        ///
+        /// A view with a struct enumerator, so a <c>foreach</c> over it allocates nothing -- the
+        /// frame walks go through this every frame. It still passes as an
+        /// <see cref="IReadOnlyCollection{T}"/>, boxed, where a caller wants one.
         /// </summary>
-        public static IReadOnlyCollection<LiveObjectHandle> instances => _instances;
+        public static InstanceView instances => default;
+
+        /// <summary>The registered objects, enumerable without allocating. See <see cref="instances"/>.</summary>
+        public readonly struct InstanceView : IReadOnlyCollection<LiveObjectHandle>
+        {
+            public int Count => _instances.Count;
+
+            public HashSet<LiveObjectHandle>.Enumerator GetEnumerator() => _instances.GetEnumerator();
+
+            IEnumerator<LiveObjectHandle> IEnumerable<LiveObjectHandle>.GetEnumerator() => _instances.GetEnumerator();
+
+            System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => _instances.GetEnumerator();
+        }
 
         /// <summary>
         /// キー付き/動的配列の要素が再構築された回数 (単調増加)。解決結果をキャッシュする側が、

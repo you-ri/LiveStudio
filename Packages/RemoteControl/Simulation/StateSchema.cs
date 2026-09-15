@@ -211,48 +211,4 @@ namespace Lilium.RemoteControl.Frames
 
         public override string ToString() => ToText();
     }
-
-    /// <summary>
-    /// What each state block holds, by the name a recording calls the block.
-    ///
-    /// Offered by the generator's module initializer for a type declared in code, and by the
-    /// declaration reader for one declared by an asset. A type nobody described has no entry, which
-    /// means "read it the way it was read before" -- a producer that hand-registers a struct keeps
-    /// working and gains nothing, exactly as it did when the width was the only check.
-    /// </summary>
-    public static class StateSchemaRegistry
-    {
-        private static readonly Dictionary<string, StateSchema> _byTypeName =
-            new Dictionary<string, StateSchema>(StringComparer.Ordinal);
-
-        /// <summary>Describes a type's block. Re-declaring replaces, for a declaration that moved.</summary>
-        public static void Declare(string typeName, StateSchema schema)
-        {
-            if (string.IsNullOrEmpty(typeName) || schema == null) return;
-
-            _byTypeName[typeName] = schema;
-        }
-
-        /// <summary>The description this build has for a type, or null when none was offered.</summary>
-        public static StateSchema Find(string typeName)
-            => string.IsNullOrEmpty(typeName) || !_byTypeName.TryGetValue(typeName, out var schema)
-                ? null
-                : schema;
-
-        /// <summary>
-        /// Takes a type's description away, for a declaration that stopped declaring.
-        ///
-        /// ⚠ There is deliberately no "drop everything". The generated descriptions are offered
-        /// once, by a module initializer at load, and nothing offers them again -- so emptying this
-        /// table takes every type in the build off the lane's description for the rest of the
-        /// process, with the symptom appearing wherever the next recording is read rather than
-        /// where it was emptied. A test that declares a description takes back that one.
-        /// </summary>
-        public static void Remove(string typeName)
-        {
-            if (string.IsNullOrEmpty(typeName)) return;
-
-            _byTypeName.Remove(typeName);
-        }
-    }
 }

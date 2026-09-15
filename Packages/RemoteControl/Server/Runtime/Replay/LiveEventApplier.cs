@@ -53,12 +53,11 @@ namespace Lilium.RemoteControl.Replay
             string message;
 
             // A string value is written straight in too. It is a value like any other; the only
-            // difference is that its bytes say their own length rather than having a fixed one.
+            // difference is that its width is whatever the record says rather than fixed by a type.
             if (evt.payloadIsString)
             {
                 if (LiveObjectHandler.ApplyRecordedValue(
-                        _container, _resolver, evt.target, evt.text, out status, out message,
-                        evt.reemitted))
+                        _container, _resolver, evt.target, evt.text, out status, out message))
                 {
                     return true;
                 }
@@ -81,8 +80,7 @@ namespace Lilium.RemoteControl.Replay
                 }
 
                 if (LiveObjectHandler.ApplyRecordedValue(
-                        _container, _resolver, evt.target, value, out status, out message,
-                        evt.reemitted))
+                        _container, _resolver, evt.target, value, out status, out message))
                 {
                     return true;
                 }

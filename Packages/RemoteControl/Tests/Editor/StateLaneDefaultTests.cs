@@ -59,7 +59,7 @@ namespace Lilium.RemoteControl.Tests
     {
         private static StateBridge _Bridge()
         {
-            var bridge = StateBridgeRegistry.Find(typeof(StateLaneDefaultProbe));
+            var bridge = StateTypes.FindBridge(typeof(StateLaneDefaultProbe));
 
             Assert.IsNotNull(bridge, "the probe has no state block at all");
             return bridge;

@@ -36,7 +36,7 @@ namespace Lilium.RemoteControl
                 // whether it is carried rather than what it declared (see the lane note below).
                 ["properties"] = new JArray(type.propertyTypes.Select(p =>
                 {
-                    var pj = ToJObject(p, StateBridgeRegistry.Find(type.type));
+                    var pj = ToJObject(p, StateTypes.FindBridge(type.type));
                     // [LiveKey] のプロパティに印を付け、RemoteApp が配列要素を index でなく
                     // このプロパティ値で安定参照 ("arr[Joy].weight") できるようにする。
                     if (type.keyProperty != null && ReferenceEquals(p, type.keyProperty)) pj["isKey"] = true;
@@ -145,7 +145,7 @@ namespace Lilium.RemoteControl
             if (propertyType == null) return false;
             if (!LiveObjectWalk.HoldsNestedLiveObject(propertyType)) return false;
 
-            return StateBridgeRegistry.Find(propertyType.valueType) != null;
+            return StateTypes.FindBridge(propertyType.valueType) != null;
         }
 
         internal static string ToJson(LivePropertyType propertyType)

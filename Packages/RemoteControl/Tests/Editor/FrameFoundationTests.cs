@@ -92,19 +92,19 @@ namespace Lilium.RemoteControl.Tests
 
     public class InputSequencerTests
     {
-        private static PendingEvent _Input(int recordCount = 1) => new PendingEvent
-        {
-            records = new EventRecord[recordCount],
-            recordCount = recordCount,
-        };
+        private static long _Submit(EventSequencer sequencer, int recordCount = 1)
+            => sequencer.Submit(new EventRecord[recordCount], ReadOnlySpan<byte>.Empty, null, null);
+
+        private static long _FirstSequenceOf(EventBatch batch, int index)
+            => batch.RecordAt(batch[index].firstRecord).sequence;
 
         [Test]
         public void Submit_StampsInAcceptanceOrder()
         {
             var sequencer = new EventSequencer();
 
-            var first = sequencer.Submit(_Input());
-            var second = sequencer.Submit(_Input());
+            var first = _Submit(sequencer);
+            var second = _Submit(sequencer);
 
             Assert.AreEqual(first + 1, second);
         }
@@ -116,30 +116,53 @@ namespace Lilium.RemoteControl.Tests
             // or none of it, so a bundled request cannot be split across two frames.
             var sequencer = new EventSequencer();
 
-            var first = sequencer.Submit(_Input(3));
-            var next = sequencer.Submit(_Input());
+            var first = _Submit(sequencer, 3);
+            var next = _Submit(sequencer);
 
             Assert.AreEqual(first + 3, next, "the group must reserve one number per record");
 
             var drained = sequencer.Drain();
             Assert.AreEqual(2, drained.Count, "a group stays a single queue entry");
-            Assert.AreEqual(first + 0, drained[0].records[0].sequence);
-            Assert.AreEqual(first + 1, drained[0].records[1].sequence);
-            Assert.AreEqual(first + 2, drained[0].records[2].sequence);
+
+            var group = drained[0];
+            for (int k = 0; k < 3; k++)
+            {
+                Assert.AreEqual(first + k, drained.RecordAt(group.firstRecord + k).sequence);
+            }
+        }
+
+        [Test]
+        public void Submit_CarriesEachRecordsValueIntoTheBatch()
+        {
+            // A record's payload position is relative to what was handed in with it, and has to be
+            // moved to where the bytes land in the batch -- after whatever arrived before it.
+            var sequencer = new EventSequencer();
+
+            var one = new EventRecord[1];
+            one[0].payloadLength = 2;
+            sequencer.Submit(one, new byte[] { 1, 2 }, null, null);
+
+            var two = new EventRecord[1];
+            two[0].payloadLength = 3;
+            sequencer.Submit(two, new byte[] { 3, 4, 5 }, null, null);
+
+            var drained = sequencer.Drain();
+            CollectionAssert.AreEqual(new byte[] { 1, 2 }, drained.PayloadOf(in drained.RecordAt(0)).ToArray());
+            CollectionAssert.AreEqual(new byte[] { 3, 4, 5 }, drained.PayloadOf(in drained.RecordAt(1)).ToArray());
         }
 
         [Test]
         public void Drain_ReturnsEverythingInOrderThenComesBackEmpty()
         {
             var sequencer = new EventSequencer();
-            for (int i = 0; i < 5; i++) sequencer.Submit(_Input());
+            for (int i = 0; i < 5; i++) _Submit(sequencer);
 
             var drained = sequencer.Drain();
 
             Assert.AreEqual(5, drained.Count);
             for (int i = 1; i < drained.Count; i++)
             {
-                Assert.Less(drained[i - 1].firstSequence, drained[i].firstSequence);
+                Assert.Less(_FirstSequenceOf(drained, i - 1), _FirstSequenceOf(drained, i));
             }
 
             Assert.AreEqual(0, sequencer.pendingCount);
@@ -148,18 +171,18 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void Drain_ReusesItsListWithoutLosingWhatArrivedSince()
+        public void Drain_ReusesItsBatchWithoutLosingWhatArrivedSince()
         {
             var sequencer = new EventSequencer();
-            sequencer.Submit(_Input());
+            _Submit(sequencer);
 
             var first = sequencer.Drain();
             first.Clear();
 
-            sequencer.Submit(_Input());
+            _Submit(sequencer);
             var second = sequencer.Drain();
 
-            Assert.AreEqual(1, second.Count, "an evt submitted between drains must not be dropped");
+            Assert.AreEqual(1, second.Count, "an event submitted between drains must not be dropped");
         }
     }
 
@@ -172,7 +195,7 @@ namespace Lilium.RemoteControl.Tests
             var frame = buffer.BeginFrame(frameNumber, kRate60);
             for (int i = 0; i < eventCount; i++)
             {
-                frame.Add(new EventRecord(i, EventKind.Set, 0, 0, EventFlags.None));
+                frame.Add(new EventRecord(i, EventKind.Set, 0, 0, EventFlags.None), ReadOnlySpan<byte>.Empty);
             }
             buffer.Commit(frameNumber);
         }
@@ -355,7 +378,7 @@ namespace Lilium.RemoteControl.Tests
             var task = FrameGate._Enqueue<bool>(EventKind.Set, "test", "/live/boom", null,
                 () => throw new InvalidOperationException("boom"));
 
-            LogAssert.Expect(LogType.Error, new Regex("Frame evt #.*failed"));
+            LogAssert.Expect(LogType.Error, new Regex("Frame event #.*failed"));
             FrameGate.Pump();
 
             Assert.IsTrue(task.IsFaulted);
@@ -381,19 +404,19 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void Enqueue_OverlongPayload_IsTruncatedAndCounted()
+        public void Enqueue_LongRequestText_IsCarriedWhole()
         {
-            var before = FrameGate.truncatedPayloadCount;
+            // The value sits in the frame's arena rather than a fixed slot, so there is no length at
+            // which it stops being carried faithfully.
+            var text = new string('x', 4000);
 
-            FrameGate._Enqueue(EventKind.Set, "test", "/live/long", new string('x', 4000),
-                () => true);
+            FrameGate._Enqueue(EventKind.Set, "test", "/live/long", text, () => true);
             FrameGate.Pump();
-
-            Assert.AreEqual(before + 1, FrameGate.truncatedPayloadCount);
 
             using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
-            Assert.IsTrue(frame[0].payloadTruncated);
+            Assert.AreEqual(text.Length, frame[0].payloadLength);
+            Assert.AreEqual(text, EventPayload.ReadString(frame.PayloadAt(0)));
         }
 
         [Test]
@@ -451,7 +474,7 @@ namespace Lilium.RemoteControl.Tests
             var task = FrameGate._Enqueue<bool>(operations, "batch",
                 () => throw new InvalidOperationException("boom"));
 
-            LogAssert.Expect(LogType.Error, new Regex("Frame evt #.*failed"));
+            LogAssert.Expect(LogType.Error, new Regex("Frame event #.*failed"));
             FrameGate.Pump();
 
             Assert.IsTrue(task.IsFaulted);
@@ -489,26 +512,14 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void Flags_ReadBackThroughTheirProperties()
         {
-            var record = new EventRecord(1, EventKind.Call, 0, 1,
-                EventFlags.Faulted | EventFlags.PayloadTruncated);
+            var record = new EventRecord(1, EventKind.Call, 0, 1, EventFlags.Faulted);
 
             Assert.IsTrue(record.faulted);
-            Assert.IsTrue(record.payloadTruncated);
 
             var clean = new EventRecord(2, EventKind.Set, 0, 1, EventFlags.None);
 
             Assert.IsFalse(clean.faulted);
-            Assert.IsFalse(clean.payloadTruncated);
-        }
-
-        [Test]
-        public void Payload_TooLongForTheRecord_IsTruncatedRatherThanThrowing()
-        {
-            var payload = default(FixedString512Bytes);
-            var error = payload.CopyFromTruncated(new string('x', 4000));
-
-            Assert.AreEqual(CopyError.Truncation, error);
-            Assert.Greater(payload.Length, 0);
+            Assert.IsFalse(clean.hasPayload, "a record says nothing about a value until one is stamped");
         }
     }
 
@@ -723,86 +734,6 @@ namespace Lilium.RemoteControl.Tests
             // The frame still commits, or every caller waiting on it would be stranded.
             using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
-        }
-    }
-
-    public class RepeatedWriteDiagnosticTests
-    {
-        [SetUp]
-        public void ClearGate()
-        {
-            FrameGate.ResetState("[test] cleared");
-            FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
-        }
-
-        /// <summary>
-        /// Puts the live clock back. The gate is process-wide, so a counter clock left behind
-        /// here counts pumps for whoever runs next -- and for the editor session after the run,
-        /// where it makes the timecode advance at whatever rate the editor happens to tick at.
-        /// </summary>
-        [TearDown]
-        public void ReleaseClearGate()
-        {
-            FrameGate.ResetState("[test] cleared");
-            FrameGate.RestoreDefaultClock();
-        }
-
-        [Test]
-        public void RepeatedWritesInOneFrame_AreCountedButNothingIsDropped()
-        {
-            for (int i = 0; i < 3; i++)
-            {
-                var value = i.ToString();
-                FrameGate._Enqueue(EventKind.Set, "test", "/live/object/cam/fov", value,
-                    () => true);
-            }
-
-            FrameGate.Pump();
-
-            // The record stays exact: folding these away would make a replay fire one callback
-            // where the live run fired three.
-            using var frame = new EventFrame();
-            Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
-            Assert.AreEqual(3, frame.eventCount);
-
-            Assert.AreEqual(2, FrameGate.repeatedWriteCount, "first write is not a repeat");
-            Assert.AreEqual("/live/object/cam/fov", FrameGate.lastRepeatedTarget);
-        }
-
-        [Test]
-        public void WritesToDifferentTargets_AreNotCountedAsRepeats()
-        {
-            FrameGate._Enqueue(EventKind.Set, "test", "/live/a", "1", () => true);
-            FrameGate._Enqueue(EventKind.Set, "test", "/live/b", "2", () => true);
-
-            FrameGate.Pump();
-
-            Assert.AreEqual(0, FrameGate.repeatedWriteCount);
-        }
-
-        [Test]
-        public void TheSameTargetInSeparateFrames_IsNotARepeat()
-        {
-            FrameGate._Enqueue(EventKind.Set, "test", "/live/a", "1", () => true);
-            FrameGate.Pump();
-
-            FrameGate._Enqueue(EventKind.Set, "test", "/live/a", "2", () => true);
-            FrameGate.Pump();
-
-            Assert.AreEqual(0, FrameGate.repeatedWriteCount,
-                "one write per frame is the normal case, not a signal");
-        }
-
-        [Test]
-        public void FunctionCalls_AreNotCountedAsRepeatedWrites()
-        {
-            FrameGate._Enqueue(EventKind.Call, "test", "/live/camera/reset", "{}", () => true);
-            FrameGate._Enqueue(EventKind.Call, "test", "/live/camera/reset", "{}", () => true);
-
-            FrameGate.Pump();
-
-            Assert.AreEqual(0, FrameGate.repeatedWriteCount,
-                "a call means something every time it happens");
         }
     }
 

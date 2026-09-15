@@ -89,7 +89,7 @@ namespace Lilium.RemoteControl.Frames
             _walkTime = time;
             _walkCount = 0;
 
-            LiveObjectWalk.Walk(_CaptureOne);
+            LiveObjectWalk.Walk(_captureOne);
 
             _walkState = null;
             _ReportUnaddressable();
@@ -104,6 +104,11 @@ namespace Lilium.RemoteControl.Frames
         private static long _walkTime;
         private static int _walkCount;
 
+        // The visitors as delegates, made once. Passing the method group instead makes a new
+        // delegate on every call -- once per frame for the length of a take.
+        private static readonly LiveObjectVisitor _captureOne = _CaptureOne;
+        private static readonly LiveObjectVisitor _applyOne = _ApplyOne;
+
         /// <summary>
         /// Writes one object's state into the frame.
         ///
@@ -114,7 +119,7 @@ namespace Lilium.RemoteControl.Frames
         private static void _CaptureOne(object target, string address, int depth)
         {
             var type = target.GetType();
-            var bridge = StateBridgeRegistry.Find(type);
+            var bridge = StateTypes.FindBridge(type);
 
             if (bridge == null)
             {
@@ -153,7 +158,7 @@ namespace Lilium.RemoteControl.Frames
             _walkState = state;
             _walkCount = 0;
 
-            LiveObjectWalk.Walk(_ApplyOne);
+            LiveObjectWalk.Walk(_applyOne);
 
             _walkState = null;
             _applySymbols = null;
@@ -163,7 +168,7 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>Writes one object's recorded state back onto it.</summary>
         private static void _ApplyOne(object target, string address, int depth)
         {
-            var bridge = StateBridgeRegistry.Find(target.GetType());
+            var bridge = StateTypes.FindBridge(target.GetType());
             if (bridge == null) return;
 
             // The frame's table, not this run's: a member carried as an id has to be read back
@@ -190,7 +195,7 @@ namespace Lilium.RemoteControl.Frames
         {
             if (state == null) return;
 
-            var bridges = StateBridgeRegistry.all;
+            var bridges = StateTypes.bridges;
             for (int i = 0; i < bridges.Count; i++) bridges[i].EnsureBlock(state);
         }
 

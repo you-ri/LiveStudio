@@ -8,19 +8,21 @@ namespace Lilium.RemoteControl.Frames.Recording
     ///
     /// The two lanes are mixed into one time-ordered stream rather than written as separate
     /// sections. Sections would lay the state out neatly but could not be appended to in the
-    /// middle, so nothing could be written while recording; chunking would fix that at the price of
-    /// holding a chunk in memory and losing it on a crash. Mixed, every entry is written the moment
-    /// it happens and the order in the file is the order in time.
+    /// middle, so nothing could be written while recording. Mixed, the order in the file is the
+    /// order in time, and a chunk is simply the entries from one keyframe to the next.
     /// </summary>
     public enum FrameEntryKind : byte
     {
-        /// <summary>Start of a frame. Carries the tick, so replay can reconstruct the cadence.</summary>
+        /// <summary>
+        /// Start of a frame: its number and the rate it was counted at. Every entry after it
+        /// belongs to that frame, up to the next boundary.
+        /// </summary>
         FrameBoundary = 0,
 
         /// <summary>
-        /// A string joining the mapping table. Ids are assigned in order, so an entry says only the
-        /// string; the id is its position. Appended as the table grows rather than written once, so
-        /// a file that was cut short still resolves everything up to the cut.
+        /// A string joining the mapping table, with the id it was given. Appended as the table grows
+        /// rather than written once, so a file that was cut short still resolves everything up to
+        /// the cut.
         /// </summary>
         Symbol = 1,
 
@@ -44,6 +46,14 @@ namespace Lilium.RemoteControl.Frames.Recording
     /// <summary>
     /// Fixed marks in a recording. Kept together so the writer and the reader cannot disagree about
     /// them by drifting apart.
+    ///
+    /// <code>
+    /// [header]  "LVDT" | version | rate | start ticks | engine | build      (strings: int32 length + UTF-8)
+    /// [chunks]  compressed length | expanded length | raw deflate body     (one per keyframe interval)
+    ///             body expands to entries: kind (1) | payload length (4) | payload
+    /// [tail]    frame index | chunk offsets | keyframes | mapping table
+    /// [footer]  three tail offsets | "LVDE"
+    /// </code>
     /// </summary>
     public static class FrameRecordFormat
     {
@@ -61,18 +71,19 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// newer offsets produces values that look plausible, which is worse than a file that will
         /// not open.
         ///
-        /// Shared with the Unreal side, which writes the same layout: whichever engine changes the
-        /// layout raises it in both, or the same number comes to mean two layouts.
+        /// 2 (2026-09-14): entries no longer repeat their frame number -- the boundary says it once
+        /// -- every string is length-prefixed the same way, and the stream is always compressed.
         ///
-        /// Restarted at 1 on 2026-09-11, before live data first shipped. The generations before it
-        /// were development-era, so a take carrying one is refused rather than migrated. Those takes
-        /// carry numbers up to 8 in this field: clear them out before this one climbs that far.
-        ///
-        /// A version is for a layout a reader cannot walk. Retiring an enum value whose field keeps
-        /// its width and offset does not raise it -- the reader maps the retired value instead, see
-        /// FrameRecordPlayer.
+        /// ⚠ Shared with the Unreal side, which still writes 1. Whichever engine changes the layout
+        /// raises it in both, or the same number comes to mean two layouts.
         /// </summary>
-        public const int kVersion = 1;
+        public const int kVersion = 2;
+
+        /// <summary>Bytes an entry spends before its payload: its kind and its payload length.</summary>
+        public const int kEntryHeaderSize = 1 + 4;
+
+        /// <summary>Payload of a frame boundary: the frame number and the rate it was counted at.</summary>
+        public const int kBoundarySize = 8 + 4 + 4;
 
         /// <summary>
         /// Bytes a chunk spends before its compressed body: what it takes on disk, and what it
@@ -119,8 +130,10 @@ namespace Lilium.RemoteControl.Frames.Recording
     {
         public readonly FrameEntryKind kind;
 
-        /// <summary>Frame this entry belongs to. Carried per entry so a scan can place an entry
-        /// even when it started in the middle of a file.</summary>
+        /// <summary>
+        /// Frame this entry belongs to: the number the last boundary read carried, or -1 before the
+        /// first one.
+        /// </summary>
         public readonly long frameNumber;
 
         public readonly ReadOnlySpan<byte> payload;

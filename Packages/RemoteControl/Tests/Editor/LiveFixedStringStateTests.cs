@@ -129,10 +129,10 @@ namespace Lilium.RemoteControl.Tests
     public class LiveFixedStringStateTests
     {
         [SetUp]
-        public void ResetCounts() => LiveFixedStringStats.Reset();
+        public void ResetCounts() => LiveTextStats.Reset();
 
         [TearDown]
-        public void ReleaseCounts() => LiveFixedStringStats.Reset();
+        public void ReleaseCounts() => LiveTextStats.Reset();
 
         [Test]
         public void TheBlock_HoldsTextAsAFixedWidth()
@@ -167,7 +167,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var captured = new FixedTextProbe { title = "front camera", weight = 0.5f };
             var restored = new FixedTextProbe();
-            var bridge = StateBridgeRegistry.Find(typeof(FixedTextProbe));
+            var bridge = StateTypes.FindBridge(typeof(FixedTextProbe));
 
             using var state = new StateBlockSet();
             bridge.Capture(captured, ownerId: 1, state, default, time: 0, FrameGate.symbols);
@@ -187,14 +187,14 @@ namespace Lilium.RemoteControl.Tests
             var fits = new string('あ', 10);
             var probe = new FixedTextProbe { title = fits };
             var restored = new FixedTextProbe();
-            var bridge = StateBridgeRegistry.Find(typeof(FixedTextProbe));
+            var bridge = StateTypes.FindBridge(typeof(FixedTextProbe));
 
             using var state = new StateBlockSet();
             bridge.Capture(probe, ownerId: 1, state, default, time: 0, FrameGate.symbols);
             bridge.Apply(restored, ownerId: 1, state, FrameGate.symbols);
 
             Assert.AreEqual(fits, restored.title);
-            Assert.AreEqual(0, LiveFixedStringStats.unrepresentableCount);
+            Assert.AreEqual(0, LiveTextStats.unrepresentableCount);
         }
 
         [Test]
@@ -202,7 +202,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var probe = new FixedTextProbe { title = new string('あ', 11) };
             var restored = new FixedTextProbe { title = "untouched" };
-            var bridge = StateBridgeRegistry.Find(typeof(FixedTextProbe));
+            var bridge = StateTypes.FindBridge(typeof(FixedTextProbe));
 
             using var state = new StateBlockSet();
             bridge.Capture(probe, ownerId: 1, state, default, time: 0, FrameGate.symbols);
@@ -211,13 +211,13 @@ namespace Lilium.RemoteControl.Tests
             // Not shortened and not blanked: a value nobody set would be written back on replay and
             // then agree with itself under comparison, which is worse than a value that is missing.
             Assert.AreEqual("untouched", restored.title);
-            Assert.AreEqual(1, LiveFixedStringStats.unrepresentableCount);
+            Assert.AreEqual(1, LiveTextStats.unrepresentableCount);
         }
 
         [Test]
         public void ANullStringIsNotAnEmptyOne()
         {
-            var bridge = StateBridgeRegistry.Find(typeof(FixedTextProbe));
+            var bridge = StateTypes.FindBridge(typeof(FixedTextProbe));
 
             using var state = new StateBlockSet();
             bridge.Capture(new FixedTextProbe { title = null }, ownerId: 1, state, default, time: 0, FrameGate.symbols);
@@ -239,7 +239,7 @@ namespace Lilium.RemoteControl.Tests
             // an asset reference answers that by loading.
             var captured = new FixedTextShadowProbe { selection = "avatar-a" };
             var restored = new FixedTextShadowProbe { selection = "avatar-a" };
-            var bridge = StateBridgeRegistry.Find(typeof(FixedTextShadowProbe));
+            var bridge = StateTypes.FindBridge(typeof(FixedTextShadowProbe));
 
             using var state = new StateBlockSet();
             bridge.Capture(captured, ownerId: 1, state, default, time: 0, FrameGate.symbols);
@@ -257,7 +257,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var captured = new FixedTextShadowProbe { selection = "avatar-b" };
             var restored = new FixedTextShadowProbe { selection = "avatar-a" };
-            var bridge = StateBridgeRegistry.Find(typeof(FixedTextShadowProbe));
+            var bridge = StateTypes.FindBridge(typeof(FixedTextShadowProbe));
 
             using var state = new StateBlockSet();
             bridge.Capture(captured, ownerId: 1, state, default, time: 0, FrameGate.symbols);
@@ -278,7 +278,7 @@ namespace Lilium.RemoteControl.Tests
             // every frame whether or not it moved.
             var captured = new FixedTextShadowProbe { weight = 2f };
             var restored = new FixedTextShadowProbe { weight = 2f };
-            var bridge = StateBridgeRegistry.Find(typeof(FixedTextShadowProbe));
+            var bridge = StateTypes.FindBridge(typeof(FixedTextShadowProbe));
 
             using var state = new StateBlockSet();
             bridge.Capture(captured, ownerId: 1, state, default, time: 0, FrameGate.symbols);
@@ -296,7 +296,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var captured = new FixedTextShadowProbe { weight = 5f };
             var restored = new FixedTextShadowProbe { weight = 2f };
-            var bridge = StateBridgeRegistry.Find(typeof(FixedTextShadowProbe));
+            var bridge = StateTypes.FindBridge(typeof(FixedTextShadowProbe));
 
             using var state = new StateBlockSet();
             bridge.Capture(captured, ownerId: 1, state, default, time: 0, FrameGate.symbols);
@@ -316,7 +316,7 @@ namespace Lilium.RemoteControl.Tests
             // only add work. FixedTextProbe._weight is the field case.
             var captured = new FixedTextProbe { weight = 3f };
             var restored = new FixedTextProbe();
-            var bridge = StateBridgeRegistry.Find(typeof(FixedTextProbe));
+            var bridge = StateTypes.FindBridge(typeof(FixedTextProbe));
 
             using var state = new StateBlockSet();
             bridge.Capture(captured, ownerId: 1, state, default, time: 0, FrameGate.symbols);
@@ -330,7 +330,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var captured = new ReactiveStateProbe { mode = 2, asset = "front" };
             var restored = new ReactiveStateProbe();
-            var bridge = StateBridgeRegistry.Find(typeof(ReactiveStateProbe));
+            var bridge = StateTypes.FindBridge(typeof(ReactiveStateProbe));
 
             using var state = new StateBlockSet();
             bridge.Capture(captured, ownerId: 1, state, default, time: 0, FrameGate.symbols);
@@ -352,7 +352,7 @@ namespace Lilium.RemoteControl.Tests
             // every frame, and reacting every frame would reload the asset sixty times a second.
             var captured = new ReactiveStateProbe { mode = 2, asset = "front" };
             var restored = new ReactiveStateProbe { mode = 2, asset = "front" };
-            var bridge = StateBridgeRegistry.Find(typeof(ReactiveStateProbe));
+            var bridge = StateTypes.FindBridge(typeof(ReactiveStateProbe));
 
             using var state = new StateBlockSet();
             bridge.Capture(captured, ownerId: 1, state, default, time: 0, FrameGate.symbols);
@@ -372,7 +372,7 @@ namespace Lilium.RemoteControl.Tests
             // would reload on every mouse move.
             var captured = new ReactiveStateProbe { mode = 7, asset = "back" };
             var restored = new ReactiveStateProbe();
-            var bridge = StateBridgeRegistry.Find(typeof(ReactiveStateProbe));
+            var bridge = StateTypes.FindBridge(typeof(ReactiveStateProbe));
 
             using var state = new StateBlockSet();
             bridge.Capture(captured, ownerId: 1, state, default, time: 0, FrameGate.symbols);
@@ -390,7 +390,7 @@ namespace Lilium.RemoteControl.Tests
         {
             var captured = new ReactiveStateProbe { quiet = 4f };
             var restored = new ReactiveStateProbe();
-            var bridge = StateBridgeRegistry.Find(typeof(ReactiveStateProbe));
+            var bridge = StateTypes.FindBridge(typeof(ReactiveStateProbe));
 
             using var state = new StateBlockSet();
             bridge.Capture(captured, ownerId: 1, state, default, time: 0, FrameGate.symbols);
@@ -411,14 +411,13 @@ namespace Lilium.RemoteControl.Tests
         public void TheViewerReadsTextAsText()
         {
             var probe = new FixedTextProbe { title = "front camera" };
-            var bridge = StateBridgeRegistry.Find(typeof(FixedTextProbe));
+            var bridge = StateTypes.FindBridge(typeof(FixedTextProbe));
 
             using var state = new StateBlockSet();
             bridge.Capture(probe, ownerId: 1, state, default, time: 0, FrameGate.symbols);
 
             var block = state.Find<FixedTextProbe.LiveStateBlock>();
-            var bytes = new byte[block.elementSize - block.metaSize];
-            block.CopyValueTo(0, bytes);
+            var bytes = block.ValueBytes(0).ToArray();
 
             var layout = Editor.LiveDataViewer.LiveDataValueLayout.For(
                 typeof(FixedTextProbe.LiveStateBlock));
@@ -438,14 +437,13 @@ namespace Lilium.RemoteControl.Tests
             // The two markers are worth seeing as themselves: an empty line would read as "it is
             // empty", which is a different thing from "it was too long to carry".
             var probe = new FixedTextProbe { title = new string('あ', 11) };
-            var bridge = StateBridgeRegistry.Find(typeof(FixedTextProbe));
+            var bridge = StateTypes.FindBridge(typeof(FixedTextProbe));
 
             using var state = new StateBlockSet();
             bridge.Capture(probe, ownerId: 1, state, default, time: 0, FrameGate.symbols);
 
             var block = state.Find<FixedTextProbe.LiveStateBlock>();
-            var bytes = new byte[block.elementSize - block.metaSize];
-            block.CopyValueTo(0, bytes);
+            var bytes = block.ValueBytes(0).ToArray();
 
             var layout = Editor.LiveDataViewer.LiveDataValueLayout.For(
                 typeof(FixedTextProbe.LiveStateBlock));
@@ -462,7 +460,7 @@ namespace Lilium.RemoteControl.Tests
             // Declaring the state lane and being carried by it are two different things, and only
             // the bridge knows which. LiveStateCarriage asks this to decide whether a write still
             // needs an event record.
-            var bridge = StateBridgeRegistry.Find(typeof(FixedTextProbe));
+            var bridge = StateTypes.FindBridge(typeof(FixedTextProbe));
 
             Assert.IsTrue(bridge.Carries("_title"));
             Assert.IsTrue(bridge.Carries("_weight"));

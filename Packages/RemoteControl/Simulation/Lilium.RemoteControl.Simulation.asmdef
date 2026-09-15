@@ -3,6 +3,7 @@
     "rootNamespace": "Lilium.RemoteControl.Frames",
     "references": [
         "Lilium.RemoteControl.Core",
+        "Unity.Burst",
         "Unity.Collections"
     ],
     "includePlatforms": [],

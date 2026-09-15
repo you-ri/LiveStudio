@@ -144,10 +144,10 @@ namespace Lilium.RemoteControl.Frames
 
             if (structure == null || symbols == null) return;
 
-            // The walk below reads ids in several places; taken once here rather than passed as a
-            // table so the reconcile keeps working in strings, which is what lets it match a
-            // recorded key against a live one without interning anything into the recording.
-            Func<int, string> resolve = symbols.Resolve;
+            // The reconcile works in strings -- resolved through the frame's table, never interned
+            // into it -- which is what lets it match a recorded key against a live one without
+            // adding anything to the recording.
+            var resolve = symbols;
 
             _present.Clear();
             _presentIds.Clear();
@@ -163,14 +163,14 @@ namespace Lilium.RemoteControl.Frames
                 // makes.
                 if (entry.isElement || entry.isCollection) continue;
 
-                var id = resolve(entry.id);
+                var id = resolve.Resolve(entry.id);
                 if (string.IsNullOrEmpty(id)) continue;
 
                 _presentIds.Add(id);
 
                 if (LiveObjectRegistry.TryFindById(id, out _)) continue;
 
-                _Create(id, resolve(entry.recipeId), resolve(entry.typeId));
+                _Create(id, resolve.Resolve(entry.recipeId), resolve.Resolve(entry.typeId));
             }
 
             _DestroyUnlisted();
@@ -217,7 +217,7 @@ namespace Lilium.RemoteControl.Frames
         /// operator deleted a row while recording" would not come back on a scrub.
         /// </para>
         /// </summary>
-        private static void _ReconcileElements(StructureBlock structure, Func<int, string> resolve)
+        private static void _ReconcileElements(StructureBlock structure, FrameSymbolTable resolve)
         {
             elementsCreated = 0;
             elementsRemoved = 0;
@@ -233,7 +233,7 @@ namespace Lilium.RemoteControl.Frames
                 var entry = structure[i];
                 if (!entry.isCollection) continue;
 
-                _ListFor(resolve(entry.parentId), resolve(entry.memberId));
+                _ListFor(resolve.Resolve(entry.parentId), resolve.Resolve(entry.memberId));
             }
 
             for (int i = 0; i < structure.count; i++)
@@ -241,21 +241,27 @@ namespace Lilium.RemoteControl.Frames
                 var entry = structure[i];
                 if (!entry.isElement) continue;
 
-                _ListFor(resolve(entry.parentId), resolve(entry.memberId)).Add(entry);
+                _ListFor(resolve.Resolve(entry.parentId), resolve.Resolve(entry.memberId)).Add(entry);
             }
 
             if (_wanted.Count == 0) return;
 
-            foreach (var pair in _wanted) pair.Value.Sort(_ByOrdinal);
+            foreach (var pair in _wanted) _SortByOrdinal(pair.Value);
 
             _walkResolve = resolve;
 
-            LiveObjectWalk.Walk(_NoteNothing, _ReconcileCollectionOf);
+            LiveObjectWalk.Walk(_noteNothing, _reconcileCollectionOf);
 
             _walkResolve = null;
         }
 
-        private static Func<int, string> _walkResolve;
+        private static FrameSymbolTable _walkResolve;
+
+        // The visitors as delegates, made once. Passing the method group instead makes a new
+        // delegate on every call -- once per frame for the length of a take.
+        private static readonly LiveObjectVisitor _noteNothing = _NoteNothing;
+        private static readonly LiveCollectionVisitor _captureCollection = _CaptureCollection;
+        private static readonly LiveCollectionVisitor _reconcileCollectionOf = _ReconcileCollectionOf;
 
         /// <summary>
         /// Brings one collection to the shape the inventory records, before the walk reads it.
@@ -277,8 +283,30 @@ namespace Lilium.RemoteControl.Frames
             return true;
         }
 
-        private static readonly Comparison<ObjectEntry> _ByOrdinal =
-            (a, b) => a.ordinal.CompareTo(b.ordinal);
+        /// <summary>
+        /// Puts a collection's entries in recorded order.
+        ///
+        /// Written out rather than handed to List.Sort, which allocates on every call on this
+        /// runtime -- whether given a delegate or a comparer object -- and this runs for every
+        /// recorded collection at every supplied frame. The lists are short (the elements of one
+        /// collection) and nearly always already in order, which is insertion sort's best case.
+        /// </summary>
+        private static void _SortByOrdinal(List<ObjectEntry> entries)
+        {
+            for (int i = 1; i < entries.Count; i++)
+            {
+                var entry = entries[i];
+                var j = i - 1;
+
+                while (j >= 0 && entries[j].ordinal > entry.ordinal)
+                {
+                    entries[j + 1] = entries[j];
+                    j--;
+                }
+
+                entries[j + 1] = entry;
+            }
+        }
 
         private static List<ObjectEntry> _ListFor(string owner, string member)
         {
@@ -309,7 +337,7 @@ namespace Lilium.RemoteControl.Frames
         /// keyless one has nothing to survive on, so its elements are whatever sits at that spot.
         /// </summary>
         private static void _ReconcileCollection(object owner, LiveClass ownerClass,
-            in LivePropertyType member, List<ObjectEntry> wanted, Func<int, string> resolve)
+            in LivePropertyType member, List<ObjectEntry> wanted, FrameSymbolTable resolve)
         {
             if (!(LivePropertyUtility.GetValueRaw(owner, in member) is IList list)) return;
 
@@ -351,7 +379,7 @@ namespace Lilium.RemoteControl.Frames
                     continue;
                 }
 
-                var element = _MakeElement(resolve(entry.typeId), in member);
+                var element = _MakeElement(resolve.Resolve(entry.typeId), in member);
                 if (element == null)
                 {
                     unresolvedCount++;
@@ -385,7 +413,7 @@ namespace Lilium.RemoteControl.Frames
             }
         }
 
-        private static int _IndexOfKey(List<ObjectEntry> wanted, string key, Func<int, string> resolve)
+        private static int _IndexOfKey(List<ObjectEntry> wanted, string key, FrameSymbolTable resolve)
         {
             for (int i = 0; i < wanted.Count; i++)
             {
@@ -405,11 +433,11 @@ namespace Lilium.RemoteControl.Frames
         /// that cannot read an id hands back an empty string, which would otherwise read as a key
         /// every keyless element shares.
         /// </summary>
-        private static string _KeyText(ObjectEntry entry, Func<int, string> resolve)
+        private static string _KeyText(ObjectEntry entry, FrameSymbolTable resolve)
         {
             if (entry.keyId == FrameSymbolTable.kNone) return null;
 
-            var key = resolve(entry.keyId);
+            var key = resolve.Resolve(entry.keyId);
             return string.IsNullOrEmpty(key) ? null : key;
         }
 
@@ -556,7 +584,7 @@ namespace Lilium.RemoteControl.Frames
             _walkStructure = structure;
             _walkSymbols = symbols;
 
-            LiveObjectWalk.Walk(_NoteNothing, _CaptureCollection);
+            LiveObjectWalk.Walk(_noteNothing, _captureCollection);
 
             _walkStructure = null;
             _walkSymbols = null;

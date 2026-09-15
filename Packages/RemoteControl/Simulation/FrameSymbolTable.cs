@@ -1,6 +1,7 @@
 // Copyright (c) You-Ri, 2026
 using System;
 using System.Collections.Concurrent;
+using System.Threading;
 
 namespace Lilium.RemoteControl.Frames
 {
@@ -15,25 +16,29 @@ namespace Lilium.RemoteControl.Frames
     ///
     /// Ids are handed out in order from zero and never reused within a run, so a table can be
     /// appended to while it is being read.
+    ///
+    /// <para>
+    /// Only appending takes a lock. Lookups in both directions are lock-free, because they are
+    /// the per-frame side: an id is resolved for every text member a replay writes back and every
+    /// element a reconcile matches, while a new string arrives a handful of times a take.
+    /// </para>
     /// </summary>
     public sealed class FrameSymbolTable
     {
         /// <summary>Id standing for no string at all. Never appears in the table.</summary>
         public const int kNone = -1;
 
-        // Lookup is lock-free for symbols already interned, which is the steady state: a path is
-        // interned once and then hit on every later write to it.
         private readonly ConcurrentDictionary<string, int> _ids = new ConcurrentDictionary<string, int>(StringComparer.Ordinal);
         private readonly object _appendLock = new object();
 
+        // Read without the lock. The array is replaced -- never shrunk -- under the lock before the
+        // count that needs the larger one is published, so a reader that reads the count first and
+        // the array second always holds an array at least that long.
         private string[] _symbols = new string[64];
         private int _count;
 
         /// <summary>Number of distinct strings interned so far.</summary>
-        public int count
-        {
-            get { lock (_appendLock) { return _count; } }
-        }
+        public int count => Volatile.Read(ref _count);
 
         /// <summary>
         /// Returns the id for <paramref name="value"/>, adding it if this is the first time it has
@@ -50,16 +55,10 @@ namespace Lilium.RemoteControl.Frames
                 // Another thread may have interned it between the miss above and this lock.
                 if (_ids.TryGetValue(value, out existing)) return existing;
 
-                if (_count == _symbols.Length)
-                {
-                    var grown = new string[_symbols.Length * 2];
-                    Array.Copy(_symbols, grown, _count);
-                    _symbols = grown;
-                }
-
                 var id = _count;
+                _EnsureCapacity(id + 1);
                 _symbols[id] = value;
-                _count = id + 1;
+                Volatile.Write(ref _count, id + 1);
 
                 // Published last: a reader that finds the id in the dictionary is then guaranteed
                 // to find the string behind it.
@@ -98,21 +97,13 @@ namespace Lilium.RemoteControl.Frames
 
             lock (_appendLock)
             {
-                if (id >= _symbols.Length)
-                {
-                    var size = _symbols.Length;
-                    while (size <= id) size *= 2;
-
-                    var grown = new string[size];
-                    Array.Copy(_symbols, grown, _count);
-                    _symbols = grown;
-                }
+                _EnsureCapacity(id + 1);
 
                 var previous = _symbols[id];
                 if (!string.IsNullOrEmpty(previous)) _ids.TryRemove(previous, out _);
 
                 _symbols[id] = value;
-                if (id >= _count) _count = id + 1;
+                if (id >= _count) Volatile.Write(ref _count, id + 1);
 
                 if (!string.IsNullOrEmpty(value)) _ids[value] = id;
             }
@@ -122,19 +113,17 @@ namespace Lilium.RemoteControl.Frames
         public bool TryResolve(int id, out string value)
         {
             value = null;
-            if (id == kNone) return false;
+            if (id < 0) return false;
 
-            lock (_appendLock)
-            {
-                if ((uint)id >= (uint)_count) return false;
+            // The count first, then the array: see the note on the fields.
+            if (id >= Volatile.Read(ref _count)) return false;
 
-                value = _symbols[id];
-                return true;
-            }
+            value = Volatile.Read(ref _symbols)[id];
+            return true;
         }
 
         /// <summary>Returns the string behind an id, or an empty string when it is not known.</summary>
-        public string Resolve(int id) => TryResolve(id, out var value) ? value : string.Empty;
+        public string Resolve(int id) => TryResolve(id, out var value) && value != null ? value : string.Empty;
 
         /// <summary>
         /// Copies the whole table, oldest id first, for writing into a recording header.
@@ -154,10 +143,22 @@ namespace Lilium.RemoteControl.Frames
         {
             lock (_appendLock)
             {
+                Volatile.Write(ref _count, 0);
                 _ids.Clear();
-                Array.Clear(_symbols, 0, _count);
-                _count = 0;
+                Array.Clear(_symbols, 0, _symbols.Length);
             }
+        }
+
+        private void _EnsureCapacity(int required)
+        {
+            if (required <= _symbols.Length) return;
+
+            var size = _symbols.Length;
+            while (size < required) size *= 2;
+
+            var grown = new string[size];
+            Array.Copy(_symbols, grown, _symbols.Length);
+            Volatile.Write(ref _symbols, grown);
         }
     }
 }

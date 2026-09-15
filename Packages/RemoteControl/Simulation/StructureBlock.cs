@@ -1,6 +1,5 @@
 // Copyright (c) You-Ri, 2026
 using System;
-using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 
 namespace Lilium.RemoteControl.Frames
@@ -8,7 +7,10 @@ namespace Lilium.RemoteControl.Frames
     /// <summary>One object in the inventory: what exists, of what type, under whom.</summary>
     public struct ObjectEntry
     {
-        /// <summary>Interned object id. See <see cref="FrameSymbolTable"/>.</summary>
+        /// <summary>
+        /// Interned object id. See <see cref="FrameSymbolTable"/>. First, because the inventory is
+        /// filed under it (<see cref="RecordList"/> keys on the leading int).
+        /// </summary>
         public int id;
 
         /// <summary>Interned type name.</summary>
@@ -80,22 +82,18 @@ namespace Lilium.RemoteControl.Frames
     /// Shape: what exists and how many, as opposed to what the values are.
     ///
     /// The inventory is a dense array rather than a map because **the order is part of the
-    /// recording**. A hash map would iterate in whatever order it felt like, and two machines fed
-    /// the same events would lay their state out differently. Lookup by id walks the array; the
-    /// counts involved (a few avatars, tens of lights) do not justify a side index yet.
+    /// recording**. Lookup by id goes through a side index (<see cref="RecordList"/>), but the
+    /// array is what is iterated and written out, so two machines fed the same events lay it out
+    /// the same way.
     ///
     /// Applying this is not assignment but a reconcile against reality: in the inventory and not in
     /// reality means create, in reality and not in the inventory means **destroy**, in both means do
     /// nothing. The last of those is why applying the same keyframe twice does not reload an avatar,
     /// and the second is why scrubbing back past a spawn makes it disappear again.
-    ///
-    /// Native storage, like the state blocks: the entries were always unmanaged, and holding them
-    /// where the address does not move keeps writing them out a plain pointer copy.
     /// </summary>
     public sealed unsafe class StructureBlock : IDisposable
     {
-        private NativeArray<ObjectEntry> _objects;
-        private int _count;
+        private RecordList _objects = new RecordList(sizeof(ObjectEntry));
         private long _epoch;
 
         /// <summary>
@@ -105,35 +103,20 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         public long epoch => _epoch;
 
-        /// <summary>Number of valid entries in <see cref="objects"/>.</summary>
-        public int count => _count;
+        /// <summary>Number of entries.</summary>
+        public int count => _objects.count;
 
-        /// <summary>Storage. Only the first <see cref="count"/> entries are valid.</summary>
-        public NativeArray<ObjectEntry> objects => _objects;
-
-        public ObjectEntry this[int index]
-        {
-            get
-            {
-                if ((uint)index >= (uint)_count) throw new ArgumentOutOfRangeException(nameof(index));
-
-                return _objects[index];
-            }
-        }
+        /// <summary>The entry at an index, read in place.</summary>
+        public ref readonly ObjectEntry this[int index] => ref UnsafeUtility.AsRef<ObjectEntry>(_objects.Get(index));
 
         /// <summary>Index of an object by id, or -1.</summary>
-        public int IndexOf(int id)
-        {
-            if (!_objects.IsCreated) return -1;
+        public int IndexOf(int id) => _objects.IndexOf(id);
 
-            var items = (ObjectEntry*)_objects.GetUnsafeReadOnlyPtr();
-            for (int i = 0; i < _count; i++)
-            {
-                if (items[i].id == id) return i;
-            }
-
-            return -1;
-        }
+        /// <summary>
+        /// The entries as they sit in memory -- seven ints each, in declaration order -- for a
+        /// recording to write out in one copy. Valid until the block is next written to.
+        /// </summary>
+        public ReadOnlySpan<byte> AsBytes() => _objects.AsBytes();
 
         public bool Contains(int id) => IndexOf(id) >= 0;
 
@@ -158,43 +141,26 @@ namespace Lilium.RemoteControl.Frames
         public bool AddOrUpdate(int id, int typeId, int parentId, int recipeId,
             int memberId, int keyId, int ordinal)
         {
-            var index = IndexOf(id);
-            if (index >= 0)
+            var existingIndex = _objects.IndexOf(id);
+            var index = existingIndex >= 0 ? existingIndex : _objects.GetOrAdd(id);
+
+            ref var entry = ref UnsafeUtility.AsRef<ObjectEntry>(_objects.Get(index));
+
+            if (existingIndex >= 0
+                && entry.typeId == typeId && entry.parentId == parentId
+                && entry.recipeId == recipeId && entry.memberId == memberId
+                && entry.keyId == keyId && entry.ordinal == ordinal)
             {
-                ref var existing = ref UnsafeUtility.ArrayElementAsRef<ObjectEntry>(
-                    _objects.GetUnsafePtr(), index);
-
-                if (existing.typeId == typeId && existing.parentId == parentId
-                    && existing.recipeId == recipeId && existing.memberId == memberId
-                    && existing.keyId == keyId && existing.ordinal == ordinal)
-                {
-                    return false;
-                }
-
-                existing.typeId = typeId;
-                existing.parentId = parentId;
-                existing.recipeId = recipeId;
-                existing.memberId = memberId;
-                existing.keyId = keyId;
-                existing.ordinal = ordinal;
-                _epoch++;
-                return true;
+                return false;
             }
 
-            _EnsureCapacity(_count + 1);
+            entry.typeId = typeId;
+            entry.parentId = parentId;
+            entry.recipeId = recipeId;
+            entry.memberId = memberId;
+            entry.keyId = keyId;
+            entry.ordinal = ordinal;
 
-            ref var created = ref UnsafeUtility.ArrayElementAsRef<ObjectEntry>(
-                _objects.GetUnsafePtr(), _count);
-
-            created.id = id;
-            created.typeId = typeId;
-            created.parentId = parentId;
-            created.recipeId = recipeId;
-            created.memberId = memberId;
-            created.keyId = keyId;
-            created.ordinal = ordinal;
-
-            _count++;
             _epoch++;
             return true;
         }
@@ -206,14 +172,8 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         public bool Remove(int id)
         {
-            var index = IndexOf(id);
-            if (index < 0) return false;
+            if (!_objects.Remove(id)) return false;
 
-            var items = (ObjectEntry*)_objects.GetUnsafePtr();
-            UnsafeUtility.MemMove(items + index, items + index + 1,
-                (long)(_count - index - 1) * sizeof(ObjectEntry));
-
-            _count--;
             _epoch++;
             return true;
         }
@@ -224,7 +184,7 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         public void Reset()
         {
-            _count = 0;
+            _objects.Clear();
             _epoch = 0;
         }
 
@@ -233,33 +193,10 @@ namespace Lilium.RemoteControl.Frames
         /// </summary>
         public void Dispose()
         {
-            if (_objects.IsCreated) _objects.Dispose();
-
-            _objects = default;
-            _count = 0;
+            _objects.Dispose();
             _epoch = 0;
         }
 
-        private void _EnsureCapacity(int required)
-        {
-            var capacity = _objects.IsCreated ? _objects.Length : 0;
-            if (capacity >= required) return;
-
-            var grown = Math.Max(required, capacity == 0 ? 8 : capacity * 2);
-            var replacement = new NativeArray<ObjectEntry>(grown, Allocator.Persistent,
-                NativeArrayOptions.ClearMemory);
-
-            if (_objects.IsCreated)
-            {
-                UnsafeUtility.MemCpy(replacement.GetUnsafePtr(), _objects.GetUnsafeReadOnlyPtr(),
-                    (long)_count * sizeof(ObjectEntry));
-
-                _objects.Dispose();
-            }
-
-            _objects = replacement;
-        }
-
-        public override string ToString() => $"structure epoch {_epoch} ({_count} objects)";
+        public override string ToString() => $"structure epoch {_epoch} ({count} objects)";
     }
 }

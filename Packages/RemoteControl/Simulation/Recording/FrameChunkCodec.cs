@@ -11,7 +11,7 @@ namespace Lilium.RemoteControl.Frames.Recording
     /// range it came from.
     ///
     /// That identity is the whole design. Everything above -- the entry walk, seeking, the viewer --
-    /// keeps reading exactly the bytes it always did, so the reorganisation done here stays
+    /// keeps reading exactly the bytes the writer appended, so the reorganisation done here stays
     /// invisible to all of it and a round-trip test is enough to hold the codec to its contract.
     ///
     /// What gets reorganised is the state lane. State payloads are dense arrays of the same shape
@@ -19,14 +19,18 @@ namespace Lilium.RemoteControl.Frames.Recording
     /// two thirds of the floats are bit-identical to the previous frame, half never change at all,
     /// and the sign and exponent byte holds still in 98% of frames. Laid out frame after frame those
     /// repeats sit ~1.4 KB apart, far enough that a match token costs nearly what it saves. Grouping
-    /// the same byte of the same element across the chunk's frames puts them side by side instead,
-    /// which measured 1.5x better than compressing the range as it stands (28% -> 19% of raw).
+    /// the same byte of the same element across the chunk's frames puts them side by side instead
+    /// (<see cref="ChunkTranspose"/>), which measured 1.5x better than compressing the range as it
+    /// stands (28% -> 19% of raw).
     ///
     /// Nothing here assumes the shape holds across the chunk. A block that appears, disappears, or
     /// changes its element count simply forms its own group, so a chunk spanning a structural change
     /// still round-trips -- it just compresses a little worse.
+    ///
+    /// Encoding runs on the recorder's chunk thread and decoding on whoever reads; one instance is
+    /// used by one thread at a time.
     /// </summary>
-    public sealed class FrameChunkCodec
+    public sealed unsafe class FrameChunkCodec
     {
         /// <summary>
         /// A run of state entries sharing a shape, and where its bytes sit in the blob.
@@ -43,8 +47,7 @@ namespace Lilium.RemoteControl.Frames.Recording
             public int blobOffset;
         }
 
-        /// <summary>Bytes an entry spends on its header: kind, payload length, frame number.</summary>
-        private const int kEntryHeader = 1 + 4 + 8;
+        private const int kEntryHeader = FrameRecordFormat.kEntryHeaderSize;
 
         /// <summary>
         /// Bytes a state payload spends naming its shape before the elements: type, element width,
@@ -57,8 +60,7 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// </summary>
         private const int kStateHeader = 4 + 4 + 4 + 4;
 
-        // Reused across calls. A chunk is built about once a second, but it is built on the frame
-        // thread, so these are buffers to refill rather than allocations to make.
+        // Reused across calls, so a codec at its high-water mark allocates nothing of its own.
         private readonly List<Group> _groups = new List<Group>();
         private int[] _cursors = Array.Empty<int>();
         private byte[] _body = Array.Empty<byte>();
@@ -89,12 +91,12 @@ namespace Lilium.RemoteControl.Frames.Recording
 
         /// <summary>
         /// Restores the entry range a chunk was made from. <paramref name="expandedLength"/> is what
-        /// the chunk header recorded, so the result is sized once rather than grown into -- and it
+        /// the chunk header recorded, so the buffers are sized once rather than grown into -- and it
         /// doubles as the check that the round trip landed where it started.
         /// </summary>
         public int Decode(ReadOnlySpan<byte> chunk, int expandedLength, out byte[] buffer)
         {
-            var bodyLength = _Inflate(chunk);
+            var bodyLength = _Inflate(chunk, expandedLength);
             var length = _Expand(bodyLength, expandedLength);
 
             buffer = _out;
@@ -117,6 +119,11 @@ namespace Lilium.RemoteControl.Frames.Recording
             var position = 0;
             while (position < entries.Length)
             {
+                if (position + kEntryHeader > entries.Length)
+                {
+                    throw new InvalidDataException("[RemoteControl] Chunk was given a partial entry.");
+                }
+
                 var length = _ReadInt32(entries, position + 1);
                 if (length < 0 || position + kEntryHeader + length > entries.Length)
                 {
@@ -185,43 +192,39 @@ namespace Lilium.RemoteControl.Frames.Recording
             _ResetCursors(_groups.Count);
             position = 0;
             var write = skeleton;
-            while (position < entries.Length)
+
+            fixed (byte* bodyPtr = body)
+            fixed (byte* entriesPtr = entries)
             {
-                var length = _ReadInt32(entries, position + 1);
-                var payload = entries.Slice(position + kEntryHeader, length);
-
-                entries.Slice(position, kEntryHeader).CopyTo(new Span<byte>(body, write, kEntryHeader));
-                write += kEntryHeader;
-
-                if (_TryReadShape(entries[position], payload, length, out var typeId, out var elementSize, out var count))
+                while (position < entries.Length)
                 {
-                    payload.Slice(0, kStateHeader).CopyTo(new Span<byte>(body, write, kStateHeader));
-                    write += kStateHeader;
+                    var length = _ReadInt32(entries, position + 1);
+                    var payload = entries.Slice(position + kEntryHeader, length);
 
-                    var index = _IndexOfGroup(typeId, elementSize, count);
-                    var group = _groups[index];
-                    var frame = _cursors[index]++;
-                    var stride = group.frames;
-                    var plane = blobs + group.blobOffset + frame;
+                    entries.Slice(position, kEntryHeader).CopyTo(new Span<byte>(body, write, kEntryHeader));
+                    write += kEntryHeader;
 
-                    for (int element = 0; element < count; element++)
+                    if (_TryReadShape(entries[position], payload, length, out var typeId, out var elementSize, out var count))
                     {
-                        var source = kStateHeader + element * elementSize;
-                        var target = plane + element * elementSize * stride;
+                        payload.Slice(0, kStateHeader).CopyTo(new Span<byte>(body, write, kStateHeader));
+                        write += kStateHeader;
 
-                        for (int b = 0; b < elementSize; b++)
-                        {
-                            body[target + b * stride] = payload[source + b];
-                        }
+                        var index = _IndexOfGroup(typeId, elementSize, count);
+                        var group = _groups[index];
+                        var frame = _cursors[index]++;
+
+                        ChunkTranspose.Scatter(
+                            entriesPtr + position + kEntryHeader + kStateHeader, count, elementSize,
+                            bodyPtr + blobs + group.blobOffset + frame, group.frames);
                     }
-                }
-                else
-                {
-                    payload.CopyTo(new Span<byte>(body, write, length));
-                    write += length;
-                }
+                    else
+                    {
+                        payload.CopyTo(new Span<byte>(body, write, length));
+                        write += length;
+                    }
 
-                position += kEntryHeader + length;
+                    position += kEntryHeader + length;
+                }
             }
 
             return bodyLength;
@@ -286,53 +289,63 @@ namespace Lilium.RemoteControl.Frames.Recording
             var read = skeleton;
             var write = 0;
             var end = skeleton + skeletonLength;
-            while (read < end)
+
+            fixed (byte* bodyPtr = body)
+            fixed (byte* outputPtr = output)
             {
-                var kind = body[read];
-                var length = _ReadInt32(body, read + 1);
-
-                Buffer.BlockCopy(body, read, output, write, kEntryHeader);
-                read += kEntryHeader;
-                write += kEntryHeader;
-
-                var head = new ReadOnlySpan<byte>(body, read, Math.Min(kStateHeader, end - read));
-                if (_TryReadShape(kind, head, length, out var typeId, out var elementSize, out var count))
+                while (read < end)
                 {
-                    Buffer.BlockCopy(body, read, output, write, kStateHeader);
-                    read += kStateHeader;
-                    write += kStateHeader;
+                    var kind = body[read];
+                    var length = _ReadInt32(body, read + 1);
 
-                    var index = _IndexOfGroup(typeId, elementSize, count);
-                    if (index < 0) throw new InvalidDataException("[RemoteControl] Chunk names a shape it does not carry.");
-
-                    var group = _groups[index];
-                    var frame = _cursors[index]++;
-                    if (frame >= group.frames)
+                    if (write + kEntryHeader > expandedLength)
                     {
-                        throw new InvalidDataException("[RemoteControl] Chunk holds more frames of a shape than it declared.");
+                        throw new InvalidDataException("[RemoteControl] Chunk expands past what was recorded.");
                     }
 
-                    var stride = group.frames;
-                    var plane = blobs + group.blobOffset + frame;
+                    Buffer.BlockCopy(body, read, output, write, kEntryHeader);
+                    read += kEntryHeader;
+                    write += kEntryHeader;
 
-                    for (int element = 0; element < count; element++)
+                    var head = new ReadOnlySpan<byte>(body, read, Math.Min(kStateHeader, end - read));
+                    if (_TryReadShape(kind, head, length, out var typeId, out var elementSize, out var count))
                     {
-                        var source = plane + element * elementSize * stride;
-                        var target = write + element * elementSize;
+                        Buffer.BlockCopy(body, read, output, write, kStateHeader);
+                        read += kStateHeader;
+                        write += kStateHeader;
 
-                        for (int b = 0; b < elementSize; b++)
+                        var index = _IndexOfGroup(typeId, elementSize, count);
+                        if (index < 0) throw new InvalidDataException("[RemoteControl] Chunk names a shape it does not carry.");
+
+                        var group = _groups[index];
+                        var frame = _cursors[index]++;
+                        if (frame >= group.frames)
                         {
-                            output[target + b] = body[source + b * stride];
+                            throw new InvalidDataException("[RemoteControl] Chunk holds more frames of a shape than it declared.");
                         }
-                    }
 
-                    write += count * elementSize;
-                }
-                else
-                {
-                    Buffer.BlockCopy(body, read, output, write, length);
-                    read += length;
-                    write += length;
+                        var bytes = count * elementSize;
+                        if (write + bytes > expandedLength)
+                        {
+                            throw new InvalidDataException("[RemoteControl] Chunk expands past what was recorded.");
+                        }
+
+                        ChunkTranspose.Gather(bodyPtr + blobs + group.blobOffset + frame, count, elementSize,
+                            group.frames, outputPtr + write);
+
+                        write += bytes;
+                    }
+                    else
+                    {
+                        if (write + length > expandedLength || read + length > end)
+                        {
+                            throw new InvalidDataException("[RemoteControl] Chunk expands past what was recorded.");
+                        }
+
+                        Buffer.BlockCopy(body, read, output, write, length);
+                        read += length;
+                        write += length;
+                    }
                 }
             }
 
@@ -345,7 +358,7 @@ namespace Lilium.RemoteControl.Frames.Recording
             return write;
         }
 
-        private int _Inflate(ReadOnlySpan<byte> chunk)
+        private int _Inflate(ReadOnlySpan<byte> chunk, int expandedLength)
         {
             // Grown before it is filled, not after: SetLength zeroes whatever it exposes, so copying
             // first and sizing second wipes the chunk and the inflate reports corrupted data.
@@ -355,7 +368,9 @@ namespace Lilium.RemoteControl.Frames.Recording
             chunk.CopyTo(new Span<byte>(_staging.GetBuffer(), 0, chunk.Length));
             _staging.Position = 0;
 
-            _Ensure(ref _body, 1024);
+            // The body is the expanded entries plus a skeleton-and-directory's worth, so sized from
+            // the length the chunk header already gave rather than grown into by doubling.
+            _Ensure(ref _body, expandedLength + 1024);
 
             var total = 0;
             using (var inflate = new DeflateStream(_staging, CompressionMode.Decompress, leaveOpen: true))
@@ -422,7 +437,7 @@ namespace Lilium.RemoteControl.Frames.Recording
         {
             if (buffer.Length >= length) return;
 
-            Array.Resize(ref buffer, Math.Max(length, 1024));
+            Array.Resize(ref buffer, Math.Max(length, Math.Max(1024, buffer.Length * 2)));
         }
 
         private static int _ReadInt32(ReadOnlySpan<byte> source, int offset)

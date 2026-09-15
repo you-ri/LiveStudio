@@ -1422,18 +1422,10 @@ namespace Lilium.RemoteControl
         /// property has a fixed width. The path resolves the same way a live write resolves it, so
         /// the same object and the same property are reached; only the parsing step is gone,
         /// because there is nothing left to parse.
-        ///
-        /// <paramref name="skipIfUnchanged"/> is for a restated value (<see cref="EventFlags.Reemitted"/>):
-        /// it says how things stood rather than that someone changed them, so writing one the world
-        /// already holds is work with no effect -- and some of that work is not free. A restated
-        /// asset reference written once a keyframe would reload the asset once a keyframe. A real
-        /// write is never skipped this way: it happened, and a setter with a side effect is entitled
-        /// to run again.
         /// </summary>
         public static bool ApplyRecordedValue(
             LiveObjectContainer container, ILiveObjectResolver resolver,
-            string absolutePath, object value, out int status, out string error,
-            bool skipIfUnchanged = false)
+            string absolutePath, object value, out int status, out string error)
         {
             status = 0;
             error = null;
@@ -1459,14 +1451,6 @@ namespace Lilium.RemoteControl
                 status = 403;
                 error = LiveEditorSession.kWriteRejected;
                 return false;
-            }
-
-            // Nothing to do, and saying so counts as done: the point of a restatement is that the
-            // value ends up right, which it already is.
-            if (skipIfUnchanged && Equals(prop.GetValue(), value))
-            {
-                status = 200;
-                return true;
             }
 
             // Same scope as the live write, for the same reasons: undo captures the value as it was

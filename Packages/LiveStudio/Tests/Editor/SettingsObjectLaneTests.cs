@@ -84,9 +84,9 @@ namespace Lilium.LiveStudio.Tests
         [Test]
         public void TheDeskHasNoStateBlock()
         {
-            Assert.IsNull(StateBridgeRegistry.Find(typeof(OperationSet)),
+            Assert.IsNull(StateTypes.FindBridge(typeof(OperationSet)),
                 "the generator still emits a block for a type declared off the frame");
-            Assert.IsNull(StateBridgeRegistry.Find(typeof(OperationManager)));
+            Assert.IsNull(StateTypes.FindBridge(typeof(OperationManager)));
         }
 
         /// <summary>
@@ -119,7 +119,7 @@ namespace Lilium.LiveStudio.Tests
         [Test]
         public void TheRecorderHasNoStateBlock()
         {
-            Assert.IsNull(StateBridgeRegistry.Find(typeof(LiveDataRecorder)),
+            Assert.IsNull(StateTypes.FindBridge(typeof(LiveDataRecorder)),
                 "a replayed pause would pause the replay that is playing it back");
         }
 
@@ -173,7 +173,7 @@ namespace Lilium.LiveStudio.Tests
             foreach (var type in typeof(AssetBase).Assembly.GetTypes())
             {
                 if (type.IsAbstract || !typeof(AssetBase).IsAssignableFrom(type)) continue;
-                if (StateBridgeRegistry.Find(type) != null) offenders.Add(type.Name);
+                if (StateTypes.FindBridge(type) != null) offenders.Add(type.Name);
             }
 
             Assert.IsEmpty(offenders,

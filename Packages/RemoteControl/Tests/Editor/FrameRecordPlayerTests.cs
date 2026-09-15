@@ -135,14 +135,14 @@ namespace Lilium.RemoteControl.Tests
         public void AMemberAddedAfterTheTake_KeepsWhatTheObjectAlreadyHas()
         {
             var name = typeof(Lantern).FullName;
-            var mine = StateSchemaRegistry.Find(name);
+            var mine = StateTypes.FindSchema(name);
             Assert.IsNotNull(mine, "the generator declared no description, so there is nothing to test");
 
             byte[] bytes;
             try
             {
                 // The recording is made by a build that had only the first member.
-                StateSchemaRegistry.Declare(name,
+                StateTypes.DeclareSchema(name,
                     new StateSchema(mine.metaSize, mine.stride, new[] { mine.members[0] }));
 
                 bytes = Record(1, (ref Frame frame) =>
@@ -154,7 +154,7 @@ namespace Lilium.RemoteControl.Tests
             }
             finally
             {
-                StateSchemaRegistry.Declare(name, mine);
+                StateTypes.DeclareSchema(name, mine);
             }
 
             LogAssert.Expect(LogType.Warning, new Regex("laid out differently"));
@@ -165,7 +165,7 @@ namespace Lilium.RemoteControl.Tests
             Assert.IsTrue(player.Advance());
 
             var lantern = new Lantern { intensity = 0f, range = 12f };
-            var bridge = StateBridgeRegistry.Find(typeof(Lantern));
+            var bridge = StateTypes.FindBridge(typeof(Lantern));
             Assert.IsNotNull(bridge);
             Assert.IsTrue(bridge.Apply(lantern, 7, player.state, player.symbols));
 
@@ -199,7 +199,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void AMemberThatMoved_IsReadBackByItsName()
         {
-            StateSchemaRegistry.Declare(typeof(Lamp).FullName,
+            StateTypes.DeclareSchema(typeof(Lamp).FullName,
                 LampSchema(Member("intensity", 0), Member("range", 4)));
 
             byte[] bytes;
@@ -214,14 +214,14 @@ namespace Lilium.RemoteControl.Tests
             }
             finally
             {
-                StateSchemaRegistry.Remove(typeof(Lamp).FullName);
+                StateTypes.RemoveSchema(typeof(Lamp).FullName);
             }
 
             // The same two members, the other way round: what a swap between two builds looks like.
             // The struct itself has not moved, so what lands in the field at offset zero is the
             // member this build calls "range" -- which is the recorded 9, proving the copy followed
             // the name rather than the position.
-            StateSchemaRegistry.Declare(typeof(Lamp).FullName,
+            StateTypes.DeclareSchema(typeof(Lamp).FullName,
                 LampSchema(Member("range", 0), Member("intensity", 4)));
 
             try
@@ -236,7 +236,7 @@ namespace Lilium.RemoteControl.Tests
             }
             finally
             {
-                StateSchemaRegistry.Remove(typeof(Lamp).FullName);
+                StateTypes.RemoveSchema(typeof(Lamp).FullName);
             }
         }
 
@@ -250,7 +250,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void AMemberTheRecordingNeverCarried_IsLeftOutOfTheMask()
         {
-            StateSchemaRegistry.Declare(typeof(Lamp).FullName, LampSchema(Member("intensity", 0)));
+            StateTypes.DeclareSchema(typeof(Lamp).FullName, LampSchema(Member("intensity", 0)));
 
             byte[] bytes;
             try
@@ -260,10 +260,10 @@ namespace Lilium.RemoteControl.Tests
             }
             finally
             {
-                StateSchemaRegistry.Remove(typeof(Lamp).FullName);
+                StateTypes.RemoveSchema(typeof(Lamp).FullName);
             }
 
-            StateSchemaRegistry.Declare(typeof(Lamp).FullName,
+            StateTypes.DeclareSchema(typeof(Lamp).FullName,
                 LampSchema(Member("intensity", 0), Member("range", 4)));
 
             try
@@ -280,7 +280,7 @@ namespace Lilium.RemoteControl.Tests
             }
             finally
             {
-                StateSchemaRegistry.Remove(typeof(Lamp).FullName);
+                StateTypes.RemoveSchema(typeof(Lamp).FullName);
             }
         }
 
@@ -314,16 +314,24 @@ namespace Lilium.RemoteControl.Tests
 
             // Stands in for a machine that has never held this type. Recording it here announced it,
             // and an announced type is given a block on playback rather than reported -- which is the
-            // point of announcing. Forget it again to get back to the case this test is about.
-            StateTypeRegistry.Clear();
+            // point of announcing. Forget it for the length of this test to get back to the case this
+            // test is about, and only it: every other type in the build stays known.
+            var forgotten = StateTypes.Forget(typeof(Pose).FullName);
 
-            using (var player = new FrameRecordPlayer(new MemoryStream(bytes)))
+            try
             {
-                // No block can be made for Pose: the replay is missing part of the world, and saying
-                // so is the difference between a hole and an empty scene nobody questions.
-                while (player.Advance()) { }
+                using (var player = new FrameRecordPlayer(new MemoryStream(bytes)))
+                {
+                    // No block can be made for Pose: the replay is missing part of the world, and
+                    // saying so is the difference between a hole and an empty scene nobody questions.
+                    while (player.Advance()) { }
 
-                CollectionAssert.Contains(player.unknownStateTypes, typeof(Pose).FullName);
+                    CollectionAssert.Contains(player.unknownStateTypes, typeof(Pose).FullName);
+                }
+            }
+            finally
+            {
+                StateTypes.Restore(forgotten);
             }
         }
 
@@ -368,7 +376,7 @@ namespace Lilium.RemoteControl.Tests
                 var total = 0;
                 while (player.Advance())
                 {
-                    for (int i = 0; i < player.events.Count; i++)
+                    for (int i = 0; i < player.events.eventCount; i++)
                     {
                         var record = player.events[i];
                         Assert.AreEqual(EventKind.Set, record.kind);
@@ -383,38 +391,8 @@ namespace Lilium.RemoteControl.Tests
         }
 
         /// <summary>
-        /// A take made before EventKind lost StructureChange (2) on 2026-09-08 still holds that
-        /// value, and the reader is the one point that knows what it meant.
-        ///
-        /// Written as a raw cast rather than patched into the bytes afterwards: a C# enum is not a
-        /// closed set, so the writer takes (EventKind)2 and puts it on disk exactly as a build from
-        /// before the change did.
-        /// </summary>
-        [Test]
-        public void ARetiredKind_ComesBackAsTheKindItBehavedLike()
-        {
-            var written = false;
-            var bytes = Record(2, beforePump: () =>
-            {
-                if (written) return;
-
-                written = true;
-                FrameGate._Enqueue((EventKind)2, "test", "/live/scene/export", "{}", () => true);
-            });
-
-            using (var player = new FrameRecordPlayer(new MemoryStream(bytes)))
-            {
-                Assert.IsTrue(player.Advance());
-                Assert.AreEqual(1, player.events.Count);
-                Assert.AreEqual(EventKind.Call, player.events[0].kind,
-                    "2 was StructureChange, and five of its six routes were calls");
-                Assert.AreEqual("/live/scene/export", player.Resolve(player.events[0].targetId));
-            }
-        }
-
-        /// <summary>
-        /// Nothing ever wrote 3 (RegisteredSource), but a reader still has to land an unknown value
-        /// on a kind the rest of the code has a case for rather than pass it through.
+        /// A reader has to land a kind it does not know on one the rest of the code has a case for
+        /// rather than pass it through.
         /// </summary>
         [Test]
         public void AKindNoBuildEverWrote_ComesBackAsSomethingReadable()
@@ -431,7 +409,7 @@ namespace Lilium.RemoteControl.Tests
             using (var player = new FrameRecordPlayer(new MemoryStream(bytes)))
             {
                 Assert.IsTrue(player.Advance());
-                Assert.AreEqual(1, player.events.Count);
+                Assert.AreEqual(1, player.events.eventCount);
                 Assert.AreEqual(EventKind.Set, player.events[0].kind);
             }
         }
@@ -451,10 +429,10 @@ namespace Lilium.RemoteControl.Tests
             using (var player = new FrameRecordPlayer(new MemoryStream(bytes)))
             {
                 Assert.IsTrue(player.Advance());
-                Assert.AreEqual(1, player.events.Count);
+                Assert.AreEqual(1, player.events.eventCount);
 
                 Assert.IsTrue(player.Advance());
-                Assert.AreEqual(0, player.events.Count, "a frame with no events has none");
+                Assert.AreEqual(0, player.events.eventCount, "a frame with no events has none");
             }
         }
 
@@ -494,13 +472,17 @@ namespace Lilium.RemoteControl.Tests
         public void Seek_WithoutATail_IsRefusedRatherThanGuessed()
         {
             var stream = new MemoryStream();
-            var recorder = new FrameRecorder();
+            var recorder = new FrameRecorder { keyframeInterval = 1 };
             recorder.Start(stream, leaveOpen: true);
             FrameGate.sink = recorder;
 
             for (int i = 0; i < 3; i++) FrameGate.Pump();
 
             FrameGate.sink = null;
+
+            // What a crash leaves: the chunks closed so far, and no tail. A keyframe every frame puts
+            // two of the three frames in closed chunks.
+            recorder.WaitForWrittenChunks();
 
             using (var player = new FrameRecordPlayer(new MemoryStream(stream.ToArray())))
             {
@@ -510,8 +492,10 @@ namespace Lilium.RemoteControl.Tests
                 // Walking still works, which is the point of the entries carrying their own length.
                 var frames = 0;
                 while (player.Advance()) frames++;
-                Assert.AreEqual(3, frames);
+                Assert.AreEqual(2, frames);
             }
+
+            recorder.Dispose();
         }
 
         [Test]

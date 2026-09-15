@@ -167,15 +167,19 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void RecordingNotStopped_IsStillReadableFromTheTop()
+        public void RecordingNotStopped_IsStillReadableUpToItsOpenChunk()
         {
-            // The crash case, driven through the real gate rather than the writer directly.
+            // The crash case, driven through the real gate rather than the writer directly. A
+            // keyframe every frame closes the chunk before it, so two of the three frames are on
+            // disk and the third -- the open chunk -- is what a crash costs.
+            _recorder.keyframeInterval = 1;
             _recorder.Start(_stream, leaveOpen: true);
             FrameGate.sink = _recorder;
 
             for (int i = 0; i < 3; i++) FrameGate.Pump();
 
             FrameGate.sink = null;
+            _recorder.WaitForWrittenChunks();
             var bytes = _stream.ToArray();
 
             using (var reader = new FrameRecordReader(new MemoryStream(bytes)))
@@ -188,7 +192,7 @@ namespace Lilium.RemoteControl.Tests
                     if (entry.kind == FrameEntryKind.FrameBoundary) frames++;
                 }
 
-                Assert.AreEqual(3, frames);
+                Assert.AreEqual(2, frames);
             }
         }
 

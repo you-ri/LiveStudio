@@ -202,7 +202,7 @@ namespace Lilium.RemoteControl.Tests
             LiveStateSystem.CaptureInto(state, time: 0);
 
             var restored = new StateWalkDimmer();
-            var bridge = StateBridgeRegistry.Find(typeof(StateWalkDimmer));
+            var bridge = StateTypes.FindBridge(typeof(StateWalkDimmer));
 
             Assert.IsTrue(bridge.Apply(restored, FrameGate.symbols.Intern("walk-dimmer"), state, FrameGate.symbols));
             Assert.AreEqual(0.5f, restored.level);

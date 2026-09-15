@@ -9,11 +9,9 @@ namespace Lilium.RemoteControl.Frames.Recording
     /// Writes every completed frame to a recording.
     ///
     /// Attaches as the gate's sink, so it sees frames at the head with the events already applied
-    /// and the state blocks already written.
-    ///
-    /// What a crash costs depends on <see cref="compress"/>. Uncompressed, each frame is written as
-    /// it happens and the loss is whatever the stream buffer had not yet put on disk. Compressed,
-    /// frames are held until the next keyframe, so the loss is up to a keyframe interval.
+    /// and the state blocks already written. What it does there is copy them into a buffer; the
+    /// compressing and the disk happen on the writer's own thread (see
+    /// <see cref="FrameRecordWriter"/>), so a crash costs up to a keyframe interval.
     /// </summary>
     public sealed class FrameRecorder : IFrameSink, IDisposable
     {
@@ -60,6 +58,18 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// <summary>Bytes written so far, or zero when not recording.</summary>
         public long length => _writer?.length ?? 0;
 
+        /// <summary>
+        /// Bytes of entries written so far, before compression, or zero when not recording. What the
+        /// format costs per frame, as opposed to what the content happens to compress to.
+        /// </summary>
+        public long entryBytes => _writer?.entryBytes ?? 0;
+
+        /// <summary>
+        /// Waits until every chunk closed so far is on disk -- the file as a crash right now would
+        /// leave it. For tests.
+        /// </summary>
+        internal void WaitForWrittenChunks() => _writer?.WaitForWrittenChunks();
+
         /// <summary>Where the current recording is being written, or null.</summary>
         public string path => _path;
 
@@ -69,21 +79,8 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// </summary>
         public int keyframeInterval { get; set; } = kDefaultKeyframeInterval;
 
-        /// <summary>
-        /// Compresses the recording, which measured about five times smaller over real takes
-        /// (356 MB an hour down to roughly 70).
-        ///
-        /// The cost is what a crash takes with it. Uncompressed, entries reach the file as they
-        /// happen; compressed, they are held until the next keyframe, so a process that dies loses
-        /// up to a keyframe interval instead of whatever the stream buffer had not flushed. It also
-        /// means the open chunk is not there for anything reading the file as it is written.
-        ///
-        /// Set before <see cref="Start(string)"/>; changing it mid-recording does nothing.
-        /// </summary>
-        public bool compress { get; set; }
-
         /// <summary>Frames that carried the inventory so far.</summary>
-        public int keyframeCount => _writer?.keyframes.Count ?? 0;
+        public int keyframeCount => _writer?.keyframeCount ?? 0;
 
         /// <summary>
         /// Exposed objects whose events are left out of the recording. Set this to whatever is
@@ -140,7 +137,7 @@ namespace Lilium.RemoteControl.Frames.Recording
             _lastFrameNumber = -1;
 
             var header = DescribeRun(FrameGate.clock.frameRate, DateTime.UtcNow.Ticks);
-            _writer = new FrameRecordWriter(stream, header, leaveOpen, compress);
+            _writer = new FrameRecordWriter(stream, header, leaveOpen);
         }
 
         /// <summary>
@@ -153,8 +150,16 @@ namespace Lilium.RemoteControl.Frames.Recording
         {
             if (_writer == null) return;
 
-            _writer.Close(_symbols);
-            _writer.Dispose();
+            try
+            {
+                _writer.Close(_symbols);
+            }
+            finally
+            {
+                // Released whether or not the tail went on: the writer holds a thread and native
+                // buffers, and a disk that failed at the end must not keep them alive.
+                _writer.Dispose();
+            }
 
             _writer = null;
             _symbols = null;
@@ -180,10 +185,10 @@ namespace Lilium.RemoteControl.Frames.Recording
                            (_lastKeyframeFrame < 0 ||
                             frame.frameNumber - _lastKeyframeFrame >= keyframeInterval);
 
-            var before = _writer.keyframes.Count;
+            var before = _writer.keyframeCount;
             _writer.WriteStructure(frame.structure, symbols, periodic);
 
-            var isKeyframe = _writer.keyframes.Count != before;
+            var isKeyframe = _writer.keyframeCount != before;
             if (isKeyframe) _lastKeyframeFrame = frame.frameNumber;
 
             _writer.WriteState(frame.state, symbols);

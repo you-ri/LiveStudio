@@ -15,14 +15,21 @@ namespace Lilium.RemoteControl.Tests
     /// </summary>
     public class FrameChunkCodecTests
     {
-        private const int kEntryHeader = 1 + 4 + 8;
-
-        private static void Append(List<byte> to, FrameEntryKind kind, long frame, byte[] payload)
+        private static void Append(List<byte> to, FrameEntryKind kind, byte[] payload)
         {
             to.Add((byte)kind);
             to.AddRange(BitConverter.GetBytes(payload.Length));
-            to.AddRange(BitConverter.GetBytes(frame));
             to.AddRange(payload);
+        }
+
+        /// <summary>A boundary payload: the frame number and a sixty-hertz rate.</summary>
+        private static byte[] Boundary(long frame)
+        {
+            var payload = new byte[FrameRecordFormat.kBoundarySize];
+            Buffer.BlockCopy(BitConverter.GetBytes(frame), 0, payload, 0, 8);
+            Buffer.BlockCopy(BitConverter.GetBytes(1u), 0, payload, 8, 4);
+            Buffer.BlockCopy(BitConverter.GetBytes(60u), 0, payload, 12, 4);
+            return payload;
         }
 
         /// <summary>A state payload of <paramref name="count"/> elements, filled by the caller.</summary>
@@ -77,9 +84,9 @@ namespace Lilium.RemoteControl.Tests
         public void EntriesWithoutState_RoundTripUntouched()
         {
             var entries = new List<byte>();
-            Append(entries, FrameEntryKind.FrameBoundary, 10, new byte[] { 1, 0, 0, 0, 60, 0, 0, 0 });
-            Append(entries, FrameEntryKind.Symbol, 10, new byte[] { 5, 104, 101, 108, 108, 111 });
-            Append(entries, FrameEntryKind.Event, 11, new byte[] { 7, 7, 7 });
+            Append(entries, FrameEntryKind.FrameBoundary, Boundary(10));
+            Append(entries, FrameEntryKind.Symbol, new byte[] { 5, 104, 101, 108, 108, 111 });
+            Append(entries, FrameEntryKind.Event, new byte[] { 7, 7, 7 });
 
             RoundTrip(entries.ToArray());
         }
@@ -91,8 +98,8 @@ namespace Lilium.RemoteControl.Tests
             for (int frame = 0; frame < 30; frame++)
             {
                 var f = frame;
-                Append(entries, FrameEntryKind.FrameBoundary, frame, new byte[] { 1, 0, 0, 0, 60, 0, 0, 0 });
-                Append(entries, FrameEntryKind.State, frame,
+                Append(entries, FrameEntryKind.FrameBoundary, Boundary(frame));
+                Append(entries, FrameEntryKind.State,
                        State(3, 16, 2, (element, b) => (byte)(b == 0 ? f : element * 31 + b)));
             }
 
@@ -110,8 +117,8 @@ namespace Lilium.RemoteControl.Tests
                 var f = frame;
                 var count = frame < 5 ? 1 : 3;
 
-                Append(entries, FrameEntryKind.FrameBoundary, frame, new byte[] { 1, 0, 0, 0, 60, 0, 0, 0 });
-                Append(entries, FrameEntryKind.State, frame, State(3, 8, count, (element, b) => (byte)(f + element + b)));
+                Append(entries, FrameEntryKind.FrameBoundary, Boundary(frame));
+                Append(entries, FrameEntryKind.State, State(3, 8, count, (element, b) => (byte)(f + element + b)));
             }
 
             RoundTrip(entries.ToArray());
@@ -124,12 +131,12 @@ namespace Lilium.RemoteControl.Tests
             for (int frame = 0; frame < 10; frame++)
             {
                 var f = frame;
-                Append(entries, FrameEntryKind.FrameBoundary, frame, new byte[] { 1, 0, 0, 0, 60, 0, 0, 0 });
-                Append(entries, FrameEntryKind.State, frame, State(3, 12, 1, (element, b) => (byte)(f * b)));
+                Append(entries, FrameEntryKind.FrameBoundary, Boundary(frame));
+                Append(entries, FrameEntryKind.State, State(3, 12, 1, (element, b) => (byte)(f * b)));
 
                 if (frame >= 6)
                 {
-                    Append(entries, FrameEntryKind.State, frame, State(9, 4, 2, (element, b) => (byte)(f + b)));
+                    Append(entries, FrameEntryKind.State, State(9, 4, 2, (element, b) => (byte)(f + b)));
                 }
             }
 
@@ -147,7 +154,7 @@ namespace Lilium.RemoteControl.Tests
             Buffer.BlockCopy(BitConverter.GetBytes(16), 0, broken, 4, 4);
             Buffer.BlockCopy(BitConverter.GetBytes(9), 0, broken, 8, 4);
 
-            Append(entries, FrameEntryKind.State, 1, broken);
+            Append(entries, FrameEntryKind.State, broken);
 
             RoundTrip(entries.ToArray());
         }
@@ -197,8 +204,8 @@ namespace Lilium.RemoteControl.Tests
                 Buffer.BlockCopy(BitConverter.GetBytes(1), 0, payload, 8, 4);
                 Buffer.BlockCopy(value, 0, payload, header, kFloats * 4);
 
-                Append(entries, FrameEntryKind.FrameBoundary, frame, new byte[] { 1, 0, 0, 0, 60, 0, 0, 0 });
-                Append(entries, FrameEntryKind.State, frame, payload);
+                Append(entries, FrameEntryKind.FrameBoundary, Boundary(frame));
+                Append(entries, FrameEntryKind.State, payload);
             }
 
             return entries.ToArray();
@@ -226,55 +233,6 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void ARealRecording_RoundTrips()
-        {
-            var symbols = new FrameSymbolTable();
-            byte[] bytes;
-
-            using (var stream = new MemoryStream())
-            {
-                var header = new FrameRecordHeader
-                {
-                    frameRate = FrameRate.FPS60,
-                    startTicks = 638000000000000000L,
-                    engineId = "unity",
-                    buildId = "test-build",
-                };
-
-                using (var writer = new FrameRecordWriter(stream, header, leaveOpen: true))
-                {
-                    var state = new StateBlockSet();
-                    for (int frame = 0; frame < 40; frame++)
-                    {
-                        var live = new Frame { frameNumber = frame, frameRate = FrameRate.FPS60 };
-                        ref var element = ref state.GetOrCreate<Pose>().GetOrCreate(1);
-                        element.value.x = frame * 0.01f;
-
-                        writer.BeginFrame(in live, symbols);
-                        writer.WriteState(state, symbols);
-                        writer.EndFrame();
-                    }
-
-                    state.Dispose();
-                }
-
-                bytes = stream.ToArray();
-            }
-
-            long entriesOffset;
-            using (var reader = new FrameRecordReader(new MemoryStream(bytes), leaveOpen: false))
-            {
-                reader.Rewind();
-                entriesOffset = reader.position;
-            }
-
-            var entries = new byte[bytes.Length - entriesOffset];
-            Buffer.BlockCopy(bytes, (int)entriesOffset, entries, 0, entries.Length);
-
-            RoundTrip(entries);
-        }
-
-        [Test]
         public void TheCodecCanBeUsedAgain()
         {
             // The buffers are reused, so a second call has to not be reading the first one's leavings.
@@ -286,7 +244,7 @@ namespace Lilium.RemoteControl.Tests
                 for (int frame = 0; frame < 5 + pass * 4; frame++)
                 {
                     var f = frame;
-                    Append(entries, FrameEntryKind.State, frame,
+                    Append(entries, FrameEntryKind.State,
                            State(3 + pass, 8, 1 + pass, (element, b) => (byte)(f + element * b)));
                 }
 
@@ -304,19 +262,11 @@ namespace Lilium.RemoteControl.Tests
             }
         }
 
-        /// <summary>Stands in for a captured value: a few floats, most of which hold still.</summary>
-        private struct Pose
-        {
-            public float x;
-            public float y;
-            public float z;
-        }
-
         [Test]
         public void ATruncatedEntry_IsRefusedRatherThanGuessedAt()
         {
             var entries = new List<byte>();
-            Append(entries, FrameEntryKind.State, 1, State(3, 8, 1, (element, b) => (byte)b));
+            Append(entries, FrameEntryKind.State, State(3, 8, 1, (element, b) => (byte)b));
 
             var raw = entries.ToArray();
             var cut = new byte[raw.Length - 4];

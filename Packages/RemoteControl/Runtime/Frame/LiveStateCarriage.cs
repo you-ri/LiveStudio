@@ -115,7 +115,7 @@ namespace Lilium.RemoteControl.Frames
         {
             if (owner == null) return false;
 
-            return IsCarriedByState(member, StateBridgeRegistry.Find(owner.GetType()));
+            return IsCarriedByState(member, StateTypes.FindBridge(owner.GetType()));
         }
 
         /// <summary>

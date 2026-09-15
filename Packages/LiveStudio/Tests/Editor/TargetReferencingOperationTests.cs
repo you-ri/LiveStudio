@@ -111,7 +111,7 @@ namespace Lilium.LiveStudio.EditorTests
             // path now asks the second question. A fixture is not partial so the generator never
             // sees it -- without a bridge, `carried` would be a member nothing carries and its
             // writes would be recorded like any other.
-            Lilium.RemoteControl.Frames.StateBridgeRegistry
+            Lilium.RemoteControl.Frames.StateTypes
                 .Register<FakeTarget, FakeTargetBlock>(_CaptureTarget, _ApplyTarget,
                     nameof(FakeTarget.carried));
             _target = new FakeTarget
@@ -125,7 +125,7 @@ namespace Lilium.LiveStudio.EditorTests
         public void TearDown()
         {
             LiveObjectRegistry.ClearAll();
-            Lilium.RemoteControl.Frames.StateBridgeRegistry.Unregister(typeof(FakeTarget));
+            Lilium.RemoteControl.Frames.StateTypes.Unregister(typeof(FakeTarget));
             Lilium.RemoteControl.Frames.FrameGate.RestoreDefaultClock();
         }
 

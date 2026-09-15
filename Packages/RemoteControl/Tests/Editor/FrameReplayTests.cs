@@ -253,24 +253,23 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void ATruncatedPayload_IsSkippedRatherThanAppliedWrong()
+        public void ALongPayload_IsAppliedWhole()
         {
-            // What was kept of it is not what was applied live, so putting it back would quietly
-            // change the value instead of reproducing it.
+            // A value has no ceiling in the frame, so what a replay puts back is exactly what was
+            // applied live, however long.
+            var text = new string('x', 4000);
             var bytes = Record(1, () =>
-                FrameGate._Enqueue(EventKind.Set, "test", "/live/object/cam/curve",
-                    new string('x', 4000), () => true));
+                FrameGate._Enqueue(EventKind.Set, "test", "/live/object/cam/curve", text, () => true));
 
             var applier = new RecordingApplier();
             using (var replayer = new FrameReplayer(new MemoryStream(bytes), applier))
             {
                 while (replayer.Advance()) { }
 
-                Assert.AreEqual(1, replayer.skippedTruncatedCount);
-                Assert.AreEqual(0, replayer.appliedEventCount);
+                Assert.AreEqual(1, replayer.appliedEventCount);
             }
 
-            Assert.IsEmpty(applier.applied);
+            Assert.AreEqual(text, applier.applied[0].text);
         }
 
         [Test]

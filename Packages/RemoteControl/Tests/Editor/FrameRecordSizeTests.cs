@@ -11,9 +11,10 @@ namespace Lilium.RemoteControl.Tests
     /// <summary>
     /// What a recording costs per frame.
     ///
-    /// The numbers are asserted rather than just printed, because the thing they guard against is
-    /// the format growing a few bytes at a time until an hour of capture no longer fits anywhere.
-    /// A change that moves them should move them on purpose.
+    /// Two numbers, kept apart on purpose. The entries are what the format costs -- asserted to the
+    /// byte, because the thing they guard against is the format growing a few bytes at a time. The
+    /// file is what the content compresses to, which depends on what was recorded and so is only
+    /// held to the budget the design was written against.
     /// </summary>
     public class FrameRecordSizeTests
     {
@@ -50,7 +51,7 @@ namespace Lilium.RemoteControl.Tests
             FrameGate.RestoreDefaultClock();
         }
 
-        private static double BytesPerFrame(int writesPerFrame, bool withPose)
+        private static (double entries, double file) BytesPerFrame(int writesPerFrame, bool withPose)
         {
             void Producer(ref Frame frame)
             {
@@ -61,6 +62,7 @@ namespace Lilium.RemoteControl.Tests
 
             var stream = new MemoryStream();
             var recorder = new FrameRecorder();
+            long entryBytes;
 
             FrameGate.AddFrameHeadHandler(Producer);
             recorder.Start(stream, leaveOpen: true);
@@ -82,46 +84,44 @@ namespace Lilium.RemoteControl.Tests
             finally
             {
                 FrameGate.sink = null;
+                entryBytes = recorder.entryBytes;
                 recorder.Stop();
                 FrameGate.RemoveFrameHeadHandler(Producer);
             }
 
-            var bytes = stream.Length;
+            var fileBytes = stream.Length;
             stream.Dispose();
-            return bytes / (double)kFrames;
+            return (entryBytes / (double)kFrames, fileBytes / (double)kFrames);
         }
 
-        private static void Report(string label, double bytesPerFrame)
+        private static void Report(string label, (double entries, double file) perFrame)
         {
-            var perSecond = bytesPerFrame * 60.0;
-            Debug.Log($"[Debug] frame recording {label}: {bytesPerFrame:F0} B/frame, " +
-                      $"{perSecond / 1024.0:F1} KiB/s, {perSecond * 3600.0 / (1024 * 1024):F0} MB/hour");
+            var perSecond = perFrame.file * 60.0;
+            Debug.Log($"[Debug] frame recording {label}: {perFrame.entries:F0} B/frame of entries, " +
+                      $"{perFrame.file:F0} B/frame on disk, {perSecond * 3600.0 / (1024 * 1024):F1} MB/hour");
         }
 
         [Test]
         public void AnEmptyFrame_CostsOnlyItsBoundary()
         {
-            var bytesPerFrame = BytesPerFrame(0, withPose: false);
-            Report("empty", bytesPerFrame);
+            var perFrame = BytesPerFrame(0, withPose: false);
+            Report("empty", perFrame);
 
-            // 21 for the boundary entry (13 of entry header plus the rate) and 8 for the frame's
-            // slot in the tail index, plus the file header and mapping table spread over the run.
-            // The index is the deliberate part: 8 bytes a frame buys seeking to any frame at all.
-            Assert.Less(bytesPerFrame, 40, "an idle frame should cost almost nothing");
-            Assert.Greater(bytesPerFrame, 28, "the tail index is 8 bytes a frame and should be there");
+            // 21 for the boundary entry: 5 of entry header, 8 of frame number, 8 of rate. The
+            // mapping table's first frame is spread over the run on top.
+            Assert.GreaterOrEqual(perFrame.entries, 21);
+            Assert.Less(perFrame.entries, 26, "an idle frame should cost its boundary and nothing else");
         }
 
         [Test]
         public void OnePose_IsTheDominantCost()
         {
-            var bytesPerFrame = BytesPerFrame(0, withPose: true);
-            Report("1 pose", bytesPerFrame);
+            var perFrame = BytesPerFrame(0, withPose: true);
+            Report("1 pose", perFrame);
 
-            // 1144 of pose, 16 of meta, 12 of block header, 13 of entry header, 21 of boundary.
-            // The pose shrank by 320 bytes when it moved to muscle space: 95 muscles and their
-            // presence weigh less than 55 quaternions and theirs.
-            Assert.Greater(bytesPerFrame, 1180);
-            Assert.Less(bytesPerFrame, 1240, "the pose should be carried nearly raw");
+            // 1144 of pose, 16 of meta, 16 of block header, 5 of entry header, 21 of boundary.
+            Assert.GreaterOrEqual(perFrame.entries, 1202);
+            Assert.Less(perFrame.entries, 1210, "the pose should be carried nearly raw");
         }
 
         [Test]
@@ -129,26 +129,27 @@ namespace Lilium.RemoteControl.Tests
         {
             var withoutWrites = BytesPerFrame(0, withPose: true);
             var withEight = BytesPerFrame(8, withPose: true);
-            var perWrite = (withEight - withoutWrites) / 8.0;
+            var perWrite = (withEight.entries - withoutWrites.entries) / 8.0;
 
             Report("1 pose + 8 writes", withEight);
-            Debug.Log($"[Debug] frame recording: {perWrite:F1} B per property write");
+            Debug.Log($"[Debug] frame recording: {perWrite:F1} B of entries per property write");
 
-            // The record is 536 bytes in memory and its actual text on disk. Paths are named once in
-            // the mapping table, so what repeats is the value and the record's own fields.
+            // 5 of entry header, 33 of record fields, and the value. Paths are named once in the
+            // mapping table, so what repeats is the value and the record's own fields.
             Assert.Less(perWrite, 60, "a write should not carry its path every frame");
         }
 
         [Test]
         public void AnHourOfOnePose_StaysWithinTheDesignBudget()
         {
-            var bytesPerFrame = BytesPerFrame(1, withPose: true);
-            var megabytesPerHour = bytesPerFrame * 60.0 * 3600.0 / (1024 * 1024);
+            var perFrame = BytesPerFrame(1, withPose: true);
+            var megabytesPerHour = perFrame.file * 60.0 * 3600.0 / (1024 * 1024);
 
-            Report("1 pose + 1 write", bytesPerFrame);
+            Report("1 pose + 1 write", perFrame);
 
-            // The design was written expecting roughly 316 MB for an hour of one avatar at 60fps.
-            // Well past that means the format grew something it should not have.
+            // The design was written expecting roughly 316 MB for an hour of one avatar at 60fps
+            // before compression. Well past that on disk means the format grew something it should
+            // not have.
             Assert.Less(megabytesPerHour, 400, $"{megabytesPerHour:F0} MB/hour is past what was planned for");
         }
     }

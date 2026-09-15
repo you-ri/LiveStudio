@@ -37,7 +37,7 @@ namespace Lilium.RemoteControl.Tests
         public void Finish()
         {
             LiveObjectRegistry.ClearAll();
-            StateBridgeRegistry.Unregister(typeof(Fixture));
+            StateTypes.Unregister(typeof(Fixture));
             LiveDataValueLayout.Clear();
         }
 
@@ -55,7 +55,7 @@ namespace Lilium.RemoteControl.Tests
             }
 
             var bridge = DeclaredStateBridge.Build(LiveClass.Register(typeof(Fixture), nameof(Fixture), members));
-            StateBridgeRegistry.Register(bridge);
+            StateTypes.Register(bridge);
             return bridge;
         }
 
@@ -78,8 +78,7 @@ namespace Lilium.RemoteControl.Tests
             bridge.Capture(subject, 1, state, default, 0, FrameGate.symbols);
 
             var block = state.FindDeclared(typeof(Fixture));
-            var value = new byte[block.elementSize - block.metaSize];
-            block.CopyValueTo(0, value);
+            var value = block.ValueBytes(0).ToArray();
 
             var layout = LiveDataValueLayout.For(typeof(Fixture));
 

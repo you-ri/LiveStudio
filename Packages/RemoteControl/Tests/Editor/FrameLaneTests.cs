@@ -161,7 +161,7 @@ namespace Lilium.RemoteControl.Tests
 
             // Named as reflection spells them: the shadowed pair is carried under the field's name,
             // which is what the generated block would assign to.
-            StateBridgeRegistry.Register<Fixture, FixtureBlock>(_CaptureFixture, _ApplyFixture,
+            StateTypes.Register<Fixture, FixtureBlock>(_CaptureFixture, _ApplyFixture,
                 nameof(Fixture.carried), "_shadowed", nameof(Fixture.undeclared));
 
             FrameGate.ResetState("[test] cleared");
@@ -172,7 +172,7 @@ namespace Lilium.RemoteControl.Tests
         public void Finish()
         {
             LiveObjectRegistry.ClearAll();
-            StateBridgeRegistry.Unregister(typeof(Fixture));
+            StateTypes.Unregister(typeof(Fixture));
             FrameGate.ResetState("[test] cleared");
             FrameGate.RestoreDefaultClock();
         }

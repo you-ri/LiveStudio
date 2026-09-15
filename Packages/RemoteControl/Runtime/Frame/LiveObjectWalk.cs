@@ -511,9 +511,7 @@ namespace Lilium.RemoteControl.Frames
             if (valueType == null) return false;
             if (!typeof(IList).IsAssignableFrom(valueType)) return false;
 
-            var elementType = valueType.IsArray
-                ? valueType.GetElementType()
-                : (valueType.IsGenericType ? valueType.GetGenericArguments()[0] : null);
+            var elementType = _ListElementType(valueType);
 
             if (elementType == null || !elementType.IsClass) return false;
             if (elementType == typeof(string)) return false;
@@ -522,6 +520,24 @@ namespace Lilium.RemoteControl.Frames
             // Exposed in its own right, asked the way the nested case asks it -- so a type first met
             // here is registered rather than looking like a type with nothing exposed.
             return LiveClass.Find(elementType) != null;
+        }
+
+        // Element type per list type. Cached because GetGenericArguments builds a new array on
+        // every call, and the inventory asks this for every recorded collection at every frame
+        // head. Concurrent because the write path asks it from REST worker threads too.
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, Type> _listElementTypes =
+            new System.Collections.Concurrent.ConcurrentDictionary<Type, Type>();
+
+        private static Type _ListElementType(Type listType)
+        {
+            if (_listElementTypes.TryGetValue(listType, out var cached)) return cached;
+
+            var found = listType.IsArray
+                ? listType.GetElementType()
+                : (listType.IsGenericType ? listType.GetGenericArguments()[0] : null);
+
+            _listElementTypes[listType] = found;
+            return found;
         }
 
         /// <summary>Forgets the cached class layouts and composed ids. For tests.</summary>

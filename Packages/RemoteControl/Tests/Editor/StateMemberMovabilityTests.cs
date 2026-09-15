@@ -50,7 +50,7 @@ namespace Lilium.RemoteControl.Tests
     {
         private static StateBridge Bridge()
         {
-            var bridge = StateBridgeRegistry.Find(typeof(UnmovableStateProbe));
+            var bridge = StateTypes.FindBridge(typeof(UnmovableStateProbe));
             Assert.IsNotNull(bridge,
                 "a type keeps its block for the members that do move -- one refusal is not the type's refusal");
             return bridge;

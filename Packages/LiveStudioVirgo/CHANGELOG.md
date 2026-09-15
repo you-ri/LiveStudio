@@ -1,18 +1,7 @@
 # Changelog
 
-## [Unreleased]
-
-### Changed
-
-- **The camera fit is no longer recorded. A replay takes its own from the take.** `_offsetPosition` and `_offsetRotation` came off the state lane and are no longer exposed. When a replay starts, `VirgoMotionSource` fits the placement to the capture camera of the first valid frame the replay supplies. This is the same reset a live run does when motion starts arriving. The replay keeps that fit to its end: a seek or a loop keeps it, and a new replay takes its own. The take already carries the capture camera with every pose, so the recorded fit was a second copy of it.
-  - A machine that has never received anything, with no Fusion running, still places a take where it was shot.
-  - The first replayed frame no longer depends on handler order to be placed by the right fit.
-  - A live reset queued while a replay is running now waits for the replay to end instead of replacing the replay's fit.
-  - The cost: a Reset Camera pressed during a take is not replayed.
-  - Nothing on `VirgoMotionSource` is recorded now.
-
 ## [0.26.0] - 2026-09-12
-<!-- changelog-sha: c41546bfecf2c2854bd2032780ab482d6ce1a63d -->
+<!-- changelog-sha: b57804fe6850c46c8e4103b9596300d3793768f2 -->
 
 ### Added
 
@@ -35,6 +24,13 @@
 - `VirgoMotionSource` receives avatar-build notifications through the new `AvatarBuildNotifier.onAvatarBuilt` event instead of implementing the removed `IAvatarBuildObserver` interface. Behaviour is unchanged.
 - `VirgoMotionSource.ResyncTiming` now asks Fusion to re-lock its capture timing as well, so a single button resyncs the whole pipeline. There are two timing baselines — Fusion's offset onto the capture stream and Studio's playback offset — and re-locking one left the other's drift in place, which meant pressing a button in each app. The request to Fusion is fire-and-forget and the local reset always runs, so a Studio-only session (or an offline Fusion) resyncs exactly as before.
 - `FusionRequestSystem` calls `/live/function/...`, following RemoteControl's `/exposed/*` → `/live/*` route rename.
+
+- **The camera fit is no longer recorded. A replay takes its own from the take.** `_offsetPosition` and `_offsetRotation` came off the state lane and are no longer exposed. When a replay starts, `VirgoMotionSource` fits the placement to the capture camera of the first valid frame the replay supplies. This is the same reset a live run does when motion starts arriving. The replay keeps that fit to its end: a seek or a loop keeps it, and a new replay takes its own. The take already carries the capture camera with every pose, so the recorded fit was a second copy of it.
+  - A machine that has never received anything, with no Fusion running, still places a take where it was shot.
+  - The first replayed frame no longer depends on handler order to be placed by the right fit.
+  - A live reset queued while a replay is running now waits for the replay to end instead of replacing the replay's fit.
+  - The cost: a Reset Camera pressed during a take is not replayed.
+  - Nothing on `VirgoMotionSource` is recorded now.
 
 ### Fixed
 

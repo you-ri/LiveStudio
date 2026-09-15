@@ -119,7 +119,7 @@ namespace Lilium.RemoteControl.Tests
     {
         private static StateBridge Bridge<T>()
         {
-            var bridge = StateBridgeRegistry.Find(typeof(T));
+            var bridge = StateTypes.FindBridge(typeof(T));
             Assert.IsNotNull(bridge, $"{typeof(T).Name} got no state bridge");
             return bridge;
         }

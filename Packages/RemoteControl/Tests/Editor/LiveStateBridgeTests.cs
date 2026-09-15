@@ -73,7 +73,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void TheGenerator_EmitsABridgeForATypeInTheStateLane()
         {
-            var bridge = StateBridgeRegistry.Find(typeof(StateLaneProbe));
+            var bridge = StateTypes.FindBridge(typeof(StateLaneProbe));
 
             Assert.IsNotNull(bridge, "no bridge was generated for a type with state-lane members");
             Assert.AreEqual(typeof(StateLaneProbe), bridge.ownerType);
@@ -109,7 +109,7 @@ namespace Lilium.RemoteControl.Tests
         public void Capture_ReadsTheObjectIntoTheBlock()
         {
             var probe = new StateLaneProbe { intensity = 0.75f, position = new Vector3(1, 2, 3), mode = ProbeMode.Auto };
-            var bridge = StateBridgeRegistry.Find(typeof(StateLaneProbe));
+            var bridge = StateTypes.FindBridge(typeof(StateLaneProbe));
 
             using var state = new StateBlockSet();
             bridge.Capture(probe, ownerId: 7, state, default, time: 42, FrameGate.symbols);
@@ -129,7 +129,7 @@ namespace Lilium.RemoteControl.Tests
             var captured = new StateLaneProbe { intensity = 2f, position = Vector3.one, mode = ProbeMode.On };
             var restored = new StateLaneProbe();
 
-            var bridge = StateBridgeRegistry.Find(typeof(StateLaneProbe));
+            var bridge = StateTypes.FindBridge(typeof(StateLaneProbe));
 
             using var state = new StateBlockSet();
             bridge.Capture(captured, ownerId: 1, state, default, time: 0, FrameGate.symbols);
@@ -145,7 +145,7 @@ namespace Lilium.RemoteControl.Tests
         public void Apply_ForAnOwnerTheSetDoesNotHave_SaysSo()
         {
             var probe = new StateLaneProbe();
-            var bridge = StateBridgeRegistry.Find(typeof(StateLaneProbe));
+            var bridge = StateTypes.FindBridge(typeof(StateLaneProbe));
 
             using var state = new StateBlockSet();
 
@@ -169,7 +169,7 @@ namespace Lilium.RemoteControl.Tests
             // The whole point of the generator: a member declared FrameLane.State is in the frame,
             // so a keyframe carries it and a replay puts it back.
             var probe = new StateLaneProbe { intensity = 1.5f, position = new Vector3(4, 5, 6), mode = ProbeMode.Auto };
-            var bridge = StateBridgeRegistry.Find(typeof(StateLaneProbe));
+            var bridge = StateTypes.FindBridge(typeof(StateLaneProbe));
 
             void Producer(ref Frame frame)
                 => bridge.Capture(probe, ownerId: 3, frame.state, default, frame.frameNumber, FrameGate.symbols);

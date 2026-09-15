@@ -1,6 +1,5 @@
 // Copyright (c) You-Ri, 2026
 using System;
-using System.Collections.Generic;
 
 namespace Lilium.RemoteControl.Frames
 {
@@ -35,9 +34,9 @@ namespace Lilium.RemoteControl.Frames
     /// asks for; the generator turns it into field assignments.
     ///
     /// The non-generic face exists so a driver can walk objects of mixed types without knowing any
-    /// of them.
+    /// of them. Registered with <see cref="StateTypes"/>, which is where a driver finds it.
     /// </summary>
-    public abstract class StateBridge
+    public abstract class StateBridge : StateType
     {
         /// <summary>The exposed type this moves state for.</summary>
         public abstract Type ownerType { get; }
@@ -45,8 +44,11 @@ namespace Lilium.RemoteControl.Frames
         /// <summary>The block type its state lives in.</summary>
         public abstract Type blockType { get; }
 
-        /// <summary>Creates this type's block in a set, so a replay has somewhere to put it.</summary>
-        public abstract StateBlock EnsureBlock(StateBlockSet state);
+        /// <summary>
+        /// The owner's name, which is what a recording calls the block by -- so where the generator
+        /// had to put the block, inside the owner or beside it, stays out of the recording.
+        /// </summary>
+        public override string typeName => ownerType.FullName;
 
         /// <summary>
         /// Reads the object's state into its element of the set. False when nothing was written.
@@ -65,12 +67,10 @@ namespace Lilium.RemoteControl.Frames
         /// Whether this bridge actually moves the named member.
         ///
         /// Asked because declaring the state lane and being carried by it are two different things.
-        /// A member can ask for the lane and not reach the block -- text with no width, a type that
-        /// is not unmanaged -- and the generator says so at compile time, but nothing said so at
-        /// runtime: the record path read the declaration, saw <see cref="FrameLane.State"/>, and
-        /// left the member to a lane that was not carrying it.
-        /// A member no lane carries is a hole in the recording that nothing reports, so the question
-        /// is put to whatever is doing the carrying rather than to the declaration.
+        /// A member can ask for the lane and not reach the block -- a type that is not unmanaged, a
+        /// width too wide -- and the generator says so at compile time, but a member no lane carries
+        /// is a hole in the recording that nothing reports at runtime, so the question is put to
+        /// whatever is doing the carrying rather than to the declaration.
         ///
         /// The name is the member's own, as reflection spells it. A bridge that keys its members by
         /// the name they are exposed under answers for that spelling instead; callers try both.
@@ -87,11 +87,6 @@ namespace Lilium.RemoteControl.Frames
         private readonly StateApply<TOwner, TBlock> _apply;
         private readonly string[] _memberNames;
 
-        /// <summary>
-        /// The name this type's state goes by in a recording. The owner's, so that where the
-        /// generator had to put the block -- inside the owner or beside it -- stays out of the
-        /// recording.
-        /// </summary>
         private static readonly string _typeName = typeof(TOwner).FullName;
 
         public StateBridge(StateCapture<TOwner, TBlock> capture, StateApply<TOwner, TBlock> apply,
@@ -110,6 +105,8 @@ namespace Lilium.RemoteControl.Frames
         public override Type ownerType => typeof(TOwner);
 
         public override Type blockType => typeof(TBlock);
+
+        public override string typeName => _typeName;
 
         public override StateBlock EnsureBlock(StateBlockSet state) => state.GetOrCreate<TBlock>(_typeName);
 
@@ -151,82 +148,9 @@ namespace Lilium.RemoteControl.Frames
             if (index < 0) return false;
 
             // The mask comes off the block rather than through this call, because the thing that
-            // knows it is whatever filled the block and the thing that needs it is the mover. A
-            // parameter here would have to be threaded through every caller of Apply to say
-            // something none of them decide.
+            // knows it is whatever filled the block and the thing that needs it is the mover.
             _apply(in block[index].value, typed, symbols, block.appliedMemberMask);
             return true;
-        }
-    }
-
-    /// <summary>
-    /// Every generated bridge, by the type it moves state for.
-    ///
-    /// Filled by module initializers the generator emits, so a bridge is there before anything runs
-    /// rather than being discovered on first use.
-    /// </summary>
-    public static class StateBridgeRegistry
-    {
-        private static readonly Dictionary<Type, StateBridge> _byOwner = new Dictionary<Type, StateBridge>();
-        private static readonly List<StateBridge> _ordered = new List<StateBridge>();
-
-        /// <summary>Bridges in registration order.</summary>
-        public static IReadOnlyList<StateBridge> all => _ordered;
-
-        /// <summary>Registers a generated bridge. Re-registering the same owner type replaces it.</summary>
-        public static void Register<TOwner, TBlock>(
-            StateCapture<TOwner, TBlock> capture, StateApply<TOwner, TBlock> apply,
-            params string[] memberNames)
-            where TOwner : class
-            where TBlock : unmanaged
-        {
-            Register(new StateBridge<TOwner, TBlock>(capture, apply, memberNames));
-        }
-
-        /// <summary>Registers a bridge built by hand, for a type the generator cannot reach.</summary>
-        public static void Register(StateBridge bridge)
-        {
-            if (bridge == null) throw new ArgumentNullException(nameof(bridge));
-
-            if (_byOwner.TryGetValue(bridge.ownerType, out var existing))
-            {
-                _ordered[_ordered.IndexOf(existing)] = bridge;
-                _byOwner[bridge.ownerType] = bridge;
-                return;
-            }
-
-            _byOwner.Add(bridge.ownerType, bridge);
-            _ordered.Add(bridge);
-        }
-
-        /// <summary>
-        /// Takes a type off the lane.
-        ///
-        /// For a declaration that can change while running: an asset that stops declaring state has
-        /// to stop being read every frame for members it no longer has.
-        /// </summary>
-        public static void Unregister(Type ownerType)
-        {
-            if (ownerType == null || !_byOwner.TryGetValue(ownerType, out var existing)) return;
-
-            _byOwner.Remove(ownerType);
-            _ordered.Remove(existing);
-        }
-
-        /// <summary>
-        /// The bridge for a type, or null.
-        ///
-        /// Exact type only. A derived type gets its own bridge from the generator, carrying the
-        /// members it added; falling back to the base one would silently drop them.
-        /// </summary>
-        public static StateBridge Find(Type ownerType)
-            => ownerType != null && _byOwner.TryGetValue(ownerType, out var bridge) ? bridge : null;
-
-        /// <summary>Drops every registration. For tests.</summary>
-        internal static void Clear()
-        {
-            _byOwner.Clear();
-            _ordered.Clear();
         }
     }
 }

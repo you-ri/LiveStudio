@@ -33,7 +33,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void AGeneratedTypeDescribesItsBlock()
         {
-            var schema = StateSchemaRegistry.Find(typeof(Lantern).FullName);
+            var schema = StateTypes.FindSchema(typeof(Lantern).FullName);
 
             Assert.IsNotNull(schema, "the generator declared no description for a state-lane type");
             CollectionAssert.AreEqual(new[] { "intensity", "range" },

@@ -85,9 +85,7 @@ namespace Lilium.RemoteControl.Tests
             var record = frame[0];
             Assert.AreEqual("System.Single", FrameGate.symbols.Resolve(record.payloadTypeId));
 
-            var bytes = new byte[record.payloadLength];
-            record.CopyPayloadTo(bytes);
-            Assert.AreEqual(35f, BitConverter.ToSingle(bytes, 0), 0f);
+            Assert.AreEqual(35f, BitConverter.ToSingle(frame.PayloadOf(in record).ToArray(), 0), 0f);
         }
 
         [Test]

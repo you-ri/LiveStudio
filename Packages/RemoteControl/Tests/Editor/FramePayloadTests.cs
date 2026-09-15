@@ -1,7 +1,6 @@
 // Copyright (c) You-Ri, 2026
 using System;
 using System.IO;
-using System.Text;
 using NUnit.Framework;
 using UnityEngine;
 using Lilium.RemoteControl.Frames;
@@ -52,7 +51,7 @@ namespace Lilium.RemoteControl.Tests
             // 0.1f has no exact decimal form, which is the case digits get wrong and bytes do not.
             const float value = 0.1f;
 
-            Span<byte> bytes = stackalloc byte[EventRecord.kPayloadCapacity];
+            Span<byte> bytes = stackalloc byte[16];
             Assert.IsTrue(EventPayload.TryPack(typeof(float), value, bytes, out var written));
             Assert.AreEqual(4, written, "a float is four bytes, not four characters");
 
@@ -65,11 +64,24 @@ namespace Lilium.RemoteControl.Tests
         {
             var value = new Vector3(1f, -2.5f, 3.25f);
 
-            Span<byte> bytes = stackalloc byte[EventRecord.kPayloadCapacity];
+            Span<byte> bytes = stackalloc byte[16];
             Assert.IsTrue(EventPayload.TryPack(typeof(Vector3), value, bytes, out var written));
             Assert.AreEqual(12, written);
 
             Assert.IsTrue(EventPayload.TryUnpack(typeof(Vector3), bytes.Slice(0, written), out var read));
+            Assert.AreEqual(value, (Vector3)read);
+        }
+
+        [Test]
+        public void AKnownType_IsWrittenWithoutGoingThroughObject()
+        {
+            // The same bytes the boxed path lays down, for a caller that knows the type.
+            var value = new Vector3(1f, -2.5f, 3.25f);
+
+            Span<byte> bytes = stackalloc byte[12];
+            EventPayload.Write(in value, bytes);
+
+            Assert.IsTrue(EventPayload.TryUnpack(typeof(Vector3), bytes, out var read));
             Assert.AreEqual(value, (Vector3)read);
         }
 
@@ -80,7 +92,7 @@ namespace Lilium.RemoteControl.Tests
             // that is what the reader lays back out.
             Assert.AreEqual(1, EventPayload.SizeOf(typeof(bool)));
 
-            Span<byte> bytes = stackalloc byte[EventRecord.kPayloadCapacity];
+            Span<byte> bytes = stackalloc byte[16];
             Assert.IsTrue(EventPayload.TryPack(typeof(bool), true, bytes, out var written));
             Assert.AreEqual(1, written);
 
@@ -91,7 +103,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void AnEnum_KeepsItsValue_NotItsName()
         {
-            Span<byte> bytes = stackalloc byte[EventRecord.kPayloadCapacity];
+            Span<byte> bytes = stackalloc byte[16];
             Assert.IsTrue(EventPayload.TryPack(typeof(Facing), Facing.Right, bytes, out var written));
 
             Assert.IsTrue(EventPayload.TryUnpack(typeof(Facing), bytes.Slice(0, written), out var read));
@@ -99,63 +111,36 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void AString_SaysItsOwnLengthBeforeItsCharacters()
+        public void AString_IsItsUtf8_AndTheRecordSaysHowLong()
         {
-            Span<byte> bytes = stackalloc byte[EventRecord.kPayloadCapacity];
-            Assert.IsTrue(EventPayload.TryWriteString("あい", bytes, out var written));
+            // No prefix and no terminator: the record carries the length, so the bytes are the text
+            // and nothing else.
+            Assert.AreEqual(6, EventPayload.ByteCountOf("あい"));
 
-            // Two bytes of length, then six of UTF-8: no terminator to scan for.
-            Assert.AreEqual(EventPayload.kLengthPrefixSize + 6, written);
-            Assert.AreEqual(6, BitConverter.ToUInt16(bytes.Slice(0, 2).ToArray(), 0));
+            Span<byte> bytes = stackalloc byte[16];
+            var written = EventPayload.WriteString("あい", bytes);
 
+            Assert.AreEqual(6, written);
             Assert.AreEqual("あい", EventPayload.ReadString(bytes.Slice(0, written)));
         }
 
         [Test]
-        public void AnEmptyString_IsStillAStringRatherThanNothing()
+        public void AnEmptyString_IsNoBytes_AndReadsBackEmpty()
         {
-            Span<byte> bytes = stackalloc byte[EventRecord.kPayloadCapacity];
-            Assert.IsTrue(EventPayload.TryWriteString(string.Empty, bytes, out var written));
-
-            Assert.AreEqual(EventPayload.kLengthPrefixSize, written);
-            Assert.AreEqual(string.Empty, EventPayload.ReadString(bytes.Slice(0, written)));
+            Assert.AreEqual(0, EventPayload.ByteCountOf(string.Empty));
+            Assert.AreEqual(string.Empty, EventPayload.ReadString(ReadOnlySpan<byte>.Empty));
         }
 
         [Test]
-        public void AStringLongerThanTheRecord_IsCutOnACharacterBoundary()
-        {
-            // Kept readable rather than ending in half a rune: what survives is still the value,
-            // just less of it.
-            var text = new string('あ', EventRecord.kPayloadCapacity);
-
-            Span<byte> bytes = stackalloc byte[EventRecord.kPayloadCapacity];
-            Assert.IsFalse(EventPayload.TryWriteString(text, bytes, out var written));
-
-            var read = EventPayload.ReadString(bytes.Slice(0, written));
-            Assert.Less(read.Length, text.Length);
-            StringAssert.StartsWith(read, text);
-        }
-
-        [Test]
-        public void APrefixLongerThanWhatIsThere_ReadsOnlyWhatIsThere()
-        {
-            // A file cut off mid-record would otherwise have its last string read past its own end.
-            Span<byte> bytes = stackalloc byte[EventRecord.kPayloadCapacity];
-            EventPayload.TryWriteString("abcdef", bytes, out var written);
-
-            Assert.AreEqual("abc", EventPayload.ReadString(bytes.Slice(0, written - 3)));
-        }
-
-        [Test]
-        public void APropertyThatDeclaresAMaximum_NeedsNoneOfThat()
+        public void APropertyThatDeclaresAMaximum_PacksAtItsOwnWidth()
         {
             // A FixedString is unmanaged, so it packs at its own width like any other value and its
-            // characters stay in the record. That is what declaring a bound buys.
+            // characters stay in the record.
             var value = new Unity.Collections.FixedString32Bytes("ai");
 
             Assert.AreEqual(32, EventPayload.SizeOf(typeof(Unity.Collections.FixedString32Bytes)));
 
-            Span<byte> bytes = stackalloc byte[EventRecord.kPayloadCapacity];
+            Span<byte> bytes = stackalloc byte[64];
             Assert.IsTrue(EventPayload.TryPack(
                 typeof(Unity.Collections.FixedString32Bytes), value, bytes, out var written));
             Assert.AreEqual(32, written);
@@ -198,11 +183,30 @@ namespace Lilium.RemoteControl.Tests
 
             var record = frame[0];
             Assert.AreEqual("System.Single", FrameGate.symbols.Resolve(record.payloadTypeId));
-            Assert.AreEqual(4, record.payloadLength, "not the six characters of \"35.0\"");
+            Assert.AreEqual(4, record.payloadLength, "not the four characters of \"35.0\"");
+            Assert.AreEqual(35f, BitConverter.ToSingle(frame.PayloadOf(in record).ToArray(), 0), 0f);
+        }
 
-            var bytes = new byte[record.payloadLength];
-            record.CopyPayloadTo(bytes);
-            Assert.AreEqual(35f, BitConverter.ToSingle(bytes, 0), 0f);
+        [Test]
+        public void AKnownTypeStamp_RecordsTheSameValue()
+        {
+            const string target = "/live/object/cam/fov";
+
+            FrameGate._Enqueue(EventKind.Set, "test", target, "35.0",
+                () =>
+                {
+                    FrameGate.StampAppliedPayload(target, 35f);
+                    return true;
+                });
+
+            FrameGate.Pump();
+
+            using var frame = new EventFrame();
+            Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
+
+            var record = frame[0];
+            Assert.AreEqual("System.Single", FrameGate.symbols.Resolve(record.payloadTypeId));
+            Assert.AreEqual(35f, BitConverter.ToSingle(frame.PayloadOf(in record).ToArray(), 0), 0f);
         }
 
         [LiveClass("DeferredViewSubject")]
@@ -256,10 +260,7 @@ namespace Lilium.RemoteControl.Tests
 
                 var record = frame[0];
                 Assert.AreEqual(EventPayload.kStringTypeName, FrameGate.symbols.Resolve(record.payloadTypeId));
-
-                var bytes = new byte[record.payloadLength];
-                record.CopyPayloadTo(bytes);
-                Assert.AreEqual("new", EventPayload.ReadString(bytes),
+                Assert.AreEqual("new", EventPayload.ReadString(frame.PayloadOf(in record)),
                     "the record kept what the getter still reported rather than what was asked for");
             }
             finally
@@ -288,10 +289,7 @@ namespace Lilium.RemoteControl.Tests
 
             var record = frame[0];
             Assert.AreEqual(EventPayload.kStringTypeName, FrameGate.symbols.Resolve(record.payloadTypeId));
-
-            var bytes = new byte[record.payloadLength];
-            record.CopyPayloadTo(bytes);
-            Assert.AreEqual("ai", EventPayload.ReadString(bytes), "the value, not its JSON form");
+            Assert.AreEqual("ai", EventPayload.ReadString(frame.PayloadOf(in record)), "the value, not its JSON form");
         }
 
         [Test]
@@ -309,10 +307,7 @@ namespace Lilium.RemoteControl.Tests
 
             var record = frame[0];
             Assert.AreEqual(EventPayload.kRequestTypeName, FrameGate.symbols.Resolve(record.payloadTypeId));
-
-            var bytes = new byte[record.payloadLength];
-            record.CopyPayloadTo(bytes);
-            Assert.AreEqual("\"ai\"", EventPayload.ReadString(bytes));
+            Assert.AreEqual("\"ai\"", EventPayload.ReadString(frame.PayloadOf(in record)));
         }
 
         [Test]
@@ -321,10 +316,11 @@ namespace Lilium.RemoteControl.Tests
             // The write path is reachable without the gate. It must not have to know that.
             Assert.DoesNotThrow(
                 () => FrameGate.StampAppliedPayload("/live/object/cam/fov", typeof(float), 1f));
+            Assert.DoesNotThrow(() => FrameGate.StampAppliedPayload("/live/object/cam/fov", 1f));
         }
 
         [Test]
-        public void AValueThatReplacesCutShortText_IsNoLongerMarkedCutShort()
+        public void AValueThatReplacesTheRequestText_IsWhatTheRecordCarries()
         {
             const string target = "/live/object/cam/fov";
 
@@ -340,8 +336,8 @@ namespace Lilium.RemoteControl.Tests
             using var frame = new EventFrame();
             Assert.AreEqual(FrameLookup.Found, FrameGate.buffer.TryReadLatest(frame));
 
-            Assert.IsFalse(frame[0].payloadTruncated,
-                "the value that replaced the text was not cut short, so the mark would be a lie");
+            Assert.AreEqual(4, frame[0].payloadLength, "the stamped value, not the request it replaced");
+            Assert.AreEqual(12f, BitConverter.ToSingle(frame.PayloadAt(0).ToArray(), 0), 0f);
         }
 
         // ---- What the lanes are allowed to carry ----
@@ -349,7 +345,7 @@ namespace Lilium.RemoteControl.Tests
         [Test]
         public void EverythingTheLanesCarry_IsUnmanaged()
         {
-            // NativeArray<T> already refuses anything else at compile time, so this is here to say
+            // The native lists already refuse anything else at compile time, so this is here to say
             // it out loud: a managed field added to one of these would be caught as a build error
             // with no explanation of why it is not allowed.
             Assert.IsTrue(UnsafeUtility.IsUnmanaged<EventRecord>(), "the evt lane");
@@ -361,15 +357,11 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void ARecord_CostsItsPayloadAndLittleElse()
+        public void ARecord_IsAHandfulOfIds()
         {
-            // Guards against a field creeping in beside the payload: the bookkeeping is a handful
-            // of ids, and a record that grew past that would be carrying something it should not.
-            var size = UnsafeUtility.SizeOf<EventRecord>();
-
-            Assert.GreaterOrEqual(size, EventRecord.kPayloadCapacity);
-            Assert.LessOrEqual(size, EventRecord.kPayloadCapacity + 64,
-                "the payload is what a record is for; everything else is ids");
+            // The value lives in the frame's arena, so a record is its bookkeeping and nothing else.
+            // One that grew past this would be carrying something it should not.
+            Assert.LessOrEqual(UnsafeUtility.SizeOf<EventRecord>(), 48);
         }
 
         // ---- Through the file ----
@@ -389,13 +381,14 @@ namespace Lilium.RemoteControl.Tests
                 events.Reset(0, FrameRate.FPS60);
 
                 var record = new EventRecord(1, EventKind.Set, symbols.Intern("rest"),
-                    symbols.Intern("/live/object/cam/fov"), EventFlags.None, symbols.Intern("PUT"));
+                    symbols.Intern("/live/object/cam/fov"), EventFlags.None, symbols.Intern("PUT"))
+                {
+                    payloadTypeId = symbols.Intern("System.Single"),
+                };
 
-                Span<byte> packed = stackalloc byte[EventRecord.kPayloadCapacity];
-                EventPayload.TryPack(typeof(float), 35f, packed, out var written);
-                record.SetPayload(packed.Slice(0, written), symbols.Intern("System.Single"));
-
-                events.Add(record);
+                Span<byte> packed = stackalloc byte[4];
+                EventPayload.Write(35f, packed);
+                events.Add(in record, packed);
 
                 var frame = new Frame { frameNumber = 0, frameRate = FrameRate.FPS60, events = events };
                 writer.BeginFrame(in frame, symbols);
@@ -409,14 +402,11 @@ namespace Lilium.RemoteControl.Tests
             using (var player = new FrameRecordPlayer(stream))
             {
                 Assert.IsTrue(player.Advance());
-                Assert.AreEqual(1, player.events.Count);
+                Assert.AreEqual(1, player.events.eventCount);
 
                 var record = player.events[0];
                 Assert.AreEqual("System.Single", player.Resolve(record.payloadTypeId));
-
-                var bytes = new byte[record.payloadLength];
-                record.CopyPayloadTo(bytes);
-                Assert.AreEqual(35f, BitConverter.ToSingle(bytes, 0), 0f);
+                Assert.AreEqual(35f, BitConverter.ToSingle(player.events.PayloadOf(in record).ToArray(), 0), 0f);
             }
         }
     }

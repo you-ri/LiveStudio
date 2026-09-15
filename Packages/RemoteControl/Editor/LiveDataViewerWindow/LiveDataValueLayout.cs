@@ -99,7 +99,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             // bytes and the declaration says what is in it. Asked first, because the type here is
             // the exposed type itself (UnityEngine.Light), and walking that as if it were the value
             // would describe the component rather than the bytes.
-            var declared = StateBridgeRegistry.Find(type) as DeclaredStateBridge;
+            var declared = StateTypes.FindBridge(type) as DeclaredStateBridge;
             if (declared != null)
             {
                 if (_cache.TryGetValue(type, out var cachedDeclared)

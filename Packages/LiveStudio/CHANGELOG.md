@@ -1,21 +1,7 @@
 # Changelog
 
-## [Unreleased]
-
-### Added
-
-- **`MotionSourceBase.OnSampleResolved(sample, supplied)` lets a source derive its reference point from the sample itself.** It runs once the frame's sample is resolved and before the sample is placed, whether the sample was taken live or read back off a supplied frame. On a supplied frame this is the only place a source sees the capture at all, so a placement derived from it (a camera fit, say) belongs here. `VirgoMotionSource` uses it to fit a replay to the take's own capture camera.
-
-### Changed
-
-- **`FrameRecorderProject` is renamed `LiveDataRecorderProject`.** This follows the rename of `FrameRecorderController` to `LiveDataRecorder` in `jp.lilium.remotecontrol`. This is a breaking change for source.
-
-### Fixed
-
-- **An avatar's meshes share one light/reflection probe anchor, so its parts are no longer lit differently.** Each renderer used to sample probes at its own bounds center — nothing on the VRM 1.0 load path, in a `.lsavatar` or in a built-in prefab set `Renderer.probeAnchor` — so hair, body and clothing could pick up visibly different ambient light. `AvatarController` now points every `SkinnedMeshRenderer` / `MeshRenderer` under the avatar (inactive ones included) at the Chest bone, falling back to Spine and then Hips when the rig lacks it. A renderer whose anchor was already set in the prefab is left as the author set it.
-
 ## [0.26.0] - 2026-09-12
-<!-- changelog-sha: c41546bfecf2c2854bd2032780ab482d6ce1a63d -->
+<!-- changelog-sha: b57804fe6850c46c8e4103b9596300d3793768f2 -->
 
 ### Added
 
@@ -28,6 +14,8 @@
 - **A scene shipped inside the app can be offered as a set, the same as an external `*.set.lsb`.** A project declares which of its scenes are sets in a `BuiltinSetList` asset under `Assets/Resources/` (create it from *Assets ▸ Lilium Live Studio ▸ Create Built-in Set List*), and each declared scene lists on the project page as a built-in asset and on the stage page as a set that loads, unloads and activates through exactly the path a bundle set does — `StageManager` reconciles through `ISetAsset`, so there was nothing to teach it. Declaring is deliberately explicit rather than "every scene in the build is a set": a build also carries scenes that are not stages, and offering the bootstrap scene as a set would load the whole studio on top of itself, a second `AvatarController` included. The declaration is also where a set gets what a bare scene path cannot carry — a display name and a preview image — and its inspector reports the two things that make a declaration fail in the field: a scene missing from the build (with a button to add it) and two sets sharing a display name, which would make the stage's saved and recorded state ambiguous, since a set is recorded by name. A set's identity is its scene's GUID, so moving or renaming the scene keeps a saved live scene working; the scene path travels alongside as a cache and is re-derived whenever the scene moves. `SetAssetBase` joins `SetBundleAsset` and `BuiltinSetAsset` under one base so the remote app can list "every set" from the inheritance chain in `GET /live/types` rather than naming each concrete type — an interface cannot serve there, since only base classes are published. `AssetBase.isBuiltin` is exposed read-only for the same reason (a saved scene is unchanged: persistence skips read-only properties). When a set bundle happens to be called the same thing as a built-in set, the built-in one wins every name lookup — a saved or recorded stage names the set it wants, and the built-in copy is the one every machine running this app is guaranteed to have, where a `*.set.lsb` is whatever that machine has on disk. The stage page marks which is which, and a warning names any stages sharing a name: settling the tie makes a restore predictable, it does not make two stages with one name a good idea.
 
 - **One deck is one file (`*.deck.json`), and every deck file in the project is a tab.** The authored operation layer — every `OperationSet` and `Deck` — used to be inlined in the live scene, so a deck could not be reused across scenes, handed to someone else, or seen in the project listing. A deck is now a file in the project's `Decks` folder holding that deck's grid width and the operation sets placed on it, and the operations page's tabs are exactly the deck files the project crawl found. The file name **is** the deck's name (nothing inside the file repeats it), so renaming a tab renames the file; adding a tab creates one; deleting a tab deletes it along with the operations it held (the remote app confirms first). There is no save button and no unsaved state: every edit — from the deck functions and from the generic property REST alike — writes the deck it landed in, and only that one. Dropping a `*.deck.json` into the project folder and re-scanning adds it as a tab. `OperationManager.operationSets` / `decks` are `PersistScope.Custom`, so the live scene carries nothing about decks at all; switching scenes within a project keeps the decks, and switching projects replaces them. One consequence worth knowing: a snapshot (and `POST /live/scene/export`) does not carry decks, since both write Scene scope.
+
+- **`MotionSourceBase.OnSampleResolved(sample, supplied)` lets a source derive its reference point from the sample itself.** It runs once the frame's sample is resolved and before the sample is placed, whether the sample was taken live or read back off a supplied frame. On a supplied frame this is the only place a source sees the capture at all, so a placement derived from it (a camera fit, say) belongs here. `VirgoMotionSource` uses it to fit a replay to the take's own capture camera.
 
 ### Changed
 
@@ -91,6 +79,8 @@
 
 - **`POST /live/commands` is gone.** It was already `[Obsolete]` with live functions (`POST /live/function/{id}/{path}`) named as its replacement, and it had stopped being reachable in practice: the only command it ever implemented was `input_action`, whose body never simulated a press at all — it just enabled or disabled the action and left a TODO — and nothing called it. On the remote app side the whole chain that fed it was dead too: `sendCommand` → `sendMessage` → a `commonProps.sendMessage` that no page was passed, plus a `useHomePage` hook with a `startCalibration` that no component imported (calibration is Fusion's endpoint, not this one). All of that is removed with the route. `POST /live/commands/quit` and `POST /live/commands/reset` are **unaffected** — they are separate routes served by RemoteControl's `QuitApiHandler` / `ResetApiHandler`, not by this handler, and both are still in use.
 
+- **`FrameRecorderProject` is renamed `LiveDataRecorderProject`.** This follows the rename of `FrameRecorderController` to `LiveDataRecorder` in `jp.lilium.remotecontrol`. This is a breaking change for source.
+
 ### Fixed
 
 - **A built-in entry a saved scene no longer recognises is dropped instead of haunting the scene.** A built-in asset has no file path to rebuild an id from, so an entry whose identity cannot be resolved — a built-in set the project stopped declaring, or one saved when the identity had another shape — came back with an empty id: it could never load (the diff skips empty ids), it dodged the de-dup that keys on id, and it was written straight back out on every save. `ExternalAssetManager` now drops such an entry as the restore lands, with a warning naming it. Nothing is lost — every still-declared built-in is re-injected immediately after.
@@ -102,6 +92,8 @@
 - The avatar the remote app showed as selected could briefly be the previous one after a switch: `AvatarSelection.GetSelectedName` returned the first enabled avatar in list order, and reconciling briefly leaves both enabled. It now reads the manager's own pick (`selectedExclusive`), so it agrees with what is about to load.
 
 - `LiveCamera`'s preview capture no longer destroys its RenderTexture while it is still the camera's target texture (Unity logged a warning); the camera is detached first.
+
+- **An avatar's meshes share one light/reflection probe anchor, so its parts are no longer lit differently.** Each renderer used to sample probes at its own bounds center — nothing on the VRM 1.0 load path, in a `.lsavatar` or in a built-in prefab set `Renderer.probeAnchor` — so hair, body and clothing could pick up visibly different ambient light. `AvatarController` now points every `SkinnedMeshRenderer` / `MeshRenderer` under the avatar (inactive ones included) at the Chest bone, falling back to Spine and then Hips when the rig lacks it. A renderer whose anchor was already set in the prefab is left as the author set it.
 
 ## [0.25.3] - 2026-07-22
 <!-- changelog-sha: ead5a500c2674f81ae92f66e88e1b3eacac8bd4f -->

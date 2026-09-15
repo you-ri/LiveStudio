@@ -1,7 +1,9 @@
 // Copyright (c) You-Ri, 2026
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Runtime.InteropServices;
+using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine;
 
 namespace Lilium.RemoteControl.Frames
@@ -9,10 +11,18 @@ namespace Lilium.RemoteControl.Frames
     /// <summary>
     /// Moves state for a type whose members were declared by a <see cref="LiveClassAsset"/>.
     ///
-    /// Reads and writes through the same accessors the REST path uses rather than by reflecting per
-    /// frame. It is still more work than a generated bridge does -- that one compiles down to field
-    /// assignments -- so this exists for the types the generator cannot reach, not as an alternative
-    /// to it.
+    /// Writes go through the same accessors the REST path uses, so a replayed value arrives with the
+    /// notifications a remote write would bring. Reads -- every member of every object, every frame
+    /// -- go through a typed mover per slot instead, which neither boxes the value nor marshals it
+    /// (see <see cref="SlotMover"/>). It is still more work than a generated bridge does -- that one
+    /// compiles down to field assignments -- so this exists for the types the generator cannot
+    /// reach, not as an alternative to it.
+    ///
+    /// <para>
+    /// The generator cannot reach them because an asset is not something Unity hands a generator:
+    /// its additional-file channel takes only specially named files under Assets and passes them
+    /// to every assembly alike, and a declaration in a bundle does not exist at compile time at all.
+    /// </para>
     ///
     /// The block is a <see cref="DeclaredStateBlock"/> sized from the declaration, so a type pays
     /// for the values it declared and nothing more. What it does not get is the check a generated
@@ -79,13 +89,201 @@ namespace Lilium.RemoteControl.Frames
             /// </summary>
             public readonly LivePropertyType property;
 
-            public Slot(string name, Type valueType, int offset, int size, LivePropertyType property)
+            /// <summary>
+            /// Moves the value without boxing it, or null for the rare width the typed copy would
+            /// get wrong -- those stay on the marshalling path below.
+            /// </summary>
+            public readonly SlotMover mover;
+
+            public Slot(string name, Type valueType, int offset, int size, LivePropertyType property,
+                SlotMover mover)
             {
                 this.name = name;
                 this.valueType = valueType;
                 this.offset = offset;
                 this.size = size;
                 this.property = property;
+                this.mover = mover;
+            }
+        }
+
+        /// <summary>
+        /// Moves one declared value between its member and its slot without going through
+        /// <c>object</c>.
+        ///
+        /// The accessor a declaration otherwise reads through answers in <c>object</c>, so every
+        /// value-typed member of every object was boxed once to capture it and again to compare it
+        /// on replay, and turned into bytes by the marshaller -- garbage at frame rate for the types
+        /// the asset exists to expose. This reads the member as the type it is: through the
+        /// generator's typed accessor where one was registered, an open delegate over a property's
+        /// getter, or a field's offset inside the object.
+        ///
+        /// Writes still go through the property, because a write is the one step that has to look
+        /// like a remote one -- the default captured, the change announced -- and it only happens
+        /// when the value actually moved.
+        /// </summary>
+        private abstract unsafe class SlotMover
+        {
+            /// <summary>
+            /// Reads the member into the slot, in the slot's format. Leaves the slot as it is when
+            /// the member cannot be read.
+            /// </summary>
+            /// <param name="target">
+            /// The object, when the slot's member is known to be on it; null to go through
+            /// <paramref name="property"/> instead.
+            /// </param>
+            public abstract void Capture(object target, in LiveProperty property, byte* slot);
+
+            /// <summary>
+            /// Writes the slot into the member, unless the member already holds it.
+            /// <paramref name="scratch"/> is at least as wide as the slot.
+            /// </summary>
+            public abstract void Apply(object target, in LiveProperty property, byte* slot, byte* scratch);
+
+            /// <summary>A mover for one slot, or null when the slot has to stay on the marshaller.</summary>
+            public static SlotMover For(LivePropertyType member, Type valueType, int size)
+            {
+                if (valueType == null) return null;
+
+                // The slot's format is what the marshaller writes, which a typed copy reproduces
+                // wherever the value's own width is the marshalled one. bool is the exception worth
+                // making -- four bytes in the slot, one in memory, and one of the likeliest things
+                // to declare. Anything else that disagrees (char marshals to one byte) keeps the
+                // marshalling path rather than a second format.
+                if (valueType == typeof(bool))
+                {
+                    if (size != sizeof(int)) return null;
+                }
+                else if (UnsafeUtility.SizeOf(valueType) != size)
+                {
+                    return null;
+                }
+
+                var moverType = typeof(SlotMover<>).MakeGenericType(valueType);
+                return (SlotMover)Activator.CreateInstance(moverType, member);
+            }
+        }
+
+        private sealed unsafe class SlotMover<T> : SlotMover where T : struct
+        {
+            private static readonly bool _isBool = typeof(T) == typeof(bool);
+            private static readonly int _size = _isBool ? sizeof(int) : UnsafeUtility.SizeOf<T>();
+
+            // At most one of these. With neither, the value is read through the property, which is
+            // still boxing-free where the generator registered a typed accessor.
+            private readonly Func<object, T> _getter;
+            private readonly int _fieldOffset = -1;
+
+            public SlotMover(LivePropertyType member)
+            {
+                if (member == null || member.isStatic || member.isArrayElement) return;
+
+                _getter = member.typedGetter as Func<object, T>;
+                if (_getter != null) return;
+
+                if (member.properyInfo != null)
+                {
+                    _getter = _OpenGetter(member.properyInfo);
+                    return;
+                }
+
+                var field = member.fieldInfo;
+                if (field != null && !field.IsStatic && field.FieldType == typeof(T)
+                    && _IsPlainClass(field.DeclaringType))
+                {
+                    _fieldOffset = UnsafeUtility.GetFieldOffset(field);
+                }
+            }
+
+            public override void Capture(object target, in LiveProperty property, byte* slot)
+            {
+                if (_TryRead(target, in property, out var value)) _Store(ref value, slot);
+            }
+
+            public override void Apply(object target, in LiveProperty property, byte* slot, byte* scratch)
+            {
+                // Compared in the slot's format, as bytes, for the reason _AlreadyHolds gives.
+                if (_TryRead(target, in property, out var current))
+                {
+                    _Store(ref current, scratch);
+                    if (UnsafeUtility.MemCmp(scratch, slot, _size) == 0) return;
+                }
+
+                property.TrySetValue(_Load(slot));
+            }
+
+            private bool _TryRead(object target, in LiveProperty property, out T value)
+            {
+                if (target == null || (_getter == null && _fieldOffset < 0))
+                {
+                    return property.TryGetValue(out value);
+                }
+
+                // What LivePropertyUtility.CanAccess asks, without the reflection behind it. The
+                // type side of that question is already settled: a target is only handed over when
+                // the handle names the class this slot was built from.
+                if (target is UnityEngine.Object unity && unity == null)
+                {
+                    value = default;
+                    return false;
+                }
+
+                if (_getter != null)
+                {
+                    value = _getter(target);
+                    return true;
+                }
+
+                var address = (byte*)UnsafeUtility.PinGCObjectAndGetAddress(target, out var handle);
+                UnsafeUtility.CopyPtrToStructure(address + _fieldOffset, out value);
+                UnsafeUtility.ReleaseGCObject(handle);
+                return true;
+            }
+
+            private static void _Store(ref T value, byte* slot)
+            {
+                if (_isBool) *(int*)slot = *(byte*)UnsafeUtility.AddressOf(ref value) != 0 ? 1 : 0;
+                else UnsafeUtility.CopyStructureToPtr(ref value, slot);
+            }
+
+            private static T _Load(byte* slot)
+            {
+                var value = default(T);
+                if (_isBool) *(bool*)UnsafeUtility.AddressOf(ref value) = *(int*)slot != 0;
+                else UnsafeUtility.CopyPtrToStructure(slot, out value);
+                return value;
+            }
+
+            private static bool _IsPlainClass(Type owner)
+                => owner != null && owner.IsClass && !owner.ContainsGenericParameters;
+
+            /// <summary>
+            /// A getter over <c>object</c> that calls the property's own getter, typed. Null when
+            /// the property is not a plain instance getter on a class, which is read through the
+            /// property instead.
+            /// </summary>
+            private static Func<object, T> _OpenGetter(PropertyInfo property)
+            {
+                var get = property.GetMethod;
+                if (get == null || get.IsStatic || property.PropertyType != typeof(T)) return null;
+                if (get.GetParameters().Length != 0 || !_IsPlainClass(property.DeclaringType)) return null;
+
+                var close = typeof(SlotMover<T>)
+                    .GetMethod(nameof(_Close), BindingFlags.NonPublic | BindingFlags.Static)
+                    .MakeGenericMethod(property.DeclaringType);
+
+                return (Func<object, T>)close.Invoke(null, new object[] { get });
+            }
+
+            private static Func<object, T> _Close<TOwner>(MethodInfo get) where TOwner : class
+            {
+                // Asked not to throw: a getter that cannot be bound this way is read through the
+                // property, which is what happened to every getter before this existed.
+                var open = (Func<TOwner, T>)Delegate.CreateDelegate(typeof(Func<TOwner, T>), get,
+                    throwOnBindFailure: false);
+
+                if (open == null) return null;
+                return target => open((TOwner)target);
             }
         }
 
@@ -158,6 +356,16 @@ namespace Lilium.RemoteControl.Frames
             property = found ?? default;
             return found != null;
         }
+
+        /// <summary>
+        /// The object a slot's mover may read directly, or null to have it go through the property.
+        ///
+        /// Only when the handle names the class the slots were built from: the movers were made
+        /// against that class's members, and a handle bound by name to some other declaration may
+        /// hold an object those members are not on.
+        /// </summary>
+        private object _DirectTarget(in LiveObjectHandle handle)
+            => ReferenceEquals(handle.targetType, _liveClass) ? handle.target : null;
 
         public override Type ownerType { get; }
 
@@ -264,7 +472,8 @@ namespace Lilium.RemoteControl.Frames
                 }
 
                 var size = SizeOf(valueType);
-                slots.Add(new Slot(member.name, valueType, offset, size, member));
+                slots.Add(new Slot(member.name, valueType, offset, size, member,
+                    SlotMover.For(member, valueType, size)));
 
                 offset += size;
             }
@@ -289,7 +498,7 @@ namespace Lilium.RemoteControl.Frames
             var schema = StateSchemaBuilder.ForDeclared(DeclaredStateBlock.kMetaSize,
                 DeclaredStateBlock.StrideFor(offset), described);
 
-            StateSchemaRegistry.Declare(liveClass.type.FullName, schema);
+            StateTypes.DeclareSchema(liveClass.type.FullName, schema);
 
             return new DeclaredStateBridge(liveClass.type, liveClass, slots.ToArray(),
                 schema.ToText(), offset);
@@ -349,6 +558,7 @@ namespace Lilium.RemoteControl.Frames
             block.SetMeta(index, source, time);
 
             var payload = block.Payload(index);
+            var target = _DirectTarget(in handle);
 
             fixed (byte* bytes = payload)
             {
@@ -356,6 +566,12 @@ namespace Lilium.RemoteControl.Frames
                 {
                     var slot = _slots[i];
                     if (!_TryBind(in handle, in slot, out var property)) continue;
+
+                    if (slot.mover != null)
+                    {
+                        slot.mover.Capture(target, in property, bytes + slot.offset);
+                        continue;
+                    }
 
                     // Read through the same accessor REST uses -- shadow fields travel through
                     // their property, so what is captured is what the setter would have applied.
@@ -409,6 +625,8 @@ namespace Lilium.RemoteControl.Frames
             }
 
             var mask = block.appliedMemberMask;
+            var target = _DirectTarget(in handle);
+            byte* scratch = stackalloc byte[_widestSlot];
 
             fixed (byte* bytes = payload)
             {
@@ -421,6 +639,13 @@ namespace Lilium.RemoteControl.Frames
 
                     var slot = _slots[i];
                     if (!_TryBind(in handle, in slot, out var property)) continue;
+
+                    if (slot.mover != null)
+                    {
+                        slot.mover.Apply(target, in property, bytes + slot.offset, scratch);
+                        continue;
+                    }
+
                     if (_AlreadyHolds(in property, in slot, bytes)) continue;
 
                     property.SetValue(_Read(slot, bytes));

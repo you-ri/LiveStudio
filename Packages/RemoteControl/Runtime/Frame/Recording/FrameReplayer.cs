@@ -32,32 +32,15 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// <summary>Which producer it came from, for choosing what to replay and what to leave out.</summary>
         public readonly string source;
 
-        /// <summary>True when the payload did not fit the record and was cut short at capture.</summary>
-        public readonly bool payloadTruncated;
-
-        /// <summary>
-        /// True when the record restates a value rather than reporting a change
-        /// (<see cref="EventFlags.Reemitted"/>).
-        ///
-        /// What it changes is whether applying it is worth doing at all: a restatement whose value
-        /// the world already holds is a write with no effect, and some of those effects are
-        /// expensive (an asset reference reloads the asset). An applier is expected to compare
-        /// first and do nothing when they match.
-        /// </summary>
-        public readonly bool reemitted;
-
         public ReplayEvent(EventKind kind, string verb, string target, string payloadTypeName,
-            ReadOnlyMemory<byte> payload, string source, bool payloadTruncated,
-            bool reemitted = false)
+            ReadOnlyMemory<byte> payload, string source)
         {
-            this.reemitted = reemitted;
             this.kind = kind;
             this.verb = verb;
             this.target = target;
             this.payloadTypeName = payloadTypeName;
             this.payload = payload;
             this.source = source;
-            this.payloadTruncated = payloadTruncated;
         }
 
         /// <summary>True when the payload is a string value rather than a laid-out one.</summary>
@@ -111,32 +94,25 @@ namespace Lilium.RemoteControl.Frames.Recording
         private readonly FrameRecordPlayer _player;
         private readonly IEventApplier _applier;
 
-        // One buffer for every event. Handed to the applier as a window over it, which is why an
-        // applier is told not to hold on to it past the call.
-        private readonly byte[] _payloadBuffer = new byte[EventRecord.kPayloadCapacity];
+        // One buffer for every event, grown to the longest seen. Handed to the applier as a window
+        // over it, which is why an applier is told not to hold on to it past the call.
+        private byte[] _payloadBuffer = new byte[256];
 
-        // The records a seek walked over, and where each target was last written in them. Kept on
-        // the replayer so a scrub does not allocate a pair of collections per jump.
-        private readonly List<EventRecord> _walked = new List<EventRecord>();
+        // The records a seek walked over, with their values, and where each target was last written
+        // in them. Kept on the replayer so a scrub does not allocate per jump.
+        private readonly EventFrame _walked = new EventFrame();
         private readonly Dictionary<int, int> _lastWriteIndex = new Dictionary<int, int>();
 
         // Records put back since the last frame was supplied, waiting to be written into that
-        // frame's event lane. A list rather than writing straight through, because a seek applies
-        // its events outside a frame head -- there is no lane to write into until the next one.
-        private readonly List<EventRecord> _replayed = new List<EventRecord>();
+        // frame's event lane. Held rather than written straight through, because a seek applies its
+        // events outside a frame head -- there is no lane to write into until the next one.
+        private readonly EventFrame _replayed = new EventFrame();
 
         /// <summary>Events handed to the applier so far.</summary>
         public int appliedEventCount { get; private set; }
 
         /// <summary>Events the applier could not put back.</summary>
         public int failedEventCount { get; private set; }
-
-        /// <summary>
-        /// Events skipped because what was recorded of them was already incomplete. Replaying a
-        /// truncated payload would put a different value back than the one that was applied live,
-        /// which is worse than not putting it back at all.
-        /// </summary>
-        public int skippedTruncatedCount { get; private set; }
 
         /// <summary>The recording being played. Its structure and state are the restored world.</summary>
         public FrameRecordPlayer player => _player;
@@ -320,15 +296,15 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// </summary>
         private void _PublishReplayed(EventFrame lane)
         {
-            if (_replayed.Count == 0) return;
+            if (_replayed.eventCount == 0) return;
 
             // No lane to publish into (a caller driving the replayer outside the gate). Dropped
             // rather than kept: holding them would hand a later frame events that are not its own.
             if (lane != null)
             {
-                for (int i = 0; i < _replayed.Count; i++)
+                for (int i = 0; i < _replayed.eventCount; i++)
                 {
-                    lane.Add(_replayed[i]);
+                    lane.Add(in _replayed[i], _replayed.PayloadAt(i));
                 }
             }
 
@@ -407,7 +383,12 @@ namespace Lilium.RemoteControl.Frames.Recording
             return first >= 0 && TrySeek(first);
         }
 
-        public void Dispose() => _player.Dispose();
+        public void Dispose()
+        {
+            _player.Dispose();
+            _walked.Dispose();
+            _replayed.Dispose();
+        }
 
         /// <summary>
         /// The keyframe at or before <paramref name="frame"/>, or -1 when the recording has none at
@@ -432,23 +413,22 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// <summary>
         /// Keeps this frame's records for the collapse at the end of the walk.
         ///
-        /// Copied out rather than read in place: the player reuses its list on the next frame, and a
-        /// record kept as a reference would read as whatever the walk ended on. The struct holds its
-        /// own payload, so a copy is the whole record.
+        /// Copied out, values and all, rather than read in place: the player rewrites its lane on
+        /// the next frame, and a record kept as a reference would read as whatever the walk ended on.
         /// </summary>
         private void _CollectEventsOfCurrentFrame()
         {
             var events = _player.events;
 
-            for (int i = 0; i < events.Count; i++)
+            for (int i = 0; i < events.eventCount; i++)
             {
-                var record = events[i];
+                ref readonly var record = ref events[i];
 
                 // Nothing to collapse a call with, and nothing that says how many of them a
                 // destination has behind it. Left to forward play, which sees them in order.
                 if (record.kind == EventKind.Call) continue;
 
-                _walked.Add(record);
+                _walked.Add(in record, events.PayloadOf(in record));
             }
         }
 
@@ -461,21 +441,21 @@ namespace Lilium.RemoteControl.Frames.Recording
         /// </summary>
         private void _ApplyCollapsed()
         {
-            if (_walked.Count == 0) return;
+            if (_walked.eventCount == 0) return;
 
             _lastWriteIndex.Clear();
-            for (int i = 0; i < _walked.Count; i++)
+            for (int i = 0; i < _walked.eventCount; i++)
             {
                 _lastWriteIndex[_walked[i].targetId] = i;
             }
 
-            for (int i = 0; i < _walked.Count; i++)
+            for (int i = 0; i < _walked.eventCount; i++)
             {
-                var record = _walked[i];
+                ref readonly var record = ref _walked[i];
 
                 if (_lastWriteIndex.TryGetValue(record.targetId, out var last) && last != i) continue;
 
-                _ApplyRecord(in record);
+                _ApplyRecord(in record, _walked.PayloadOf(in record));
             }
 
             _walked.Clear();
@@ -485,39 +465,35 @@ namespace Lilium.RemoteControl.Frames.Recording
         {
             var events = _player.events;
 
-            for (int i = 0; i < events.Count; i++)
+            for (int i = 0; i < events.eventCount; i++)
             {
-                var record = events[i];
-                _ApplyRecord(in record);
+                _ApplyRecord(in events[i], events.PayloadAt(i));
             }
         }
 
         /// <summary>Resolves one record back into what it meant and hands it to the applier.</summary>
-        private void _ApplyRecord(in EventRecord record)
+        private void _ApplyRecord(in EventRecord record, ReadOnlySpan<byte> payload)
         {
             // Kept for the lane before anything can turn it away. What the frame reports is what the
-            // recording carried at it -- a record that was skipped or that the applier refused still
-            // happened in the take, and a viewer that hides those is the one place the difference
-            // between "the recording has nothing here" and "nothing could be put back" is invisible.
-            _replayed.Add(record);
+            // recording carried at it -- a record the applier refused still happened in the take,
+            // and a viewer that hides those is the one place the difference between "the recording
+            // has nothing here" and "nothing could be put back" is invisible.
+            _replayed.Add(in record, payload);
 
-            if (record.payloadTruncated)
+            if (_payloadBuffer.Length < payload.Length)
             {
-                skippedTruncatedCount++;
-                return;
+                _payloadBuffer = new byte[Math.Max(payload.Length, _payloadBuffer.Length * 2)];
             }
 
-            var length = record.CopyPayloadTo(_payloadBuffer);
+            payload.CopyTo(_payloadBuffer);
 
             var evt = new ReplayEvent(
                 record.kind,
                 _player.Resolve(record.verbId),
                 _player.Resolve(record.targetId),
                 _player.Resolve(record.payloadTypeId),
-                new ReadOnlyMemory<byte>(_payloadBuffer, 0, length),
-                _player.Resolve(record.sourceId),
-                record.payloadTruncated,
-                record.reemitted);
+                new ReadOnlyMemory<byte>(_payloadBuffer, 0, payload.Length),
+                _player.Resolve(record.sourceId));
 
             if (_applier.Apply(in evt, out var error))
             {

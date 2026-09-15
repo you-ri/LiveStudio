@@ -53,7 +53,7 @@ namespace Lilium.LiveStudio
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void _RegisterStateType()
         {
-            StateTypeRegistry.Register<AvatarAnimationData>();
+            StateTypes.RegisterStruct<AvatarAnimationData>();
         }
 
         /// <summary>

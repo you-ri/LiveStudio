@@ -83,7 +83,7 @@ namespace Lilium.RemoteControl.Tests
                 {
                     events.Reset(f, FrameRate.FPS60);
                     events.Add(new EventRecord(f, EventKind.Set, symbols.Intern("rest"),
-                        symbols.Intern("/live/a"), EventFlags.None));
+                        symbols.Intern("/live/a"), EventFlags.None), ReadOnlySpan<byte>.Empty);
 
                     var frame = new Frame { frameNumber = f, frameRate = FrameRate.FPS60, events = events };
                     writer.BeginFrame(in frame, symbols);
@@ -97,12 +97,13 @@ namespace Lilium.RemoteControl.Tests
                 var seen = new List<(FrameEntryKind kind, long frame)>();
                 while (reader.TryReadEntry(out var entry)) seen.Add((entry.kind, entry.frameNumber));
 
-                // Symbols first (nothing can refer to an id that has not been named), then the
-                // boundary, then what happened in the frame.
-                Assert.AreEqual(FrameEntryKind.Symbol, seen[0].kind);
+                // The boundary first, so a seek lands on it; then the symbols the frame names, before
+                // anything uses them; then what happened in the frame.
+                Assert.AreEqual(FrameEntryKind.FrameBoundary, seen[0].kind);
                 Assert.AreEqual(FrameEntryKind.Symbol, seen[1].kind);
-                Assert.AreEqual(FrameEntryKind.FrameBoundary, seen[2].kind);
+                Assert.AreEqual(FrameEntryKind.Symbol, seen[2].kind);
                 Assert.AreEqual(FrameEntryKind.Event, seen[3].kind);
+                Assert.AreEqual(0, seen[1].frame, "a frame's symbols belong to it");
 
                 // Frame numbers only ever move forward.
                 long previous = -1;
@@ -123,13 +124,15 @@ namespace Lilium.RemoteControl.Tests
                 events.Reset(0, FrameRate.FPS60);
 
                 var record = new EventRecord(7, EventKind.Call, symbols.Intern("rest"),
-                    symbols.Intern("/live/camera/reset"), EventFlags.PayloadTruncated);
-                Span<byte> text = stackalloc byte[EventRecord.kPayloadCapacity];
-                EventPayload.TryWriteString("35.0", text, out var textLength);
-                record.SetPayload(text.Slice(0, textLength),
-                    symbols.Intern(EventPayload.kRequestTypeName));
+                    symbols.Intern("/live/camera/reset"), EventFlags.Faulted)
+                {
+                    payloadTypeId = symbols.Intern(EventPayload.kRequestTypeName),
+                };
 
-                events.Add(record);
+                Span<byte> text = stackalloc byte[16];
+                var textLength = EventPayload.WriteString("35.0", text);
+
+                events.Add(in record, text.Slice(0, textLength));
 
                 var frame = new Frame { frameNumber = 0, frameRate = FrameRate.FPS60, events = events };
                 writer.BeginFrame(in frame, symbols);
@@ -147,7 +150,7 @@ namespace Lilium.RemoteControl.Tests
                     Assert.AreEqual((int)EventKind.Call, BitConverter.ToInt32(entry.payload.Slice(8, 4).ToArray(), 0));
                     // 8 sequence, 4 kind, 4 source, 4 target, 4 verb, 4 payload type, 1 flags,
                     // 4 length, payload.
-                    Assert.AreEqual((byte)EventFlags.PayloadTruncated, entry.payload[28]);
+                    Assert.AreEqual((byte)EventFlags.Faulted, entry.payload[28]);
 
                     var payloadLength = BitConverter.ToInt32(entry.payload.Slice(29, 4).ToArray(), 0);
                     Assert.AreEqual("35.0", EventPayload.ReadString(entry.payload.Slice(33, payloadLength)));
@@ -339,19 +342,25 @@ namespace Lilium.RemoteControl.Tests
         }
 
         [Test]
-        public void FileCutMidEntry_ReadsUpToTheCutRatherThanThrowing()
+        public void FileCutMidChunk_ReadsTheChunksBeforeTheCutRatherThanThrowing()
         {
+            // A keyframe on every frame, so each frame is a chunk of its own and the cut takes only
+            // the last one.
+            var structure = new StructureBlock();
             var complete = Write((writer, symbols) =>
             {
                 for (long f = 0; f < 4; f++)
                 {
-                    var frame = new Frame { frameNumber = f, frameRate = FrameRate.FPS60 };
+                    var frame = new Frame { frameNumber = f, frameRate = FrameRate.FPS60, structure = structure };
                     writer.BeginFrame(in frame, symbols);
+                    writer.WriteStructure(structure, symbols, force: true);
                     writer.EndFrame();
                 }
             }, close: false);
 
-            // Lop off a few bytes, landing in the middle of the last entry.
+            structure.Dispose();
+
+            // Lop off a few bytes, landing in the middle of the last chunk.
             var truncated = new byte[complete.Length - 5];
             Array.Copy(complete, truncated, truncated.Length);
 
@@ -378,7 +387,7 @@ namespace Lilium.RemoteControl.Tests
                 {
                     events.Reset(f, FrameRate.FPS60);
                     events.Add(new EventRecord(f, EventKind.Set, symbols.Intern("rest"),
-                        symbols.Intern("/live/object/cam/fov"), EventFlags.None));
+                        symbols.Intern("/live/object/cam/fov"), EventFlags.None), ReadOnlySpan<byte>.Empty);
 
                     var frame = new Frame { frameNumber = f, frameRate = FrameRate.FPS60, events = events };
                     writer.BeginFrame(in frame, symbols);

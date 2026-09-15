@@ -529,12 +529,10 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _SetPill(_sourcePill, "source", snapshot.hasSource, "ldv-pill-on");
             _SetPill(_sinkPill, "recording", snapshot.hasSink, "ldv-pill-on");
 
-            // Every one of these is a quiet failure that otherwise only shows up as "it does not
-            // work": an event that skipped the queue, a payload cut short, a target written many
-            // times a frame that belongs on the other lane.
+            // Each of these is a quiet failure that otherwise only shows up as "it does not work": an
+            // event that skipped the queue, a write left out of the take because a lane carries it.
             _gateLabel.text =
-                $"bypassed {FrameGate.bypassedCount}   truncated {FrameGate.truncatedPayloadCount}   " +
-                $"repeated {FrameGate.repeatedWriteCount}";
+                $"bypassed {FrameGate.bypassedCount}   omitted {FrameGate.omittedRecordCount}";
 
             var detached = FrameGate.detachedObserverCount;
             _observerLabel.text = detached == 0
@@ -626,7 +624,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
                     _shape.Append(row.elements[e].ownerId).Append(',');
                 }
             }
-            foreach (var name in StateTypeRegistry.knownTypeNames)
+            foreach (var name in StateTypes.knownTypeNames)
             {
                 _shape.Append('!').Append(name);
                 if (!_blocked.Contains(name)) emptyTotal++;
@@ -674,7 +672,7 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             // A type that announced itself but has no block is the other half of the picture. Drawing
             // only what exists makes "the producer wrote to nobody" look exactly like "we are not
             // recording", which is how it went unnoticed twice.
-            foreach (var name in StateTypeRegistry.knownTypeNames)
+            foreach (var name in StateTypes.knownTypeNames)
             {
                 if (_blocked.Contains(name)) continue;
 
@@ -1219,13 +1217,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             verb.AddToClassList(RemoteControlEditorStyles.kEllipsis);
             head.Add(verb);
 
-            if (evt.truncated)
-            {
-                var cut = new Label(_Tr("LDV_TRUNCATED"));
-                cut.AddToClassList(RemoteControlEditorStyles.kWarning);
-                head.Add(cut);
-            }
-
             var target = new Label(evt.target);
             target.AddToClassList("ldv-evt-target");
             target.AddToClassList(RemoteControlEditorStyles.kEllipsis);
@@ -1379,10 +1370,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             _rows.Add(new LiveDataValueRow("target", evt.target));
 
             if (evt.faulted) _rows.Add(new LiveDataValueRow(_Tr("LDV_ROW_STATUS"), _Tr("LDV_APPLY_FAILED")));
-            if (evt.truncated)
-            {
-                _rows.Add(new LiveDataValueRow(_Tr("LDV_ROW_STATUS"), _Tr("LDV_PAYLOAD_TRUNCATED")));
-            }
 
             _AddPayloadRows(in evt);
         }

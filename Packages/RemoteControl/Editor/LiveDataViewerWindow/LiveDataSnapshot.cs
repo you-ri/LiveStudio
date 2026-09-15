@@ -113,7 +113,6 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
         public byte[] payload;
 
         public bool faulted;
-        public bool truncated;
     }
 
     /// <summary>
