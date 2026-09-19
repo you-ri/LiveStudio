@@ -465,6 +465,11 @@ namespace Lilium.LiveStudio
                 ? CameraClearFlags.Skybox
                 : CameraClearFlags.SolidColor;
             camera.backgroundColor = _backgroundColor;
+
+#if KEIJIRO_KLAK_SPOUT
+            var sender = camera.GetComponent<SpoutSender>();
+            if (sender != null) sender.keepAlpha = _SpoutKeepsAlpha;
+#endif
         }
 
         // --- Spout -----------------------------------------------------------------------------------
@@ -508,6 +513,7 @@ namespace Lilium.LiveStudio
             // go, and a name that moved with it would drop the source out of OBS on every switch.
             sender.spoutName = kSpoutName;
             sender.captureMethod = CaptureMethod.Texture;
+            sender.keepAlpha = _SpoutKeepsAlpha;
 
             camera.targetTexture = _spoutRenderTexture;
 #endif
@@ -515,6 +521,13 @@ namespace Lilium.LiveStudio
 
 #if KEIJIRO_KLAK_SPOUT
         const string kSpoutName = "LiveStudio";
+
+        // The sender forces alpha to 1 unless told otherwise, so a transparent background color never
+        // reached the receiver. Keep alpha only when a transparent background was asked for: with an
+        // opaque background, blended transparent objects can still leave alpha below 1 and would punch
+        // holes in the output.
+        private bool _SpoutKeepsAlpha =>
+            _backgroundType == BackgroundType.SolidColor && _backgroundColor.a < 1f;
 
         private void _EnsureSpoutTexture()
         {

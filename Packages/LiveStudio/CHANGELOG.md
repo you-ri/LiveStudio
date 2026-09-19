@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Expression settings belong to the avatar and are kept in the project, not in the live scene.** `AvatarExpressionConfig` — the input weight adjustments, blink sync, the neutral expression and the expression list — is a tuning of one avatar, yet it was saved per scene, so opening another scene lost it and every take carried it. Its members are now `PersistScope.Custom`, and `AvatarController` saves them per avatar into `{projectPath}/Settings/AvatarExpressions.json`: choosing an avatar brings back what was last set for it, in any scene of the project. An avatar is keyed by the project-relative path of its source file (a `*.preset.json` resolves to the avatar file it references), by its catalog GUID when it is built in, and as `default` when no avatar asset is selected. Like a deck file there is no save button: an edit is written half a second after the last one, and whatever the config holds is written for the outgoing avatar on every switch and when the controller is disabled. An avatar with no entry yet starts from the values currently shown rather than from the config asset, which is also how settings saved in an earlier build's live scene carry over — such a scene still restores them on load, and the next write puts them in the project. The avatar file itself is never touched, and renaming or moving it detaches its settings.
+
 ## [0.26.0] - 2026-09-12
 <!-- changelog-sha: b57804fe6850c46c8e4103b9596300d3793768f2 -->
 

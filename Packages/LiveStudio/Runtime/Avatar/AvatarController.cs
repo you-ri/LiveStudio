@@ -382,6 +382,10 @@ namespace Lilium.LiveStudio
         // asset reference). Guards OnDestroy so we never destroy the source asset.
         private bool _ownsExpressionConfig;
 
+        // Saves the clone's values per avatar into the project; the live scene does not (the config's
+        // members are PersistScope.Custom). Switched along with the avatar in Start / _ReplaceAvatar.
+        private readonly AvatarExpressionStore _expressionStore = new AvatarExpressionStore();
+
         IAvatarSource[] _avatarSources = Array.Empty<IAvatarSource>();
 
 
@@ -430,6 +434,9 @@ namespace Lilium.LiveStudio
 
             LiveClass.Get<AvatarController>().onPropertyChanging += OnPropertyChanging;
             LiveClass.Get<AvatarController>().onPropertyChanged += OnPropertyChanged;
+            // The config is also reachable as an object of its own (by reference), and an edit made that
+            // way is raised on its class rather than on ours.
+            LiveClass.Get<AvatarExpressionConfig>().onPropertyChanged += _OnExpressionConfigChanged;
 
             _avatarSources = GetComponents<IAvatarSource>();
             foreach (var source in _avatarSources)
@@ -455,6 +462,12 @@ namespace Lilium.LiveStudio
 
             LiveClass.Get<AvatarController>().onPropertyChanging -= OnPropertyChanging;
             LiveClass.Get<AvatarController>().onPropertyChanged -= OnPropertyChanged;
+            LiveClass.Get<AvatarExpressionConfig>().onPropertyChanged -= _OnExpressionConfigChanged;
+
+            // Before OnDestroy drops the clone: an edit still waiting for its delayed write, and values
+            // that arrived without an edit, are written now.
+            _expressionStore.Flush(_expressionConfig);
+
             SelectableService<IAvatarService>.Unregister("current", this);
 
             SingletonService<IAvatarService>.Unregister(this);
@@ -477,10 +490,16 @@ namespace Lilium.LiveStudio
             _target = _FindAvatarTarget()?.gameObject;
             if (_target != null)
             {
+                _expressionStore.SwitchTo(AvatarExpressionStore.ResolveAvatarKey(), ProjectManager.projectPath, _expressionConfig);
                 _PostSetupAvatar(_target);
                 InvalidateExpressions();
                 onAvatarChanged?.Invoke();
             }
+        }
+
+        void Update()
+        {
+            _expressionStore.Tick(_expressionConfig);
         }
 
         // First HUMANOID Animator (with a valid Avatar) in the children — the avatar to drive. Other
@@ -1027,6 +1046,9 @@ namespace Lilium.LiveStudio
 #endif
             if (newTarget != null)
             {
+                // The avatar asset layer has settled on the avatar by the time it is ready, so the
+                // selection names the avatar arriving here.
+                _expressionStore.SwitchTo(AvatarExpressionStore.ResolveAvatarKey(), ProjectManager.projectPath, _expressionConfig);
                 newTarget.GetComponent<IAvatar>()?.SetExpressionConfig(_expressionConfig);
                 _target = newTarget;
             }
@@ -1112,6 +1134,8 @@ namespace Lilium.LiveStudio
             // OnAfterLiveDeserialize、REST 書き込み経路はここ、と両経路をカバーする。
             _OnOverrideRefMaybeChanged();
 
+            if (property.PathRootIs(nameof(_expressionConfig))) _expressionStore.MarkDirty();
+
             if (_target == null) return;
 
             // 変更されたプロパティに対応する再適用だけを行う。以前は _PostSetupAvatar を丸ごと呼んでいたが、
@@ -1151,6 +1175,11 @@ namespace Lilium.LiveStudio
             {
                 _ReapplyOverrideToTarget();
             }
+        }
+
+        private void _OnExpressionConfigChanged(LiveProperty property, object oldValue)
+        {
+            if (ReferenceEquals(property.owner.target, _expressionConfig)) _expressionStore.MarkDirty();
         }
 
         // Expression key bindings live on the generic OperationManager as ordinary SetPropertyOperation sets that
