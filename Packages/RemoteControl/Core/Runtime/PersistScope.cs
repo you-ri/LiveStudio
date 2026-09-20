@@ -25,8 +25,10 @@ namespace Lilium.RemoteControl
         /// scope explicitly (see <c>LiveObjectSnapshot.Capture(handle, scope)</c>) -- but the built-in
         /// writers (scene / project settings) and the dirty comparison, which both filter on
         /// <see cref="Scene"/> or <see cref="Project"/>, skip them. Such an owner is therefore
-        /// responsible for its own save and unsaved-state reporting; see
-        /// <c>LiveSceneSaveSystem.onAfterSave</c> / <c>unsavedChangesProbe</c>.
+        /// responsible for its own saving, and its members are invisible to
+        /// <c>LiveSceneSaveSystem.HasUnsavedChanges</c>. That is why every owner so far writes
+        /// continuously -- an edit lands in the file moments later -- rather than offering a save:
+        /// nothing would tell the operator that something was still waiting to be saved.
         /// Deserialization ignores the scope, so a legacy file that still holds these members inline
         /// keeps restoring them.
         /// </summary>

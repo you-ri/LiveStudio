@@ -394,6 +394,17 @@ namespace Lilium.LiveStudio
         // preset file; the live scene saves none of them. Switched along with the avatar.
         private readonly AvatarPresetStore _presetStore = new AvatarPresetStore();
 
+        // Whether this controller is the one the avatar's settings file is about.
+        //
+        // Which avatar is out is answered once, by the asset layer, and every avatar load is routed to a
+        // single controller (AvatarService.Load -> SelectableService.Select). A second controller -- a set
+        // scene loaded additively can bring one, see OnDisable -- is not who that answer describes: it
+        // shows whatever model its own scene carried, which nobody selected. Were both to keep settings,
+        // both would write the file the selection names and overwrite each other, so only the controller
+        // the loads reach keeps one; the other leaves its members where its scene put them.
+        internal bool keepsAvatarPreset
+            => ReferenceEquals(SelectableService<IAvatarService>.Select("current"), this);
+
         IAvatarSource[] _avatarSources = Array.Empty<IAvatarSource>();
 
 
@@ -478,7 +489,7 @@ namespace Lilium.LiveStudio
 
             // Before the object goes away: an edit still waiting for its delayed write, and values that
             // arrived without an edit, are written now.
-            _presetStore.Flush(this.gameObject);
+            if (keepsAvatarPreset) _presetStore.Flush(this.gameObject);
 
             SelectableService<IAvatarService>.Unregister("current", this);
 
@@ -502,7 +513,7 @@ namespace Lilium.LiveStudio
             _target = _FindAvatarTarget()?.gameObject;
             if (_target != null)
             {
-                _presetStore.SwitchTo(this.gameObject, ProjectManager.projectPath);
+                if (keepsAvatarPreset) _presetStore.SwitchTo(this.gameObject, ProjectManager.projectPath);
                 _PostSetupAvatar(_target);
                 InvalidateExpressions();
                 onAvatarChanged?.Invoke();
@@ -511,7 +522,7 @@ namespace Lilium.LiveStudio
 
         void Update()
         {
-            _presetStore.Tick(this.gameObject);
+            if (keepsAvatarPreset) _presetStore.Tick(this.gameObject);
         }
 
         // First HUMANOID Animator (with a valid Avatar) in the children — the avatar to drive. Other
@@ -1061,7 +1072,7 @@ namespace Lilium.LiveStudio
                 // Before the new avatar is set up, so the settings it is set up with are its own. The
                 // asset layer has settled on the avatar by the time it is ready, so the selection names
                 // the one arriving here.
-                _presetStore.SwitchTo(this.gameObject, ProjectManager.projectPath);
+                if (keepsAvatarPreset) _presetStore.SwitchTo(this.gameObject, ProjectManager.projectPath);
                 newTarget.GetComponent<IAvatar>()?.SetExpressionConfig(_expressionConfig);
                 _target = newTarget;
             }
@@ -1149,7 +1160,11 @@ namespace Lilium.LiveStudio
 
             // Every avatar-owned member goes to the avatar's file, so the store is told about any of
             // them rather than about one member by name.
-            if (property.type != null && property.type.persistScope == PersistScope.Custom) _presetStore.MarkDirty();
+            if (property.type != null && property.type.persistScope == PersistScope.Custom
+                && keepsAvatarPreset)
+            {
+                _presetStore.MarkDirty();
+            }
 
             if (_target == null) return;
 
@@ -1194,7 +1209,10 @@ namespace Lilium.LiveStudio
 
         private void _OnExpressionConfigChanged(LiveProperty property, object oldValue)
         {
-            if (ReferenceEquals(property.owner.target, _expressionConfig)) _presetStore.MarkDirty();
+            if (ReferenceEquals(property.owner.target, _expressionConfig) && keepsAvatarPreset)
+            {
+                _presetStore.MarkDirty();
+            }
         }
 
         // Expression key bindings live on the generic OperationManager as ordinary SetPropertyOperation sets that

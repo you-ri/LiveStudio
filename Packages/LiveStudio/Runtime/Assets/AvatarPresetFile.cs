@@ -49,7 +49,10 @@ namespace Lilium.LiveStudio
         /// <paramref name="displayName"/> is what to call it when someone opens the file.
         /// <para>
         /// Which avatar is out is the asset layer's answer, not the controller's: the controller drives
-        /// whichever model was handed to it and does not know where it came from.
+        /// whichever model was handed to it and does not know where it came from. That answer describes
+        /// one controller -- the one every avatar load is routed to -- so only that controller may ask;
+        /// see <c>AvatarController.keepsAvatarPreset</c>, which is what keeps a second controller from
+        /// writing the same file.
         /// </para>
         /// </summary>
         public static string Resolve(string projectPath, out string source, out string displayName)
