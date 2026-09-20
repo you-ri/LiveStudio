@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`LiveObjectSnapshot` can take a delta, and the defaults behind it, for one persistence scope.** `CaptureDelta(handle, scope)` / `CaptureScopedDefaults(handle, scope)` / `EnsureScopedDefaults(handle, scope)` let an owner of `PersistScope.Custom` members write its own file the way the live scene writes its own, and put exactly those members back without touching what another writer owns. `LiveObjectDefaultRegistry` keeps a second baseline for that scope: the existing one is also what a REST delta read reports as changed, so widening it would have changed those answers. `AssetStateSnapshot` grows the matching `CaptureDelta(instance, scope)` / `RestoreScopedDefaults` / `EnsureScopedDefaults`, plus `CaptureFullDelta` for a named preset that wants both scopes.
+
 ### Fixed
 
 - **A live scene file given as a relative path — including the default file of an app that never records one, such as Fusion — now resolves inside the open project instead of `Application.persistentDataPath`.** `LiveSceneSaveSystem` kept the startup state and the project settings in the project folder but resolved the scene file itself against the player's data folder. An app that does not switch scenes records no scene in `startup.json`, so it read and auto-saved one machine-wide file whatever project it was pointed at: a run given `-project` for isolation still loaded, and on quit could overwrite, the operator's own state. Relative paths now resolve against the same state directory, which is still `persistentDataPath` when no project is set. A scene file saved there by an earlier build is not carried over.

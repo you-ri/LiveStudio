@@ -324,7 +324,7 @@ namespace Lilium.LiveStudio
 
             // A file already inside the project folder is part of the project: register it in place (like
             // the crawl) rather than copying it onto itself.
-            if (_IsInsideProject(sourcePath, projectPath))
+            if (IsInsideProject(sourcePath, projectPath))
             {
                 _RegisterImported(sourcePath);
                 return;
@@ -385,9 +385,14 @@ namespace Lilium.LiveStudio
         /// <summary>
         /// True if the file extension maps to a supported asset kind (bundle / VRM / glTF). Lets a
         /// project crawler classify files by path alone, without reading their contents.
+        ///
+        /// An avatar's own settings file is the exception: it is a preset by shape, but it belongs to the
+        /// avatar beside it rather than being an entry of its own, and listing both would show one avatar
+        /// twice (see <see cref="AvatarPresetFile"/>).
         /// </summary>
         public static bool IsSupportedAssetFile(string filePath)
         {
+            if (AvatarPresetFile.IsAutoPreset(filePath)) return false;
             return AssetTypeRegistry.IsSupported(filePath);
         }
 
@@ -753,112 +758,6 @@ namespace Lilium.LiveStudio
             return null;
         }
 
-        /// <summary>
-        /// Saves a loaded exposed object as a named preset (<c>*.preset.json</c>) in the project folder:
-        /// records how to recreate the object (a <c>target</c> descriptor) plus the parameter state to
-        /// reapply, then re-crawls so the preset appears as a loadable entry. The user can later load the
-        /// preset to recreate the object in the saved state.
-        ///
-        /// Keyed on the object's exposed <c>@id</c> so the API generalizes to any object; the recreation
-        /// strategy is resolved in <see cref="_ResolvePresetTarget"/>. Today only the asset strategy is
-        /// implemented: loaded props and the active avatar (both as delta state in the unified envelope).
-        /// Objects without a supported strategy are rejected.
-        /// </summary>
-        [LiveFunction]
-        public void SaveAsPreset(string objectId, string presetName)
-        {
-            var projectPath = ProjectManager.projectPath;
-            if (string.IsNullOrEmpty(projectPath) || !Directory.Exists(projectPath))
-            {
-                Debug.LogError("[LiveStudio] SaveAsPreset: no project folder is open to save the preset into.");
-                return;
-            }
-
-            if (!_ResolvePresetTarget(objectId, out var kind, out var source, out var state))
-            {
-                Debug.LogError($"[LiveStudio] SaveAsPreset: object '{objectId}' is not presetable (loaded prop or active avatar only).");
-                return;
-            }
-
-            var json = PropPreset.BuildJson(
-                kind,
-                presetName,
-                PropPreset.Relativize(source, projectPath),
-                state);
-
-            var fallbackName = Path.GetFileNameWithoutExtension(source);
-            var baseName = PropPreset.SanitizeFileName(string.IsNullOrEmpty(presetName) ? fallbackName : presetName);
-            var path = _UniquePresetPath(projectPath, baseName);
-            try
-            {
-                File.WriteAllText(path, json);
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[LiveStudio] SaveAsPreset: failed to write '{path}': {e.Message}");
-                return;
-            }
-
-            // Re-crawl so the new preset is registered as a loadable entry right away.
-            ProjectManager.RecrawlProject();
-            RemoteNotificationSystem.Show(
-                LocalizationSystem.Translate("NOTIFY_PRESET_SAVED"), RemoteNotificationSystem.Type.Success, icon: "save");
-        }
-
-        // Resolves how to recreate the exposed object identified by objectId into a preset target
-        // descriptor (asset kind + source file + state snapshot). Returns false when no supported
-        // strategy applies. This is the single extension point for future preset strategies (e.g.
-        // factory-created objects, apply-to-existing scene objects).
-        private bool _ResolvePresetTarget(string objectId, out PropPreset.AssetKind kind, out string source, out string state)
-        {
-            kind = default;
-            source = null;
-            state = null;
-
-            // Prop strategy: a loaded prop whose exposed object id matches. Presets are eligible too —
-            // sourceFilePath resolves to the underlying source asset (not the preset file), so re-saving
-            // an edited preset writes a new preset against the same source with the current delta.
-            for (int i = 0; i < assets.Length; i++)
-            {
-                if (assets[i] is PropAsset prop && prop.isLoaded && prop.objectId == objectId &&
-                    !string.IsNullOrEmpty(prop.sourceFilePath))
-                {
-                    kind = PropPreset.AssetKind.Prop;
-                    source = prop.sourceFilePath;
-                    state = prop.CaptureDeltaState();
-                    return true;
-                }
-            }
-
-            // Avatar strategy: avatars are exposed through the shared AvatarController (not a per-asset
-            // wrapper), so delta-capture against its GameObject and pin the active avatar asset's source.
-            // A preset-loaded avatar is eligible too — its sourceFilePath resolves to the underlying file.
-            var handle = LiveObjectRegistry.FindById(objectId);
-            if (handle.HasValue && handle.Value.target is AvatarController controller)
-            {
-                for (int i = 0; i < assets.Length; i++)
-                {
-                    if (assets[i] is AvatarAsset avatar && avatar.enabled &&
-                        !string.IsNullOrEmpty(avatar.sourceFilePath))
-                    {
-                        kind = PropPreset.AssetKind.Avatar;
-                        source = avatar.sourceFilePath;
-                        // Object-generic delta in the same { wrapper, components } envelope as props.
-                        // Requires the baseline captured at avatar load (see AvatarAsset).
-                        state = AssetStateSnapshot.CaptureDelta(controller.gameObject);
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        // Builds a non-colliding "<name>.preset.json" path in the project folder, appending " (n)"
-        // when a file of that name already exists.
-        private static string _UniquePresetPath(string folder, string baseName)
-            => _UniqueFilePath(folder, baseName + PropPreset.Extension);
-
         // Builds a non-colliding path for fileName inside folder, inserting " (n)" before the extension
         // when a file of that name already exists. The "extension" is everything after the asset kind's
         // base name, so compound suffixes (e.g. ".avatar.lsb") are preserved; unknown kinds fall back to
@@ -1223,9 +1122,12 @@ namespace Lilium.LiveStudio
             return null;
         }
 
-        // True when filePath resolves to a location inside the project folder. Used to register a picked
-        // file already in the project in place rather than copying it onto itself.
-        private static bool _IsInsideProject(string filePath, string projectPath)
+        /// <summary>
+        /// True when <paramref name="filePath"/> resolves to a location inside the project folder. Used to
+        /// register a picked file already in the project in place rather than copying it onto itself, and
+        /// to decide whether a file is ours to write beside (<see cref="AvatarPresetFile"/>).
+        /// </summary>
+        internal static bool IsInsideProject(string filePath, string projectPath)
         {
             string full, root;
             try

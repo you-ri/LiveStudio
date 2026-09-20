@@ -53,6 +53,57 @@ namespace Lilium.RemoteControl
         }
 
         /// <summary>
+        /// <see cref="CaptureDelta(LiveObjectHandle)"/> restricted to the members declared with
+        /// <paramref name="scope"/>, for an owner writing its own file (see
+        /// <see cref="Capture(LiveObjectHandle, PersistScope)"/>). The baseline the delta is taken
+        /// against covers every scope, so the result holds exactly the members of this scope that
+        /// differ from their defaults.
+        /// </summary>
+        public static string CaptureDelta(LiveObjectHandle handle, PersistScope scope)
+        {
+            return LivePropertySerializer.ToJson(
+                handle, DefaultLiveObjectResolver.Instance, isDirtyOnly: true, forPersistence: true,
+                scopeFilter: scope);
+        }
+
+        /// <summary>
+        /// Writes down what <paramref name="handle"/>'s <paramref name="scope"/> members hold right now as
+        /// their defaults, unless that was already done. An owner calls this before anything has been
+        /// applied to the object, so a later delta says what was changed rather than everything.
+        /// </summary>
+        public static void EnsureScopedDefaults(LiveObjectHandle handle, PersistScope scope)
+        {
+            LiveObjectDefaultRegistry.EnsureDefaultsCaptured(handle, DefaultLiveObjectResolver.Instance, scope);
+        }
+
+        /// <summary>
+        /// The captured defaults of <paramref name="handle"/>, restricted to the members declared with
+        /// <paramref name="scope"/>, as a JSON string ready for <see cref="Restore"/>. Restoring it puts
+        /// those members back to what the object started with, leaving every other scope alone — what an
+        /// owner needs before applying another subject's saved values onto a shared object (the one
+        /// <c>AvatarController</c> driving whichever avatar is out). Null when no baseline was captured.
+        /// </summary>
+        public static string CaptureScopedDefaults(LiveObjectHandle handle, PersistScope scope)
+        {
+            var defaults = LiveObjectDefaultRegistry.GetDefaults(handle, scope);
+            if (defaults == null) return null;
+
+            var result = new Newtonsoft.Json.Linq.JObject();
+            foreach (var property in defaults.Properties())
+            {
+                if (property.Name.Length > 0 && property.Name[0] == '@')
+                {
+                    result[property.Name] = property.Value.DeepClone();
+                    continue;
+                }
+                var member = handle.targetType?.FindProperty(property.Name);
+                if (member == null || !member.isPersistable || member.persistScope != scope) continue;
+                result[property.Name] = property.Value.DeepClone();
+            }
+            return result.ToString(Newtonsoft.Json.Formatting.None);
+        }
+
+        /// <summary>
         /// Restores values previously produced by <see cref="Capture"/> onto <paramref name="handle"/>.
         /// Treats the restored values as authoritative (<c>captureDefaults: false</c>) and invokes
         /// <see cref="ILiveDeserializeCallback.OnAfterLiveDeserialize"/> on the target.

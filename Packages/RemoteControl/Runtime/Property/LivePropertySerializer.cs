@@ -1531,7 +1531,11 @@ namespace Lilium.RemoteControl
 
             // 2. デフォルトJSONの取得（LiveObjectDefaultRegistryから）
             // デフォルトがない場合は差分なし（currentをデフォルトとみなす）。
-            var defaultJson = LiveObjectDefaultRegistry.GetDefaults(liveObject);
+            // 保存先ごとに基準が別なのは、基準が current と同じ形でないと差が出せないため
+            // (Custom の delta を Scene の基準と比べると、全メンバーが「追加された」になる)。
+            var defaultJson = options.forPersistence
+                ? LiveObjectDefaultRegistry.GetDefaults(liveObject, options.scopeFilter)
+                : LiveObjectDefaultRegistry.GetDefaults(liveObject);
             if (defaultJson == null)
             {
                 defaultJson = currentJson;

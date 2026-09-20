@@ -58,12 +58,9 @@ namespace Lilium.LiveStudio
 
         /// <summary>
         /// The source asset path this prop represents: the resolved referenced asset for a preset,
-        /// otherwise the entry's own file path. Used when saving a new preset from a loaded prop.
+        /// otherwise the entry's own file path.
         /// </summary>
         internal string sourceFilePath => _effectiveSourcePath;
-
-        /// <summary>Serializes the loaded prop's current parameter delta (vs the source defaults).</summary>
-        internal string CaptureDeltaState() => _loaded.CaptureDelta();
 
         public override async Task LoadAsync(AssetLoadContext context)
         {

@@ -29,6 +29,19 @@ namespace Lilium.RemoteControl
             = new Dictionary<object, JObject>(LiveObjectRegistry.ReferenceEqualityComparer.Instance);
 
         /// <summary>
+        /// The same baseline taken over the <see cref="PersistScope.Custom"/> members instead: what an
+        /// owner writing its own file diffs against (<c>LiveObjectSnapshot.CaptureDelta(handle, scope)</c>).
+        /// </summary>
+        /// <remarks>
+        /// Kept as a second table rather than widening <see cref="_serializationBaseline"/> to every
+        /// scope, because that baseline is also what a REST delta read answers with: a member absent
+        /// from it reads as changed, and adding the other scopes to it changes those answers. The two
+        /// are captured and dropped together, so a caller never finds one without the other.
+        /// </remarks>
+        private static Dictionary<object, JObject> _ownedBaseline
+            = new Dictionary<object, JObject>(LiveObjectRegistry.ReferenceEqualityComparer.Instance);
+
+        /// <summary>
         /// Values of the writable members nothing persists, as they stood when the object's defaults
         /// were captured. Read by <see cref="Revert"/> and by nothing else.
         /// </summary>
@@ -55,6 +68,7 @@ namespace Lilium.RemoteControl
         {
             _serializationBaseline = new Dictionary<object, JObject>(LiveObjectRegistry.ReferenceEqualityComparer.Instance);
             _userChangeBaseline = new Dictionary<object, JObject>(LiveObjectRegistry.ReferenceEqualityComparer.Instance);
+            _ownedBaseline = new Dictionary<object, JObject>(LiveObjectRegistry.ReferenceEqualityComparer.Instance);
             _nonPersistedDefaults = new Dictionary<object, JObject>(LiveObjectRegistry.ReferenceEqualityComparer.Instance);
         }
 
@@ -86,8 +100,31 @@ namespace Lilium.RemoteControl
             // 同一条件で比較できるようにする。read-onlyプロパティは永続化不要なので除外する。
             var json = LivePropertySerializer.SerializeFullToJObject(obj, resolver, forPersistence: true);
             _serializationBaseline[key] = json;
+            _ownedBaseline[key] = LivePropertySerializer.SerializeFullToJObject(
+                obj, resolver, forPersistence: true, scopeFilter: PersistScope.Custom);
             _userChangeBaseline.Remove(key);
             _CaptureNonPersistedDefaults(obj, resolver, key, onlyIfMissing: false);
+        }
+
+        /// <summary>
+        /// Captures the defaults of <paramref name="scope"/> only if none were captured yet, so an object
+        /// that is about to be handed values from a file has something to be compared against — and to be
+        /// put back to. Leaves an existing baseline alone: it was taken before those values arrived, and
+        /// re-taking it now would adopt them as the defaults.
+        /// </summary>
+        public static void EnsureDefaultsCaptured(LiveObjectHandle obj, ILiveObjectResolver resolver, PersistScope scope)
+        {
+            var key = _GetKey(obj);
+            if (scope == PersistScope.Custom)
+            {
+                if (_ownedBaseline.ContainsKey(key)) return;
+                _ownedBaseline[key] = LivePropertySerializer.SerializeFullToJObject(
+                    obj, resolver, forPersistence: true, scopeFilter: PersistScope.Custom);
+                return;
+            }
+
+            if (_serializationBaseline.ContainsKey(key)) return;
+            CaptureDefaults(obj, resolver);
         }
 
         /// <summary>
@@ -122,6 +159,25 @@ namespace Lilium.RemoteControl
             }
             _serializationBaseline[key] = fresh;
             _userChangeBaseline.Remove(key);
+
+            // Same treatment for the owner-saved members: an avatar's settings are applied by its own
+            // file right after the load, and adopting them here would drop them from the next write.
+            var freshOwned = LivePropertySerializer.SerializeFullToJObject(
+                obj, resolver, forPersistence: true, scopeFilter: PersistScope.Custom);
+            if (_ownedBaseline.TryGetValue(key, out var oldOwned) && oldOwned != null)
+            {
+                foreach (var property in oldOwned.Properties())
+                {
+                    if (property.Name.Length > 0 && property.Name[0] == '@') continue;
+                    var current = freshOwned[property.Name];
+                    if (current == null) continue;
+                    if (!JToken.DeepEquals(property.Value, current))
+                    {
+                        freshOwned[property.Name] = property.Value.DeepClone();
+                    }
+                }
+            }
+            _ownedBaseline[key] = freshOwned;
 
             // Whatever was written down for the members nothing persists stays written down. This
             // runs when an asset finishes loading, and its whole reason for existing is not to adopt
@@ -182,6 +238,7 @@ namespace Lilium.RemoteControl
         {
             var key = _GetKey(obj);
             _serializationBaseline.Remove(key);
+            _ownedBaseline.Remove(key);
             _userChangeBaseline.Remove(key);
             _nonPersistedDefaults.Remove(key);
         }
@@ -192,6 +249,7 @@ namespace Lilium.RemoteControl
         public static void ClearAll()
         {
             _serializationBaseline.Clear();
+            _ownedBaseline.Clear();
             _userChangeBaseline.Clear();
             _nonPersistedDefaults.Clear();
         }
@@ -204,6 +262,20 @@ namespace Lilium.RemoteControl
         {
             var key = _GetKey(obj);
             _serializationBaseline.TryGetValue(key, out var result);
+            return result;
+        }
+
+        /// <summary>
+        /// The captured defaults a delta of <paramref name="scope"/> is taken against. Every scope but
+        /// <see cref="PersistScope.Custom"/> answers from the ordinary baseline, which is shaped for the
+        /// live scene and for what a REST read reports as changed; the owner-saved members have their
+        /// own (see <see cref="_ownedBaseline"/>). Null when nothing was captured for the object.
+        /// </summary>
+        public static JObject GetDefaults(LiveObjectHandle obj, PersistScope scope)
+        {
+            if (scope != PersistScope.Custom) return GetDefaults(obj);
+            var key = _GetKey(obj);
+            _ownedBaseline.TryGetValue(key, out var result);
             return result;
         }
 

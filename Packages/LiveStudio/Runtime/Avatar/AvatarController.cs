@@ -240,7 +240,7 @@ namespace Lilium.LiveStudio
         // 見えないのでムーバーが届かず、黙ってブロックから外れる (LRC009)。同じアセンブリなので
         // internal で足りる (partial 化は不要)。
         [SerializeField]
-        [LiveField(label="AVATAR_LAYER", lane = FrameLane.State), StringSelector(nameof(layerNames))]
+        [LiveField(label="AVATAR_LAYER", lane = FrameLane.State, persistScope = PersistScope.Custom), StringSelector(nameof(layerNames))]
         internal string _avatarLayer = string.Empty;
 
         // _ApplyAvatarLayer で元レイヤーへ戻せるよう、ターゲット差し替え時に一度だけ捕捉する
@@ -249,11 +249,16 @@ namespace Lilium.LiveStudio
         private readonly Dictionary<Transform, int> _originalLayers = new Dictionary<Transform, int>();
 
         [SerializeField]
-        [LiveField(label="AVATAR_MESHSTATEOVERRIDES")]
+        // Saved with the avatar, not with the scene: which meshes are hidden is about this model's
+        // parts and means nothing for the next avatar. The lane is said out loud so a take still carries
+        // it -- hiding a mesh mid-show is a change the recording has to keep (FrameLaneRules).
+        [LiveField(label="AVATAR_MESHSTATEOVERRIDES", persistScope = PersistScope.Custom, lane = FrameLane.Event)]
         private MeshState[] meshStateOverrides = new MeshState[0];
 
         [SerializeField]
-        [LiveField(label="AVATAR_ANIMATIONPARAMETEROVERRIDES")]
+        // Avatar-owned for the same reason as the mesh states above: the parameters are this model's
+        // animator's.
+        [LiveField(label="AVATAR_ANIMATIONPARAMETEROVERRIDES", persistScope = PersistScope.Custom, lane = FrameLane.Event)]
         private AnimationParameterOverride[] animationParameterOverrides = new AnimationParameterOverride[0];
 
         // _bodyOverrideClip のアセット GUID (未選択は空文字)。ランタイムでは AssetDatabase を使えないため
@@ -269,7 +274,7 @@ namespace Lilium.LiveStudio
         // RemoteControl のシリアライズ (live.json 等) にはアセット GUID が保存される。候補は
         // GET /live/assets?type=AnimationClip (組み込み Resources + 外部バンドル) から供給される。
         [SerializeField]
-        [LiveField(label="AVATAR_BODYOVERRIDECLIP", carriedBy = nameof(bodyOverrideClipKey)),
+        [LiveField(label="AVATAR_BODYOVERRIDECLIP", carriedBy = nameof(bodyOverrideClipKey), persistScope = PersistScope.Custom),
          AssetSelector(refPropertyName: nameof(_bodyOverrideClipRef))]
         private AnimationClip _bodyOverrideClip;
 
@@ -283,7 +288,7 @@ namespace Lilium.LiveStudio
         // Object でなくキー文字列で保持し、PackBundleLoader がロード→AssetRegistry 登録→解決する。
         // 旧シーンにこのフィールドは無い (=空=既存挙動) ので live.json はバイト不変。Hide でジェネリック
         // インスペクタから隠し、RemoteApp の専用 2 段セレクタが読み書きする。
-        [LiveField(carriedBy = nameof(bodyOverrideClipKey)), Hide]
+        [LiveField(carriedBy = nameof(bodyOverrideClipKey), persistScope = PersistScope.Custom), Hide]
         private string _bodyOverrideClipRef = string.Empty;
 
         // _bodyOverrideClipRef の非同期解決状態 (解決済みクリップ / 適用済みキー / 解決中キー / supersede)
@@ -367,12 +372,15 @@ namespace Lilium.LiveStudio
         // 両足は脚の 2 ボーン IK で接地位置に固定する。クリップ未設定時は固定されない。
         // internal: _avatarLayer と同じ理由 — ブロックは型の外に生成されるので private では届かない。
         [SerializeField]
-        [LiveField(label="AVATAR_LOCKLOWERBODYPOSE")]
+        [LiveField(label="AVATAR_LOCKLOWERBODYPOSE", persistScope = PersistScope.Custom, lane = FrameLane.Event)]
         [Help("AVATAR_LOCKLOWERBODYPOSE_HELP")]
         internal bool _lockLowerBodyPose;
 
+        // The config is the avatar's too, and this reference is the gate: the scene save skips the whole
+        // member, so nothing inside the config reaches the scene file, while the avatar's own preset
+        // (PersistScope.Custom) carries it inline.
         [SerializeField]
-        [LiveField, Hide]
+        [LiveField(persistScope = PersistScope.Custom), Hide]
         [FormerlyNamedAs("_config")]
         private AvatarExpressionConfig _expressionConfig;
 
@@ -382,9 +390,9 @@ namespace Lilium.LiveStudio
         // asset reference). Guards OnDestroy so we never destroy the source asset.
         private bool _ownsExpressionConfig;
 
-        // Saves the clone's values per avatar into the project; the live scene does not (the config's
-        // members are PersistScope.Custom). Switched along with the avatar in Start / _ReplaceAvatar.
-        private readonly AvatarExpressionStore _expressionStore = new AvatarExpressionStore();
+        // Saves this controller's avatar-owned members (PersistScope.Custom) into the avatar's own
+        // preset file; the live scene saves none of them. Switched along with the avatar.
+        private readonly AvatarPresetStore _presetStore = new AvatarPresetStore();
 
         IAvatarSource[] _avatarSources = Array.Empty<IAvatarSource>();
 
@@ -405,6 +413,10 @@ namespace Lilium.LiveStudio
                 _expressionConfig.name = $"{sourceName} (Instanced)";
                 _ownsExpressionConfig = true;
             }
+
+            // In Awake, before the live scene is restored (its host runs in Start): these are the values
+            // this controller was authored with, and every avatar's settings are a difference from them.
+            _presetStore.CaptureDefaults(this.gameObject);
 
             // Propagate the clone to the avatar already placed in the scene. Doing this in
             // Awake (AvatarController is [DefaultExecutionOrder(200)], IAvatar implementations
@@ -464,9 +476,9 @@ namespace Lilium.LiveStudio
             LiveClass.Get<AvatarController>().onPropertyChanged -= OnPropertyChanged;
             LiveClass.Get<AvatarExpressionConfig>().onPropertyChanged -= _OnExpressionConfigChanged;
 
-            // Before OnDestroy drops the clone: an edit still waiting for its delayed write, and values
-            // that arrived without an edit, are written now.
-            _expressionStore.Flush(_expressionConfig);
+            // Before the object goes away: an edit still waiting for its delayed write, and values that
+            // arrived without an edit, are written now.
+            _presetStore.Flush(this.gameObject);
 
             SelectableService<IAvatarService>.Unregister("current", this);
 
@@ -490,7 +502,7 @@ namespace Lilium.LiveStudio
             _target = _FindAvatarTarget()?.gameObject;
             if (_target != null)
             {
-                _expressionStore.SwitchTo(AvatarExpressionStore.ResolveAvatarKey(), ProjectManager.projectPath, _expressionConfig);
+                _presetStore.SwitchTo(this.gameObject, ProjectManager.projectPath);
                 _PostSetupAvatar(_target);
                 InvalidateExpressions();
                 onAvatarChanged?.Invoke();
@@ -499,7 +511,7 @@ namespace Lilium.LiveStudio
 
         void Update()
         {
-            _expressionStore.Tick(_expressionConfig);
+            _presetStore.Tick(this.gameObject);
         }
 
         // First HUMANOID Animator (with a valid Avatar) in the children — the avatar to drive. Other
@@ -1046,9 +1058,10 @@ namespace Lilium.LiveStudio
 #endif
             if (newTarget != null)
             {
-                // The avatar asset layer has settled on the avatar by the time it is ready, so the
-                // selection names the avatar arriving here.
-                _expressionStore.SwitchTo(AvatarExpressionStore.ResolveAvatarKey(), ProjectManager.projectPath, _expressionConfig);
+                // Before the new avatar is set up, so the settings it is set up with are its own. The
+                // asset layer has settled on the avatar by the time it is ready, so the selection names
+                // the one arriving here.
+                _presetStore.SwitchTo(this.gameObject, ProjectManager.projectPath);
                 newTarget.GetComponent<IAvatar>()?.SetExpressionConfig(_expressionConfig);
                 _target = newTarget;
             }
@@ -1134,7 +1147,9 @@ namespace Lilium.LiveStudio
             // OnAfterLiveDeserialize、REST 書き込み経路はここ、と両経路をカバーする。
             _OnOverrideRefMaybeChanged();
 
-            if (property.PathRootIs(nameof(_expressionConfig))) _expressionStore.MarkDirty();
+            // Every avatar-owned member goes to the avatar's file, so the store is told about any of
+            // them rather than about one member by name.
+            if (property.type != null && property.type.persistScope == PersistScope.Custom) _presetStore.MarkDirty();
 
             if (_target == null) return;
 
@@ -1179,7 +1194,7 @@ namespace Lilium.LiveStudio
 
         private void _OnExpressionConfigChanged(LiveProperty property, object oldValue)
         {
-            if (ReferenceEquals(property.owner.target, _expressionConfig)) _expressionStore.MarkDirty();
+            if (ReferenceEquals(property.owner.target, _expressionConfig)) _presetStore.MarkDirty();
         }
 
         // Expression key bindings live on the generic OperationManager as ordinary SetPropertyOperation sets that

@@ -362,6 +362,46 @@ namespace Lilium.LiveStudio
         public static string CaptureDelta(GameObject instance)
             => _Build(_WrapperHandleForGameObject(instance), instance, LiveObjectSnapshot.CaptureDelta, skipEmpty: true);
 
+        /// <summary>
+        /// Delta-captures only the members declared with <paramref name="scope"/>. An owner writing its
+        /// own file takes what belongs to it and leaves the rest to whoever saves that scope — the avatar's
+        /// own settings (<see cref="PersistScope.Custom"/>) without the placement the live scene keeps.
+        /// </summary>
+        public static string CaptureDelta(GameObject instance, PersistScope scope)
+            => _Build(_WrapperHandleForGameObject(instance), instance,
+                handle => LiveObjectSnapshot.CaptureDelta(handle, scope), skipEmpty: true);
+
+        /// <summary>
+        /// Writes down the <paramref name="scope"/> defaults of the wrapper and components, unless that was
+        /// already done. Called before anything is applied to the object, so what a later delta reports is
+        /// what was changed (see <see cref="LiveObjectSnapshot.EnsureScopedDefaults"/>).
+        /// </summary>
+        public static void EnsureScopedDefaults(GameObject instance, PersistScope scope)
+        {
+            if (instance == null) return;
+            foreach (var entry in _EnumerateHandles(_WrapperHandleForGameObject(instance), instance))
+            {
+                LiveObjectSnapshot.EnsureScopedDefaults(entry.handle, scope);
+            }
+        }
+
+        /// <summary>
+        /// Puts every <paramref name="scope"/> member of the wrapper and components back to the defaults
+        /// captured for them, leaving the other scopes untouched. Called before applying another subject's
+        /// saved values onto a shared object, so what the previous one changed does not survive as though
+        /// it had been saved for the new one.
+        /// </summary>
+        public static void RestoreScopedDefaults(GameObject instance, PersistScope scope)
+        {
+            if (instance == null) return;
+            foreach (var entry in _EnumerateHandles(_WrapperHandleForGameObject(instance), instance))
+            {
+                var defaults = LiveObjectSnapshot.CaptureScopedDefaults(entry.handle, scope);
+                if (string.IsNullOrEmpty(defaults)) continue;
+                LiveObjectSnapshot.Restore(defaults, entry.handle);
+            }
+        }
+
         /// <summary>Records the delta baseline for <paramref name="instance"/>. See
         /// <see cref="CaptureDefaults(LiveGameObject, GameObject)"/>.</summary>
         public static void CaptureDefaults(GameObject instance)
