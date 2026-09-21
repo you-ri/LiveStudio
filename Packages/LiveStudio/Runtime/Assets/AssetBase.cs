@@ -130,25 +130,12 @@ namespace Lilium.LiveStudio
         public void OnEnabledApplied() => ExternalAssetManager.current?.MarkAssetsDirty();
 
         /// <summary>
-        /// Stable id of this asset's exposed object, so the remote app can keep a durable reference
-        /// to the loaded object's property editor across unload/reload cycles. Assigned once and
-        /// persisted. Unused by kinds that do not wrap a fresh exposed object (e.g. avatars, which are
-        /// exposed through the existing <c>AvatarController</c>).
+        /// Id of the exposed object this asset is shown through, so the remote app can open its property
+        /// editor from the asset list. A runtime pointer only (<c>persistable=false</c>): nothing about a
+        /// catalog entry is written to the live scene, which holds the objects themselves.
         /// </summary>
-        [LiveField, Hide]
+        [LiveField(persistable = false), Hide]
         public string objectId;
-
-        /// <summary>
-        /// Serialized snapshot of this asset's exposed parameter values, captured before unload and
-        /// reapplied after reload so edits survive an unload/reload cycle (and an avatar swap, for
-        /// avatar-attached props). A runtime carrier only — NOT persisted to the live scene
-        /// (<c>persistable=false</c>): a loaded object's persisted state now lives as top-level object
-        /// entries in the live scene, applied through the deferred-bind pending store once the asset has
-        /// loaded. Legacy scenes that stored <c>state</c> still read it harmlessly (the top-level diff
-        /// supersedes it). Hidden from the editor; [RawJson] keeps the (JSON) value inline.
-        /// </summary>
-        [LiveField(persistable = false), Hide, RawJson]
-        public string state;
 
         /// <summary>True while a load/unload is in flight; the manager skips re-entrant requests.</summary>
         [NonSerialized]
@@ -211,11 +198,11 @@ namespace Lilium.LiveStudio
         public virtual string persistentId => null;
 
         /// <summary>
-        /// True when the loaded object lives under the avatar and is therefore destroyed when the
-        /// avatar is swapped, so the manager must reload it onto the new avatar. Free-standing scene
-        /// objects (and the avatar itself) return false.
+        /// Whether enabling this entry puts something out. False for a catalog of files that reach the
+        /// stage as scene objects of their own (props): there the live scene holds the instances, and an
+        /// entry that also claimed to be "on" would be a second, disagreeing answer to the same question.
         /// </summary>
-        public virtual bool reloadsOnAvatarChange => false;
+        public virtual bool isLoadable => true;
 
         /// <summary>
         /// Absolute path of a plain image file that IS this asset's preview, for kinds whose picture is a
@@ -248,11 +235,8 @@ namespace Lilium.LiveStudio
         /// <summary>Loads this asset. Implementations set <see cref="isLoaded"/> on success.</summary>
         public abstract Task LoadAsync(AssetLoadContext context);
 
-        /// <summary>Unloads this asset, capturing <see cref="state"/> first when applicable.</summary>
+        /// <summary>Unloads this asset.</summary>
         public abstract void Unload(AssetLoadContext context);
-
-        /// <summary>Refreshes <see cref="state"/> from the live object so a save captures latest edits.</summary>
-        public virtual void CaptureState() { }
 
         /// <summary>
         /// Deletes the files this entry owns, called by <see cref="ExternalAssetManager.DeleteAssetFile"/>

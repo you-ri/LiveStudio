@@ -39,7 +39,7 @@ namespace Lilium.LiveStudio
     /// </summary>
     [Serializable]
     [LiveClass(Icon = "deployed_code", Category = "Asset", HideInScene = true, lane = FrameLane.None)]
-    public class ExternalAssetManager : ILiveObject, ILiveDeserializeCallback, ILiveSerializeCallback
+    public class ExternalAssetManager : ILiveObject
     {
         // lane = None on the class: the project's assets are what this machine has on disk, not what
         // the show did. The calls are the operator's housekeeping -- adding, removing, deleting a
@@ -73,30 +73,16 @@ namespace Lilium.LiveStudio
 
         public string id => kId;
 
-        // Added assets, exposed as an editable polymorphic array. The remote app toggles each entry's
-        // `enabled` flag (load/unload) and removes entries. NOT persisted directly: the live list mixes
-        // the project's disabled catalog (re-created by the project crawl) with the assets actually in
-        // use; only the used ones are persisted, via the `_persistedAssets` shadow below. Persisting the
-        // array directly would let the deferred crawl populate it after the live-scene save baseline is
-        // captured, marking the scene unsaved on every launch (and blocking quit) — the shadow exists to
-        // keep the crawl-built catalog out of the persisted state.
+        // The catalog: every asset file this app knows about, rebuilt by the project crawl each run and
+        // exposed as an editable polymorphic array. Nothing here is written to the live scene — the
+        // catalog says which files exist, which is a fact about this machine, while what is out is said
+        // by the show itself (the avatar by ExternalAvatarSource.selectedAvatar, the stage by
+        // StageManager.activeSet / loadedSets, a prop by the scene instance being there). Persisting it
+        // also had the deferred crawl populate the array after the save baseline was captured, marking
+        // the scene unsaved on every launch and blocking quit.
         [NonSerialized]
         [LiveField(persistable = false)]
         private AssetBase[] assets = Array.Empty<AssetBase>();
-
-        // Persistence shadow for `assets`: holds only the assets actually in use (enabled / loaded), so
-        // the live scene JSON saves the selected avatar / loaded props / active world but NOT the
-        // disabled project catalog. Refreshed in OnBeforeLiveSerialize; applied back to `assets` in
-        // OnAfterLiveDeserialize (the catalog is then re-added by the project crawl).
-        [NonSerialized]
-        [LiveField, Hide]
-        private AssetBase[] _persistedAssets = Array.Empty<AssetBase>();
-
-        // The `_persistedAssets` reference this manager last applied to / produced for the live set.
-        // Lets OnAfterLiveDeserialize tell a real restore (FromJson replaces the reference) from an
-        // unrelated property write (reference unchanged), so a plain enabled-toggle is not clobbered.
-        [NonSerialized]
-        private AssetBase[] _lastAppliedPersisted;
 
         // Currently-loaded additive (non-exclusive) assets, tracked so entries removed from the array
         // while still loaded can be detected and unloaded.
@@ -106,9 +92,6 @@ namespace Lilium.LiveStudio
         // Id of the exclusive asset (avatar) currently selected, or null. Drives radio reconciliation.
         [NonSerialized]
         private string _selectedExclusiveId;
-
-        [NonSerialized]
-        private IAvatarService _avatarService;
 
         [NonSerialized]
         private bool _dirty;
@@ -138,17 +121,8 @@ namespace Lilium.LiveStudio
             LiveObjectRegistry.Create<ExternalAssetManager>(this, kId);
             LiveClass.Get<ExternalAssetManager>().onPropertyChanged += _OnPropertyChanged;
 
-            if (Application.isPlaying)
-            {
-                _avatarService = SingletonService<IAvatarService>.subject;
-                if (_avatarService != null) _avatarService.onAvatarChanged += _OnAvatarChanged;
-            }
-
             RemoteControlBehaviour.onBaseSceneReloaded += _OnBaseSceneReloaded;
 
-            // Match the current persisted reference so an unrelated property write before any real
-            // restore does not trigger a (clobbering) swap.
-            _lastAppliedPersisted = _persistedAssets;
             _initialized = true;
 
             // Register app-embedded built-in assets (e.g. Resources animation clips) in the asset registry
@@ -166,8 +140,6 @@ namespace Lilium.LiveStudio
             RemoteControlBehaviour.onBaseSceneReloaded -= _OnBaseSceneReloaded;
 
             LiveClass.Get<ExternalAssetManager>().onPropertyChanged -= _OnPropertyChanged;
-            if (_avatarService != null) _avatarService.onAvatarChanged -= _OnAvatarChanged;
-            _avatarService = null;
 
             _UnloadAllAdditive();
 
@@ -181,94 +153,8 @@ namespace Lilium.LiveStudio
             OnDisable();
         }
 
-        // True when _persistedAssets was just replaced by a live-scene restore (FromJson deserializes a
-        // brand-new array) rather than left untouched by an unrelated property write. OnAfterLiveDeserialize
-        // fires on EVERY exposed-property write on this manager, not only after a full restore, so without
-        // this guard a plain enabled-toggle would re-apply the persisted set and wipe the live assets (and
-        // the just-toggled selection). Reference identity is the signal: a restore brings in an array this
-        // manager did not produce, whereas a property write leaves the reference OnBeforeLiveSerialize
-        // last recorded into _lastAppliedPersisted.
-        private bool _IsFreshRestore() => !ReferenceEquals(_persistedAssets, _lastAppliedPersisted);
-
-        /// <summary>
-        /// Fires after a live scene is restored. The used assets were deserialized into
-        /// <see cref="_persistedAssets"/>; make them the live set, schedule a diff to (un)load them, and
-        /// re-arm the crawl so the project catalog is re-added on the next <see cref="Update"/>.
-        /// </summary>
-        public void OnAfterLiveDeserialize()
-        {
-            if (!Application.isPlaying) return;
-
-            // Apply the persisted set to the live `assets` array ONLY on a genuine restore, not on the
-            // every-property-write firings of this callback (see _IsFreshRestore).
-            if (!_IsFreshRestore()) return;
-
-            _lastAppliedPersisted = _persistedAssets;
-            // A persisted entry deserializes to null when its @type is no longer registered (e.g.
-            // saved data referencing a removed/renamed asset kind). Compact those holes out so a null
-            // never reaches the live array or a broadcast — consumers that project the list
-            // (StageManager, the remote app) would otherwise dereference null and crash.
-            assets = _WithoutNulls(_persistedAssets);
-            _ResolveAssetPaths(assets);
-            assets = _WithoutUnidentifiableBuiltins(assets);
-            // The persisted set carries only loadable built-ins that were in use (e.g. an enabled built-in
-            // prop, restored with its objectId so its overrides reattach); reference-only built-ins and the
-            // disabled catalog are not persisted. Re-inject the built-in catalog so the rest is present —
-            // idempotent, dedups by id, so a restored loadable entry is kept, not duplicated. The re-armed
-            // crawl below also re-adds them, but doing it here keeps them present immediately (and even when
-            // no project folder is open).
-            _EnsureBuiltinAssets();
-            _dirty = true;
-            _assetManagerReadyNotified = false;
-        }
-
-        /// <summary>
-        /// Fires before persistence. Refreshes each loaded asset's <see cref="AssetBase.state"/> from its
-        /// live values, then captures only the in-use assets (enabled / loaded) into
-        /// <see cref="_persistedAssets"/> so the saved live scene excludes the disabled project catalog.
-        /// </summary>
-        public void OnBeforeLiveSerialize()
-        {
-            for (int i = 0; i < _loaded.Count; i++) _loaded[i].CaptureState();
-
-            var projectPath = ProjectManager.projectPath;
-            var used = new List<AssetBase>();
-            for (int i = 0; i < assets.Length; i++)
-            {
-                var asset = assets[i];
-                // Skip entries with nothing to persist: unused ones, and reference-only built-ins
-                // (app-embedded selectable resources with no per-scene state, always re-injected each run —
-                // isPersistable=false). A loadable built-in (e.g. a built-in prop) IS persisted, so its
-                // enabled state and objectId — hence its saved parameter overrides — survive a restore.
-                if (asset == null || !asset.isPersistable || (!asset.enabled && !asset.isLoaded)) continue;
-                // A built-in asset has no project file; its identity is the catalog GUID persisted on the
-                // entry, so leave its path empty. A file-backed asset persists a portable, project-relative
-                // path so a saved scene survives moving the project folder / opening it on another machine
-                // (the absolute id/filePath are persistable=false and reconstructed from it on load).
-                if (!asset.isBuiltin)
-                    asset.path = PropPreset.Relativize(asset.filePath, projectPath);
-                used.Add(asset);
-            }
-            _persistedAssets = used.ToArray();
-            // We produced this reference (not a restore); record it so OnAfterLiveDeserialize does
-            // not re-apply it on a later property write.
-            _lastAppliedPersisted = _persistedAssets;
-        }
-
         public void Update()
         {
-            // The avatar service may not have existed at OnEnable (load order). Bind late so prop
-            // reloads track avatar swaps.
-            if (Application.isPlaying && _avatarService == null)
-            {
-                _avatarService = SingletonService<IAvatarService>.subject;
-                if (_avatarService != null)
-                {
-                    _avatarService.onAvatarChanged += _OnAvatarChanged;
-                    _dirty = true; // a new avatar is available; (re)load enabled assets onto it.
-                }
-            }
-
             // Once the live scene (if any) has been restored in Start, let the project manager run its
             // pending folder crawl so discovered assets merge on top of the restored set.
             if (Application.isPlaying && !_assetManagerReadyNotified)
@@ -814,24 +700,6 @@ namespace Lilium.LiveStudio
             _dirty = true;
         }
 
-        // The avatar was swapped: avatar-attached props were destroyed with it. Drop them and re-diff
-        // so the enabled ones are reloaded onto the new avatar.
-        private void _OnAvatarChanged()
-        {
-            var context = _MakeContext();
-            for (int i = _loaded.Count - 1; i >= 0; i--)
-            {
-                var asset = _loaded[i];
-                if (!asset.reloadsOnAvatarChange) continue;
-                // The instance was destroyed with the old avatar; Unload captures state best-effort and
-                // clears the load flag. objectId is stable/persisted, so it is left intact and the prop
-                // reloads onto the new avatar under the same exposed-object id.
-                asset.Unload(context);
-                _loaded.RemoveAt(i);
-            }
-            _dirty = true;
-        }
-
         // A persistent host reloaded the base scene: every loaded asset's GameObject was destroyed with
         // it, but this manager (and its container entries) survived. Drop the now-dangling additive
         // wrappers — Unload removes each from the container, so a stale reference is never serialized by
@@ -851,13 +719,16 @@ namespace Lilium.LiveStudio
         /// </summary>
         private void _ApplyDiff()
         {
-            // Additive assets (props).
+            // Additive assets (sets).
             for (int i = 0; i < assets.Length; i++)
             {
                 var asset = assets[i];
                 if (asset == null || string.IsNullOrEmpty(asset.id)) continue;
                 if (asset.isExclusive) continue;
                 if (asset.busy) continue;
+                // A catalog of files that are put out as scene objects of their own (props) has nothing
+                // to load here; the scene holds the instances.
+                if (!asset.isLoadable) continue;
 
                 if (asset.enabled && !asset.isLoaded)
                 {
@@ -1074,44 +945,6 @@ namespace Lilium.LiveStudio
             return filePath.Replace('\\', '/');
         }
 
-        // Reconstructs the absolute runtime filePath/id from the persisted (project-relative) path after a
-        // live-scene restore. New-format entries persisted only the relative `path` (id/filePath are
-        // persistable=false); resolve those to absolutes. Legacy entries that persisted absolute
-        // id/filePath instead are kept as-is and back-filled with a relative `path`, so a re-save upgrades
-        // them to the portable form. PropPreset.ResolveSource returns a rooted path verbatim, so a `path`
-        // that is itself absolute (different drive / out-of-project fallback) still resolves correctly.
-        private static void _ResolveAssetPaths(AssetBase[] assets)
-        {
-            var projectPath = ProjectManager.projectPath;
-            for (int i = 0; i < assets.Length; i++)
-            {
-                var asset = assets[i];
-                if (asset == null) continue;
-
-                if (asset.isBuiltin)
-                {
-                    // App-embedded entry: no project file, so there is no path to resolve. Restore the
-                    // runtime id from the persisted stable identity (the catalog GUID) so this entry dedups
-                    // against the catalog entry re-injected by _EnsureBuiltinAssets right after.
-                    if (string.IsNullOrEmpty(asset.id)) asset.id = asset.persistentId;
-                    continue;
-                }
-
-                if (string.IsNullOrEmpty(asset.filePath) && !string.IsNullOrEmpty(asset.path))
-                {
-                    // New format: only the relative path was persisted.
-                    asset.filePath = PropPreset.ResolveSource(asset.path, projectPath);
-                    asset.id = _MakeId(asset.filePath);
-                    if (string.IsNullOrEmpty(asset.name)) asset.name = AssetTypeRegistry.DeriveName(asset.filePath);
-                }
-                else if (!string.IsNullOrEmpty(asset.filePath))
-                {
-                    // Legacy format: absolute id/filePath were persisted. Normalize id and back-fill path.
-                    if (string.IsNullOrEmpty(asset.id)) asset.id = _MakeId(asset.filePath);
-                    if (string.IsNullOrEmpty(asset.path)) asset.path = PropPreset.Relativize(asset.filePath, projectPath);
-                }
-            }
-        }
 
         private AssetBase _Find(string assetId)
         {
@@ -1141,58 +974,6 @@ namespace Lilium.LiveStudio
             }
             return string.Equals(full, root, StringComparison.OrdinalIgnoreCase) ||
                 full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
-        }
-
-        // Returns a copy of `source` with null entries removed (or an empty array). A persisted asset
-        // entry deserializes to null when its @type is no longer registered (e.g. saved data referencing
-        // a removed/renamed asset kind); such holes must not reach the live array or a broadcast. The
-        // input is returned as-is when it has no nulls, so the common case allocates nothing.
-        /// <summary>
-        /// Drops built-in entries whose identity could not be resolved after a restore. A built-in asset has
-        /// no file path to rebuild an id from, so an entry the app no longer recognises (a built-in set the
-        /// project stopped declaring; a saved scene written when the identity had another shape) comes back
-        /// with an empty id. Such an entry can never load — <c>_ApplyDiff</c> skips empty ids — yet it would
-        /// list on the stage page, dodge the built-in de-dup (which keys on id) and be written back out on
-        /// every save, so it would haunt the scene permanently. Nothing is lost by dropping it: every
-        /// still-declared built-in is re-injected right after.
-        /// </summary>
-        private static AssetBase[] _WithoutUnidentifiableBuiltins(AssetBase[] source)
-        {
-            if (source == null || source.Length == 0) return Array.Empty<AssetBase>();
-
-            var kept = new List<AssetBase>(source.Length);
-            for (int i = 0; i < source.Length; i++)
-            {
-                var asset = source[i];
-                if (asset != null && asset.isBuiltin && string.IsNullOrEmpty(asset.id))
-                {
-                    Debug.LogWarning(
-                        $"[LiveStudio] Built-in asset '{asset.name}' in the saved scene is no longer available; dropping it.");
-                    continue;
-                }
-                kept.Add(asset);
-            }
-            return kept.Count == source.Length ? source : kept.ToArray();
-        }
-
-        private static AssetBase[] _WithoutNulls(AssetBase[] source)
-        {
-            if (source == null || source.Length == 0) return Array.Empty<AssetBase>();
-
-            int count = 0;
-            for (int i = 0; i < source.Length; i++)
-            {
-                if (source[i] != null) count++;
-            }
-            if (count == source.Length) return source;
-
-            var result = new AssetBase[count];
-            int w = 0;
-            for (int i = 0; i < source.Length; i++)
-            {
-                if (source[i] != null) result[w++] = source[i];
-            }
-            return result;
         }
 
         // Builds a registered (but not yet loaded) entry for the file, or null if the extension is

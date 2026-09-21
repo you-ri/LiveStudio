@@ -17,10 +17,15 @@ namespace Lilium.LiveStudio
     /// as a separate object.
     ///
     /// Each frame this bridges the avatar's animator parameter values onto the item's own Animator: for
-    /// every parameter the item's controller declares, the same-named value is read from the parent
-    /// avatar (via <see cref="IAvatarParameterSource"/>) and written here. It also drives the item's own
-    /// expression mapping from the avatar's expression weights. The avatar is found by walking up the
-    /// parent hierarchy, since the item is its child.
+    /// every parameter the item's controller declares, the same-named value is read from the avatar
+    /// (via <see cref="IAvatarParameterSource"/>) and written here. It also drives the item's own
+    /// expression mapping from the avatar's expression weights.
+    ///
+    /// The avatar is asked for through the avatar service, NOT the parent chain — the same as
+    /// <see cref="PropAttachment"/>'s socket lookup and <see cref="AvatarChair"/>. An item is not always
+    /// a child of the avatar: one spawned from the scene's "+" stands in the base scene on its own, and
+    /// walking up from there found nothing, so its parameter bridge and its expressions were silently
+    /// dead while its socket follow worked.
     ///
     /// This is one of the mutually-exclusive prop behavior components (<see cref="IProp"/>): it owns the
     /// socket follow itself through its shared <see cref="attachment"/> (socket name + offsets), in
@@ -95,11 +100,10 @@ namespace Lilium.LiveStudio
             _NotifyAvatarExpressionsChanged();
         }
 
-        // 表情集合の変化を親 AvatarController に伝え、expressions getter のキャッシュを無効化する。
-        // item はアバターの子、アバターは AvatarController の子なので親を辿って見つける。
+        // 表情集合の変化を AvatarController に伝え、expressions getter のキャッシュを無効化する。
         void _NotifyAvatarExpressionsChanged()
         {
-            GetComponentInParent<AvatarController>(includeInactive: true)?.InvalidateExpressions();
+            (SingletonService<IAvatarService>.subject as AvatarController)?.InvalidateExpressions();
         }
 
         // item 自身の controller が宣言する非 Trigger パラメータをキャッシュ（毎フレームのブリッジ対象）。
@@ -121,17 +125,26 @@ namespace Lilium.LiveStudio
             _parameters = list.ToArray();
         }
 
-        // 親階層からアバターのパラメータ読み出し口を取得（item はアバターの子）。
+        // アバターのパラメータ読み出し口を取得する。
         void _ResolveSource()
         {
-            _source = GetComponentInParent<IAvatarParameterSource>();
+            _source = _Avatar()?.GetComponent<IAvatarParameterSource>();
         }
 
-        // 親階層からアバターの表情ウェイト供給口を得る（item はアバターの子）。
+        // アバターの表情ウェイト供給口を得る。
         void _ResolveAvatarExpression()
         {
-            _avatarExpression = GetComponentInParent<IExpressionAvatar>();
+            _avatarExpression = _Avatar()?.GetComponent<IExpressionAvatar>();
         }
+
+        // The avatar that is out, whether or not this item is parented under it.
+        static GameObject _Avatar() => SingletonService<IAvatarService>.subject?.target;
+
+        // Whether a resolved reference has to be looked up again. An interface reference does not see
+        // Unity's destroyed-object ==, so an avatar that has been swapped out would look present for the
+        // rest of the session and the item would keep reading a dead component.
+        static bool _Lost(object resolved)
+            => resolved == null || (resolved is UnityEngine.Object o && o == null);
 
         /// <summary>
         /// この item が公開する表情キー一覧。ExpressionController (AvatarExpression) が
@@ -189,7 +202,7 @@ namespace Lilium.LiveStudio
             // パラメータブリッジ: アバターの Animator パラメータを item へ複製する。
             // IAvatarParameterSource は VRCFTAvatar / VRCAvatar のみ実装するため、VRM/Standard 配下では
             // _source は null のまま。その場合はブリッジをスキップするだけで、表情駆動 (下) は続行する。
-            if (_source == null) _ResolveSource();
+            if (_Lost(_source)) _ResolveSource();
             if (_source != null)
             {
                 for (int i = 0; i < _parameters.Length; i++)
@@ -218,7 +231,7 @@ namespace Lilium.LiveStudio
             // 済ませた後 (item は order 20) に走る。
             if (_expressions.Length > 0)
             {
-                if (_avatarExpression == null) _ResolveAvatarExpression();
+                if (_Lost(_avatarExpression)) _ResolveAvatarExpression();
                 if (_avatarExpression != null)
                 {
                     _expressionDriver.Update(_expressions, _avatarExpression);

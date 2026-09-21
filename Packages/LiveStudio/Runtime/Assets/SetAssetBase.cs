@@ -45,6 +45,6 @@ namespace Lilium.LiveStudio
 
         // A set is a free-standing scene, not something parented under the avatar, so swapping the avatar
         // never invalidates it. True for every set source.
-        public override bool reloadsOnAvatarChange => false;
+
     }
 }
