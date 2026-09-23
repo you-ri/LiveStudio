@@ -1,0 +1,111 @@
+{
+  "format": "jp.lilium.remotecontrol.live",
+  "formatVersion": 1,
+  "baseSceneName": "Studio",
+  "metadata": {
+    "packageVersion": "0.26.0-exp.1",
+    "appName": "VirgoMotionStudio",
+    "appVersion": "0.26.0",
+    "unityVersion": "6000.0.76f1"
+  },
+  "objects": [
+    {
+      "@source": "a7d3f1e2-9c4b-4e85-b6a1-2f8c5d3e7b91",
+      "@type": "ExternalAssetManager",
+      "_persistedAssets": [
+        {
+          "@type": "AvatarAsset",
+          "name": "7989649190987387872",
+          "path": "Avatars/7989649190987387872.vrm",
+          "enabled": true,
+          "objectId": "1bd72042-8b83-4a6d-b39c-c662487db3f0",
+          "@op": "new"
+        },
+        {
+          "@type": "PropAsset",
+          "name": "SampleHandMic",
+          "path": "Props/SampleHandMic.prop.lsb",
+          "enabled": true,
+          "objectId": "3bf75052-e335-42df-b3c2-3e4f85a7d418",
+          "@op": "new"
+        },
+        {
+          "@type": "SetBundleAsset",
+          "name": "SampleRoom",
+          "path": "Sets/SampleRoom.set.lsb",
+          "enabled": true,
+          "objectId": "404d567e-8c51-4828-bd1c-d0bc79d93980",
+          "isActive": true,
+          "@op": "new"
+        }
+      ]
+    },
+    {
+      "@source": "b2f7c9a1-3d4e-4f8a-9c1b-7e2d5a6f8c30",
+      "@type": "StageManager",
+      "activeSet": "SampleRoom",
+      "loadedSets": [
+        {
+          "@type": "LoadedSet",
+          "name": "SampleRoom",
+          "@op": "new"
+        }
+      ]
+    },
+    {
+      "@source": "1bd72042-8b83-4a6d-b39c-c662487db3f0",
+      "@type": "GameObjectWithTransform",
+      "transform": {
+        "position": {
+          "x": -18.627
+        },
+        "rotation": {
+          "y": 0.7071068,
+          "w": 0.7071068
+        }
+      }
+    },
+    {
+      "@source": "1bd72042-8b83-4a6d-b39c-c662487db3f0.components[ExternalAvatarSource]",
+      "@type": "ExternalAvatarSource",
+      "selectedAvatar": "7989649190987387872"
+    },
+    {
+      "@source": "3bf75052-e335-42df-b3c2-3e4f85a7d418.components[Item]",
+      "@type": "Item",
+      "attachment": {
+        "@type": "PropAttachment",
+        "offset": {
+          "position": {
+            "x": 0.0457884036,
+            "y": -0.0122777224,
+            "z": -0.0062856474
+          },
+          "rotation": {
+            "x": 0.7528562,
+            "y": 0.04909146,
+            "z": -0.0542307124,
+            "w": 0.654107451
+          }
+        }
+      }
+    },
+    {
+      "@source": "1bd72042-8b83-4a6d-b39c-c662487db3f0.components[Avatar]._expressionConfig",
+      "@type": "AvatarExpressionConfig",
+      "expressions": [
+        {
+          "@type": "ExpressionData",
+          "name": "happy",
+          "blinkWeightInfluence": 0.0,
+          "@op": "new"
+        },
+        {
+          "@type": "ExpressionData",
+          "name": "angry",
+          "@op": "new"
+        }
+      ]
+    }
+  ]
+}

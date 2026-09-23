@@ -26,6 +26,25 @@ namespace Lilium.RemoteControl.LiveScene
         // read best-effort. See FormatHeader for the shared policy. Incompatible breaks use a new format id.
         public const int MinSupportedVersion = 1;
 
+        /// <summary>
+        /// Raised once a live scene has been applied, for work that has to wait until the whole file is
+        /// in — standing up the <c>@prefab</c> entries whose asset could not be resolved while the passes
+        /// ran (<see cref="PendingPrefabStore"/>) is the one this exists for.
+        ///
+        /// <para>
+        /// An announcement rather than the serializer doing that work itself. Resolving an asset is
+        /// asynchronous and belongs to whoever owns the assets; started from inside the restore it
+        /// outlives the call and runs during whatever comes next, which in a test suite is the next test.
+        /// Handing it to a subscriber puts it back under an owner that knows when it is allowed to run.
+        /// </para>
+        /// </summary>
+        public static event Action onLiveSceneRestored;
+
+        // Cleared at runtime startup so a subscriber from a previous play session never stays attached
+        // when Domain Reload is disabled.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void _ResetRestoredEvent() => onLiveSceneRestored = null;
+
         public static string LiveSceneToJson(IReadOnlyList<LiveObjectHandle> objects, ILiveObjectResolver resolver, SerializeMode filter = SerializeMode.Snapshot, ExcludeFilter exclude = ExcludeFilter.None, string baseSceneName = null)
         {
             bool onlyDirty = filter == SerializeMode.Delta;
@@ -310,6 +329,9 @@ namespace Lilium.RemoteControl.LiveScene
             _RegisterRoots(jArray, resolver);        // Pass 2: ルートを Registry へ反映
             _RegisterFileObjects(jArray, resolver);  // Pass 2.5: source-key → UnityEngine.Object
             _ApplyProperties(jArray, resolver);      // Pass 3: プロパティ適用
+
+            // ファイル全体が入ってから動きたいものへ知らせる (解決できなかった @prefab の遅延生成など)。
+            onLiveSceneRestored?.Invoke();
         }
 
         // -------------------------------------------------------

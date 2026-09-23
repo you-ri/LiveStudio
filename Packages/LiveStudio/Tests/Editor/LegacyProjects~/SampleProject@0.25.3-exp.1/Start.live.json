@@ -1,0 +1,136 @@
+{
+  "format": "jp.lilium.remotecontrol.live",
+  "formatVersion": 1,
+  "baseSceneName": "Studio",
+  "metadata": {
+    "packageVersion": "0.25.2-exp.1",
+    "appName": "VirgoMotionStudio",
+    "appVersion": "0.25.2",
+    "unityVersion": "6000.0.76f1"
+  },
+  "objects": [
+    {
+      "@source": "a7d3f1e2-9c4b-4e85-b6a1-2f8c5d3e7b91",
+      "@type": "ExternalAssetManager",
+      "_persistedAssets": [
+        {
+          "@type": "AvatarAsset",
+          "name": "7989649190987387872",
+          "path": "Avatars/7989649190987387872.vrm",
+          "enabled": true,
+          "objectId": "1bd72042-8b83-4a6d-b39c-c662487db3f0",
+          "@op": "new"
+        },
+        {
+          "@type": "PropAsset",
+          "name": "SampleChair",
+          "path": "Props/SampleChair.prop.lsb",
+          "enabled": true,
+          "objectId": "7a690ce1-0edf-420c-8ce9-7d93b0c4b844",
+          "@op": "new"
+        },
+        {
+          "@type": "PropAsset",
+          "name": "SampleHandMic",
+          "path": "Props/SampleHandMic.prop.lsb",
+          "enabled": true,
+          "objectId": "3bf75052-e335-42df-b3c2-3e4f85a7d418",
+          "@op": "new"
+        }
+      ]
+    },
+    {
+      "@source": "c4e8b2d6-7a91-4f53-8e0c-1d9a6b3f2e74",
+      "@type": "OperationManager",
+      "operationSets": [
+        {
+          "@type": "OperationSet",
+          "id": "bfb1d9ee-e64a-486c-a227-f35da39f33bc",
+          "name": "happy",
+          "group": "Expression",
+          "input": {
+            "@type": "KeyInputSource"
+          },
+          "operations": [
+            {
+              "@type": "SetPropertyOperation",
+              "targetId": "1bd72042-8b83-4a6d-b39c-c662487db3f0",
+              "propertyPath": "components/0/expressions/happy/weight"
+            }
+          ],
+          "control": {
+            "@type": "DeckToggle",
+            "deckName": "Deck",
+            "x": 0,
+            "y": 0,
+            "w": 1,
+            "h": 1,
+            "backgroundAssetId": ""
+          },
+          "@op": "new"
+        },
+        {
+          "@type": "OperationSet",
+          "id": "a4da92c2-1e89-4f0b-994f-fdfd1fcf4d36",
+          "name": "angry",
+          "group": "Expression",
+          "input": {
+            "@type": "KeyInputSource"
+          },
+          "operations": [
+            {
+              "@type": "SetPropertyOperation",
+              "targetId": "1bd72042-8b83-4a6d-b39c-c662487db3f0",
+              "propertyPath": "components/0/expressions/angry/weight"
+            }
+          ],
+          "control": {
+            "@type": "DeckToggle",
+            "deckName": "Deck",
+            "x": 1,
+            "y": 0,
+            "w": 1,
+            "h": 1,
+            "backgroundAssetId": ""
+          },
+          "@op": "new"
+        }
+      ],
+      "decks": [
+        {
+          "@type": "Deck",
+          "@op": "new"
+        }
+      ]
+    },
+    {
+      "@source": "7a690ce1-0edf-420c-8ce9-7d93b0c4b844.components[Chair]",
+      "@type": "Chair",
+      "restRecorded": true,
+      "restYaw": -11.7481928,
+      "restPitch": 2.18882155,
+      "restHipsLocal": {
+        "x": 0.0105601735,
+        "y": 0.773528457,
+        "z": 0.0385940261
+      }
+    },
+    {
+      "@source": "1bd72042-8b83-4a6d-b39c-c662487db3f0.components[Avatar]._expressionConfig",
+      "@type": "AvatarExpressionConfig",
+      "expressions": [
+        {
+          "@type": "ExpressionData",
+          "name": "happy",
+          "blinkWeightInfluence": 0.0,
+          "@op": "new"
+        },
+        {
+          "@type": "ExpressionData",
+          "name": "angry",
+          "@op": "new"
+        }
+      ]
+    }
+  ]
+}

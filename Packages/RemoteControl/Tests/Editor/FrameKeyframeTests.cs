@@ -34,12 +34,22 @@ namespace Lilium.RemoteControl.Tests
             FrameGate.RestoreDefaultClock();
         }
 
-        /// <summary>Records frames through the real gate at a given keyframe interval.</summary>
+        /// <summary>
+        /// Records frames through the real gate at a given keyframe interval.
+        ///
+        /// ⚠ From a cleared gate every time, so two recordings made to be compared are comparable.
+        /// Left as it was, the second one starts where the first stopped and inherits its symbol
+        /// table: a frame number is written in as many bytes as it needs, and a name already
+        /// interned is not written again. Identical content then comes out a few bytes apart, and a
+        /// test reading sizes calls that difference a keyframe.
+        /// </summary>
         private static byte[] Record(int frames, int keyframeInterval, FrameHeadDelegate producer)
         {
             var stream = new MemoryStream();
             var recorder = new FrameRecorder { keyframeInterval = keyframeInterval };
 
+            FrameGate.ResetState("[test] recording");
+            FrameGate.SetClock(new FrameCounterClock(FrameRate.FPS60));
             FrameGate.AddFrameHeadHandler(producer);
             recorder.Start(stream, leaveOpen: true);
             FrameGate.sink = recorder;
@@ -176,7 +186,6 @@ namespace Lilium.RemoteControl.Tests
             }
 
             var sparse = Record(60, keyframeInterval: 0, Producer).Length;
-            var everySecond = Record(60, keyframeInterval: 60, Producer).Length;
             var everyFrame = Record(60, keyframeInterval: 1, Producer).Length;
 
             // 12 of block header plus 28 per object plus 13 of entry header: about 305 bytes for ten
@@ -189,7 +198,15 @@ namespace Lilium.RemoteControl.Tests
             var perKeyframe = (everyFrame - sparse) / 59.0;
             Assert.Less(perKeyframe, 350, $"a keyframe cost {perKeyframe:F0} bytes");
 
-            Assert.AreEqual(sparse, everySecond, "one a second over a second of frames is just the first");
+            // One a second over a second of frames is just the first. Asked of the recording rather
+            // than of its size, which was how this read before: two recordings differ by a few bytes
+            // for reasons that have nothing to do with keyframes -- where on the frame counter they
+            // start, which names their symbol table had already interned -- so a size that matched
+            // was only ever circumstantial, and a size that stopped matching said nothing.
+            using (var player = new FrameRecordPlayer(new MemoryStream(Record(60, keyframeInterval: 60, Producer))))
+            {
+                CollectionAssert.AreEqual(new long[] { 0 }, player.keyframes);
+            }
         }
     }
 }

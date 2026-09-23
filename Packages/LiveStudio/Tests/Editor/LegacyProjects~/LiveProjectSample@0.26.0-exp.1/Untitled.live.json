@@ -1,0 +1,71 @@
+{
+  "format": "jp.lilium.remotecontrol.live",
+  "formatVersion": 1,
+  "baseSceneName": "Studio Test",
+  "metadata": {
+    "packageVersion": "0.25.3-exp.1",
+    "appName": "VirgoMotionStudio",
+    "appVersion": "0.25.3",
+    "unityVersion": "6000.0.76f1"
+  },
+  "objects": [
+    {
+      "@source": "a7d3f1e2-9c4b-4e85-b6a1-2f8c5d3e7b91",
+      "@type": "ExternalAssetManager",
+      "_persistedAssets": [
+        {
+          "@type": "AvatarAsset",
+          "name": "7989649190987387872",
+          "path": "Avatars/7989649190987387872.vrm",
+          "enabled": true,
+          "objectId": "1bd72042-8b83-4a6d-b39c-c662487db3f0",
+          "@op": "new"
+        },
+        {
+          "@type": "SetBundleAsset",
+          "name": "SampleRoom",
+          "path": "Sets/SampleRoom.set.lsb",
+          "enabled": true,
+          "objectId": "817e52c4-62fa-4614-95da-40782f4e2c07",
+          "@op": "new"
+        }
+      ]
+    },
+    {
+      "@source": "1bd72042-8b83-4a6d-b39c-c662487db3f0",
+      "@type": "GameObjectWithTransform",
+      "transform": {
+        "position": {
+          "x": -18.627
+        },
+        "rotation": {
+          "y": 0.7071068,
+          "w": 0.7071068
+        }
+      },
+      "components": [
+        {
+          "@ref": "1bd72042-8b83-4a6d-b39c-c662487db3f0.components[Transform]"
+        }
+      ]
+    },
+    {
+      "@source": "450dd368-3ad8-4b61-9f08-f986adeb7908",
+      "@type": "GameObject",
+      "components": [
+        {
+          "@ref": "450dd368-3ad8-4b61-9f08-f986adeb7908.components[Transform]"
+        }
+      ]
+    },
+    {
+      "@source": "48ffab25-85be-47b8-879c-9cd5f8c9fe6d",
+      "@type": "GameObject",
+      "components": [
+        {
+          "@ref": "48ffab25-85be-47b8-879c-9cd5f8c9fe6d.components[Transform]"
+        }
+      ]
+    }
+  ]
+}

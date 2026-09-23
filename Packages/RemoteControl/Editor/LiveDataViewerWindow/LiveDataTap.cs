@@ -150,11 +150,26 @@ namespace Lilium.RemoteControl.Editor.LiveDataViewer
             version++;
         }
 
+        // The table the resolver reads, held in a field rather than captured. A lambda that closes
+        // over a local is a closure and a delegate built fresh at every call -- two allocations at
+        // every frame head for as long as the window is open, which is precisely the hitch this
+        // window is opened to hunt. Reading a static instead captures nothing, so the delegate below
+        // is built once for the session.
+        private static FrameSymbolTable _resolverTable;
+
+        private static readonly Func<int, string> _resolveThroughTable = id => _resolverTable.Resolve(id);
+
+        /// <summary>
+        /// The resolver for this frame's ids. Valid only for the duration of one capture: it reads
+        /// whichever table the latest frame brought, which is the recording's own on a supplied
+        /// frame and this run's otherwise. Not to be stored — resolving an id later would name
+        /// whatever holds that number by then.
+        /// </summary>
         private static Func<int, string> _ResolverFor(in Frame frame, FrameSymbolTable symbols)
         {
-            var table = frame.symbols ?? symbols;
+            _resolverTable = frame.symbols ?? symbols;
 
-            return id => table.Resolve(id);
+            return _resolveThroughTable;
         }
 
         private static void _CaptureState(in Frame frame, Func<int, string> resolve)

@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- **A scene opened while the app was already running stood none of its external props up.** A `*.prop.lsb` prop instance is restored from a `@prefab` key that only resolves once this machine's catalog knows the file, so the restore queues what it cannot make yet and something has to come back for it. The only thing that did was the project crawl — and no crawl follows a scene being opened, so the props appeared at startup and were missing from the same scene opened from the remote app, until a restart. They were never lost (an undrained entry is re-saved verbatim), but nothing said why the stage was bare. `ExternalAssetManager` now also drains on `LiveSceneSerializer.onLiveSceneRestored`, which is raised whenever a scene is read rather than only when the catalog is rebuilt. The gap opened when the catalog stopped being saved: its deserialize callback was the other path into the drain, and it went with it.
+
 - **An avatar item spawned from the scene page's "+" drove none of its animator parameters and none of its expressions.** `AvatarItem` looked for the avatar by walking up its parent chain, which only finds one while the item is a child of the avatar — and an item added from the "+" stands in the base scene on its own. Its socket follow worked, so the item was in the right place and visibly dead. It now asks the avatar service, the same way `PropAttachment`'s socket lookup and `AvatarChair` already did, so it works wherever it lives. A resolved reference is also re-resolved properly across an avatar swap: it is held as an interface, which does not see Unity's destroyed-object `==`, so a swapped-out avatar's components looked present for the rest of the session.
 
 ### Changed

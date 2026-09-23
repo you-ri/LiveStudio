@@ -1,0 +1,100 @@
+{
+  "format": "jp.lilium.remotecontrol.live",
+  "formatVersion": 1,
+  "baseSceneName": "Studio",
+  "metadata": {
+    "packageVersion": "0.23.6-exp.1",
+    "appName": "VirgoMotionStudio",
+    "appVersion": "0.23.6",
+    "unityVersion": "6000.0.76f1"
+  },
+  "objects": [
+    {
+      "@source": "a7d3f1e2-9c4b-4e85-b6a1-2f8c5d3e7b91",
+      "@type": "ExternalAssetManager",
+      "_persistedAssets": [
+        {
+          "@type": "SetBundleAsset",
+          "name": "SampleRoomSet",
+          "path": "Sets/SampleRoomSet.set.lsb",
+          "enabled": true,
+          "objectId": "06e69b97-4a89-461a-a1e9-fae114d5b614",
+          "isActive": true,
+          "@op": "new"
+        },
+        {
+          "@type": "AvatarAsset",
+          "name": "VRoid_V110_Male_v1.1.3",
+          "path": "Avatars/VRoid_V110_Male_v1.1.3.vrm",
+          "enabled": true,
+          "objectId": "1bd72042-8b83-4a6d-b39c-c662487db3f0",
+          "@op": "new"
+        }
+      ]
+    },
+    {
+      "@source": "c4e8b2d6-7a91-4f53-8e0c-1d9a6b3f2e74",
+      "@type": "ActionManager",
+      "actionSets": [
+        {
+          "@type": "ActionSet",
+          "id": "ca99c121-e3f5-4f1f-841b-b7cfcd9ae407",
+          "name": "happy",
+          "group": "Expression",
+          "input": {
+            "@type": "KeyInputSource",
+            "mode": "Toggle",
+            "_controlPath": "/Keyboard/c"
+          },
+          "actions": [
+            {
+              "@type": "SetExpressionAction",
+              "expression": "happy"
+            }
+          ],
+          "@op": "new"
+        },
+        {
+          "@type": "ActionSet",
+          "id": "f6cf6148-db07-4487-bb74-4e70fcc90148",
+          "name": "angry",
+          "group": "Expression",
+          "input": {
+            "@type": "KeyInputSource",
+            "mode": "Toggle",
+            "_controlPath": "/Keyboard/b"
+          },
+          "actions": [
+            {
+              "@type": "SetExpressionAction",
+              "expression": "angry"
+            }
+          ],
+          "@op": "new"
+        }
+      ]
+    },
+    {
+      "@source": "2c3043aa-ce67-4e7b-bd99-6c51f51ae8c2",
+      "@type": "ExposedLight",
+      "enabled": false
+    },
+    {
+      "@source": "1bd72042-8b83-4a6d-b39c-c662487db3f0.components[0]._expressionConfig",
+      "@type": "AvatarExpressionConfig",
+      "expressions": [
+        {
+          "@type": "ExpressionData",
+          "name": "happy",
+          "blinkWeightInfluence": 0.0,
+          "@op": "new"
+        },
+        {
+          "@type": "ExpressionData",
+          "name": "angry",
+          "@op": "new"
+        }
+      ]
+    }
+  ]
+}

@@ -122,6 +122,7 @@ namespace Lilium.LiveStudio
             LiveClass.Get<ExternalAssetManager>().onPropertyChanged += _OnPropertyChanged;
 
             RemoteControlBehaviour.onBaseSceneReloaded += _OnBaseSceneReloaded;
+            LiveSceneSerializer.onLiveSceneRestored += _OnLiveSceneRestored;
 
             _initialized = true;
 
@@ -138,6 +139,7 @@ namespace Lilium.LiveStudio
             _initialized = false;
 
             RemoteControlBehaviour.onBaseSceneReloaded -= _OnBaseSceneReloaded;
+            LiveSceneSerializer.onLiveSceneRestored -= _OnLiveSceneRestored;
 
             LiveClass.Get<ExternalAssetManager>().onPropertyChanged -= _OnPropertyChanged;
 
@@ -378,7 +380,9 @@ namespace Lilium.LiveStudio
         /// them; they are added here and protected from the crawl's prune (<see cref="AssetBase.isBuiltin"/>).
         /// Cheap and idempotent — dedups by id (a loadable built-in restored from the live scene therefore
         /// wins over the fresh catalog entry, keeping its enabled state / objectId) and only broadcasts when
-        /// it adds something. Called at init and after every rebuild of <c>assets</c> (crawl / restore).
+        /// it adds something. Called at init and after the project crawl rebuilds <c>assets</c> — a live
+        /// scene restore reaches the deferred-prefab drain through <see cref="_OnLiveSceneRestored"/>
+        /// instead, since it no longer touches the catalog at all.
         /// </summary>
         private void _EnsureBuiltinAssets()
         {
@@ -712,6 +716,19 @@ namespace Lilium.LiveStudio
             _selectedExclusiveId = null;
             _dirty = true;
         }
+
+        /// <summary>
+        /// Stands up the <c>@prefab</c> instances the restore could not resolve on its own — an external
+        /// prop whose bundle this manager has to read before there is a prefab to copy.
+        ///
+        /// <para>
+        /// At startup this usually resolves nothing: the catalog is still empty and the crawl that fills
+        /// it drains again when it is done. It is the only drain a scene opened *after* startup gets,
+        /// though, because opening a scene runs no crawl — without it such a scene stood none of its
+        /// external props up until the next restart.
+        /// </para>
+        /// </summary>
+        private void _OnLiveSceneRestored() => _ = PendingPrefabStore.DrainAsync();
 
         /// <summary>
         /// Brings the actual loaded assets in line with the desired <see cref="AssetBase.enabled"/>
