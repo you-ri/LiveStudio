@@ -284,6 +284,11 @@ namespace Lilium.RemoteControl.LiveScene
             // フォーマット検証 (バージョン方針は FormatHeader に集約)。
             if (!FormatHeader.TryReadVersion(jRoot, "Scene", CurrentFormatVersion, MinSupportedVersion, out _)) return;
 
+            // 読み取りの前に旧ビルドの書式を現行へ寄せる。移動・廃止されたメンバーのエントリは
+            // 持ち主が見つからず黙って捨てられるので、ここで言い換えておかないとシーンは
+            // 「中身が無い」ように開く (LiveSceneMigrations 参照)。
+            LiveSceneMigrations.Apply(jRoot);
+
             var jArray = jRoot["objects"] as JArray;
             if (jArray == null)
             {

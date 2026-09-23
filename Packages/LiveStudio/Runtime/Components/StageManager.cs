@@ -138,7 +138,9 @@ namespace Lilium.LiveStudio
     [MovedFrom(false, null, null, "WorldManager")]
     public class StageManager : ILiveObject, ILiveDeserializeCallback
     {
-        const string kId = "b2f7c9a1-3d4e-4f8a-9c1b-7e2d5a6f8c30";
+        // internal so LegacyAssetCatalogMigration can address this manager in a scene file that
+        // predates it having an entry of its own, where there is no entry to find by type.
+        internal const string kId = "b2f7c9a1-3d4e-4f8a-9c1b-7e2d5a6f8c30";
 
         // Stable id for the synthetic entry representing the bootstrap / persistent set. A short
         // literal is safe because real bundle entries use path-based ids and never collide with it.
