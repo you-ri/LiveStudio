@@ -4,7 +4,7 @@ namespace Lilium.RemoteControl
     /// <summary>
     /// Where a persisted member is written.
     ///
-    /// <see cref="Scene"/> goes into the live scene file (<c>*.scene.json</c>, and a snapshot of it);
+    /// <see cref="Scene"/> goes into the live scene file (<c>*.live.json</c>, and a snapshot of it);
     /// <see cref="Project"/> into the project-wide settings file
     /// (<c>{projectPath}/Settings/{ClassName}.settings.json</c>); <see cref="Custom"/> into a file the
     /// owner writes itself. The default is <see cref="Scene"/> (= 0).

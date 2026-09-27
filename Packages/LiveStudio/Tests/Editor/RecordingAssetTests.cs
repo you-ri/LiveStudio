@@ -61,7 +61,7 @@ namespace Lilium.LiveStudio.EditorTests
             Assert.AreEqual("C:/proj/Recordings/old.live.png",
                 RecordingManager.ResolveThumbnailPath("C:/proj/Recordings/old.livedata"));
             // Only takes have one; every other kind keeps the base's "no picture file" answer.
-            Assert.IsNull(RecordingManager.ResolveThumbnailPath("C:/proj/Start.scene.json"));
+            Assert.IsNull(RecordingManager.ResolveThumbnailPath("C:/proj/Start.live.json"));
         }
 
         /// <summary>

@@ -5,7 +5,7 @@
     python update.py <archive.zip> [<archive.zip> ...]
     python update.py ../../../../../../dist/*Sample*@*.zip      # Virgo's own build output
 
-Takes the `*.live.json` / `*.scene.json` out of each archive and writes them under a folder
+Takes the `*.live.json` out of each archive and writes them under a folder
 named after the archive, which is how a release is addressed from
 `LegacyProjectCompatibilityTests`. Everything else in the archive -- the avatars, the bundles,
 the thumbnails -- is left where it is: it comes to tens of megabytes, and a migration is text in
@@ -27,7 +27,7 @@ import sys
 import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SCENE_SUFFIXES = (".live.json", ".scene.json")
+SCENE_SUFFIXES = (".live.json",)
 
 
 def add(archive):

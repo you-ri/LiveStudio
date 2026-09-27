@@ -17,7 +17,7 @@ namespace Lilium.LiveStudio
         /// <summary>
         /// Evaluation order. Higher priority descriptors are matched first, so kinds whose suffixes
         /// would otherwise collide (e.g. <c>*.set.lsb</c> before <c>*.avatar.lsb</c>, or
-        /// <c>*.preset.json</c> before <c>*.scene.json</c>) win when they sit above the others.
+        /// <c>*.preset.json</c> before <c>*.live.json</c>) win when they sit above the others.
         /// </summary>
         public int priority;
 
@@ -255,11 +255,11 @@ namespace Lilium.LiveStudio
                 importSubfolder = RecordingManager.kFolderName,
             });
 
-            // Live scenes (*.scene.json / legacy *.live.json) are launcher entries, not loadable resources.
+            // Live scenes (*.live.json) are launcher entries, not loadable resources.
             Register(new AssetTypeDescriptor
             {
                 priority = 30,
-                suffixes = new[] { ".scene.json", ".live.json" },
+                suffixes = new[] { ".live.json" },
                 matches = LiveSceneSaveSystem.IsLiveSceneFile,
                 create = _ => new LiveSceneAsset(),
             });

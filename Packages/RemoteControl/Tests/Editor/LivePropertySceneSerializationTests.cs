@@ -2248,7 +2248,7 @@ namespace Lilium.RemoteControl.Tests
 
         /// <summary>
         /// Load → Save の往復で GameObjectWithTransform エントリが失われないことを確認する。
-        /// 実運用で test.scene.json を読み込んだ後に自動保存した際、GLTF Model エントリが
+        /// 実運用で test.live.json を読み込んだ後に自動保存した際、GLTF Model エントリが
         /// 永続化されないリグレッションを捕捉する。
         /// </summary>
         [Test]
@@ -2320,7 +2320,7 @@ namespace Lilium.RemoteControl.Tests
         /// <summary>
         /// Factory._prefabGuid が空 (UI Designer Reset / OnValidate 未実行) の状態で Factory.Create → container に追加 →
         /// BuildLiveSceneJson (Delta) したとき、exposed.prefabSourceKey も空のため isPrefabNew=false + メタのみ判定で
-        /// エントリが完全に欠落するリグレッションを捕捉する。ユーザー報告 test.scene.json (objects: []) と同じ症状。
+        /// エントリが完全に欠落するリグレッションを捕捉する。ユーザー報告 test.live.json (objects: []) と同じ症状。
         /// RefreshPrefabKey を事前に呼べば @prefab が出力されることも検証する。
         /// </summary>
         [Test]
