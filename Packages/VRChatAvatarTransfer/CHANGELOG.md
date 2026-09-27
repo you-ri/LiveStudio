@@ -1,7 +1,7 @@
 # Changelog
 
-## [0.26.0] - 2026-09-12
-<!-- changelog-sha: c639c1ec8e82903d9b2fce176fb5ad194df87332 -->
+## [0.26.0] - 2026-09-27
+<!-- changelog-sha: e153ad85a3fb35d32c17f775ced7d9c6bfa38ebf -->
 
 ### Fixed
 
