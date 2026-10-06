@@ -341,6 +341,9 @@ namespace Lilium.LiveStudio
         {
             if (string.IsNullOrEmpty(_projectPath) || !Directory.Exists(_projectPath)) return;
 
+            // Before counting, so the catalog's folder watch takes its times ahead of the enumeration.
+            ExternalAssetManager.current?.OnCrawlStarting(_projectPath);
+
             var assetPaths = new List<string>();
             foreach (var path in Directory.EnumerateFiles(_projectPath, "*", SearchOption.AllDirectories))
             {

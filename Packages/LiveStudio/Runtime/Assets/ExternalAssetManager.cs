@@ -112,6 +112,80 @@ namespace Lilium.LiveStudio
         /// </summary>
         public event Action onAssetsChanged;
 
+        // Folder watch for lists that are projected from this catalog (the snapshot page). See
+        // RefreshIfFolderChanged. Per instance and never serialized.
+        private struct WatchedFolder
+        {
+            public DateTime stamp;
+            public DateTime checkedAt;
+        }
+
+        [NonSerialized] private readonly Dictionary<string, WatchedFolder> _watchedFolders = new Dictionary<string, WatchedFolder>();
+        [NonSerialized] private string _crawledProjectPath;
+        [NonSerialized] private bool _crawledOnce;
+        [NonSerialized] private int _catalogRevision;
+
+        /// <summary>
+        /// Advances every time the catalog is reconciled or changed. A list projected from the catalog
+        /// compares it to decide, cheaply, whether it has to rebuild.
+        /// </summary>
+        public int catalogRevision => _catalogRevision;
+
+        /// <summary>
+        /// Re-crawls the project when <paramref name="folder"/> changed since it was last looked at, and
+        /// returns whether it did. Lets a polled list stay in step with the folder (including files put
+        /// there by something other than this app) without enumerating it on every read: a file added to
+        /// or removed from a folder moves the folder's last-write time, so only that one time is read.
+        /// A folder asked about for the first time, or a project other than the one last crawled, is
+        /// crawled too.
+        ///
+        /// The re-crawl is the whole project: changes are rare, so no per-folder diff is kept.
+        /// While playing, nothing is crawled before the live scene has been restored (the crawl is
+        /// deliberately ordered after it, see <see cref="Update"/>).
+        /// </summary>
+        public bool RefreshIfFolderChanged(string folder)
+        {
+            if (string.IsNullOrEmpty(folder)) return false;
+            if (Application.isPlaying && !_assetManagerReadyNotified) return false;
+
+            var projectChanged = !_crawledOnce || ProjectManager.projectPath != _crawledProjectPath;
+            if (!projectChanged && _watchedFolders.TryGetValue(folder, out var seen)
+                && seen.stamp == Directory.GetLastWriteTimeUtc(folder)
+                // A matching time is only conclusive once the crawl started a full second after it.
+                // Some file systems (and the Unreal port's file API) keep times to the second, so a
+                // change within the same second as the crawl would not move the time; until then the
+                // folder is looked at again.
+                && seen.checkedAt >= seen.stamp.AddSeconds(1))
+            {
+                return false;
+            }
+
+            _watchedFolders[folder] = default;
+            ProjectManager.RecrawlProject();
+            return true;
+        }
+
+        /// <summary>
+        /// Called by the project crawl just before it enumerates the folder: takes the watched folders'
+        /// times here, before counting, so a file that arrives while counting is caught on the next read
+        /// rather than hidden behind a time taken after it.
+        /// </summary>
+        internal void OnCrawlStarting(string projectPath)
+        {
+            _crawledOnce = true;
+            _crawledProjectPath = projectPath;
+            var now = DateTime.UtcNow;
+            var folders = new List<string>(_watchedFolders.Keys);
+            foreach (var folder in folders)
+            {
+                _watchedFolders[folder] = new WatchedFolder
+                {
+                    stamp = Directory.GetLastWriteTimeUtc(folder),
+                    checkedAt = now,
+                };
+            }
+        }
+
         public void OnEnable()
         {
             _current = this;
@@ -341,6 +415,14 @@ namespace Lilium.LiveStudio
                 }
             }
 
+            // Re-read the facts entries keep about their files (a sibling file may have appeared since).
+            for (int i = 0; i < list.Count; i++)
+            {
+                var entry = list[i];
+                if (entry != null && discovered.Contains(entry.id)) entry.RefreshFileFacts();
+            }
+
+            _catalogRevision++;
             if (changed)
             {
                 assets = list.ToArray();
@@ -1015,6 +1097,7 @@ namespace Lilium.LiveStudio
 
         private void _Broadcast()
         {
+            _catalogRevision++;
             LivePropertyBroadcast.BroadcastProperty(this, "assets");
             onAssetsChanged?.Invoke();
         }

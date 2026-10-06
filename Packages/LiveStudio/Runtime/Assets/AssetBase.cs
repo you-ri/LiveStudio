@@ -239,6 +239,14 @@ namespace Lilium.LiveStudio
         public abstract void Unload(AssetLoadContext context);
 
         /// <summary>
+        /// Re-reads the facts this entry keeps about its file (last-write time, sibling files...). The
+        /// catalog calls this for every crawled entry each time it reconciles, so a list that is polled
+        /// (the snapshot page) reads the kept facts instead of touching the disk on every read. Files
+        /// come and go rarely; reads are constant.
+        /// </summary>
+        public virtual void RefreshFileFacts() { }
+
+        /// <summary>
         /// Deletes the files this entry owns, called by <see cref="ExternalAssetManager.DeleteAssetFile"/>
         /// once it has decided the kind may be deleted. Kinds that own more than the one file they were
         /// discovered by (a snapshot also has its thumbnail) override this; the caller only drops the entry.

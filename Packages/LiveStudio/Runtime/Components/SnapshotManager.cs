@@ -63,8 +63,13 @@ namespace Lilium.LiveStudio
         public const string kThumbnailFileExtension = ".snapshot.png";
 
         /// <summary>
-        /// Snapshots in the open project's recordings folder, newest first. Listed by path only
-        /// (file contents are not read here).
+        /// Snapshots in the open project's recordings folder, newest first.
+        ///
+        /// Projected from the project's asset catalog (<see cref="ExternalAssetManager"/>), so the folder
+        /// is listed in one place. This getter is polled while the snapshot page is open, so a read only
+        /// checks the folder's last-write time: when it moved, the catalog re-crawls and its revision
+        /// advances — files put there by something other than this app included. With the same revision
+        /// and folder, the previous list is handed back as is.
         /// </summary>
         [LiveProperty, Hide]
         public static SnapshotInfo[] snapshots
@@ -72,31 +77,67 @@ namespace Lilium.LiveStudio
             get
             {
                 var dir = GetSnapshotDirectory();
-                if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+                var manager = ExternalAssetManager.current;
+                if (string.IsNullOrEmpty(dir) || manager == null)
                     return Array.Empty<SnapshotInfo>();
 
-                var files = Directory.GetFiles(dir, "*" + kSnapshotFileExtension, SearchOption.TopDirectoryOnly);
-                var list = new List<SnapshotInfo>(files.Length);
-                foreach (var file in files)
+                manager.RefreshIfFolderChanged(dir);
+                if (dir == _projectedDirectory && manager.catalogRevision == _projectedRevision)
+                    return _projected;
+
+                var list = new List<SnapshotInfo>();
+                var assets = manager.assetsView;
+                for (int i = 0; i < assets.Count; i++)
                 {
-                    var name = _SnapshotNameFromPath(file);
+                    // The catalog covers the whole project, so snapshots outside the recordings folder
+                    // (the old "Snapshots" folder, for one) are in it too. This list is the folder's only.
+                    if (!(assets[i] is SnapshotAsset snapshot)) continue;
+                    if (!_IsSameDirectory(Path.GetDirectoryName(snapshot.filePath), dir)) continue;
+
+                    var name = _SnapshotNameFromPath(snapshot.filePath);
                     if (string.IsNullOrEmpty(name)) continue;
                     list.Add(new SnapshotInfo
                     {
                         name = name,
-                        timestamp = File.GetLastWriteTime(file).ToString("o"),
-                        hasThumbnail = File.Exists(Path.Combine(dir, name + kThumbnailFileExtension)),
+                        timestamp = snapshot.capturedAt,
+                        hasThumbnail = snapshot.hasThumbnail,
                         // The folder is always "{project}/Recordings", so the project-relative
-                        // reference is this one concat — no need to relativize path-by-path (this getter
-                        // is polled while the page is open, and Uri-based relativization would allocate
-                        // per entry, per poll).
+                        // reference is this one concat — no need to relativize path-by-path.
                         reference = kSnapshotDirName + "/" + name + kSnapshotFileExtension,
                     });
                 }
                 // Newest first. The timestamp is ISO 8601, so ordinal string order is time order.
                 list.Sort((a, b) => string.CompareOrdinal(b.timestamp, a.timestamp));
-                return list.ToArray();
+
+                _projected = list.ToArray();
+                _projectedDirectory = dir;
+                _projectedRevision = manager.catalogRevision;
+                return _projected;
             }
+        }
+
+        // The last projection, handed back while neither the catalog nor the folder moved.
+        private static SnapshotInfo[] _projected = Array.Empty<SnapshotInfo>();
+        private static string _projectedDirectory;
+        private static int _projectedRevision;
+
+        // Cleared at runtime startup so a projection from a previous play session is never handed back
+        // when Domain Reload is disabled (the catalog's revision starts over with its new instance).
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void _ResetProjection()
+        {
+            _projected = Array.Empty<SnapshotInfo>();
+            _projectedDirectory = null;
+            _projectedRevision = 0;
+        }
+
+        private static bool _IsSameDirectory(string a, string b)
+        {
+            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return false;
+            return string.Equals(
+                Path.GetFullPath(a).TrimEnd('/', '\\'),
+                Path.GetFullPath(b).TrimEnd('/', '\\'),
+                StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -167,9 +208,9 @@ namespace Lilium.LiveStudio
             LiveCameraThumbnail.TryWrite(Path.Combine(dir, name + kThumbnailFileExtension));
 
             Debug.Log($"[Studio] Snapshot saved: '{Path.Combine(dir, name + kSnapshotFileExtension)}'");
-            LivePropertyBroadcast.BroadcastStaticProperty(typeof(SnapshotManager), nameof(snapshots));
-            // The file is a project asset too, so the project listing has to see it appear.
+            // The list is projected from the project listing, so that sees the file appear first.
             ProjectManager.RecrawlProject();
+            LivePropertyBroadcast.BroadcastStaticProperty(typeof(SnapshotManager), nameof(snapshots));
             RemoteNotificationSystem.Show(
                 LocalizationSystem.Translate("NOTIFY_SNAPSHOT_SAVED"),
                 RemoteNotificationSystem.Type.Success,
@@ -214,8 +255,8 @@ namespace Lilium.LiveStudio
             if (thumbnailPath != null && File.Exists(thumbnailPath)) File.Delete(thumbnailPath);
 
             Debug.Log($"[Studio] Snapshot deleted: '{filePath}'");
-            LivePropertyBroadcast.BroadcastStaticProperty(typeof(SnapshotManager), nameof(snapshots));
             ProjectManager.RecrawlProject();
+            LivePropertyBroadcast.BroadcastStaticProperty(typeof(SnapshotManager), nameof(snapshots));
         }
 
         /// <summary>
