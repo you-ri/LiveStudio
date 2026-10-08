@@ -29,29 +29,32 @@ namespace Lilium.LiveStudio.EditorTests
         {
             var sets = "[{\"@type\":\"OperationSet\",\"id\":\"set-1\"}]";
 
-            var json = DeckFile.BuildJson(4, sets);
+            var json = DeckFile.BuildJson("Talk / Game: 1?", 4, sets);
 
-            Assert.IsTrue(DeckFile.TryParse(json, "test", out var columns, out var setsJson));
+            Assert.IsTrue(DeckFile.TryParse(json, "test", out var name, out var columns, out var setsJson));
+            Assert.AreEqual("Talk / Game: 1?", name, "the display name is stored as is, any characters included");
             Assert.AreEqual(4, columns);
             StringAssert.Contains("\"id\":\"set-1\"", setsJson);
         }
 
         [Test]
-        public void BuildJson_DoesNotStoreTheDeckName()
+        public void TryParse_FileWithoutName_ReturnsEmptyName()
         {
-            // The file name is the deck's name. Writing it inside as well would be a second source of
-            // truth that a rename (which moves the file) would immediately contradict.
-            var json = DeckFile.BuildJson(8, "[]");
+            // A deck file written before the name was stored: the caller shows the file's stem instead, and
+            // the name is written the next time the deck is saved.
+            var legacy = "{\"format\":\"jp.lilium.livestudio.deck\",\"formatVersion\":1," +
+                "\"columns\":8,\"operationSets\":[]}";
 
-            StringAssert.Contains(DeckFile.FormatId, json);
-            StringAssert.DoesNotContain("\"name\"", json);
+            Assert.IsTrue(DeckFile.TryParse(legacy, "test", out var name, out var columns, out _));
+            Assert.AreEqual(string.Empty, name);
+            Assert.AreEqual(8, columns);
         }
 
         [Test]
         public void TryParse_UnknownFormat_ReturnsFalse()
         {
             LogAssert.ignoreFailingMessages = true;
-            Assert.IsFalse(DeckFile.TryParse("{\"format\":\"something.else\"}", "test", out _, out _));
+            Assert.IsFalse(DeckFile.TryParse("{\"format\":\"something.else\"}", "test", out _, out _, out _));
         }
 
         [Test]
@@ -62,7 +65,7 @@ namespace Lilium.LiveStudio.EditorTests
             LogAssert.ignoreFailingMessages = true;
             var legacy = "{\"format\":\"jp.lilium.livestudio.deck\",\"formatVersion\":1," +
                 "\"name\":\"old\",\"state\":{\"decks\":[],\"operationSets\":[]}}";
-            Assert.IsFalse(DeckFile.TryParse(legacy, "test", out _, out _));
+            Assert.IsFalse(DeckFile.TryParse(legacy, "test", out _, out _, out _));
         }
 
         [Test]
@@ -72,7 +75,7 @@ namespace Lilium.LiveStudio.EditorTests
             LogAssert.ignoreFailingMessages = true;
             var future = "{\"format\":\"jp.lilium.livestudio.deck\",\"formatVersion\":999," +
                 "\"columns\":6,\"operationSets\":[]}";
-            Assert.IsTrue(DeckFile.TryParse(future, "test", out var columns, out _));
+            Assert.IsTrue(DeckFile.TryParse(future, "test", out _, out var columns, out _));
             Assert.AreEqual(6, columns);
         }
 
@@ -80,8 +83,8 @@ namespace Lilium.LiveStudio.EditorTests
         public void TryParse_EmptyOrGarbage_ReturnsFalse()
         {
             LogAssert.ignoreFailingMessages = true;
-            Assert.IsFalse(DeckFile.TryParse("", "test", out _, out _));
-            Assert.IsFalse(DeckFile.TryParse("not json", "test", out _, out _));
+            Assert.IsFalse(DeckFile.TryParse("", "test", out _, out _, out _));
+            Assert.IsFalse(DeckFile.TryParse("not json", "test", out _, out _, out _));
         }
 
         [TestCase("foo.deck.json", true)]
@@ -117,7 +120,7 @@ namespace Lilium.LiveStudio.EditorTests
             var asset = AssetTypeRegistry.Create("C:/proj/Decks/Live.deck.json");
 
             Assert.IsInstanceOf<DeckAsset>(asset, "*.deck.json should be classified as a deck asset.");
-            // The derived name is the tab's name, so this is what the operations page shows.
+            // The derived name is the file's stem: the deck's id, and the tab's name for a file without one.
             Assert.AreEqual("Live", AssetTypeRegistry.DeriveName("C:/proj/Decks/Live.deck.json"));
             Assert.AreEqual(DeckFile.Subfolder, AssetTypeRegistry.ResolveImportSubfolder("x.deck.json"));
             // The ".json" tail must not steal live scenes, which sit below decks in priority.
@@ -147,14 +150,14 @@ namespace Lilium.LiveStudio.EditorTests
         public void CustomScopeSnapshot_RoundTripsOperationSetsAndDecks()
         {
             var manager = new OperationManager();
-            manager.decks.Add(new Deck { name = "Main", columns = 4 });
+            manager.decks.Add(new Deck { id = "main", name = "Main", columns = 4 });
             manager.operationSets.Add(new OperationSet
             {
                 id = "set-1",
                 name = "Wave",
                 enabled = true,
                 input = new KeyInputSource(),
-                control = new DeckToggle { deckName = "Main", x = 2, y = 1 },
+                control = new DeckToggle { deckId = "main", x = 2, y = 1 },
             });
             var handle = LiveObjectRegistry.GetOrCreateWithoutId(LiveClass.Get<OperationManager>(), manager);
 
@@ -169,7 +172,9 @@ namespace Lilium.LiveStudio.EditorTests
             Assert.IsInstanceOf<DeckToggle>(restored.operationSets[0].control, "The tile kind round-trips via @type.");
             Assert.AreEqual(2, restored.operationSets[0].control.x);
             Assert.AreEqual(1, restored.decks.Count);
+            Assert.AreEqual("main", restored.decks[0].id);
             Assert.AreEqual("Main", restored.decks[0].name);
+            Assert.AreEqual("main", restored.operationSets[0].control.deckId);
             Assert.AreEqual(4, restored.decks[0].columns);
         }
     }

@@ -14,8 +14,9 @@ namespace Lilium.LiveStudio
     /// <see cref="InputMode"/> (the physical key binding). The control is pure data; the actual firing runs
     /// through <see cref="OperationManager"/>'s existing remote functions.
     ///
-    /// <see cref="deckName"/> says which <see cref="Deck"/> it is placed on (matched by the deck's unique
-    /// name; empty/unknown = treated as unplaced and re-placed on the default page). The remote
+    /// <see cref="deckId"/> says which <see cref="Deck"/> it is placed on (matched by the deck's
+    /// <see cref="Deck.id"/>; empty = treated as unplaced and re-placed on the default page, unknown = the deck is
+    /// recreated). The remote
     /// app draws a deck's tiles as the operation sets whose control points at that deck. Polymorphic via
     /// <c>[SerializeReference]</c> + the RemoteControl <c>@type</c> discriminator, exactly like
     /// <see cref="OperationBase"/>. <c>[LiveClass]</c> on the abstract base lets the owning field's
@@ -25,10 +26,11 @@ namespace Lilium.LiveStudio
     [LiveClass]
     public abstract class DeckControl
     {
-        /// <summary>Name of the <see cref="Deck"/> this control is placed on (deck names are kept unique),
-        /// or empty when unplaced. An empty or unknown name is normalized to the default page on load.</summary>
-        [LiveField(lane = FrameLane.State, textCapacity = 128)]
-        public string deckName = string.Empty;
+        /// <summary><see cref="Deck.id"/> of the deck this control is placed on, or empty when unplaced. An
+        /// empty id is normalized to the default page on load. Hidden from the generic editor: it is an id, and
+        /// placement is changed through <see cref="OperationManager.PlaceControl"/>.</summary>
+        [LiveField(lane = FrameLane.State, textCapacity = 128), Hide]
+        public string deckId = string.Empty;
 
         /// <summary>Grid column of the tile's top-left cell (0-based). Driven by the deck's drag layout,
         /// not hand-edited, so it is hidden from the generic editor.</summary>

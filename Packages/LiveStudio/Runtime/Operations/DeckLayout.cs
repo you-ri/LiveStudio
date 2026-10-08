@@ -12,7 +12,7 @@ namespace Lilium.LiveStudio
     /// jobs — taking input, evaluating each frame, syncing with files — so it does not live with them.
     /// </para>
     /// <para>
-    /// Creating a deck and deciding its name stay on the desk. What is here is only "which cell is free"
+    /// Creating a deck and deciding its id stay on the desk. What is here is only "which cell is free"
     /// and "does this stay inside the deck".
     /// </para>
     /// </summary>
@@ -25,10 +25,14 @@ namespace Lilium.LiveStudio
         /// </summary>
         internal const int FallbackColumns = 8;
 
-        /// <summary>The logical column count of the deck with the given name.</summary>
-        internal static int ColumnsOf(List<Deck> decks, string deckName)
+        /// <summary>The deck with the given id, or null.</summary>
+        internal static Deck Find(List<Deck> decks, string deckId)
+            => decks?.Find(p => p != null && p.id == deckId);
+
+        /// <summary>The logical column count of the deck with the given id.</summary>
+        internal static int ColumnsOf(List<Deck> decks, string deckId)
         {
-            var deck = decks?.Find(p => p != null && p.name == deckName);
+            var deck = Find(decks, deckId);
             return deck != null && deck.columns > 0 ? deck.columns : FallbackColumns;
         }
 
@@ -37,13 +41,13 @@ namespace Lilium.LiveStudio
         /// <paramref name="placing"/> is the tile being placed and never counts against itself.
         /// </summary>
         internal static bool IsAreaFree(
-            List<OperationSet> sets, string deckName, DeckControl placing, int x, int y, int w, int h)
+            List<OperationSet> sets, string deckId, DeckControl placing, int x, int y, int w, int h)
         {
             if (sets == null) return true;
             for (int i = 0; i < sets.Count; i++)
             {
                 var c = sets[i]?.control;
-                if (c == null || c == placing || c.deckName != deckName) continue;
+                if (c == null || c == placing || c.deckId != deckId) continue;
                 int cw = Mathf.Max(1, c.w);
                 int ch = Mathf.Max(1, c.h);
                 if (x < c.x + cw && c.x < x + w && y < c.y + ch && c.y < y + h) return false;
@@ -56,10 +60,10 @@ namespace Lilium.LiveStudio
         /// another tile, scanning row by row. Falls back to the top-left when nothing fits.
         /// </summary>
         internal static void FindFreeCell(
-            List<Deck> decks, List<OperationSet> sets, string deckName, DeckControl placing,
+            List<Deck> decks, List<OperationSet> sets, string deckId, DeckControl placing,
             out int x, out int y)
         {
-            int columns = ColumnsOf(decks, deckName);
+            int columns = ColumnsOf(decks, deckId);
 
             int w = Mathf.Clamp(placing != null ? placing.w : 1, 1, columns);
             int h = Mathf.Max(1, placing != null ? placing.h : 1);
@@ -71,7 +75,7 @@ namespace Lilium.LiveStudio
                 for (int i = 0; i < sets.Count; i++)
                 {
                     var c = sets[i]?.control;
-                    if (c != null && c != placing && c.deckName == deckName)
+                    if (c != null && c != placing && c.deckId == deckId)
                         maxRow = Mathf.Max(maxRow, c.y + Mathf.Max(1, c.h));
                 }
             }
@@ -80,7 +84,7 @@ namespace Lilium.LiveStudio
             {
                 for (int col = 0; col + w <= columns; col++)
                 {
-                    if (IsAreaFree(sets, deckName, placing, col, row, w, h)) { x = col; y = row; return; }
+                    if (IsAreaFree(sets, deckId, placing, col, row, w, h)) { x = col; y = row; return; }
                 }
             }
             x = 0;
@@ -96,7 +100,7 @@ namespace Lilium.LiveStudio
         {
             if (control == null) return;
             control.w = control.fixedWidth;
-            int columns = ColumnsOf(decks, control.deckName);
+            int columns = ColumnsOf(decks, control.deckId);
             if (control.x + control.w > columns) control.x = Mathf.Max(0, columns - control.w);
         }
     }

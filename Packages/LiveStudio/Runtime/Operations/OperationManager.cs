@@ -84,8 +84,6 @@ namespace Lilium.LiveStudio
         [LiveField(persistScope = PersistScope.Custom)]
         public List<Deck> decks = new List<Deck>();
 
-        // Deck name -> the file that deck is (absolute path). One tab is one file, so this is the whole
-        // deck/file relationship; nothing about it is persisted, since the files themselves are the state.
         [NonSerialized]
         /// <summary>
         /// The decks' side of the project's files. Decks are the one part of this model that follows the
@@ -301,7 +299,7 @@ namespace Lilium.LiveStudio
             // fires on an unrelated property write.
             _RebuildInputMap();
             // No unplaced state: a restored / pasted scene may carry controls with no deck (→ default page) or
-            // a name no deck has yet (→ recreate that deck by name, so pasted operation data brings its deck
+            // a deck id no deck has yet (→ recreate that deck, so pasted operation data brings its deck
             // along). Idempotent once every control resolves to an existing deck.
             _NormalizeControlPlacement();
             // Enforce each tile's fixed per-kind width (DeckControl.fixedWidth) on restored/older scenes. Idempotent.
@@ -514,33 +512,30 @@ namespace Lilium.LiveStudio
             _deckFiles.FlushDirty(this);
         }
 
-        /// <summary>Adds a new control deck with a unique auto-generated name and returns that name. The deck
-        /// is a file (<c>Decks/&lt;name&gt;.deck.json</c>), written immediately so the tab always has one behind
-        /// it. The remote app then adds tiles by placing controls' <see cref="DeckControl.deckName"/> onto it.</summary>
+        /// <summary>Adds a new control deck and returns its <see cref="Deck.id"/>. The deck is a file
+        /// (<c>Decks/&lt;id&gt;.deck.json</c>), written immediately so the tab always has one behind it; its
+        /// display name starts as the id. The remote app then adds tiles by placing controls'
+        /// <see cref="DeckControl.deckId"/> onto it.</summary>
         [LiveFunction]
         public string AddDeck()
         {
-            // The name becomes the file name, so reserve the sanitized form: otherwise the file would be
-            // named one thing, the tab another, and the next crawl would rename the tab under the user.
-            var deck = new Deck { name = _UniqueDeckName(DeckFile.SanitizeFileName("Deck"), null) };
-            decks.Add(deck);
-            // ⚠ 名前を写しておく。下の書き出しはファイル集合との同期を伴い、その復元が decks の
-            // 要素を作り直す (この deck が別の名前で上書きされる)。返し先は「今作ったタブを選ぶ」
-            // ために使われるので、写さないと別のタブが選ばれる。
-            var name = deck.name;
+            var id = _UniqueDeckId("Deck");
+            decks.Add(new Deck { id = id, name = id });
+            // The id is a local copy on purpose: the write below syncs with the file set, and that restore
+            // rebuilds the elements of `decks`. The caller uses the return value to select the tab it just made.
             _BroadcastDecks();
             _deckFiles.FlushDirty(this);
-            return name;
+            return id;
         }
 
-        /// <summary>Removes the deck with the given name, <b>deleting its file and the operation sets placed on
+        /// <summary>Removes the deck with the given id, <b>deleting its file and the operation sets placed on
         /// it</b> — a deck is a file, so removing the tab removes what it held. The remote app confirms with the
-        /// user first. No-op if the name is unknown.</summary>
+        /// user first. No-op if the id is unknown.</summary>
         [LiveFunction]
-        public void RemoveDeck(string deckName)
+        public void RemoveDeck(string deckId)
         {
-            if (string.IsNullOrEmpty(deckName)) return;
-            int index = decks.FindIndex(p => p != null && p.name == deckName);
+            if (string.IsNullOrEmpty(deckId)) return;
+            int index = decks.FindIndex(p => p != null && p.id == deckId);
             if (index < 0) return;
             decks.RemoveAt(index);
 
@@ -548,14 +543,14 @@ namespace Lilium.LiveStudio
             for (int i = operationSets.Count - 1; i >= 0; i--)
             {
                 var control = operationSets[i]?.control;
-                if (control != null && control.deckName == deckName)
+                if (control != null && control.deckId == deckId)
                 {
                     operationSets.RemoveAt(i);
                     anyRemoved = true;
                 }
             }
 
-            _deckFiles.OnDeckRemoved(deckName);
+            _deckFiles.OnDeckRemoved(deckId);
             // The catalog still lists the file that was just deleted; re-crawl so the entry goes with it
             // (and so this manager's own view of the file set stays the one the crawl reports).
             if (_deckFiles.isActive) ProjectManager.RecrawlProject();
@@ -565,65 +560,46 @@ namespace Lilium.LiveStudio
             if (anyRemoved) _Broadcast();
         }
 
-        /// <summary>Renames the deck currently named <paramref name="deckName"/> to <paramref name="newName"/>,
-        /// auto-suffixing on collision so deck names stay unique, and updates every control placed on it so the
-        /// reference follows the rename. The deck's file is renamed with it (the file name is the deck's name).
-        /// Returns the resulting (possibly suffixed) name; returns the original name unchanged for an unknown
-        /// current name, an empty new name, or a no-op rename.</summary>
+        /// <summary>Sets the display name of the deck with the given id. The name is free text — no character is
+        /// replaced and it need not be unique, since nothing refers to a deck by name — and it is stored inside
+        /// the deck's file, which is rewritten in place (never renamed). Returns the resulting name; an empty
+        /// (after trimming) new name changes nothing. Returns an empty string for an unknown id.</summary>
         [LiveFunction]
-        public string RenameDeck(string deckName, string newName)
+        public string RenameDeck(string deckId, string newName)
         {
-            if (string.IsNullOrEmpty(deckName) || string.IsNullOrEmpty(newName)) return deckName;
-            int index = decks.FindIndex(p => p != null && p.name == deckName);
-            if (index < 0) return deckName;
+            var deck = DeckLayout.Find(decks, deckId);
+            if (deck == null) return string.Empty;
 
-            // The new name has to survive as a file name, since that is where it is kept.
-            string unique = _UniqueDeckName(DeckFile.SanitizeFileName(newName), decks[index]);
-            if (unique == deckName) return deckName; // no effective change
-            decks[index].name = unique;
-
-            // Controls reference decks by name; follow the rename so their tiles stay on this page.
-            bool anyMoved = false;
-            for (int i = 0; i < operationSets.Count; i++)
-            {
-                var control = operationSets[i]?.control;
-                if (control != null && control.deckName == deckName)
-                {
-                    control.deckName = unique;
-                    anyMoved = true;
-                }
-            }
-
-            _deckFiles.OnDeckRenamed(deckName, unique);
-            // The catalog holds the old file name; re-crawl so the entry follows the rename.
-            if (_deckFiles.isActive) ProjectManager.RecrawlProject();
+            var name = newName?.Trim();
+            if (string.IsNullOrEmpty(name) || name == deck.name) return deck.name;
+            deck.name = name;
 
             _BroadcastDecks();
-            if (anyMoved) _Broadcast();
+            // The name is part of the file's payload, so the diff rewrites this deck's file.
             _deckFiles.FlushDirty(this);
-            return unique;
+            return name;
         }
 
-        /// <summary>Places (or moves) the control of the operation set with the given id onto the deck named
-        /// <paramref name="deckName"/> at grid cell (<paramref name="x"/>, <paramref name="y"/>). An empty
-        /// <paramref name="deckName"/> falls back to the default page at a free cell (no unplaced state).
-        /// No-op for an unknown id.</summary>
+        /// <summary>Places (or moves) the control of the operation set with the given id onto the deck with id
+        /// <paramref name="deckId"/> at grid cell (<paramref name="x"/>, <paramref name="y"/>). An empty
+        /// <paramref name="deckId"/> falls back to the default page at a free cell (no unplaced state).
+        /// No-op for an unknown operation set id.</summary>
         [LiveFunction]
-        public void PlaceControl(string operationSetId, string deckName, int x, int y)
+        public void PlaceControl(string operationSetId, string deckId, int x, int y)
         {
             int index = _IndexOf(operationSetId);
             if (index < 0) return;
             var control = operationSets[index]?.control;
             if (control == null) return;
-            if (string.IsNullOrEmpty(deckName))
+            if (string.IsNullOrEmpty(deckId))
             {
                 _PlaceOnDefaultDeck(control);
             }
             else
             {
-                control.deckName = deckName;
+                control.deckId = deckId;
                 // Keep the tile on-grid for its (possibly 2-wide) span.
-                int columns = DeckLayout.ColumnsOf(decks, deckName);
+                int columns = DeckLayout.ColumnsOf(decks, deckId);
                 control.x = Mathf.Clamp(x, 0, Mathf.Max(0, columns - Mathf.Max(1, control.w)));
                 control.y = Mathf.Max(0, y);
             }
@@ -632,19 +608,19 @@ namespace Lilium.LiveStudio
             _deckFiles.FlushDirty(this);
         }
 
-        /// <summary>Places the control of the operation set with the given id onto the deck named
-        /// <paramref name="deckName"/> at that deck's first free grid cell (row-major scan), so an added tile
-        /// never lands on top of one already there. An empty <paramref name="deckName"/> means the default
+        /// <summary>Places the control of the operation set with the given id onto the deck with id
+        /// <paramref name="deckId"/> at that deck's first free grid cell (row-major scan), so an added tile
+        /// never lands on top of one already there. An empty <paramref name="deckId"/> means the default
         /// page. This is the "add a tile to this deck" entry point; <see cref="PlaceControl"/> takes an
-        /// explicit cell and stays the drag-and-drop move. No-op for an unknown id.</summary>
+        /// explicit cell and stays the drag-and-drop move. No-op for an unknown operation set id.</summary>
         [LiveFunction]
-        public void PlaceControlOnFreeCell(string operationSetId, string deckName)
+        public void PlaceControlOnFreeCell(string operationSetId, string deckId)
         {
             int index = _IndexOf(operationSetId);
             if (index < 0) return;
             var control = operationSets[index]?.control;
             if (control == null) return;
-            _PlaceOnFreeCell(control, deckName);
+            _PlaceOnFreeCell(control, deckId);
             _Broadcast();
             _deckFiles.FlushDirty(this);
         }
@@ -666,7 +642,7 @@ namespace Lilium.LiveStudio
             var old = set.control;
             if (old != null)
             {
-                next.deckName = old.deckName;
+                next.deckId = old.deckId;
                 next.x = old.x;
                 next.y = old.y;
                 next.w = old.w;
@@ -679,58 +655,60 @@ namespace Lilium.LiveStudio
             _deckFiles.FlushDirty(this);
         }
 
-        // Returns a deck name unique among all decks except <paramref name="self"/>, auto-suffixing " 2",
-        // " 3", … on collision so a name stays usable as the placement key.
-        private string _UniqueDeckName(string desired, Deck self)
+        // Returns a new deck id: <paramref name="desired"/> made safe as a file name (the id is the deck file's
+        // stem), auto-suffixed " 2", " 3", … until no deck has it and — on a running desk — no deck file in the
+        // project already holds it (a file the crawl has not reached yet must not be overwritten). Compared
+        // case-insensitively, as file names are.
+        private string _UniqueDeckId(string desired)
         {
-            string baseName = string.IsNullOrEmpty(desired) ? "Deck" : desired;
-            string candidate = baseName;
+            string baseId = DeckFile.SanitizeFileName(desired);
+            string candidate = baseId;
             int n = 2;
-            while (_NameTaken(candidate, self))
+            while (_DeckIdTaken(candidate))
             {
-                candidate = baseName + " " + n;
+                candidate = baseId + " " + n;
                 n++;
             }
             return candidate;
         }
 
-        private bool _NameTaken(string name, Deck self)
+        private bool _DeckIdTaken(string id)
         {
             for (int i = 0; i < decks.Count; i++)
             {
                 var p = decks[i];
-                if (p != null && p != self && p.name == name) return true;
+                if (p != null && string.Equals(p.id, id, StringComparison.OrdinalIgnoreCase)) return true;
             }
-            return false;
+            return _deckFiles.isActive && DeckFileStore.FileExistsFor(id);
         }
 
-        // No unplaced state: ensure a default page exists and return its name. The first deck is the default;
-        // a fresh one (with a unique name) is created when the list is empty, so a new control always has a home.
-        private string _EnsureDefaultDeckName()
+        // No unplaced state: ensure a default page exists and return its id. The first deck is the default;
+        // a fresh one is created when the list is empty, so a new control always has a home.
+        private string _EnsureDefaultDeckId()
         {
             for (int i = 0; i < decks.Count; i++)
             {
-                if (decks[i] != null && !string.IsNullOrEmpty(decks[i].name))
-                    return decks[i].name;
+                if (decks[i] != null && !string.IsNullOrEmpty(decks[i].id))
+                    return decks[i].id;
             }
-            var deck = new Deck { name = _UniqueDeckName("Deck", null) };
-            decks.Add(deck);
+            var id = _UniqueDeckId("Deck");
+            decks.Add(new Deck { id = id, name = id });
             _BroadcastDecks();
-            return deck.name;
+            return id;
         }
 
         // Places the control on the default page at the first free grid cell (row-major scan).
         private void _PlaceOnDefaultDeck(DeckControl control) => _PlaceOnFreeCell(control, null);
 
-        // Places the control on the deck named deckName at its first free grid cell (row-major scan), so a
-        // tile never lands on top of one already there. An empty name means the default page (created on
+        // Places the control on the deck with the given id at its first free grid cell (row-major scan), so a
+        // tile never lands on top of one already there. An empty id means the default page (created on
         // demand), which keeps "no unplaced state" true whatever the caller passes.
-        private void _PlaceOnFreeCell(DeckControl control, string deckName)
+        private void _PlaceOnFreeCell(DeckControl control, string deckId)
         {
             if (control == null) return;
-            string target = string.IsNullOrEmpty(deckName) ? _EnsureDefaultDeckName() : deckName;
+            string target = string.IsNullOrEmpty(deckId) ? _EnsureDefaultDeckId() : deckId;
             DeckLayout.FindFreeCell(decks, operationSets, target, control, out int x, out int y);
-            control.deckName = target;
+            control.deckId = target;
             control.x = x;
             control.y = y;
         }
@@ -753,10 +731,10 @@ namespace Lilium.LiveStudio
         }
 
         // No unplaced state: make sure every control resolves to an existing deck.
-        //  - empty name        → place on the default page at a free cell (genuinely unplaced).
-        //  - non-empty unknown  → recreate a deck with that name and keep the control where it is, so pasting
-        //                         serialized operation data automatically reconstructs the deck it referenced.
-        //  - known name         → leave as is.
+        //  - empty id         → place on the default page at a free cell (genuinely unplaced).
+        //  - non-empty unknown → recreate a deck with that id (and that as its name) and keep the control where
+        //                        it is, so pasting serialized operation data reconstructs the deck it referenced.
+        //  - known id         → leave as is.
         private void _NormalizeControlPlacement()
         {
             bool changed = false;
@@ -765,14 +743,14 @@ namespace Lilium.LiveStudio
                 var control = operationSets[i]?.control;
                 if (control == null) continue;
 
-                if (string.IsNullOrEmpty(control.deckName))
+                if (string.IsNullOrEmpty(control.deckId))
                 {
                     _PlaceOnDefaultDeck(control);
                     changed = true;
                 }
-                else if (!decks.Exists(p => p != null && p.name == control.deckName))
+                else if (DeckLayout.Find(decks, control.deckId) == null)
                 {
-                    decks.Add(new Deck { name = control.deckName });
+                    decks.Add(new Deck { id = control.deckId, name = control.deckId });
                     changed = true;
                 }
             }

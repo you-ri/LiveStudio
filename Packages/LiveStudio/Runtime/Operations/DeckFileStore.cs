@@ -26,10 +26,10 @@ namespace Lilium.LiveStudio
     /// </summary>
     internal sealed class DeckFileStore
     {
-        // Deck name -> the file that deck is (absolute path). The one-tab-one-file mapping itself.
+        // Deck id -> the file that deck is (absolute path). The one-tab-one-file mapping itself.
         private readonly Dictionary<string, string> _filePaths = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        // Deck name -> the text last written (or read). The baseline that keeps untouched decks unwritten.
+        // Deck id -> the text last written (or read). The baseline that keeps untouched decks unwritten.
         private readonly Dictionary<string, string> _writtenPayloads = new Dictionary<string, string>(StringComparer.Ordinal);
 
         // The project the current model was built from. A different one rebuilds everything.
@@ -49,7 +49,7 @@ namespace Lilium.LiveStudio
 
         /// <summary>
         /// Rebuilds the decks from the project's deck files. This is where tabs come from: every
-        /// <c>*.deck.json</c> the project crawl found becomes a deck, named after its file.
+        /// <c>*.deck.json</c> the project crawl found becomes a deck, identified by its file's stem.
         /// <para>
         /// Only the set of files matters. A file already loaded is left alone (its in-memory state,
         /// including a manual hold in the middle of a show, must survive an unrelated crawl); files that
@@ -122,10 +122,10 @@ namespace Lilium.LiveStudio
         }
 
         /// <summary>Deletes a deck's file and forgets it. The deck itself is removed by the caller.</summary>
-        internal void OnDeckRemoved(string deckName)
+        internal void OnDeckRemoved(string deckId)
         {
             if (!isActive) return;
-            if (_filePaths.TryGetValue(deckName, out var path) && !string.IsNullOrEmpty(path))
+            if (_filePaths.TryGetValue(deckId, out var path) && !string.IsNullOrEmpty(path))
             {
                 try
                 {
@@ -136,47 +136,24 @@ namespace Lilium.LiveStudio
                     Debug.LogError($"[LiveStudio] Failed to delete the deck file '{path}': {e.Message}");
                 }
             }
-            _filePaths.Remove(deckName);
-            _writtenPayloads.Remove(deckName);
+            _filePaths.Remove(deckId);
+            _writtenPayloads.Remove(deckId);
         }
 
-        /// <summary>
-        /// Renames a deck's file to follow the deck's new name. No-op when the deck has no file yet
-        /// (renamed before the first write); the file is then created under the new name.
-        /// </summary>
-        internal void OnDeckRenamed(string fromName, string toName)
+        // A rename needs nothing here: the name is part of the deck's payload, so the next FlushDirty sees the
+        // payload differ and rewrites the same file. The file is never moved (its stem is the deck's id).
+
+        /// <summary>True when a deck file with this id already exists in the project's deck folder (a file the
+        /// crawl has not reached yet must not be overwritten by a new deck taking the same id).</summary>
+        internal static bool FileExistsFor(string deckId)
         {
-            if (!isActive) return;
-            if (!_filePaths.TryGetValue(fromName, out var fromPath) || string.IsNullOrEmpty(fromPath))
-            {
-                return;
-            }
-
-            _filePaths.Remove(fromName);
-            _writtenPayloads.TryGetValue(fromName, out var written);
-            _writtenPayloads.Remove(fromName);
-
-            var dir = Path.GetDirectoryName(fromPath);
-            var toPath = string.IsNullOrEmpty(dir)
-                ? toName + DeckFile.Extension
-                : Path.Combine(dir, toName + DeckFile.Extension);
-
-            try
-            {
-                if (File.Exists(fromPath)) File.Move(fromPath, toPath);
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[LiveStudio] Failed to rename the deck file '{fromPath}': {e.Message}");
-                return;
-            }
-
-            _filePaths[toName] = toPath;
-            if (written != null) _writtenPayloads[toName] = written;
+            var projectPath = ProjectManager.projectPath;
+            if (string.IsNullOrEmpty(projectPath) || string.IsNullOrEmpty(deckId)) return false;
+            return File.Exists(Path.Combine(projectPath, DeckFile.Subfolder, deckId + DeckFile.Extension));
         }
 
-        // The deck files the project crawl knows about, as (deck name, absolute path) in tab order.
-        // Names come from the file names and are made unique, since two folders may hold the same name.
+        // The deck files the project crawl knows about, as (deck id, absolute path) in tab order.
+        // Ids come from the file stems and are made unique, since two folders may hold the same stem.
         private static List<KeyValuePair<string, string>> _Discover()
         {
             var result = new List<KeyValuePair<string, string>>();
@@ -192,14 +169,14 @@ namespace Lilium.LiveStudio
             // The catalog's order follows the crawl; sort so the tabs do not shuffle between runs.
             paths.Sort(StringComparer.OrdinalIgnoreCase);
 
-            var used = new HashSet<string>(StringComparer.Ordinal);
+            var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < paths.Count; i++)
             {
-                var name = AssetTypeRegistry.DeriveName(paths[i]);
-                if (string.IsNullOrEmpty(name)) name = "Deck";
-                var unique = name;
+                var stem = AssetTypeRegistry.DeriveName(paths[i]);
+                if (string.IsNullOrEmpty(stem)) stem = "Deck";
+                var unique = stem;
                 int n = 2;
-                while (!used.Add(unique)) unique = name + " " + (n++);
+                while (!used.Add(unique)) unique = stem + " " + (n++);
                 result.Add(new KeyValuePair<string, string>(unique, paths[i]));
             }
             return result;
@@ -212,8 +189,8 @@ namespace Lilium.LiveStudio
             for (int i = 0; i < desired.Count; i++)
             {
                 var deck = manager.decks[i];
-                if (deck == null || deck.name != desired[i].Key) return false;
-                if (!_filePaths.TryGetValue(deck.name, out var path) ||
+                if (deck == null || deck.id != desired[i].Key) return false;
+                if (!_filePaths.TryGetValue(deck.id, out var path) ||
                     !string.Equals(path, desired[i].Value, StringComparison.OrdinalIgnoreCase))
                 {
                     return false;
@@ -239,28 +216,31 @@ namespace Lilium.LiveStudio
 
             for (int i = 0; i < desired.Count; i++)
             {
-                var name = desired[i].Key;
+                var id = desired[i].Key;
                 var path = desired[i].Value;
 
+                string name;
                 int columns;
                 JArray sets;
-                if (_filePaths.TryGetValue(name, out var loadedPath) &&
+                if (_filePaths.TryGetValue(id, out var loadedPath) &&
                     string.Equals(loadedPath, path, StringComparison.OrdinalIgnoreCase))
                 {
                     // Already loaded: keep what is in memory rather than re-reading the file.
-                    columns = DeckLayout.ColumnsOf(manager.decks, name);
-                    sets = SetsOnDeck(currentSets, name);
+                    var loaded = DeckLayout.Find(manager.decks, id);
+                    name = loaded != null ? loaded.name : id;
+                    columns = DeckLayout.ColumnsOf(manager.decks, id);
+                    sets = SetsOnDeck(currentSets, id);
                 }
-                else if (!_TryReadFile(path, name, out columns, out sets))
+                else if (!_TryReadFile(path, id, out name, out columns, out sets))
                 {
                     // Unreadable file: leave the tab out entirely rather than showing an empty one that
                     // would overwrite the file on the next edit.
                     continue;
                 }
 
-                newDecks.Add(new JObject { ["@type"] = "Deck", ["name"] = name, ["columns"] = columns });
+                newDecks.Add(new JObject { ["@type"] = "Deck", ["id"] = id, ["name"] = name, ["columns"] = columns });
                 for (int s = 0; s < sets.Count; s++) newSets.Add(sets[s]);
-                newPaths[name] = path;
+                newPaths[id] = path;
             }
 
             var payload = new JObject
@@ -292,8 +272,9 @@ namespace Lilium.LiveStudio
         }
 
         // Reads one deck file. Returns false (already logged) when it cannot be used.
-        private static bool _TryReadFile(string fullPath, string deckName, out int columns, out JArray sets)
+        private static bool _TryReadFile(string fullPath, string deckId, out string name, out int columns, out JArray sets)
         {
+            name = deckId;
             columns = 0;
             sets = null;
 
@@ -305,29 +286,31 @@ namespace Lilium.LiveStudio
                 return false;
             }
 
-            if (!DeckFile.TryParse(json, fullPath, out var fileColumns, out var setsJson)) return false;
+            if (!DeckFile.TryParse(json, fullPath, out var fileName, out var fileColumns, out var setsJson)) return false;
 
+            // A file written before the name was stored shows its stem until it is next written.
+            name = string.IsNullOrEmpty(fileName) ? deckId : fileName;
             columns = fileColumns > 0 ? fileColumns : DeckLayout.FallbackColumns;
             try { sets = JArray.Parse(setsJson); }
             catch { sets = new JArray(); }
-            // The file decides which deck its sets are on; the stored deckName is only a leftover of where
+            // The file decides which deck its sets are on; the stored deckId is only a leftover of where
             // they were when written (and is wrong outright for a file copied in from another project).
             for (int i = 0; i < sets.Count; i++)
             {
-                if (sets[i] is JObject set && set["control"] is JObject control) control["deckName"] = deckName;
+                if (sets[i] is JObject set && set["control"] is JObject control) control["deckId"] = deckId;
             }
             return true;
         }
 
         /// <summary>The serialized sets placed on one deck, in order.</summary>
-        internal static JArray SetsOnDeck(JArray sets, string deckName)
+        internal static JArray SetsOnDeck(JArray sets, string deckId)
         {
             var result = new JArray();
             for (int i = 0; i < sets.Count; i++)
             {
                 if (sets[i] is JObject set &&
                     set["control"] is JObject control &&
-                    string.Equals(control["deckName"]?.Value<string>(), deckName, StringComparison.Ordinal))
+                    string.Equals(control["deckId"]?.Value<string>(), deckId, StringComparison.Ordinal))
                 {
                     result.Add(set);
                 }
@@ -335,7 +318,7 @@ namespace Lilium.LiveStudio
             return result;
         }
 
-        // The file text each deck would be written as, keyed by deck name.
+        // The file text each deck would be written as, keyed by deck id.
         private static Dictionary<string, string> _BuildPayloads(OperationManager manager)
         {
             if (manager == null) return null;
@@ -349,18 +332,18 @@ namespace Lilium.LiveStudio
             for (int i = 0; i < manager.decks.Count; i++)
             {
                 var deck = manager.decks[i];
-                if (deck == null || string.IsNullOrEmpty(deck.name)) continue;
-                result[deck.name] = DeckFile.BuildJson(
-                    deck.columns, SetsOnDeck(sets, deck.name).ToString(Formatting.None));
+                if (deck == null || string.IsNullOrEmpty(deck.id)) continue;
+                result[deck.id] = DeckFile.BuildJson(
+                    deck.name, deck.columns, SetsOnDeck(sets, deck.id).ToString(Formatting.None));
             }
             return result;
         }
 
         // The file a deck is, creating the mapping for a deck that does not have one yet (added from the
         // remote app). Null when no project is open to write into.
-        private string _EnsureFilePath(string deckName)
+        private string _EnsureFilePath(string deckId)
         {
-            if (_filePaths.TryGetValue(deckName, out var known) && !string.IsNullOrEmpty(known)) return known;
+            if (_filePaths.TryGetValue(deckId, out var known) && !string.IsNullOrEmpty(known)) return known;
 
             var projectPath = ProjectManager.projectPath;
             if (string.IsNullOrEmpty(projectPath))
@@ -369,8 +352,8 @@ namespace Lilium.LiveStudio
                 return null;
             }
 
-            var path = Path.Combine(projectPath, DeckFile.Subfolder, deckName + DeckFile.Extension);
-            _filePaths[deckName] = path;
+            var path = Path.Combine(projectPath, DeckFile.Subfolder, deckId + DeckFile.Extension);
+            _filePaths[deckId] = path;
             return path;
         }
 

@@ -11,21 +11,25 @@ namespace Lilium.LiveStudio
     /// remote app switches between them).
     ///
     /// The deck holds no tile list of its own: its tiles are the operation sets whose
-    /// <see cref="OperationSet.control"/> has <see cref="DeckControl.deckName"/> equal to this deck's
-    /// <see cref="name"/> (so an operation and its placement are one object — see <see cref="DeckControl"/>).
-    /// A plain serializable type, persisted with the manager in the scene.
+    /// <see cref="OperationSet.control"/> has <see cref="DeckControl.deckId"/> equal to this deck's
+    /// <see cref="id"/> (so an operation and its placement are one object — see <see cref="DeckControl"/>).
+    /// Persisted in its own deck file (<see cref="DeckFileStore"/>), not in the scene.
     /// </summary>
     [Serializable]
     [LiveClass(Category = "Operation", Icon = "grid_view")]
     public class Deck
     {
-        /// <summary>The deck's display name, also its identity: <see cref="OperationManager"/> keeps it unique
-        /// (auto-suffixing on collision) so placed controls can reference it by name
-        /// (<see cref="DeckControl.deckName"/>). Renaming goes through <see cref="OperationManager.RenameDeck"/>
-        /// so referencing controls follow.</summary>
-        // 安定キー ([LiveKey])。名前は OperationManager が一意に保ち、改名は RenameDeck を通って
-        // 参照側も追従するので、要素の識別子として使える。
+        /// <summary>The deck's identity: the stem of its deck file, decided when the deck is created and never
+        /// changed (renaming does not move the file). Placed controls point at it
+        /// (<see cref="DeckControl.deckId"/>), and it is the element key, so a rename never breaks a reference.
+        /// </summary>
         [LiveField(lane = FrameLane.State, textCapacity = 128), LiveKey]
+        public string id = "Deck";
+
+        /// <summary>The deck's display name, stored inside its deck file. Free text: no character is replaced
+        /// and two decks may share a name, since nothing refers to a deck by it. Changed through
+        /// <see cref="OperationManager.RenameDeck"/> so the file is rewritten.</summary>
+        [LiveField(lane = FrameLane.State, textCapacity = 128)]
         public string name = "Deck";
 
         /// <summary>Logical column count of the grid. The remote app keeps this fixed and lets the physical

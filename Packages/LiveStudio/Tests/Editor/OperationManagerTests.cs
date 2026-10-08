@@ -521,20 +521,21 @@ namespace Lilium.LiveStudio.EditorTests
         }
 
         [Test]
-        public void AddDeck_AppendsDeckWithUniqueNameAndReturnsIt()
+        public void AddDeck_AppendsDeckAndReturnsItsId()
         {
             var manager = new OperationManager();
 
-            var name = manager.AddDeck();
+            var id = manager.AddDeck();
 
             Assert.AreEqual(1, manager.decks.Count);
             var deck = manager.decks[0];
-            Assert.AreEqual(name, deck.name, "the returned name addresses the created deck");
-            Assert.IsFalse(string.IsNullOrEmpty(deck.name), "a name is assigned");
+            Assert.AreEqual(id, deck.id, "the returned id addresses the created deck");
+            Assert.IsFalse(string.IsNullOrEmpty(deck.id), "an id is assigned");
+            Assert.AreEqual(deck.id, deck.name, "a new deck's display name starts as its id");
         }
 
         [Test]
-        public void AddDeck_AssignsUniqueNames()
+        public void AddDeck_AssignsUniqueIds()
         {
             var manager = new OperationManager();
 
@@ -543,7 +544,19 @@ namespace Lilium.LiveStudio.EditorTests
 
             Assert.AreEqual(2, manager.decks.Count);
             Assert.AreEqual("Deck", first);
-            Assert.AreEqual("Deck 2", second, "a colliding default name is auto-suffixed");
+            Assert.AreEqual("Deck 2", second, "a colliding id is auto-suffixed");
+        }
+
+        [Test]
+        public void AddDeck_IdIsUniqueEvenAfterTheFirstDeckIsRenamed()
+        {
+            var manager = new OperationManager();
+            var first = manager.AddDeck();
+            manager.RenameDeck(first, "Main");
+
+            var second = manager.AddDeck();
+
+            Assert.AreNotEqual(first, second, "ids stay unique; the display name does not free the id");
         }
 
         [Test]
@@ -556,18 +569,18 @@ namespace Lilium.LiveStudio.EditorTests
             manager.RemoveDeck(drop);
 
             Assert.AreEqual(1, manager.decks.Count);
-            Assert.AreEqual(keep, manager.decks[0].name, "the other deck is untouched");
+            Assert.AreEqual(keep, manager.decks[0].id, "the other deck is untouched");
         }
 
         [Test]
-        public void RemoveDeck_UnknownName_IsNoOp()
+        public void RemoveDeck_UnknownId_IsNoOp()
         {
             var manager = new OperationManager();
             manager.AddDeck();
 
             manager.RemoveDeck("does-not-exist");
 
-            Assert.AreEqual(1, manager.decks.Count, "an unknown name removes nothing");
+            Assert.AreEqual(1, manager.decks.Count, "an unknown id removes nothing");
         }
 
         [Test]
@@ -581,7 +594,7 @@ namespace Lilium.LiveStudio.EditorTests
             Assert.AreEqual(id, set.id);
             Assert.IsInstanceOf<DeckButton>(set.control, "a function bind defaults to a momentary push tile");
             Assert.AreEqual(1, manager.decks.Count, "a default page is auto-created for the new control");
-            Assert.AreEqual(manager.decks[0].name, set.control.deckName,
+            Assert.AreEqual(manager.decks[0].id, set.control.deckId,
                 "a new control is placed on the default page (no unplaced state)");
             Assert.AreEqual(0, set.control.x);
             Assert.AreEqual(0, set.control.y);
@@ -689,7 +702,7 @@ namespace Lilium.LiveStudio.EditorTests
             manager.PlaceControl(id, "deck-1", 3, 2);
 
             var control = manager.operationSets[0].control;
-            Assert.AreEqual("deck-1", control.deckName);
+            Assert.AreEqual("deck-1", control.deckId);
             Assert.AreEqual(3, control.x);
             Assert.AreEqual(2, control.y);
         }
@@ -700,12 +713,12 @@ namespace Lilium.LiveStudio.EditorTests
             var manager = new OperationManager();
             var id = manager.AddFunctionOperation("obj", "DoThing", "Do Thing", "");
             // AddFunctionOperation auto-created the default page and placed the control there.
-            var defaultDeckName = manager.decks[0].name;
+            var defaultDeckId = manager.decks[0].id;
             manager.PlaceControl(id, "deck-1", 1, 1);
 
             manager.PlaceControl(id, "", 0, 0);
 
-            Assert.AreEqual(defaultDeckName, manager.operationSets[0].control.deckName,
+            Assert.AreEqual(defaultDeckId, manager.operationSets[0].control.deckId,
                 "an empty deck name falls back to the default page (no unplaced state)");
         }
 
@@ -721,7 +734,7 @@ namespace Lilium.LiveStudio.EditorTests
             manager.PlaceControlOnFreeCell(id, deck);
 
             var control = manager.operationSets[1].control;
-            Assert.AreEqual(deck, control.deckName);
+            Assert.AreEqual(deck, control.deckId);
             Assert.AreEqual(1, control.x, "an added tile takes the first free cell instead of overlapping");
             Assert.AreEqual(0, control.y);
         }
@@ -751,13 +764,13 @@ namespace Lilium.LiveStudio.EditorTests
         {
             var manager = new OperationManager();
             var id = manager.AddFunctionOperation("obj", "DoThing", "Do Thing", "");
-            var defaultDeckName = manager.decks[0].name;
+            var defaultDeckId = manager.decks[0].id;
             manager.PlaceControl(id, "deck-1", 1, 1);
 
             manager.PlaceControlOnFreeCell(id, "");
 
             var control = manager.operationSets[0].control;
-            Assert.AreEqual(defaultDeckName, control.deckName,
+            Assert.AreEqual(defaultDeckId, control.deckId,
                 "an empty deck name falls back to the default page (no unplaced state)");
             Assert.AreEqual(0, control.x);
             Assert.AreEqual(0, control.y);
@@ -774,7 +787,7 @@ namespace Lilium.LiveStudio.EditorTests
 
             var control = manager.operationSets[0].control;
             Assert.IsInstanceOf<DeckSlider>(control, "the kind is swapped");
-            Assert.AreEqual("deck-1", control.deckName, "placement is preserved across the swap");
+            Assert.AreEqual("deck-1", control.deckId, "placement is preserved across the swap");
             Assert.AreEqual(4, control.x);
             Assert.AreEqual(5, control.y);
         }
@@ -808,7 +821,7 @@ namespace Lilium.LiveStudio.EditorTests
             Assert.AreEqual(1, manager.decks.Count, "only the kept deck remains");
             Assert.AreEqual(1, manager.operationSets.Count, "the operation on the removed deck went with it");
             Assert.AreEqual(b, manager.operationSets[0].id, "the operation on the kept deck stays");
-            Assert.AreEqual(keep, manager.operationSets[0].control.deckName, "and stays where it was");
+            Assert.AreEqual(keep, manager.operationSets[0].control.deckId, "and stays where it was");
         }
 
         [Test]
@@ -820,7 +833,7 @@ namespace Lilium.LiveStudio.EditorTests
 
             Assert.AreEqual(1, manager.decks.Count, "the first add auto-creates the default page");
             var control = manager.operationSets[0].control;
-            Assert.AreEqual(manager.decks[0].name, control.deckName, "placed on the default page");
+            Assert.AreEqual(manager.decks[0].id, control.deckId, "placed on the default page");
             Assert.AreEqual(0, control.x);
             Assert.AreEqual(0, control.y);
         }
@@ -890,11 +903,11 @@ namespace Lilium.LiveStudio.EditorTests
             var manager = new OperationManager();
             var id = manager.AddFunctionOperation("obj", "DoThing", "Do Thing", "");
             // Simulate a restored/older scene where the control carries no deck.
-            manager.operationSets[0].control.deckName = string.Empty;
+            manager.operationSets[0].control.deckId = string.Empty;
 
             manager.OnAfterLiveDeserialize();
 
-            Assert.IsFalse(string.IsNullOrEmpty(manager.operationSets[0].control.deckName),
+            Assert.IsFalse(string.IsNullOrEmpty(manager.operationSets[0].control.deckId),
                 "a control with no deck is placed on the default page after restore");
         }
 
@@ -904,13 +917,13 @@ namespace Lilium.LiveStudio.EditorTests
             var manager = new OperationManager();
             manager.AddFunctionOperation("obj", "DoThing", "Do Thing", "");
             // Simulate pasted serialized action data referencing a deck that does not exist yet.
-            manager.operationSets[0].control.deckName = "Combat";
+            manager.operationSets[0].control.deckId = "Combat";
 
             manager.OnAfterLiveDeserialize();
 
-            Assert.IsTrue(manager.decks.Exists(p => p.name == "Combat"),
+            Assert.IsTrue(manager.decks.Exists(p => p.id == "Combat"),
                 "a missing referenced deck is recreated by name so pasted data brings its deck along");
-            Assert.AreEqual("Combat", manager.operationSets[0].control.deckName,
+            Assert.AreEqual("Combat", manager.operationSets[0].control.deckId,
                 "the control keeps its deck reference rather than being moved");
         }
 
@@ -920,52 +933,67 @@ namespace Lilium.LiveStudio.EditorTests
             var manager = new OperationManager();
             manager.AddFunctionOperation("obj", "A", "A", "");
             manager.AddFunctionOperation("obj", "B", "B", "");
-            manager.operationSets[0].control.deckName = "Combat";
-            manager.operationSets[1].control.deckName = "Combat";
+            manager.operationSets[0].control.deckId = "Combat";
+            manager.operationSets[1].control.deckId = "Combat";
 
             manager.OnAfterLiveDeserialize();
 
-            Assert.AreEqual(1, manager.decks.FindAll(p => p.name == "Combat").Count,
+            Assert.AreEqual(1, manager.decks.FindAll(p => p.id == "Combat").Count,
                 "controls referencing the same missing deck create exactly one deck");
         }
 
         [Test]
-        public void RenameDeck_PropagatesToControls()
+        public void RenameDeck_ChangesOnlyTheDisplayName()
         {
             var manager = new OperationManager();
-            var name = manager.AddDeck();
+            var deckId = manager.AddDeck();
             var id = manager.AddFunctionOperation("obj", "DoThing", "Do Thing", "");
-            manager.PlaceControl(id, name, 0, 0);
+            manager.PlaceControl(id, deckId, 0, 0);
 
-            manager.RenameDeck(name, "Main");
+            var result = manager.RenameDeck(deckId, "  Main  ");
 
+            Assert.AreEqual("Main", result, "the resulting (trimmed) name is returned");
             Assert.AreEqual("Main", manager.decks[0].name, "the deck is renamed");
-            Assert.AreEqual("Main", manager.operationSets[0].control.deckName,
-                "a control on the renamed deck follows the rename");
+            Assert.AreEqual(deckId, manager.decks[0].id, "the id does not change");
+            Assert.AreEqual(deckId, manager.operationSets[0].control.deckId,
+                "a control on the renamed deck stays on it without being touched");
         }
 
         [Test]
-        public void RenameDeck_CollisionAutoSuffixes()
+        public void RenameDeck_KeepsAnyCharactersAndAllowsDuplicates()
         {
             var manager = new OperationManager();
-            manager.AddDeck(); // "Deck"
-            var second = manager.AddDeck(); // "Deck 2"
+            var first = manager.AddDeck();
+            var second = manager.AddDeck();
 
-            manager.RenameDeck(second, "Deck");
+            manager.RenameDeck(first, "Talk / Game: 1?");
+            manager.RenameDeck(second, "Talk / Game: 1?");
 
-            Assert.AreEqual("Deck 2", manager.decks[1].name,
-                "renaming onto an existing name auto-suffixes to stay unique");
+            Assert.AreEqual("Talk / Game: 1?", manager.decks[0].name, "characters invalid in file names are kept");
+            Assert.AreEqual("Talk / Game: 1?", manager.decks[1].name, "two decks may share a name");
+            Assert.AreNotEqual(manager.decks[0].id, manager.decks[1].id, "they are still told apart by id");
         }
 
         [Test]
-        public void RenameDeck_SameName_NoOp()
+        public void RenameDeck_EmptyName_NoOp()
         {
             var manager = new OperationManager();
-            var name = manager.AddDeck();
+            var id = manager.AddDeck();
 
-            manager.RenameDeck(name, name);
+            var result = manager.RenameDeck(id, "   ");
 
-            Assert.AreEqual(name, manager.decks[0].name, "renaming to the same name is a no-op");
+            Assert.AreEqual(id, result, "an empty name changes nothing and returns the current name");
+            Assert.AreEqual(id, manager.decks[0].name);
+        }
+
+        [Test]
+        public void RenameDeck_UnknownId_ReturnsEmpty()
+        {
+            var manager = new OperationManager();
+            manager.AddDeck();
+
+            Assert.AreEqual(string.Empty, manager.RenameDeck("does-not-exist", "Main"));
+            Assert.AreEqual("Deck", manager.decks[0].name, "no other deck is renamed");
         }
     }
 }

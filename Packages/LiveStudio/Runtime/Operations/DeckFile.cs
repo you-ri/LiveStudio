@@ -24,15 +24,17 @@ namespace Lilium.LiveStudio
     /// {
     ///   "format": "jp.lilium.livestudio.deck",
     ///   "formatVersion": 1,
+    ///   "name": "Main",
     ///   "columns": 8,
     ///   "operationSets": [ { "@type": "OperationSet", ... }, ... ]
     /// }
     /// </code>
     ///
-    /// <para>The deck's name is <b>not</b> in the file: the file name is the name (see
-    /// <see cref="AssetTypeRegistry.DeriveName"/>), so renaming a tab renames the file and there is no second
-    /// source of truth to keep in step. <see cref="DeckControl.deckName"/> inside the sets is likewise
-    /// redundant once the file is known, and is rewritten from the file name on load.</para>
+    /// <para>The file name (its stem) is the deck's <see cref="Deck.id"/>: decided when the deck is created and
+    /// never changed, so renaming a tab never moves the file. The display <c>name</c> is stored inside the file
+    /// as free text; a file without one (written before the name was stored) shows its stem, and gains the
+    /// name the next time the deck is written. <see cref="DeckControl.deckId"/> inside the sets is redundant
+    /// once the file is known, and is rewritten from the file on load.</para>
     ///
     /// <para>Versioning follows the shared <see cref="FormatHeader"/> policy (missing = min, below min =
     /// reject, above current = best-effort), so a deck written by a newer build still opens.</para>
@@ -67,7 +69,7 @@ namespace Lilium.LiveStudio
         /// array of the sets placed on it; it is embedded as parsed JSON (not an escaped string) so the file
         /// stays readable and diffable.
         /// </summary>
-        public static string BuildJson(int columns, string operationSetsJson)
+        public static string BuildJson(string name, int columns, string operationSetsJson)
         {
             JArray sets;
             if (string.IsNullOrEmpty(operationSetsJson))
@@ -82,6 +84,7 @@ namespace Lilium.LiveStudio
 
             var root = new JObject();
             FormatHeader.Write(root, FormatId, CurrentFormatVersion);
+            root["name"] = name ?? string.Empty;
             root["columns"] = columns;
             root["operationSets"] = sets;
             return root.ToString(Formatting.Indented);
@@ -91,10 +94,12 @@ namespace Lilium.LiveStudio
         /// Parses deck file JSON. Returns false (and logs) if the content is unparseable, is not a deck file,
         /// or predates <see cref="MinSupportedVersion"/>. <paramref name="label"/> names the file in the log.
         /// <paramref name="columns"/> is the deck's grid width and <paramref name="operationSetsJson"/> the
-        /// serialized array of the sets placed on it. The deck's name is the file's, so it is not returned.
+        /// serialized array of the sets placed on it. <paramref name="name"/> is the stored display name, empty
+        /// when the file has none (the caller then shows the file's stem).
         /// </summary>
-        public static bool TryParse(string json, string label, out int columns, out string operationSetsJson)
+        public static bool TryParse(string json, string label, out string name, out int columns, out string operationSetsJson)
         {
+            name = string.Empty;
             columns = 0;
             operationSetsJson = null;
             if (string.IsNullOrEmpty(json))
@@ -131,6 +136,7 @@ namespace Lilium.LiveStudio
                 return false;
             }
 
+            name = (root["name"]?.Type == JTokenType.String ? root["name"].Value<string>() : null)?.Trim() ?? string.Empty;
             columns = root["columns"]?.Value<int>() ?? 0;
             operationSetsJson = (root["operationSets"] as JArray ?? new JArray()).ToString(Formatting.None);
             return true;
@@ -138,7 +144,7 @@ namespace Lilium.LiveStudio
 
         /// <summary>
         /// Replaces characters not allowed in file names with '_', returning a non-empty fallback when the
-        /// input reduces to nothing. Deck names become file names, so this runs on every rename.
+        /// input reduces to nothing. A new deck's id is its file stem, so this runs when a deck is created.
         /// </summary>
         public static string SanitizeFileName(string name)
         {
