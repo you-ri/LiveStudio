@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.26.1] - 2026-10-25
+<!-- changelog-sha: f08272933e9be16a44959a088f99638f000d700a -->
+
+### Changed
+
+- Renaming a deck tab no longer renames its file. A deck is now identified by its file name, fixed when the deck is created, and its display name is stored inside the file, so two decks can share a name; a deck file from an earlier build shows its file name until it is next written. Code that read `DeckControl.deckName` now reads `DeckControl.deckId`.
+
+- The snapshot list no longer rescans the Recordings folder on every refresh while its page is open. Files added to the folder from outside the app are still picked up.
+
 ## [0.26.0] - 2026-09-27
 <!-- changelog-sha: 421123c230cfe0e3615cfb534adafdd6cf4edbcd -->
 
