@@ -1,6 +1,6 @@
 # Third-Party Licenses
 
-VirgoMotionRemote 0.26.0 is licensed under the Apache License 2.0 (see LICENSE).
+VirgoMotionRemote 0.26.1 is licensed under the Apache License 2.0 (see LICENSE).
 The distributed application incorporates the third-party software listed below.
 Each entry reproduces the copyright and license notices shipped with that software.
 
